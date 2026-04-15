@@ -79,7 +79,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Wallet,
     resource: 'payroll',
     children: [
-      { label: 'Regular Payroll', href: '/payroll/regular' },
+      { label: 'Regular Payroll', href: '/payroll' },
       { label: 'JO / COS', href: '/payroll/jo-cos' },
       { label: 'Payslips', href: '/payroll/payslips' },
       { label: 'History', href: '/payroll/history' },

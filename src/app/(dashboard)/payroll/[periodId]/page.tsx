@@ -37,8 +37,13 @@ function formatDate(d: string): string {
   });
 }
 
+// RFC 4122 v1–v5 UUID format
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function PayrollPeriodPage({ params }: Props) {
   const { periodId } = await params;
+  // Guard against route collisions like /payroll/regular hitting [periodId]
+  if (!UUID_RE.test(periodId)) notFound();
   await requirePermission('payroll', 'view');
 
   const [period, records, exceptions, totals] = await Promise.all([
