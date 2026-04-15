@@ -26,12 +26,18 @@ Sentry.init({
     }
 
     // Redact database connection strings that may appear in breadcrumbs.
-    if (event.breadcrumbs?.values) {
-      event.breadcrumbs.values = event.breadcrumbs.values.map((crumb) => {
-        if (crumb.data?.url && typeof crumb.data.url === 'string') {
+    // Sentry's Event type evolves across versions — treat breadcrumbs as unknown
+    // and coerce into an array we can mutate.
+    const breadcrumbs = (event as unknown as { breadcrumbs?: unknown }).breadcrumbs;
+    if (breadcrumbs && typeof breadcrumbs === 'object') {
+      const raw = (breadcrumbs as { values?: unknown }).values;
+      const arr = typeof raw === 'function' ? Array.from((raw as () => Iterable<unknown>)()) : Array.isArray(raw) ? raw : [];
+      (breadcrumbs as { values: unknown[] }).values = arr.map((c) => {
+        const crumb = c as { data?: { url?: unknown } };
+        if (crumb?.data && typeof crumb.data.url === 'string') {
           crumb.data.url = crumb.data.url.replace(
             /postgresql:\/\/[^@]+@/g,
-            'postgresql://[REDACTED]@'
+            'postgresql://[REDACTED]@',
           );
         }
         return crumb;

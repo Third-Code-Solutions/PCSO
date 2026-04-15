@@ -38,7 +38,8 @@ export function OrgChartClient({ roots }: OrgChartClientProps) {
       ]);
 
       // Use createElement to avoid needing JSX in async function context
-      const doc = createElement(OrgChartPdfDocument, { roots });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const doc = createElement(OrgChartPdfDocument, { roots }) as any;
       const blob = await pdf(doc).toBlob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');

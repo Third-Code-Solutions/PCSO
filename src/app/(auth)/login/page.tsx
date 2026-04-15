@@ -110,7 +110,17 @@ const URL_ERROR_MESSAGES: Record<string, string> = {
 
 // ─── Page component ───────────────────────────────────────────────────────────
 
+import { Suspense } from 'react';
+
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const searchParams = useSearchParams();
   const next = searchParams.get('next') ?? undefined;
   const urlError = searchParams.get('error');
