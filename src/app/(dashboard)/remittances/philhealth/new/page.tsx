@@ -32,6 +32,10 @@ export default function PhilHealthNewPage() {
         periodId: periodId.trim(),
         remarks: remarks.trim() || undefined,
       });
+      if (!batch) {
+        setError('Batch generation returned no data.');
+        return;
+      }
       router.push(`/remittances/philhealth/${batch.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to generate batch.');

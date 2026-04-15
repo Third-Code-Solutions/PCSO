@@ -13,6 +13,7 @@ import { LEAVE_TYPES } from '@/lib/constants/leave-types';
 import type { LeaveTypeCode } from '@/lib/constants/leave-types';
 import { CalendarIcon, UserIcon, FileTextIcon, AlertCircleIcon } from 'lucide-react';
 import { MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS } from '@/lib/constants/leave-types';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -46,6 +47,7 @@ export default async function LeaveApprovalDetailPage({ params }: PageProps) {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
+      <RealtimeBoundary tables={['leave_applications']} />
       <PageHeader
         title="Leave Application"
         breadcrumbs={[
@@ -205,53 +207,75 @@ export default async function LeaveApprovalDetailPage({ params }: PageProps) {
             <div className="border-b bg-senate-navy/5 px-5 py-3">
               <h2 className="text-sm font-semibold text-senate-navy">Your Decision</h2>
             </div>
-            <div className="p-5">
-              <form className="space-y-4">
+            <div className="p-5 space-y-4">
+              {/* Disapprove form — includes remarks field; remarks required (min 5 chars) */}
+              <form
+                action={async (formData: FormData) => {
+                  'use server';
+                  const remarks = (formData.get('disapprove_remarks') as string | null) ?? '';
+                  await disapproveLeave({ leaveApplicationId: id, remarks });
+                }}
+                className="space-y-4"
+              >
                 <div className="space-y-1.5">
                   <label
-                    htmlFor="remarks"
+                    htmlFor="disapprove_remarks"
                     className="block text-sm font-medium"
                   >
-                    Remarks (optional for approval; required for disapproval)
+                    Reason for Disapproval <span className="text-destructive">*</span>
                   </label>
                   <textarea
-                    id="remarks"
-                    name="remarks"
+                    id="disapprove_remarks"
+                    name="disapprove_remarks"
                     rows={3}
+                    required
+                    minLength={5}
                     className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-senate-navy"
-                    placeholder="Add remarks..."
+                    placeholder="Required — provide a reason for disapproval..."
                   />
                 </div>
-                <div className="flex justify-end gap-2">
-                  <form
-                    action={async (formData: FormData) => {
-                      'use server';
-                      const remarks = formData.get('remarks') as string | null;
-                      await disapproveLeave({ leaveApplicationId: id, remarks: remarks ?? 'Disapproved.' });
-                    }}
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="border-destructive/30 text-destructive hover:bg-destructive/5"
                   >
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      className="border-destructive/30 text-destructive hover:bg-destructive/5"
-                    >
-                      Disapprove
-                    </Button>
-                  </form>
-                  <form
-                    action={async (formData: FormData) => {
-                      'use server';
-                      const remarks = formData.get('remarks') as string | null;
-                      await approveLeave({ leaveApplicationId: id, remarks: remarks ?? undefined });
-                    }}
+                    Disapprove
+                  </Button>
+                </div>
+              </form>
+
+              {/* Approve form — remarks are optional */}
+              <form
+                action={async (formData: FormData) => {
+                  'use server';
+                  const remarks = (formData.get('approve_remarks') as string | null) ?? undefined;
+                  await approveLeave({ leaveApplicationId: id, remarks: remarks || undefined });
+                }}
+                className="space-y-4 border-t pt-4"
+              >
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="approve_remarks"
+                    className="block text-sm font-medium"
                   >
-                    <Button
-                      type="submit"
-                      className="bg-emerald-700 hover:bg-emerald-800 text-white"
-                    >
-                      Approve Application
-                    </Button>
-                  </form>
+                    Approver Remarks <span className="text-muted-foreground text-xs">(optional)</span>
+                  </label>
+                  <textarea
+                    id="approve_remarks"
+                    name="approve_remarks"
+                    rows={2}
+                    className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-senate-navy"
+                    placeholder="Add remarks (optional)..."
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    className="bg-emerald-700 hover:bg-emerald-800 text-white"
+                  >
+                    Approve Application
+                  </Button>
                 </div>
               </form>
             </div>

@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { APPOINTMENT_TYPE_LABELS } from '@/lib/constants/appointment-types';
+import { fullName } from '@/lib/utils/format';
 import type { EmployeeListRow } from '@/app/(dashboard)/employees/queries';
 
 function getStatusVariant(
@@ -41,9 +42,12 @@ function formatStatus(status: EmployeeListRow['status']): string {
 }
 
 function formatFullName(row: EmployeeListRow): string {
-  const parts = [row.firstName, row.middleName, row.lastName].filter(Boolean);
-  const base = parts.join(' ');
-  return row.suffix ? `${base}, ${row.suffix}` : base;
+  return fullName({
+    firstName: row.firstName,
+    middleName: row.middleName,
+    lastName: row.lastName,
+    suffix: row.suffix,
+  });
 }
 
 type ColumnActions = {

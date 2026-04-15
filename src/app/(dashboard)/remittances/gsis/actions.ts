@@ -77,7 +77,7 @@ export async function generateRemittanceList(input: unknown) {
 
   if (existingBatch.length > 0) {
     throw new Error(
-      `A GSIS remittance batch already exists for this period (batch ID: ${existingBatch[0].id}). ` +
+      `A GSIS remittance batch already exists for this period (batch ID: ${existingBatch[0]?.id ?? 'unknown'}). ` +
         'Delete the existing batch first before regenerating.',
     );
   }
@@ -165,7 +165,7 @@ export async function generateRemittanceList(input: unknown) {
   const totalRemittance = roundHalfEven(totalPersonal + totalEmployer + totalLifeInsurance, 2);
 
   // Insert batch
-  const [batch] = await db
+  const inserted = await db
     .insert(gsisRemittanceBatches)
     .values({
       periodId: parsed.periodId,
@@ -178,6 +178,9 @@ export async function generateRemittanceList(input: unknown) {
       employeeCount: gsisRecords.length,
     })
     .returning();
+
+  const batch = inserted[0];
+  if (!batch) throw new Error('Failed to insert GSIS remittance batch.');
 
   // Insert lines
   const linesWithBatchId = lineValues.map((l) => ({ ...l, batchId: batch.id }));
@@ -305,7 +308,7 @@ export async function markSubmitted(input: unknown) {
   }
 
   const now = new Date().toISOString();
-  const [updated] = await db
+  const updatedRows = await db
     .update(gsisRemittanceBatches)
     .set({
       status: 'submitted',
@@ -317,6 +320,9 @@ export async function markSubmitted(input: unknown) {
     })
     .where(eq(gsisRemittanceBatches.id, parsed.batchId))
     .returning();
+
+  const updated = updatedRows[0];
+  if (!updated) throw new Error('Failed to update GSIS batch status.');
 
   await auditLog({
     userId: user.id,
@@ -359,7 +365,7 @@ export async function createGsisRegistration(input: unknown) {
     );
   }
 
-  const [row] = await db
+  const regRows = await db
     .insert(gsisRegistrations)
     .values({
       employeeId: parsed.employeeId,
@@ -372,6 +378,9 @@ export async function createGsisRegistration(input: unknown) {
       notes: parsed.notes ?? null,
     })
     .returning();
+
+  const row = regRows[0];
+  if (!row) throw new Error('Failed to create GSIS registration.');
 
   // Sync GSIS number back to employees table for payroll use
   await db
@@ -451,7 +460,7 @@ export async function createGsisLoan(input: unknown) {
   const parsed = GsisLoanSchema.parse(input);
   const user = await requirePermission('employees', 'edit');
 
-  const [row] = await db
+  const loanRows = await db
     .insert(gsisLoans)
     .values({
       employeeId: parsed.employeeId,
@@ -465,6 +474,9 @@ export async function createGsisLoan(input: unknown) {
       notes: parsed.notes ?? null,
     })
     .returning();
+
+  const row = loanRows[0];
+  if (!row) throw new Error('Failed to create GSIS loan.');
 
   await auditLog({
     userId: user.id,

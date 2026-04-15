@@ -241,6 +241,62 @@ export async function getMyPerformanceRatings(
   });
 }
 
+// ─── Approved IPCRF ratings with period dateFrom (for eligibility checks) ────
+
+export interface ApprovedIpcrfRow extends PerformanceRatingRow {
+  /** Actual period start date (YYYY-MM-DD) — used for chronological sorting in step-eligibility. */
+  periodDateFrom: string;
+}
+
+/**
+ * Returns approved IPCRF ratings for an employee, including the period's
+ * actual dateFrom so step-eligibility calculations are chronologically correct.
+ */
+export async function getApprovedIpcrfWithPeriodDates(
+  employeeId: string,
+): Promise<ApprovedIpcrfRow[]> {
+  const supabase = await createServerClient();
+
+  const { data, error } = await supabase
+    .from('performance_ratings')
+    .select(`
+      id,
+      employee_id,
+      period_id,
+      rating_type,
+      numerical_rating,
+      adjectival_rating,
+      rated_by,
+      approved_by,
+      status,
+      kras,
+      created_at,
+      performance_periods ( year, semester, date_from )
+    `)
+    .eq('employee_id', employeeId)
+    .eq('rating_type', 'ipcrf')
+    .eq('status', 'approved')
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`Failed to fetch approved IPCRF ratings: ${error.message}`);
+
+  return (data ?? []).map((row) => {
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+      date_from?: string;
+    } | null;
+    const periodLabel = period
+      ? makePeriodLabel(Number(period.year), String(period.semester))
+      : 'Unknown';
+
+    return {
+      ...toRatingRow(row as Record<string, unknown>, periodLabel),
+      periodDateFrom: String(period?.date_from ?? row.created_at ?? '2020-01-01'),
+    };
+  });
+}
+
 export async function getPerformanceRatingById(
   ratingId: string,
 ): Promise<PerformanceRatingRow | null> {

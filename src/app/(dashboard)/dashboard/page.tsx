@@ -3,26 +3,42 @@ import { KpiGrid } from '@/components/dashboard/kpi-grid';
 import { RecentActivity } from '@/components/dashboard/recent-activity';
 import { UpcomingCutoffs } from '@/components/dashboard/upcoming-cutoffs';
 import { PageHeader } from '@/components/layouts/page-header';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import {
+  getKpiCounts,
+  getTotalRemittancesDueThisMonth,
+  getRecentActivity,
+  getUpcomingCutoffs,
+} from './queries';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
 };
 
-// TODO: Replace this page with a Server Component that fetches:
-//   1. KPI aggregates from `employees`, `plantilla`, `leave_applications`, `payroll_periods`
-//   2. Last 10 `audit_logs` entries for the Recent Activity feed
-//   3. Upcoming cutoff dates from `payroll_periods` + `remittance_schedules`
-//
-// Data fetching pattern (using server actions or direct DB calls):
-//   const [kpiData, activityLog, cutoffs] = await Promise.all([
-//     getDashboardKpis(),
-//     getRecentAuditLogs({ limit: 10 }),
-//     getUpcomingCutoffs(),
-//   ]);
+// Subscribe to changes in these tables so the page auto-refreshes
+const REALTIME_TABLES = [
+  'employees',
+  'plantilla_positions',
+  'leave_applications',
+  'payroll_periods',
+  'remittance_batches',
+  'gsis_remittance_batches',
+  'audit_logs',
+] as const;
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const [kpi, remittancesDue, recentActivity, upcomingCutoffs] = await Promise.all([
+    getKpiCounts(),
+    getTotalRemittancesDueThisMonth(),
+    getRecentActivity(10),
+    getUpcomingCutoffs(),
+  ]);
+
   return (
     <div className="space-y-6">
+      {/* Client boundary: triggers router.refresh() on any table change */}
+      <RealtimeBoundary tables={REALTIME_TABLES} />
+
       <PageHeader
         title="Dashboard"
         description="Overview of Senate HRIS operations"
@@ -33,26 +49,28 @@ export default function DashboardPage() {
       />
 
       {/* KPI Cards — top row */}
-      <KpiGrid />
+      <KpiGrid
+        data={{
+          totalEmployees: kpi.totalActiveEmployees,
+          permanentCount: kpi.permanentCount,
+          joCosCount: kpi.joCosCount,
+          vacantPositions: kpi.vacantPositions,
+          pendingLeaveApplications: kpi.pendingLeaveApplications,
+          payrollCutoffDays: kpi.payrollCutoffDays,
+          remittancesDueThisMonth: remittancesDue,
+        }}
+      />
 
       {/* Secondary row: Recent Activity + Upcoming Cutoffs */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
         {/* Recent Activity takes 2/3 on XL */}
         <div className="xl:col-span-2">
-          {/*
-           * TODO: Replace empty array with real audit log entries.
-           * Fetch: await getRecentAuditLogs({ limit: 10 })
-           */}
-          <RecentActivity entries={[]} />
+          <RecentActivity entries={recentActivity} />
         </div>
 
         {/* Upcoming Cutoffs takes 1/3 on XL */}
         <div>
-          {/*
-           * TODO: Replace empty array with real cutoff data.
-           * Fetch: await getUpcomingCutoffs()
-           */}
-          <UpcomingCutoffs items={[]} />
+          <UpcomingCutoffs items={upcomingCutoffs} />
         </div>
       </div>
     </div>

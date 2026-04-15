@@ -31,6 +31,8 @@ import {
 import {
   computeAnnualAccrual,
   accrueMonthlyCredits as accrueEmployeeMonthlyCredits,
+  deductLeaveCredits,
+  restoreLeaveCredits,
 } from '@/lib/utils/leave/credits';
 import { Resend } from 'resend';
 import { env } from '@/lib/env';
@@ -129,9 +131,56 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
     throw new Error(`Leave type '${parsed.leaveTypeCode}' not found in reference table.`);
   }
 
-  // Determine initial status and approval routing
-  const needsMultiLevel = parsed.workingDays > MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS;
-  const initialStatus = needsMultiLevel ? 'pending' : 'pending'; // both start as 'pending'
+  // For accrued leave types (VL, SL), validate balance and deduct atomically
+  const isAccruedLeave = leaveTypeRef.code === 'VL' || leaveTypeRef.code === 'SL';
+  const currentYear = new Date().getFullYear();
+
+  if (isAccruedLeave) {
+    // Fetch current credit row
+    const { data: creditRow, error: creditFetchError } = await supabase
+      .from('leave_credits')
+      .select('id, balance, used_credits, total_credits, carry_over')
+      .eq('employee_id', parsed.employeeId)
+      .eq('leave_type_id', leaveTypeRef.id)
+      .eq('year', currentYear)
+      .single();
+
+    if (creditFetchError || !creditRow) {
+      throw new Error(
+        `No ${leaveTypeRef.code} credit record found for ${currentYear}. ` +
+          'Please contact HR to initialize your leave credits.',
+      );
+    }
+
+    const currentBalance = {
+      vl: leaveTypeRef.code === 'VL' ? Number(creditRow.balance) : 0,
+      sl: leaveTypeRef.code === 'SL' ? Number(creditRow.balance) : 0,
+    };
+
+    // This will throw RangeError if insufficient balance
+    const updatedBalance = deductLeaveCredits(
+      currentBalance,
+      leaveTypeRef.code as 'VL' | 'SL',
+      parsed.workingDays,
+    );
+
+    const newBalance =
+      leaveTypeRef.code === 'VL' ? updatedBalance.vl : updatedBalance.sl;
+    const newUsed = Number(creditRow.used_credits) + parsed.workingDays;
+
+    const { error: creditUpdateError } = await supabase
+      .from('leave_credits')
+      .update({
+        balance: String(newBalance),
+        used_credits: String(newUsed),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', creditRow.id);
+
+    if (creditUpdateError) {
+      throw new Error(`Failed to deduct leave credits: ${creditUpdateError.message}`);
+    }
+  }
 
   // Insert leave application
   const { data: application, error: insertError } = await supabase
@@ -143,12 +192,44 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
       date_to: parsed.endDate,
       no_of_days: String(parsed.workingDays),
       reason: parsed.reason ?? null,
-      status: initialStatus,
+      status: 'pending',
     })
     .select('id')
     .single();
 
   if (insertError || !application) {
+    // Credit was already deducted — attempt to restore on insert failure
+    if (isAccruedLeave) {
+      // Best-effort restore; if this also fails, HR can correct via admin
+      await supabase
+        .from('leave_credits')
+        .select('id, balance, used_credits')
+        .eq('employee_id', parsed.employeeId)
+        .eq('leave_type_id', leaveTypeRef.id)
+        .eq('year', currentYear)
+        .single()
+        .then(async ({ data: cr }) => {
+          if (!cr) return;
+          const restored = restoreLeaveCredits(
+            {
+              vl: leaveTypeRef.code === 'VL' ? Number(cr.balance) : 0,
+              sl: leaveTypeRef.code === 'SL' ? Number(cr.balance) : 0,
+            },
+            leaveTypeRef.code as 'VL' | 'SL',
+            parsed.workingDays,
+          );
+          const restoredBalance =
+            leaveTypeRef.code === 'VL' ? restored.vl : restored.sl;
+          await supabase
+            .from('leave_credits')
+            .update({
+              balance: String(restoredBalance),
+              used_credits: String(Math.max(0, Number(cr.used_credits) - parsed.workingDays)),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', cr.id);
+        });
+    }
     throw new Error(`Failed to submit leave application: ${insertError?.message}`);
   }
 
@@ -164,7 +245,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
       startDate: parsed.startDate,
       endDate: parsed.endDate,
       workingDays: parsed.workingDays,
-      status: initialStatus,
+      status: 'pending',
     },
   });
 
@@ -368,6 +449,7 @@ export async function disapproveLeave(input: unknown): Promise<void> {
       no_of_days,
       date_from,
       date_to,
+      leave_type_id,
       leave_types ( code ),
       employees ( email, first_name, last_name )
     `)
@@ -376,7 +458,7 @@ export async function disapproveLeave(input: unknown): Promise<void> {
     .single();
 
   if (fetchError || !app) throw new Error('Leave application not found.');
-  if (!['pending', 'for_hr_review', 'for_super_admin'].includes(String(app.status))) {
+  if (String(app.status) !== 'pending') {
     throw new Error(`Cannot disapprove an application in '${app.status}' status.`);
   }
 
@@ -394,6 +476,53 @@ export async function disapproveLeave(input: unknown): Promise<void> {
     .eq('id', parsed.leaveApplicationId);
 
   if (updateError) throw new Error(`Disapproval failed: ${updateError.message}`);
+
+  // Restore credits for accrued leave types that were deducted on application
+  const disapproveLeaveTypeData = app.leave_types as { code?: string } | null;
+  const disapproveLeaveCode = disapproveLeaveTypeData?.code ?? '';
+  const isDisapproveAccrued = disapproveLeaveCode === 'VL' || disapproveLeaveCode === 'SL';
+
+  if (isDisapproveAccrued) {
+    const daysToRestore = Number(app.no_of_days ?? 0);
+    const disapproveYear = new Date().getFullYear();
+
+    const { data: disapproveCreditRow } = await supabase
+      .from('leave_credits')
+      .select('id, balance, used_credits')
+      .eq('employee_id', String(app.employee_id))
+      .eq('leave_type_id', String(app.leave_type_id))
+      .eq('year', disapproveYear)
+      .single();
+
+    if (disapproveCreditRow && daysToRestore > 0) {
+      const currentDisapproveBalance = {
+        vl: disapproveLeaveCode === 'VL' ? Number(disapproveCreditRow.balance) : 0,
+        sl: disapproveLeaveCode === 'SL' ? Number(disapproveCreditRow.balance) : 0,
+      };
+      const restoredDisapproveBalance = restoreLeaveCredits(
+        currentDisapproveBalance,
+        disapproveLeaveCode as 'VL' | 'SL',
+        daysToRestore,
+      );
+      const newDisapproveBalance =
+        disapproveLeaveCode === 'VL'
+          ? restoredDisapproveBalance.vl
+          : restoredDisapproveBalance.sl;
+      const newDisapproveUsed = Math.max(
+        0,
+        Number(disapproveCreditRow.used_credits) - daysToRestore,
+      );
+
+      await supabase
+        .from('leave_credits')
+        .update({
+          balance: String(newDisapproveBalance),
+          used_credits: String(newDisapproveUsed),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', disapproveCreditRow.id);
+    }
+  }
 
   await writeAuditLog(supabase, {
     userId: user.id,
@@ -444,6 +573,7 @@ export async function disapproveLeave(input: unknown): Promise<void> {
 
   revalidatePath('/leave/approvals');
   revalidatePath('/leave');
+  revalidatePath('/leave/credits');
 }
 
 // ---------------------------------------------------------------------------
@@ -457,7 +587,7 @@ export async function cancelLeave(input: unknown): Promise<void> {
 
   const { data: app, error: fetchError } = await supabase
     .from('leave_applications')
-    .select('id, status, employee_id')
+    .select('id, status, employee_id, no_of_days, leave_type_id, leave_types ( code )')
     .eq('id', parsed.leaveApplicationId)
     .is('deleted_at', null)
     .single();
@@ -490,6 +620,47 @@ export async function cancelLeave(input: unknown): Promise<void> {
 
   if (updateError) throw new Error(`Cancellation failed: ${updateError.message}`);
 
+  // Restore credits for accrued leave types (VL, SL) when a pending/approved app is cancelled
+  const leaveTypeData = app.leave_types as { code?: string } | null;
+  const leaveCode = leaveTypeData?.code ?? '';
+  const isAccruedLeave = leaveCode === 'VL' || leaveCode === 'SL';
+
+  if (isAccruedLeave) {
+    const daysToRestore = Number(app.no_of_days ?? 0);
+    const cancelYear = new Date().getFullYear();
+
+    const { data: creditRow } = await supabase
+      .from('leave_credits')
+      .select('id, balance, used_credits')
+      .eq('employee_id', String(app.employee_id))
+      .eq('leave_type_id', String(app.leave_type_id))
+      .eq('year', cancelYear)
+      .single();
+
+    if (creditRow && daysToRestore > 0) {
+      const currentBalance = {
+        vl: leaveCode === 'VL' ? Number(creditRow.balance) : 0,
+        sl: leaveCode === 'SL' ? Number(creditRow.balance) : 0,
+      };
+      const restoredBalance = restoreLeaveCredits(
+        currentBalance,
+        leaveCode as 'VL' | 'SL',
+        daysToRestore,
+      );
+      const newBalance = leaveCode === 'VL' ? restoredBalance.vl : restoredBalance.sl;
+      const newUsed = Math.max(0, Number(creditRow.used_credits) - daysToRestore);
+
+      await supabase
+        .from('leave_credits')
+        .update({
+          balance: String(newBalance),
+          used_credits: String(newUsed),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', creditRow.id);
+    }
+  }
+
   await writeAuditLog(supabase, {
     userId: user.id,
     action: 'cancel',
@@ -501,6 +672,7 @@ export async function cancelLeave(input: unknown): Promise<void> {
 
   revalidatePath('/leave');
   revalidatePath('/leave/approvals');
+  revalidatePath('/leave/credits');
 }
 
 // ---------------------------------------------------------------------------

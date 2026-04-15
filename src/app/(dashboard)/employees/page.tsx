@@ -4,6 +4,7 @@ import { UserPlus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmployeeFilters } from '@/components/employees/employee-filters';
 import { EmployeeListTable } from '@/components/employees/employee-list-table';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { getEmployees, getOfficesForSelect } from './queries';
 import { EmployeeListParamsSchema } from '@/lib/validations/employees';
 
@@ -33,6 +34,9 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6 p-6">
+      {/* Realtime subscription — refreshes on any employees table change */}
+      <RealtimeBoundary tables={['employees']} />
+
       {/* Page header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -44,7 +48,7 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-2" asChild>
             {/* CSV export — triggers a route handler; TODO: xlsx via exceljs */}
-            <Link href={`/api/employees/export?${new URLSearchParams(flatParams)}`}>
+            <Link href={`/api/employees/export?${new URLSearchParams(flatParams as Record<string, string>)}`}>
               <Download className="h-4 w-4" />
               Export CSV
             </Link>

@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { requirePermission } from '@/lib/auth/guards';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Badge } from '@/components/ui/badge';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { getEligibleEmployeesForStepIncrement, getStepIncrements } from '../queries';
 import { TrendingUpIcon, ChevronRightIcon } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -42,6 +43,7 @@ export default async function StepIncrementsPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
+      <RealtimeBoundary tables={['performance_ratings', 'step_increments']} />
       <PageHeader
         title="Step Increment Tracker"
         description="Employees eligible for salary step increment based on CSC performance ratings."

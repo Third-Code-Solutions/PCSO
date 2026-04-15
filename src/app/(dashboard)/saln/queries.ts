@@ -80,16 +80,43 @@ function toSubmissionRow(row: Record<string, unknown>): SalnSubmissionRow {
   };
 }
 
+/**
+ * The personal_properties column stores one of two shapes:
+ *  - Legacy / seeder flat array: PersonalProperty[]
+ *  - Compound envelope written by actions: { v: 1, personalProperties: [], investments: [] }
+ *
+ * This function normalises both into separate typed arrays.
+ */
+function unpackPersonalProperties(raw: unknown): {
+  personalProperties: unknown[];
+  investments: unknown[];
+} {
+  if (!raw) return { personalProperties: [], investments: [] };
+  if (Array.isArray(raw)) {
+    // Legacy flat format — treat the whole array as personal properties, no investments.
+    return { personalProperties: raw as unknown[], investments: [] };
+  }
+  if (typeof raw === 'object' && raw !== null && 'v' in raw) {
+    const envelope = raw as Record<string, unknown>;
+    return {
+      personalProperties: Array.isArray(envelope['personalProperties'])
+        ? (envelope['personalProperties'] as unknown[])
+        : [],
+      investments: Array.isArray(envelope['investments'])
+        ? (envelope['investments'] as unknown[])
+        : [],
+    };
+  }
+  return { personalProperties: [], investments: [] };
+}
+
 function toSubmissionDetail(row: Record<string, unknown>): SalnSubmissionDetail {
+  const { personalProperties, investments } = unpackPersonalProperties(row['personal_properties']);
   return {
     ...toSubmissionRow(row),
     realAssets: Array.isArray(row['real_assets']) ? (row['real_assets'] as unknown[]) : [],
-    personalProperties: Array.isArray(row['personal_properties'])
-      ? (row['personal_properties'] as unknown[])
-      : [],
-    investments: Array.isArray(row['investments'])
-      ? (row['investments'] as unknown[])
-      : [],
+    personalProperties,
+    investments,
     liabilities: Array.isArray(row['liabilities'])
       ? (row['liabilities'] as unknown[])
       : [],
@@ -169,7 +196,8 @@ export async function getMySalnSubmissions(
   }
 
   return (data ?? []).map((row) => {
-    const emp = row.employees as Record<string, unknown>;
+    const empRaw = row.employees;
+    const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<string, unknown> | null ?? {};
     const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
       .filter(Boolean)
       .join(' ');
@@ -204,7 +232,6 @@ export async function getSalnSubmissionById(
       status,
       real_assets,
       personal_properties,
-      investments,
       liabilities,
       business_interests,
       relatives,
@@ -246,7 +273,8 @@ export async function getSalnSubmissionById(
     });
   }
 
-  const emp = data.employees as Record<string, unknown>;
+  const empRaw = data.employees;
+  const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<string, unknown> | null ?? {};
   const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
     .filter(Boolean)
     .join(' ');
@@ -308,7 +336,8 @@ export async function getSalnComplianceForYear(year: number): Promise<Compliance
   const deadline = new Date(year + 1, 3, 30); // April 30 of following year
 
   return (empData ?? []).map((emp) => {
-    const office = emp.offices as Record<string, unknown> | null;
+    const officeRaw = emp.offices;
+    const office = (Array.isArray(officeRaw) ? officeRaw[0] : officeRaw) as Record<string, unknown> | null;
     const name = [emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ');
     const submission = submissionMap.get(emp.id);
 

@@ -73,7 +73,8 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
     redirect('/saln');
   }
 
-  const office = emp.offices as Record<string, unknown> | null;
+  const officeRaw = emp.offices;
+  const office = (Array.isArray(officeRaw) ? officeRaw[0] : officeRaw) as Record<string, unknown> | null;
   const fullName = [emp.first_name, emp.middle_name, emp.last_name]
     .filter(Boolean)
     .join(' ');

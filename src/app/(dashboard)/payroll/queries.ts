@@ -225,6 +225,16 @@ export async function getPeriodTotals(periodId: string): Promise<PeriodTotals> {
 export type MyPayslip = {
   record: PayrollRecord;
   period: PayrollPeriod;
+  employee: {
+    employeeNo: string;
+    firstName: string;
+    middleName: string | null;
+    lastName: string;
+    positionTitle: string;
+    officeName: string | null;
+    salaryGrade: number;
+    step: number;
+  };
 };
 
 export async function getMyPayslips(employeeId: string): Promise<MyPayslip[]> {
@@ -232,9 +242,21 @@ export async function getMyPayslips(employeeId: string): Promise<MyPayslip[]> {
     .select({
       record: payrollRecords,
       period: payrollPeriods,
+      employee: {
+        employeeNo: employees.employeeNo,
+        firstName: employees.firstName,
+        middleName: employees.middleName,
+        lastName: employees.lastName,
+        positionTitle: employees.positionTitle,
+        salaryGrade: employees.salaryGrade,
+        step: employees.step,
+      },
+      officeName: offices.name,
     })
     .from(payrollRecords)
     .innerJoin(payrollPeriods, eq(payrollRecords.periodId, payrollPeriods.id))
+    .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
+    .leftJoin(offices, eq(employees.officeId, offices.id))
     .where(
       and(
         eq(payrollRecords.employeeId, employeeId),
@@ -243,5 +265,27 @@ export async function getMyPayslips(employeeId: string): Promise<MyPayslip[]> {
     )
     .orderBy(desc(payrollPeriods.periodStart));
 
-  return rows;
+  return rows.map((r) => ({
+    record: r.record,
+    period: r.period,
+    employee: {
+      ...r.employee,
+      officeName: r.officeName ?? null,
+    },
+  }));
+}
+
+// ─── Register Data (for PDF export) ──────────────────────────────────────────
+
+export type RegisterData = {
+  period: PayrollPeriod;
+  records: PayrollRecordWithEmployee[];
+};
+
+export async function getRegisterData(periodId: string): Promise<RegisterData | null> {
+  const period = await getPayrollPeriodById(periodId);
+  if (!period) return null;
+
+  const records = await getPayrollRecordsByPeriod(periodId);
+  return { period, records };
 }

@@ -71,7 +71,7 @@ export async function generateBir1601CBatch(input: unknown) {
 
   if (existing.length > 0) {
     throw new Error(
-      `A BIR 1601-C batch already exists for ${parsed.yearMonth} (ID: ${existing[0].id}).`,
+      `A BIR 1601-C batch already exists for ${parsed.yearMonth} (ID: ${existing[0]?.id ?? 'unknown'}).`,
     );
   }
 
@@ -129,7 +129,7 @@ export async function generateBir1601CBatch(input: unknown) {
       };
     });
 
-  const [batch] = await db
+  const bir1601Rows = await db
     .insert(remittanceBatches)
     .values({
       type: 'bir',
@@ -143,6 +143,9 @@ export async function generateBir1601CBatch(input: unknown) {
       remarks: parsed.remarks ?? null,
     })
     .returning();
+
+  const batch = bir1601Rows[0];
+  if (!batch) throw new Error('Failed to insert BIR 1601-C batch.');
 
   if (recordValues.length > 0) {
     const linesWithBatchId = recordValues.map((rv) => ({ ...rv, batchId: batch.id }));
@@ -192,7 +195,7 @@ export async function markBir1601CFiled(input: unknown) {
   }
 
   const now = new Date().toISOString();
-  const [updated] = await db
+  const bir1601UpdatedRows = await db
     .update(remittanceBatches)
     .set({
       status: 'submitted',
@@ -203,6 +206,9 @@ export async function markBir1601CFiled(input: unknown) {
     })
     .where(eq(remittanceBatches.id, parsed.batchId))
     .returning();
+
+  const updated = bir1601UpdatedRows[0];
+  if (!updated) throw new Error('Failed to update BIR 1601-C batch status.');
 
   await auditLog({
     userId: user.id,
@@ -371,7 +377,7 @@ export async function generateBir1604CAnnualReturn(input: unknown) {
 
   if (existing.length > 0) {
     throw new Error(
-      `A BIR 1604-C batch already exists for ${parsed.year} (ID: ${existing[0].id}).`,
+      `A BIR 1604-C batch already exists for ${parsed.year} (ID: ${existing[0]?.id ?? 'unknown'}).`,
     );
   }
 
@@ -387,7 +393,7 @@ export async function generateBir1604CAnnualReturn(input: unknown) {
     0,
   );
 
-  const [batch] = await db
+  const bir1604Rows = await db
     .insert(remittanceBatches)
     .values({
       type: 'bir',
@@ -401,6 +407,9 @@ export async function generateBir1604CAnnualReturn(input: unknown) {
       remarks: parsed.remarks ?? `BIR 1604-C Annual Information Return — ${parsed.year}`,
     })
     .returning();
+
+  const batch = bir1604Rows[0];
+  if (!batch) throw new Error('Failed to insert BIR 1604-C batch.');
 
   await auditLog({
     userId: user.id,
@@ -492,7 +501,7 @@ export async function markBir1604CFiled(input: unknown) {
   if (batch.status === 'submitted') throw new Error('Batch is already marked as filed.');
 
   const now = new Date().toISOString();
-  const [updated] = await db
+  const bir1604UpdatedRows = await db
     .update(remittanceBatches)
     .set({
       status: 'submitted',
@@ -503,6 +512,9 @@ export async function markBir1604CFiled(input: unknown) {
     })
     .where(eq(remittanceBatches.id, parsed.batchId))
     .returning();
+
+  const updated = bir1604UpdatedRows[0];
+  if (!updated) throw new Error('Failed to update BIR 1604-C batch status.');
 
   await auditLog({
     userId: user.id,

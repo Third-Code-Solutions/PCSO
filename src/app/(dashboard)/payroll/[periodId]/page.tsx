@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PeriodStatusBadge } from '@/components/payroll/period-status-badge';
 import { RecordsTable } from '@/components/payroll/records-table';
 import { ExceptionReport } from '@/components/payroll/exception-report';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { requirePermission } from '@/lib/auth/guards';
 import {
   getPayrollPeriodById,
@@ -51,6 +52,7 @@ export default async function PayrollPeriodPage({ params }: Props) {
 
   return (
     <main className="space-y-6">
+      <RealtimeBoundary tables={['payroll_periods', 'payroll_records']} />
       <PageHeader
         title={period.name}
         description={`${formatDate(period.periodStart)} – ${formatDate(period.periodEnd)} · Pay Date: ${formatDate(period.payDate)}`}

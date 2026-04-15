@@ -71,7 +71,7 @@ export async function generatePhilHealthBatch(input: unknown) {
 
   if (existing.length > 0) {
     throw new Error(
-      `A PhilHealth remittance batch already exists for this period (ID: ${existing[0].id}).`,
+      `A PhilHealth remittance batch already exists for this period (ID: ${existing[0]?.id ?? 'unknown'}).`,
     );
   }
 
@@ -132,7 +132,7 @@ export async function generatePhilHealthBatch(input: unknown) {
 
   const totalAmount = roundHalfEven(totalPersonal + totalEmployer, 2);
 
-  const [batch] = await db
+  const batchRows = await db
     .insert(remittanceBatches)
     .values({
       type: 'philhealth',
@@ -146,6 +146,9 @@ export async function generatePhilHealthBatch(input: unknown) {
       remarks: parsed.remarks ?? null,
     })
     .returning();
+
+  const batch = batchRows[0];
+  if (!batch) throw new Error('Failed to insert PhilHealth remittance batch.');
 
   const linesWithBatchId = recordValues.map((rv) => ({ ...rv, batchId: batch.id }));
   await db.insert(remittanceRecords).values(linesWithBatchId);
@@ -334,7 +337,7 @@ export async function markPhilHealthSubmitted(input: unknown) {
   }
 
   const now = new Date().toISOString();
-  const [updated] = await db
+  const updatedRows = await db
     .update(remittanceBatches)
     .set({
       status: 'submitted',
@@ -345,6 +348,9 @@ export async function markPhilHealthSubmitted(input: unknown) {
     })
     .where(eq(remittanceBatches.id, parsed.batchId))
     .returning();
+
+  const updated = updatedRows[0];
+  if (!updated) throw new Error('Failed to update PhilHealth batch status.');
 
   await auditLog({
     userId: user.id,

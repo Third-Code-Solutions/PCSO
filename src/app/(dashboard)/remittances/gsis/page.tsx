@@ -1,14 +1,71 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { requirePermission } from '@/lib/auth/guards';
+import { db } from '@/lib/db';
+import { gsisRemittanceBatches } from '@/lib/db/schema';
+import { eq, and, isNull, count, gte, sql } from 'drizzle-orm';
 import { getGsisBatches } from './actions';
 import { GsisBatchTable } from '@/components/remittances/gsis-batch-table';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export const metadata = {
   title: 'GSIS Remittance',
 };
+
+// ─── Stat fetch ───────────────────────────────────────────────────────────────
+
+async function fetchGsisStats() {
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+
+  const [thisYear, pending, submitted, accepted] = await Promise.all([
+    db
+      .select({ cnt: count() })
+      .from(gsisRemittanceBatches)
+      .where(
+        and(
+          isNull(gsisRemittanceBatches.deletedAt),
+          gte(gsisRemittanceBatches.createdAt, yearStart),
+        ),
+      ),
+    db
+      .select({ cnt: count() })
+      .from(gsisRemittanceBatches)
+      .where(
+        and(
+          eq(gsisRemittanceBatches.status, 'generated'),
+          isNull(gsisRemittanceBatches.deletedAt),
+        ),
+      ),
+    db
+      .select({ cnt: count() })
+      .from(gsisRemittanceBatches)
+      .where(
+        and(
+          eq(gsisRemittanceBatches.status, 'submitted'),
+          isNull(gsisRemittanceBatches.deletedAt),
+        ),
+      ),
+    db
+      .select({ cnt: count() })
+      .from(gsisRemittanceBatches)
+      .where(
+        and(
+          eq(gsisRemittanceBatches.status, 'accepted'),
+          isNull(gsisRemittanceBatches.deletedAt),
+        ),
+      ),
+  ]);
+
+  return {
+    thisYear: Number(thisYear[0]?.cnt ?? 0),
+    pending: Number(pending[0]?.cnt ?? 0),
+    submitted: Number(submitted[0]?.cnt ?? 0),
+    accepted: Number(accepted[0]?.cnt ?? 0),
+  };
+}
 
 // ─── Async data component ─────────────────────────────────────────────────────
 
@@ -41,9 +98,12 @@ function StatCard({
 
 export default async function GsisRemittancePage() {
   await requirePermission('remittances', 'view');
+  const stats = await fetchGsisStats();
 
   return (
     <div className="space-y-8">
+      <RealtimeBoundary tables={['gsis_remittance_batches']} />
+
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
@@ -70,10 +130,10 @@ export default async function GsisRemittancePage() {
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="This Year" value="—" sub="batches generated" />
-        <StatCard label="Pending Submission" value="—" sub="generated, not yet submitted" />
-        <StatCard label="Submitted" value="—" sub="awaiting GSIS confirmation" />
-        <StatCard label="Accepted" value="—" sub="confirmed by GSIS portal" />
+        <StatCard label="This Year" value={stats.thisYear} sub="batches generated" />
+        <StatCard label="Pending Submission" value={stats.pending} sub="generated, not yet submitted" />
+        <StatCard label="Submitted" value={stats.submitted} sub="awaiting GSIS confirmation" />
+        <StatCard label="Accepted" value={stats.accepted} sub="confirmed by GSIS portal" />
       </div>
 
       {/* Batch table */}

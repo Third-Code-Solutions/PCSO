@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layouts/page-header';
 import { HolidayCalendar, type HolidayRow } from '@/components/admin/holiday-calendar';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { requirePermission } from '@/lib/auth/guards';
 import { db } from '@/lib/db';
 import { holidays } from '@/lib/db/schema';
@@ -80,6 +81,9 @@ export default async function HolidaysPage({ searchParams }: PageProps) {
       </div>
 
       <HolidayCalendar holidays={holidayRows} year={year} canDelete />
+
+      {/* Realtime: auto-refreshes when holidays are added, updated, or deleted */}
+      <RealtimeBoundary tables={['holidays']} />
     </div>
   );
 }

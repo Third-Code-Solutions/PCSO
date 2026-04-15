@@ -24,7 +24,7 @@ export async function createGsisRate(input: unknown): Promise<{ id: string }> {
   const actor = await requirePermission('admin', 'create');
   const parsed: GsisRateInput = GsisRateSchema.parse(input);
 
-  const [row] = await db
+  const gsisInserted = await db
     .insert(gsisRates)
     .values({
       effectiveDate: parsed.effectiveDate,
@@ -34,17 +34,20 @@ export async function createGsisRate(input: unknown): Promise<{ id: string }> {
     })
     .returning({ id: gsisRates.id });
 
+  const gsisRow = gsisInserted[0];
+  if (!gsisRow) throw new Error('GSIS rate insert returned no row');
+
   await auditLog({
     userId: actor.id,
     action: 'create',
     table: 'gsis_rates',
-    recordId: row.id,
+    recordId: gsisRow.id,
     newValues: { ...parsed },
   });
 
   revalidatePath('/admin/rates/gsis');
   revalidatePath('/admin/rates');
-  return { id: row.id };
+  return { id: gsisRow.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +57,7 @@ export async function createPhilhealthRate(input: unknown): Promise<{ id: string
   const actor = await requirePermission('admin', 'create');
   const parsed: PhilhealthRateInput = PhilhealthRateSchema.parse(input);
 
-  const [row] = await db
+  const philhealthInserted = await db
     .insert(philhealthRates)
     .values({
       effectiveDate: parsed.effectiveDate,
@@ -67,17 +70,20 @@ export async function createPhilhealthRate(input: unknown): Promise<{ id: string
     })
     .returning({ id: philhealthRates.id });
 
+  const philhealthRow = philhealthInserted[0];
+  if (!philhealthRow) throw new Error('PhilHealth rate insert returned no row');
+
   await auditLog({
     userId: actor.id,
     action: 'create',
     table: 'philhealth_rates',
-    recordId: row.id,
+    recordId: philhealthRow.id,
     newValues: { ...parsed },
   });
 
   revalidatePath('/admin/rates/philhealth');
   revalidatePath('/admin/rates');
-  return { id: row.id };
+  return { id: philhealthRow.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +93,7 @@ export async function createPagibigRate(input: unknown): Promise<{ id: string }>
   const actor = await requirePermission('admin', 'create');
   const parsed: PagibigRateInput = PagibigRateSchema.parse(input);
 
-  const [row] = await db
+  const pagibigInserted = await db
     .insert(pagibigRates)
     .values({
       effectiveDate: parsed.effectiveDate,
@@ -99,17 +105,20 @@ export async function createPagibigRate(input: unknown): Promise<{ id: string }>
     })
     .returning({ id: pagibigRates.id });
 
+  const pagibigRow = pagibigInserted[0];
+  if (!pagibigRow) throw new Error('Pag-IBIG rate insert returned no row');
+
   await auditLog({
     userId: actor.id,
     action: 'create',
     table: 'pagibig_rates',
-    recordId: row.id,
+    recordId: pagibigRow.id,
     newValues: { ...parsed },
   });
 
   revalidatePath('/admin/rates/pagibig');
   revalidatePath('/admin/rates');
-  return { id: row.id };
+  return { id: pagibigRow.id };
 }
 
 // ---------------------------------------------------------------------------

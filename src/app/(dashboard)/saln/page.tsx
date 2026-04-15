@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table';
 import { annualDeadline, daysUntilDeadline } from '@/lib/utils/saln/deadline';
 import { formatPeso } from '@/lib/utils/saln/net-worth';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import type { SalnStatus } from '@/lib/validations/saln';
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,7 @@ export default async function MySalnPage() {
 
   return (
     <div>
+      <RealtimeBoundary tables={['saln_submissions']} />
       <PageHeader
         title="My SALN"
         description="Statement of Assets, Liabilities, and Net Worth"

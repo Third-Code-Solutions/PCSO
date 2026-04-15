@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/layouts/page-header';
 import { AuditLogTable, type AuditLogRow } from '@/components/admin/audit-log-table';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { requirePermission } from '@/lib/auth/guards';
 import { createServerClient } from '@/lib/supabase/server';
 
@@ -207,6 +208,9 @@ export default async function AuditLogsPage({ searchParams }: PageProps) {
       <FilterBar params={queryParams} />
 
       <AuditLogTable logs={logs} />
+
+      {/* Realtime: auto-refreshes the log list when new audit entries are written */}
+      <RealtimeBoundary tables={['audit_logs']} />
     </div>
   );
 }

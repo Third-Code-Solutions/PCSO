@@ -9,6 +9,7 @@ import { requireAuth } from '@/lib/auth/guards';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Badge } from '@/components/ui/badge';
 import { RatingBadge } from '@/components/performance/rating-badge';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import {
   getPerformancePeriods,
   getMyPerformanceRatings,
@@ -81,6 +82,7 @@ export default async function PerformanceDashboardPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
+      <RealtimeBoundary tables={['performance_ratings', 'step_increments']} />
       <PageHeader
         title="Performance Management"
         description="IPCRF/OPCRF ratings, step increment tracking, and analytics."

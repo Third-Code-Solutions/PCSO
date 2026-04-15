@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layouts/page-header';
 import { LeaveCalendar } from '@/components/leave/leave-calendar';
 import { getApprovedLeavesForCalendar } from '@/app/(dashboard)/leave/queries';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -43,6 +44,7 @@ export default async function LeaveCalendarPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
+      <RealtimeBoundary tables={['leave_applications']} />
       <PageHeader
         title="Leave Calendar"
         description={

@@ -104,6 +104,14 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
   const status = parsed.submit ? 'submitted' : 'draft';
   const dateFiled = parsed.submit ? now.toISOString().slice(0, 10) : null;
 
+  // Investments are stored inside the personal_properties JSONB column
+  // using a compound envelope (v:1) so the schema remains unchanged.
+  const personalPropertiesEnvelope = {
+    v: 1,
+    personalProperties: parsed.personalProperties,
+    investments: parsed.investments,
+  };
+
   const { data, error } = await supabase
     .from('saln_submissions')
     .insert({
@@ -111,8 +119,7 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
       year: parsed.year,
       filing_type: parsed.filingType,
       real_assets: parsed.realAssets,
-      personal_properties: parsed.personalProperties,
-      investments: parsed.investments,
+      personal_properties: personalPropertiesEnvelope,
       liabilities: parsed.liabilities,
       business_interests: parsed.businessInterests,
       relatives: parsed.relatives,
@@ -159,9 +166,10 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
   const supabase = await createServerClient();
 
   // Fetch existing record to check ownership
+  // personal_properties stores a compound envelope { v, personalProperties, investments }
   const { data: existing, error: fetchError } = await supabase
     .from('saln_submissions')
-    .select('id, employee_id, status, real_assets, personal_properties, investments, liabilities')
+    .select('id, employee_id, status, real_assets, personal_properties, liabilities')
     .eq('id', parsed.id)
     .single();
 
@@ -191,13 +199,30 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
     );
   }
 
+  // Unpack the compound envelope stored in personal_properties
+  const existingEnvelope = existing.personal_properties as
+    | { v: number; personalProperties: PersonalProperty[]; investments: Investment[] }
+    | PersonalProperty[]
+    | null;
+
+  let existingPersonalProperties: PersonalProperty[] = [];
+  let existingInvestments: Investment[] = [];
+
+  if (Array.isArray(existingEnvelope)) {
+    // Legacy flat format from seeder — no investments stored
+    existingPersonalProperties = existingEnvelope as PersonalProperty[];
+  } else if (existingEnvelope && typeof existingEnvelope === 'object' && 'v' in existingEnvelope) {
+    existingPersonalProperties = existingEnvelope.personalProperties ?? [];
+    existingInvestments = existingEnvelope.investments ?? [];
+  }
+
   // Recompute net worth from latest data
   const realAssets = (parsed.realAssets ?? (existing.real_assets as RealAsset[])) as RealAsset[];
   const personalProperties = (
-    parsed.personalProperties ?? (existing.personal_properties as PersonalProperty[])
+    parsed.personalProperties ?? existingPersonalProperties
   ) as PersonalProperty[];
   const investments = (
-    parsed.investments ?? (existing.investments as Investment[])
+    parsed.investments ?? existingInvestments
   ) as Investment[];
   const liabilities = (
     parsed.liabilities ?? (existing.liabilities as Liability[])
@@ -221,9 +246,16 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
   };
 
   if (parsed.realAssets !== undefined) updatePayload['real_assets'] = parsed.realAssets;
-  if (parsed.personalProperties !== undefined)
-    updatePayload['personal_properties'] = parsed.personalProperties;
-  if (parsed.investments !== undefined) updatePayload['investments'] = parsed.investments;
+
+  // Always rebuild the compound envelope when either personalProperties or investments changes.
+  if (parsed.personalProperties !== undefined || parsed.investments !== undefined) {
+    updatePayload['personal_properties'] = {
+      v: 1,
+      personalProperties,
+      investments,
+    };
+  }
+
   if (parsed.liabilities !== undefined) updatePayload['liabilities'] = parsed.liabilities;
   if (parsed.businessInterests !== undefined)
     updatePayload['business_interests'] = parsed.businessInterests;
@@ -471,8 +503,10 @@ export async function exportDocuments(input: unknown): Promise<ExportResult> {
   ];
 
   const rows = (data ?? []).map((row) => {
-    const emp = row.employees as Record<string, unknown>;
-    const office = emp['offices'] as Record<string, unknown> | null;
+    const empRaw = row.employees;
+    const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<string, unknown> | null ?? {};
+    const officeRaw = emp['offices'];
+    const office = (Array.isArray(officeRaw) ? officeRaw[0] : officeRaw) as Record<string, unknown> | null;
     const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
       .filter(Boolean)
       .join(' ');

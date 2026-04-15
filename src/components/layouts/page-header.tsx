@@ -10,6 +10,9 @@ interface PageHeaderProps {
   title: string;
   description?: string;
   breadcrumbs?: BreadcrumbItem[];
+  /** Convenience back-link rendered as a breadcrumb. Pass a label + href pair. */
+  backHref?: string;
+  backLabel?: string;
   actions?: React.ReactNode;
   className?: string;
 }
@@ -18,22 +21,30 @@ export function PageHeader({
   title,
   description,
   breadcrumbs,
+  backHref,
+  backLabel = 'Back',
   actions,
   className,
 }: PageHeaderProps) {
+  // Merge backHref into breadcrumbs when provided
+  const resolvedCrumbs: BreadcrumbItem[] =
+    backHref
+      ? [{ label: backLabel, href: backHref }, { label: title }]
+      : (breadcrumbs ?? []);
+
   return (
     <header className={cn('mb-6', className)}>
-      {breadcrumbs && breadcrumbs.length > 0 && (
+      {resolvedCrumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="mb-2">
           <ol className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            {breadcrumbs.map((crumb, index) => (
+            {resolvedCrumbs.map((crumb, index) => (
               <li key={index} className="flex items-center gap-1.5">
                 {index > 0 && (
                   <span className="text-muted-foreground/50" aria-hidden>
                     /
                   </span>
                 )}
-                {crumb.href && index < breadcrumbs.length - 1 ? (
+                {crumb.href && index < resolvedCrumbs.length - 1 ? (
                   <a
                     href={crumb.href}
                     className="hover:text-foreground transition-colors"
@@ -43,12 +54,12 @@ export function PageHeader({
                 ) : (
                   <span
                     className={
-                      index === breadcrumbs.length - 1
+                      index === resolvedCrumbs.length - 1
                         ? 'text-foreground font-medium'
                         : undefined
                     }
                     aria-current={
-                      index === breadcrumbs.length - 1 ? 'page' : undefined
+                      index === resolvedCrumbs.length - 1 ? 'page' : undefined
                     }
                   >
                     {crumb.label}

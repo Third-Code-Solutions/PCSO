@@ -22,7 +22,7 @@ export async function createHoliday(input: unknown): Promise<{ id: string }> {
 
   const year = parseInt(parsed.holidayDate.slice(0, 4), 10);
 
-  const [row] = await db
+  const inserted = await db
     .insert(holidays)
     .values({
       name: parsed.name,
@@ -33,6 +33,9 @@ export async function createHoliday(input: unknown): Promise<{ id: string }> {
       remarks: parsed.remarks ?? null,
     })
     .returning({ id: holidays.id });
+
+  const row = inserted[0];
+  if (!row) throw new Error('Holiday insert returned no row');
 
   await auditLog({
     userId: actor.id,

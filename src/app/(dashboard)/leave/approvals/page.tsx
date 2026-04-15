@@ -9,6 +9,7 @@ import { getPendingApprovals } from '@/app/(dashboard)/leave/queries';
 import { approveLeave, disapproveLeave } from '@/app/(dashboard)/leave/actions';
 import { createServerClient } from '@/lib/supabase/server';
 import { CheckSquareIcon } from 'lucide-react';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -45,6 +46,7 @@ export default async function LeaveApprovalsPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
+      <RealtimeBoundary tables={['leave_applications', 'leave_credits']} />
       <PageHeader
         title="Pending Leave Approvals"
         description={`${enriched.length} application${enriched.length !== 1 ? 's' : ''} awaiting review.`}

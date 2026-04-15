@@ -10,6 +10,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layouts/page-header';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { fetchDashboardAggregate } from '@/lib/utils/remittances/dashboard-aggregate';
 import type { AgencySummary, RecentBatchRow } from '@/lib/utils/remittances/dashboard-aggregate';
 
@@ -234,6 +235,7 @@ export default async function RemittanceDashboardPage() {
 
   return (
     <div className="space-y-8 p-6">
+      <RealtimeBoundary tables={['remittance_batches', 'gsis_remittance_batches']} />
       <PageHeader
         title="Government Remittances"
         description="PhilHealth · Pag-IBIG · BIR · GSIS — all agency contributions in one place"

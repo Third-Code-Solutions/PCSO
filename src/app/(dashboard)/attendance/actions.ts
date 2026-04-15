@@ -1,40 +1,33 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { db } from '@/lib/db';
+import { attendanceLogs } from '@/lib/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { createServerClient } from '@/lib/supabase/server';
+import { requirePermission, requireAuth } from '@/lib/auth/guards';
+import { auditLog } from '@/lib/audit';
 import {
   ClockInSchema,
   ClockOutSchema,
   ManualEntrySchema,
   OvertimeRequestSchema,
   OvertimeApprovalSchema,
-  BiometricImportSchema,
-  type BiometricRow,
 } from '@/lib/validations/attendance';
 import { computeDailyAttendance } from '@/lib/utils/attendance/compute';
 import { DEFAULT_SENATE_SCHEDULE } from '@/lib/constants/work-schedule';
 import type { AttendanceLog, DayType } from '@/lib/utils/attendance/types';
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Internal helper: build an AttendanceLog for the compute engine
 // ---------------------------------------------------------------------------
 
-async function getAuthenticatedUser() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Unauthenticated');
-  return { supabase, user };
-}
-
-function buildAttendanceLog(
+function buildComputeInput(
   date: string,
   timeIn: string | null,
   timeOut: string | null,
-  dayType: DayType,
   approvedOvertimeMinutes: number,
+  dayType: DayType = 'ordinary',
 ): AttendanceLog {
   return {
     date,
@@ -52,39 +45,56 @@ function buildAttendanceLog(
 
 export async function clockIn(input: unknown): Promise<{ id: string }> {
   const parsed = ClockInSchema.parse(input);
-  const { supabase, user } = await getAuthenticatedUser();
+
+  // Require at minimum the employee_self_service permission to create their own record
+  const user = await requirePermission('attendance', 'create');
 
   // Employees may only clock in for themselves
-  if (parsed.employeeId !== user.id) {
+  const effectiveEmployeeId = user.employeeId;
+  if (!effectiveEmployeeId) {
+    throw new Error('Your account is not linked to an employee record.');
+  }
+  if (parsed.employeeId !== effectiveEmployeeId) {
     throw new Error('Forbidden: cannot clock in on behalf of another employee');
   }
 
-  const log = buildAttendanceLog(parsed.date, parsed.timeIn, null, 'ordinary', 0);
-  const computed = computeDailyAttendance(log);
+  const computed = computeDailyAttendance(
+    buildComputeInput(parsed.date, parsed.timeIn, null, 0),
+  );
 
-  const { data, error } = await supabase
-    .from('attendance_logs')
-    .insert({
-      employee_id: parsed.employeeId,
-      date: parsed.date,
-      time_in: parsed.timeIn,
-      time_out: null,
-      day_type: 'ordinary',
-      approved_overtime_minutes: 0,
-      late_minutes: computed.lateMinutes,
-      undertime_minutes: computed.undertimeMinutes,
-      overtime_minutes: computed.overtimeMinutes,
-      deduction_fraction: String(computed.deductionFraction),
-      notes: parsed.notes ?? null,
-      created_by: user.id,
+  const [row] = await db
+    .insert(attendanceLogs)
+    .values({
+      employeeId: effectiveEmployeeId,
+      logDate: parsed.date,
+      timeIn: parsed.timeIn,
+      timeOut: null,
+      source: 'web',
+      isLate: computed.lateMinutes > 0,
+      lateMinutes: computed.lateMinutes,
+      undertimeMinutes: computed.undertimeMinutes,
+      overtimeMinutes: computed.overtimeMinutes,
+      remarks: parsed.notes ?? null,
     })
-    .select('id')
-    .single();
+    .returning();
 
-  if (error) throw new Error(`Clock-in failed: ${error.message}`);
+  if (!row) throw new Error('Clock-in failed: no row returned');
+
+  await auditLog({
+    userId: user.id,
+    action: 'clock_in',
+    table: 'attendance_logs',
+    recordId: row.id,
+    newValues: {
+      employeeId: row.employeeId,
+      logDate: row.logDate,
+      timeIn: row.timeIn,
+      source: row.source,
+    },
+  });
 
   revalidatePath('/attendance');
-  return { id: data.id as string };
+  return { id: row.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -93,43 +103,61 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
 
 export async function clockOut(input: unknown): Promise<void> {
   const parsed = ClockOutSchema.parse(input);
-  const { supabase, user } = await getAuthenticatedUser();
+  const user = await requirePermission('attendance', 'create');
 
-  // Fetch the existing record to verify ownership and get timeIn + dayType
-  const { data: existing, error: fetchError } = await supabase
-    .from('attendance_logs')
-    .select('*')
-    .eq('id', parsed.attendanceLogId)
-    .single();
-
-  if (fetchError || !existing) throw new Error('Attendance log not found');
-  if ((existing.employee_id as string) !== user.id) {
-    throw new Error('Forbidden: cannot clock out on behalf of another employee');
+  const effectiveEmployeeId = user.employeeId;
+  if (!effectiveEmployeeId) {
+    throw new Error('Your account is not linked to an employee record.');
   }
 
-  const log = buildAttendanceLog(
-    existing.date as string,
-    existing.time_in as string | null,
-    parsed.timeOut,
-    (existing.day_type as DayType) ?? 'ordinary',
-    Number(existing.approved_overtime_minutes ?? 0),
+  // Fetch the existing record to verify ownership and obtain timeIn
+  const [existing] = await db
+    .select()
+    .from(attendanceLogs)
+    .where(
+      and(
+        eq(attendanceLogs.id, parsed.attendanceLogId),
+        eq(attendanceLogs.employeeId, effectiveEmployeeId),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) throw new Error('Attendance log not found or does not belong to you');
+
+  const computed = computeDailyAttendance(
+    buildComputeInput(
+      existing.logDate,
+      existing.timeIn,
+      parsed.timeOut,
+      0,
+      'ordinary',
+    ),
   );
-  const computed = computeDailyAttendance(log);
 
-  const { error } = await supabase
-    .from('attendance_logs')
-    .update({
-      time_out: parsed.timeOut,
-      late_minutes: computed.lateMinutes,
-      undertime_minutes: computed.undertimeMinutes,
-      overtime_minutes: computed.overtimeMinutes,
-      deduction_fraction: String(computed.deductionFraction),
-      notes: parsed.notes ?? existing.notes,
-      updated_at: new Date().toISOString(),
+  const [updated] = await db
+    .update(attendanceLogs)
+    .set({
+      timeOut: parsed.timeOut,
+      isLate: computed.lateMinutes > 0,
+      lateMinutes: computed.lateMinutes,
+      undertimeMinutes: computed.undertimeMinutes,
+      overtimeMinutes: computed.overtimeMinutes,
+      remarks: parsed.notes ?? existing.remarks,
+      updatedAt: new Date(),
     })
-    .eq('id', parsed.attendanceLogId);
+    .where(eq(attendanceLogs.id, parsed.attendanceLogId))
+    .returning();
 
-  if (error) throw new Error(`Clock-out failed: ${error.message}`);
+  if (!updated) throw new Error('Clock-out failed: update returned no rows');
+
+  await auditLog({
+    userId: user.id,
+    action: 'clock_out',
+    table: 'attendance_logs',
+    recordId: updated.id,
+    oldValues: { timeOut: existing.timeOut },
+    newValues: { timeOut: updated.timeOut, lateMinutes: updated.lateMinutes, undertimeMinutes: updated.undertimeMinutes },
+  });
 
   revalidatePath('/attendance');
 }
@@ -140,45 +168,56 @@ export async function clockOut(input: unknown): Promise<void> {
 
 export async function manualEntry(input: unknown): Promise<{ id: string }> {
   const parsed = ManualEntrySchema.parse(input);
-  const { supabase, user } = await getAuthenticatedUser();
+  const user = await requirePermission('attendance', 'edit');
 
-  const log = buildAttendanceLog(
-    parsed.date,
-    parsed.timeIn,
-    parsed.timeOut,
-    parsed.dayType,
-    parsed.approvedOvertimeMinutes,
+  const computed = computeDailyAttendance(
+    buildComputeInput(
+      parsed.date,
+      parsed.timeIn,
+      parsed.timeOut,
+      parsed.approvedOvertimeMinutes,
+      parsed.dayType as DayType,
+    ),
   );
-  const computed = computeDailyAttendance(log);
 
+  // Upsert on the unique index (employee_id, log_date)
+  const supabase = await createServerClient();
   const { data, error } = await supabase
     .from('attendance_logs')
     .upsert(
       {
         employee_id: parsed.employeeId,
-        date: parsed.date,
+        log_date: parsed.date,
         time_in: parsed.timeIn,
         time_out: parsed.timeOut,
-        day_type: parsed.dayType,
-        approved_overtime_minutes: parsed.approvedOvertimeMinutes,
+        source: 'manual',
+        is_late: computed.lateMinutes > 0,
         late_minutes: computed.lateMinutes,
         undertime_minutes: computed.undertimeMinutes,
         overtime_minutes: computed.overtimeMinutes,
-        deduction_fraction: String(computed.deductionFraction),
-        notes: parsed.notes ?? null,
-        correction_reason: parsed.correctionReason,
-        corrected_by: user.id,
-        corrected_at: new Date().toISOString(),
+        remarks: parsed.notes ?? null,
       },
-      { onConflict: 'employee_id,date' },
+      { onConflict: 'employee_id,log_date' },
     )
     .select('id')
     .single();
 
   if (error) throw new Error(`Manual entry failed: ${error.message}`);
 
+  await auditLog({
+    userId: user.id,
+    action: 'manual_entry',
+    table: 'attendance_logs',
+    recordId: (data as { id: string }).id,
+    newValues: {
+      employeeId: parsed.employeeId,
+      logDate: parsed.date,
+      correctionReason: parsed.correctionReason,
+    },
+  });
+
   revalidatePath('/attendance/admin');
-  return { id: data.id as string };
+  return { id: (data as { id: string }).id };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,12 +226,17 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
 
 export async function requestOvertime(input: unknown): Promise<{ id: string }> {
   const parsed = OvertimeRequestSchema.parse(input);
-  const { supabase, user } = await getAuthenticatedUser();
+  const user = await requirePermission('attendance', 'create');
 
-  if (parsed.employeeId !== user.id) {
+  const effectiveEmployeeId = user.employeeId;
+  if (!effectiveEmployeeId) {
+    throw new Error('Your account is not linked to an employee record.');
+  }
+  if (parsed.employeeId !== effectiveEmployeeId) {
     throw new Error('Forbidden: cannot submit OT request on behalf of another employee');
   }
 
+  const supabase = await createServerClient();
   const { data, error } = await supabase
     .from('overtime_requests')
     .insert({
@@ -203,15 +247,26 @@ export async function requestOvertime(input: unknown): Promise<{ id: string }> {
       justification: parsed.justification,
       supervisor_id: parsed.supervisorId,
       status: 'pending',
-      created_by: user.id,
     })
     .select('id')
     .single();
 
   if (error) throw new Error(`OT request failed: ${error.message}`);
 
+  await auditLog({
+    userId: user.id,
+    action: 'overtime_request',
+    table: 'overtime_requests',
+    recordId: (data as { id: string }).id,
+    newValues: {
+      employeeId: parsed.employeeId,
+      date: parsed.date,
+      requestedMinutes: parsed.requestedMinutes,
+    },
+  });
+
   revalidatePath('/attendance/overtime');
-  return { id: data.id as string };
+  return { id: (data as { id: string }).id };
 }
 
 // ---------------------------------------------------------------------------
@@ -220,13 +275,13 @@ export async function requestOvertime(input: unknown): Promise<{ id: string }> {
 
 export async function approveOvertime(input: unknown): Promise<void> {
   const parsed = OvertimeApprovalSchema.parse(input);
-  const { supabase, user } = await getAuthenticatedUser();
+  const user = await requirePermission('attendance', 'approve');
 
-  // Determine approved minutes based on decision
-  const approvedMinutes =
-    parsed.decision === 'denied' ? 0 : parsed.approvedMinutes;
+  const approvedMinutes = parsed.decision === 'denied' ? 0 : parsed.approvedMinutes;
 
-  const { error } = await supabase
+  const supabase = await createServerClient();
+
+  const { error: updateError } = await supabase
     .from('overtime_requests')
     .update({
       approved_minutes: approvedMinutes,
@@ -238,9 +293,17 @@ export async function approveOvertime(input: unknown): Promise<void> {
     })
     .eq('id', parsed.overtimeRequestId);
 
-  if (error) throw new Error(`OT approval failed: ${error.message}`);
+  if (updateError) throw new Error(`OT approval failed: ${updateError.message}`);
 
-  // Update the attendance log's approved_overtime_minutes if approved
+  await auditLog({
+    userId: user.id,
+    action: 'overtime_approval',
+    table: 'overtime_requests',
+    recordId: parsed.overtimeRequestId,
+    newValues: { decision: parsed.decision, approvedMinutes, comments: parsed.comments },
+  });
+
+  // If approved or partial, propagate approved minutes to the attendance_log row
   if (parsed.decision !== 'denied') {
     const { data: otRequest } = await supabase
       .from('overtime_requests')
@@ -249,11 +312,18 @@ export async function approveOvertime(input: unknown): Promise<void> {
       .single();
 
     if (otRequest) {
-      await supabase
-        .from('attendance_logs')
-        .update({ approved_overtime_minutes: approvedMinutes })
-        .eq('employee_id', otRequest.employee_id as string)
-        .eq('date', otRequest.date as string);
+      await db
+        .update(attendanceLogs)
+        .set({
+          overtimeMinutes: approvedMinutes,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(attendanceLogs.employeeId, otRequest.employee_id as string),
+            eq(attendanceLogs.logDate, otRequest.date as string),
+          ),
+        );
     }
   }
 
@@ -271,10 +341,13 @@ export interface ImportResult {
   errors: Array<{ row: number; message: string }>;
 }
 
-/**
- * Parses a raw CSV string into BiometricRow objects.
- * Expects a header row followed by data rows.
- */
+interface BiometricRow {
+  employeeId: string;
+  date: string;
+  timeIn: string | null;
+  timeOut: string | null;
+}
+
 function parseBiometricCsv(
   csvText: string,
   config: {
@@ -309,17 +382,13 @@ function parseBiometricCsv(
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line?.trim()) continue;
-
     const cells = line.split(',').map((c) => c.trim());
-    const raw = {
+    rows.push({
       employeeId: cells[empCol] ?? '',
       date: cells[dateCol] ?? '',
-      timeIn: inCol >= 0 && cells[inCol] ? cells[inCol]! : null,
-      timeOut: outCol >= 0 && cells[outCol] ? cells[outCol]! : null,
-    };
-
-    rows.push(raw as BiometricRow);
-    void parseErrors; // used below
+      timeIn: inCol >= 0 && cells[inCol] ? (cells[inCol] ?? null) : null,
+      timeOut: outCol >= 0 && cells[outCol] ? (cells[outCol] ?? null) : null,
+    });
   }
 
   return { rows, parseErrors };
@@ -329,11 +398,13 @@ export async function importBiometric(
   input: unknown,
   csvText: string,
 ): Promise<ImportResult> {
+  const user = await requirePermission('attendance', 'create');
+
+  // Validate config
+  const { BiometricImportSchema } = await import('@/lib/validations/attendance');
   const parsed = BiometricImportSchema.parse(input);
-  const { supabase, user } = await getAuthenticatedUser();
 
   const result: ImportResult = { imported: 0, skipped: 0, errors: [] };
-
   const { rows, parseErrors } = parseBiometricCsv(csvText, parsed);
   result.errors.push(...parseErrors);
 
@@ -341,34 +412,43 @@ export async function importBiometric(
     const row = rows[i];
     if (!row) continue;
 
-    const log = buildAttendanceLog(row.date, row.timeIn, row.timeOut, 'ordinary', 0);
-    const computed = computeDailyAttendance(log);
-
-    const { error } = await supabase.from('attendance_logs').upsert(
-      {
-        employee_id: row.employeeId,
-        date: row.date,
-        time_in: row.timeIn,
-        time_out: row.timeOut,
-        day_type: 'ordinary',
-        approved_overtime_minutes: 0,
-        late_minutes: computed.lateMinutes,
-        undertime_minutes: computed.undertimeMinutes,
-        overtime_minutes: computed.overtimeMinutes,
-        deduction_fraction: String(computed.deductionFraction),
-        imported_by: user.id,
-        import_source: 'biometric_csv',
-      },
-      { onConflict: 'employee_id,date' },
+    const computed = computeDailyAttendance(
+      buildComputeInput(row.date, row.timeIn, row.timeOut, 0),
     );
 
-    if (error) {
-      result.errors.push({ row: i + 2, message: error.message });
+    const supabase = await createServerClient();
+    const { error: upsertError } = await supabase
+      .from('attendance_logs')
+      .upsert(
+        {
+          employee_id: row.employeeId,
+          log_date: row.date,
+          time_in: row.timeIn,
+          time_out: row.timeOut,
+          source: 'biometric',
+          is_late: computed.lateMinutes > 0,
+          late_minutes: computed.lateMinutes,
+          undertime_minutes: computed.undertimeMinutes,
+          overtime_minutes: computed.overtimeMinutes,
+          remarks: null,
+        },
+        { onConflict: 'employee_id,log_date' },
+      );
+
+    if (upsertError) {
+      result.errors.push({ row: i + 2, message: upsertError.message });
       result.skipped++;
     } else {
       result.imported++;
     }
   }
+
+  await auditLog({
+    userId: user.id,
+    action: 'biometric_import',
+    table: 'attendance_logs',
+    newValues: { imported: result.imported, skipped: result.skipped },
+  });
 
   revalidatePath('/attendance/admin');
   return result;

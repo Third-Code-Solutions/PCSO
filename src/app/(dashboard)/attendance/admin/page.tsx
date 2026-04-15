@@ -2,6 +2,7 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { getAttendanceLogsByPeriod, getAnomaliesForPeriod, getEmployeeSummaries } from '../queries';
 import { DtrTable } from '@/components/attendance/dtr-table';
 import { AnomalyAlerts } from '@/components/attendance/anomaly-alerts';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 interface PageProps {
   searchParams: Promise<{ year?: string; month?: string; employeeId?: string }>;
@@ -31,6 +32,8 @@ export default async function AttendanceAdminPage({ searchParams }: PageProps) {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
+      {/* Real-time refresh when attendance_logs change */}
+      <RealtimeBoundary tables={['attendance_logs']} />
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>

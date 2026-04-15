@@ -6,6 +6,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layouts/page-header';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { getPhilHealthBatches } from './actions';
 
 export const metadata: Metadata = {
@@ -31,6 +32,7 @@ export default async function PhilHealthPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <RealtimeBoundary tables={['remittance_batches']} />
       <PageHeader
         title="PhilHealth Remittance"
         description="RF-1 form generation · EPRS CSV export · Contribution tracking"

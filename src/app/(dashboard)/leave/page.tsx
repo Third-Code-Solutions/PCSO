@@ -13,6 +13,7 @@ import { LEAVE_TYPES } from '@/lib/constants/leave-types';
 import type { LeaveTypeCode } from '@/lib/constants/leave-types';
 import { PlusIcon, CalendarIcon, CreditCardIcon } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -56,6 +57,7 @@ export default async function MyLeaveApplicationsPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
+      <RealtimeBoundary tables={['leave_applications', 'leave_credits']} />
       <PageHeader
         title="My Leave Applications"
         description="View and manage your leave applications."

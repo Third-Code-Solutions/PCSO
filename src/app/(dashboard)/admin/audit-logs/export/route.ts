@@ -220,7 +220,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     filename = `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`;
   }
 
-  return new NextResponse(body, {
+  // NextResponse expects a BodyInit-compatible value; convert Buffer to Uint8Array.
+  return new NextResponse(new Uint8Array(body), {
     status: 200,
     headers: {
       'Content-Type': contentType,

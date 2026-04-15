@@ -208,8 +208,10 @@ export default async function SalnDetailPage({ params }: SalnDetailPageProps) {
   // Use non-null assertion — notFound() throws so we never reach the lines below.
   const sub = submission!;
 
+  // Matches editableStatuses in [id]/edit/page.tsx — drafts and deficient submissions
+  // can be edited by the owning employee or super_admin.
   const canEdit =
-    sub.status === 'draft' &&
+    (sub.status === 'draft' || sub.status === 'deficient') &&
     (user.role === 'super_admin' || user.employeeId === sub.employeeId);
 
   return (

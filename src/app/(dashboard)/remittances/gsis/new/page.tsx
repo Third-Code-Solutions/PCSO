@@ -26,6 +26,10 @@ export default function NewGsisBatchPage() {
     startTransition(async () => {
       try {
         const batch = await generateRemittanceList({ periodId: periodId.trim() });
+        if (!batch) {
+          toast.error('Batch generation returned no data.');
+          return;
+        }
         toast.success(`Batch ${batch.batchNo} generated with ${batch.employeeCount} employees.`);
         router.push(`/remittances/gsis/${batch.id}`);
       } catch (err) {

@@ -62,6 +62,7 @@ export function EmployeeForm({ mode, defaultValues, offices }: EmployeeFormProps
     try {
       if (mode === 'create') {
         const row = await createEmployee(data);
+        if (!row) throw new Error('No employee record returned from server.');
         toast.success('Employee record created successfully.');
         router.push(`/employees/${row.id}`);
       } else {
@@ -80,15 +81,17 @@ export function EmployeeForm({ mode, defaultValues, offices }: EmployeeFormProps
 
   const goToNext = () => {
     const idx = TAB_KEYS.indexOf(activeTab);
-    if (idx < TAB_KEYS.length - 1) {
-      setActiveTab(TAB_KEYS[idx + 1]);
+    const next = TAB_KEYS[idx + 1];
+    if (idx < TAB_KEYS.length - 1 && next !== undefined) {
+      setActiveTab(next);
     }
   };
 
   const goToPrev = () => {
     const idx = TAB_KEYS.indexOf(activeTab);
-    if (idx > 0) {
-      setActiveTab(TAB_KEYS[idx - 1]);
+    const prev = TAB_KEYS[idx - 1];
+    if (idx > 0 && prev !== undefined) {
+      setActiveTab(prev);
     }
   };
 

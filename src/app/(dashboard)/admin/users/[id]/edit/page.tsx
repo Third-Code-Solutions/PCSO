@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { updateUser } from '../../actions';
 import { SYSTEM_ROLE_VALUES } from '@/lib/validations/admin';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 const ROLE_LABELS: Record<typeof SYSTEM_ROLE_VALUES[number], string> = {
   super_admin: 'Super Admin',
@@ -24,20 +25,42 @@ export default function EditUserPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [pending, setPending] = React.useState(false);
-  const [role, setRole] = React.useState<string>('employee_self_service');
+  const [loading, setLoading] = React.useState(true);
+  const [role, setRole] = React.useState<typeof SYSTEM_ROLE_VALUES[number]>('employee_self_service');
+  const [officeId, setOfficeId] = React.useState('');
+
+  // Load current user values so the form is pre-populated.
+  React.useEffect(() => {
+    const supabase = createBrowserClient();
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('system_users')
+          .select('role, office_id')
+          .eq('id', id)
+          .single();
+
+        if (error || !data) {
+          toast.error('Could not load user details.');
+          return;
+        }
+        setRole((data.role as typeof SYSTEM_ROLE_VALUES[number]) ?? 'employee_self_service');
+        setOfficeId((data.office_id as string | null) ?? '');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPending(true);
 
-    const formData = new FormData(e.currentTarget);
-    const officeIdRaw = formData.get('officeId');
-
     try {
       await updateUser({
         id,
         role,
-        officeId: officeIdRaw && officeIdRaw !== '' ? (officeIdRaw as string) : null,
+        officeId: officeId.trim() !== '' ? officeId.trim() : null,
       });
       toast.success('User updated successfully');
       router.push(`/admin/users/${id}`);
@@ -48,6 +71,14 @@ export default function EditUserPage() {
     } finally {
       setPending(false);
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p className="text-sm text-muted-foreground">Loading user…</p>
+      </div>
+    );
   }
 
   return (
@@ -66,7 +97,11 @@ export default function EditUserPage() {
       <form onSubmit={handleSubmit} className="max-w-lg space-y-6">
         <div className="space-y-2">
           <Label htmlFor="role">Role</Label>
-          <Select value={role} onValueChange={setRole} name="role">
+          <Select
+            value={role}
+            onValueChange={(v) => setRole(v as typeof SYSTEM_ROLE_VALUES[number])}
+            name="role"
+          >
             <SelectTrigger id="role">
               <SelectValue placeholder="Select a role" />
             </SelectTrigger>
@@ -86,6 +121,8 @@ export default function EditUserPage() {
             id="officeId"
             name="officeId"
             placeholder="Office UUID — leave blank for org-wide access"
+            value={officeId}
+            onChange={(e) => setOfficeId(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
             Leave blank to grant org-wide access (subject to role permissions).

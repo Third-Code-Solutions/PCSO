@@ -13,7 +13,7 @@ import { RatingBadge } from '@/components/performance/rating-badge';
 import { StepIncrementTable } from '@/components/performance/step-increment-table';
 import {
   getStepIncrementsByEmployee,
-  getMyPerformanceRatings,
+  getApprovedIpcrfWithPeriodDates,
 } from '../../queries';
 import {
   checkStepEligibility,
@@ -52,21 +52,17 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
   const officeData = emp.offices as { name?: string } | null;
   const fullName = `${emp.last_name}, ${emp.first_name}`;
 
-  const [incrementHistory, ratingsData] = await Promise.all([
+  const [incrementHistory, ipcrf] = await Promise.all([
     getStepIncrementsByEmployee(employeeId),
-    getMyPerformanceRatings(employeeId),
+    getApprovedIpcrfWithPeriodDates(employeeId),
   ]);
 
-  // Build rating records for eligibility check
-  const ipcrf = ratingsData.filter(
-    (r) => r.ratingType === 'ipcrf' && r.status === 'approved',
-  );
-
+  // Build rating records for eligibility check using actual period dateFrom
   const ratingRecords = ipcrf.map((r) =>
     toRatingRecord({
       periodLabel: r.periodLabel,
       numericalRating: r.numericalRating,
-      periodDateFrom: r.createdAt, // approximate — ideally the period's dateFrom
+      periodDateFrom: r.periodDateFrom,
     }),
   );
 

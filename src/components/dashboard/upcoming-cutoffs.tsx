@@ -3,31 +3,30 @@ import { CalendarClock } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { UpcomingCutoffRow } from '@/app/(dashboard)/dashboard/queries';
 
-// TODO: Replace with real data from payroll / remittances module
-export interface CutoffItem {
-  id: string;
-  label: string;
-  dueDate: string; // ISO 8601 date string
-  type: 'payroll' | 'gsis' | 'philhealth' | 'pagibig' | 'bir';
-  status: 'upcoming' | 'due_today' | 'overdue';
+export type { UpcomingCutoffRow as CutoffItem };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function deriveCutoffStatus(periodEnd: string): 'upcoming' | 'due_today' | 'overdue' {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(periodEnd);
+  end.setHours(0, 0, 0, 0);
+  const diffMs = end.getTime() - today.getTime();
+  if (diffMs < 0) return 'overdue';
+  if (diffMs === 0) return 'due_today';
+  return 'upcoming';
 }
 
-interface UpcomingCutoffsProps {
-  items?: CutoffItem[];
-  isLoading?: boolean;
-}
-
-const TYPE_LABELS: Record<CutoffItem['type'], string> = {
-  payroll: 'Payroll',
-  gsis: 'GSIS',
-  philhealth: 'PhilHealth',
-  pagibig: 'Pag-IBIG',
-  bir: 'BIR',
+const SCOPE_LABELS: Record<UpcomingCutoffRow['scope'], string> = {
+  regular: 'Regular',
+  jo_cos: 'JO / COS',
 };
 
 const STATUS_VARIANT: Record<
-  CutoffItem['status'],
+  'upcoming' | 'due_today' | 'overdue',
   'default' | 'warning' | 'destructive'
 > = {
   upcoming: 'default',
@@ -35,24 +34,31 @@ const STATUS_VARIANT: Record<
   overdue: 'destructive',
 };
 
-const STATUS_LABEL: Record<CutoffItem['status'], string> = {
+const STATUS_LABEL: Record<'upcoming' | 'due_today' | 'overdue', string> = {
   upcoming: 'Upcoming',
   due_today: 'Due Today',
   overdue: 'Overdue',
 };
 
-function formatDate(isoString: string): string {
-  return new Date(isoString).toLocaleDateString('en-PH', {
+const PERIOD_STATUS_LABEL: Record<UpcomingCutoffRow['status'], string> = {
+  draft: 'Draft',
+  processing: 'Processing',
+};
+
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('en-PH', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 }
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
 function CutoffSkeleton() {
   return (
     <div className="space-y-3">
-      {Array.from({ length: 4 }).map((_, i) => (
+      {Array.from({ length: 3 }).map((_, i) => (
         <div key={i} className="flex items-center justify-between">
           <div className="space-y-1">
             <Skeleton className="h-3.5 w-28" />
@@ -71,16 +77,20 @@ function EmptyState() {
       <CalendarClock className="h-8 w-8 text-muted-foreground/40 mb-2" />
       <p className="text-sm text-muted-foreground">No upcoming cutoffs</p>
       <p className="text-xs text-muted-foreground/60 mt-1">
-        Payroll and remittance deadlines will appear here.
+        Payroll deadlines will appear here.
       </p>
     </div>
   );
 }
 
-export function UpcomingCutoffs({
-  items = [],
-  isLoading = false,
-}: UpcomingCutoffsProps) {
+// ─── Component ────────────────────────────────────────────────────────────────
+
+interface UpcomingCutoffsProps {
+  items?: UpcomingCutoffRow[];
+  isLoading?: boolean;
+}
+
+export function UpcomingCutoffs({ items = [], isLoading = false }: UpcomingCutoffsProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -96,28 +106,37 @@ export function UpcomingCutoffs({
         ) : items.length === 0 ? (
           <EmptyState />
         ) : (
-          <ul className="space-y-3" aria-label="Upcoming payroll and remittance cutoffs">
-            {items.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between gap-2"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {item.label}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {TYPE_LABELS[item.type]} · {formatDate(item.dueDate)}
-                  </p>
-                </div>
-                <Badge
-                  variant={STATUS_VARIANT[item.status]}
-                  className="shrink-0"
+          <ul
+            className="space-y-3"
+            aria-label="Upcoming payroll cutoffs"
+          >
+            {items.map((item) => {
+              const cutoffStatus = deriveCutoffStatus(item.periodEnd);
+              return (
+                <li
+                  key={item.id}
+                  className="flex items-center justify-between gap-2"
                 >
-                  {STATUS_LABEL[item.status]}
-                </Badge>
-              </li>
-            ))}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {item.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {SCOPE_LABELS[item.scope]} · Cutoff {formatDate(item.periodEnd)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Pay date: {formatDate(item.payDate)} · {PERIOD_STATUS_LABEL[item.status]}
+                    </p>
+                  </div>
+                  <Badge
+                    variant={STATUS_VARIANT[cutoffStatus]}
+                    className="shrink-0"
+                  >
+                    {STATUS_LABEL[cutoffStatus]}
+                  </Badge>
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>

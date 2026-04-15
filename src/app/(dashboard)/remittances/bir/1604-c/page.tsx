@@ -107,8 +107,8 @@ export default function Bir1604CPage() {
     try {
       await markBir1604CFiled({ batchId: filedBatch.id, referenceNo, filedDate });
       setBatches((prev) =>
-        prev.map((b) =>
-          b.id === filedBatch.id ? { ...b, status: 'submitted', referenceNo } : b,
+        prev.map((b): typeof b =>
+          b.id === filedBatch.id ? { ...b, status: 'submitted' as const, referenceNo } : b,
         ),
       );
       setFiledBatch(null);

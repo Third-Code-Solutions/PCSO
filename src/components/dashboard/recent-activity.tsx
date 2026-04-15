@@ -2,32 +2,31 @@ import * as React from 'react';
 import { Activity } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { RecentActivityRow } from '@/app/(dashboard)/dashboard/queries';
 
-// TODO: Replace with real AuditLog type from @/lib/db/schema when wired
-export interface AuditLogEntry {
-  id: string;
-  action: 'create' | 'edit' | 'delete' | 'approve' | 'process' | 'export' | 'login';
-  table: string;
-  description: string;
-  performedBy: string;
-  performedAt: string; // ISO 8601
-}
+/**
+ * AuditLogEntry is the shape this component renders.
+ * It maps directly from RecentActivityRow produced by getRecentActivity().
+ */
+export type { RecentActivityRow as AuditLogEntry };
 
-interface RecentActivityProps {
-  // TODO: Pass real data from server query (last 10 audit_log entries)
-  entries?: AuditLogEntry[];
-  isLoading?: boolean;
-}
+// Recognised action values for colour-coding; anything else falls back to slate.
+type KnownAction = 'create' | 'edit' | 'update' | 'delete' | 'approve' | 'process' | 'export' | 'login';
 
-const ACTION_COLORS: Record<AuditLogEntry['action'], string> = {
+const ACTION_COLORS: Record<KnownAction, string> = {
   create: 'bg-emerald-500',
   edit: 'bg-blue-500',
+  update: 'bg-blue-500',
   delete: 'bg-red-500',
   approve: 'bg-teal-500',
   process: 'bg-purple-500',
   export: 'bg-amber-500',
   login: 'bg-slate-400',
 };
+
+function dotColorForAction(action: string): string {
+  return ACTION_COLORS[action as KnownAction] ?? 'bg-slate-400';
+}
 
 function formatRelativeTime(isoString: string): string {
   const now = Date.now();
@@ -40,6 +39,35 @@ function formatRelativeTime(isoString: string): string {
   if (diffH < 24) return `${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
   return `${diffD}d ago`;
+}
+
+/** Builds a human-readable description from an audit log row. */
+function describeActivity(row: RecentActivityRow): string {
+  const table = row.tableName.replace(/_/g, ' ');
+  const actionVerb =
+    row.action === 'create'
+      ? 'Created'
+      : row.action === 'update' || row.action === 'edit'
+        ? 'Updated'
+        : row.action === 'delete'
+          ? 'Deleted'
+          : row.action === 'approve'
+            ? 'Approved'
+            : row.action === 'process'
+              ? 'Processed'
+              : row.action === 'export'
+                ? 'Exported'
+                : row.action === 'login'
+                  ? 'Logged in'
+                  : row.action.charAt(0).toUpperCase() + row.action.slice(1);
+
+  if (row.action === 'login') return `${actionVerb} to the system`;
+  return `${actionVerb} ${table} record`;
+}
+
+interface RecentActivityProps {
+  entries?: RecentActivityRow[];
+  isLoading?: boolean;
 }
 
 function ActivitySkeleton() {
@@ -89,20 +117,17 @@ export function RecentActivity({
         ) : entries.length === 0 ? (
           <EmptyState />
         ) : (
-          <ol
-            className="space-y-4"
-            aria-label="Recent system activity"
-          >
+          <ol className="space-y-4" aria-label="Recent system activity">
             {entries.map((entry) => (
               <li key={entry.id} className="flex items-start gap-3">
-                {/* Action color dot */}
+                {/* Action colour dot */}
                 <span
-                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ACTION_COLORS[entry.action] ?? 'bg-slate-400'}`}
+                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotColorForAction(entry.action)}`}
                   aria-hidden
                 />
                 <div className="min-w-0">
                   <p className="text-sm leading-snug text-foreground">
-                    {entry.description}
+                    {describeActivity(entry)}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {entry.performedBy} · {formatRelativeTime(entry.performedAt)}

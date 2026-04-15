@@ -24,7 +24,7 @@ export async function createEmployee(input: unknown) {
 
   const employeeNo = await generateEmployeeNo();
 
-  const [row] = await db
+  const inserted = await db
     .insert(employees)
     .values({
       employeeNo,
@@ -63,6 +63,9 @@ export async function createEmployee(input: unknown) {
       pagibigNo: parsed.pagibigNo || null,
     })
     .returning();
+
+  const row = inserted[0];
+  if (!row) throw new Error('Insert returned no rows');
 
   await auditLog({
     userId: user.id,

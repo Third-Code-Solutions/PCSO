@@ -10,6 +10,7 @@ import { computeTerminalLeave, formatTerminalLeavePay } from '@/lib/utils/leave/
 import { createServerClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -55,6 +56,7 @@ export default async function MyLeaveCreditsPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
+      <RealtimeBoundary tables={['leave_applications', 'leave_credits']} />
       <PageHeader
         title="My Leave Credits"
         description={`Leave credit summary for ${currentYear}.`}

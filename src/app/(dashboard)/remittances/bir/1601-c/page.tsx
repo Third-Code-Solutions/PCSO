@@ -84,8 +84,8 @@ export default function Bir1601CPage() {
         taxPaid,
       });
       setBatches((prev) =>
-        prev.map((b) =>
-          b.id === filedBatch.id ? { ...b, status: 'submitted', referenceNo } : b,
+        prev.map((b): typeof b =>
+          b.id === filedBatch.id ? { ...b, status: 'submitted' as const, referenceNo } : b,
         ),
       );
       setFiledBatch(null);

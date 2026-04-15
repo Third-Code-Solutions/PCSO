@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/layouts/page-header';
 import { Button } from '@/components/ui/button';
 import { ComplianceDashboard } from '@/components/saln/compliance-dashboard';
 import { currentCoverageYear } from '@/lib/utils/saln/deadline';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 // ---------------------------------------------------------------------------
 // Page
@@ -47,6 +48,7 @@ export default async function AdminSalnPage({ searchParams }: AdminSalnPageProps
 
   return (
     <div>
+      <RealtimeBoundary tables={['saln_submissions']} />
       <PageHeader
         title="SALN Compliance Tracker"
         description={`Annual SALN filing status for Calendar Year ${year}`}

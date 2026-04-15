@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { Users, Building, Clock, CalendarCheck, Landmark } from 'lucide-react';
+import Link from 'next/link';
+import { Users, Building, CalendarCheck, Clock, Landmark } from 'lucide-react';
 import { KpiCard } from '@/components/dashboard/kpi-card';
+import { formatPeso } from '@/lib/utils/format';
 
-// TODO: Wire to real data from server actions / TanStack Query when dashboard API is ready
-// All values below are placeholder zeros — the module agents will replace these with live queries.
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface KpiData {
   totalEmployees: number;
@@ -11,11 +12,13 @@ interface KpiData {
   joCosCount: number;
   vacantPositions: number;
   pendingLeaveApplications: number;
+  /** Days until next payroll period end cutoff; 0 means today or overdue */
   payrollCutoffDays: number;
-  remittancesDueThisMonth: string; // stored as string per CONVENTIONS.md
+  /** Total pending remittances this month as a numeric string */
+  remittancesDueThisMonth: string;
 }
 
-const PLACEHOLDER_DATA: KpiData = {
+const DEFAULTS: KpiData = {
   totalEmployees: 0,
   permanentCount: 0,
   joCosCount: 0,
@@ -26,94 +29,92 @@ const PLACEHOLDER_DATA: KpiData = {
 };
 
 interface KpiGridProps {
-  // TODO: Accept real data props when wired to API
   data?: Partial<KpiData>;
 }
 
-export function KpiGrid({ data = {} }: KpiGridProps) {
-  const kpi: KpiData = { ...PLACEHOLDER_DATA, ...data };
+// ─── Component ────────────────────────────────────────────────────────────────
 
-  const formatPeso = (amount: string) => {
-    const num = parseFloat(amount);
-    if (isNaN(num)) return '₱0.00';
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 2,
-    }).format(num);
-  };
+export function KpiGrid({ data = {} }: KpiGridProps) {
+  const kpi: KpiData = { ...DEFAULTS, ...data };
+
+  const cutoffLabel =
+    kpi.payrollCutoffDays === 0 ? 'Today' : `${kpi.payrollCutoffDays}d`;
 
   return (
     <section aria-label="Key performance indicators">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-        {/* Total Employees */}
-        <KpiCard
-          title="Total Employees"
-          value={kpi.totalEmployees}
-          detail={`Permanent: ${kpi.permanentCount.toLocaleString('en-PH')} · JO/COS: ${kpi.joCosCount.toLocaleString('en-PH')}`}
-          icon={Users}
-          iconColorClass="bg-blue-50 text-blue-600"
-        />
+        {/* 1. Active Employees */}
+        <Link href="/employees" className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg">
+          <KpiCard
+            title="Active Employees"
+            value={kpi.totalEmployees}
+            detail={`Permanent: ${kpi.permanentCount.toLocaleString('en-PH')} · JO/COS: ${kpi.joCosCount.toLocaleString('en-PH')}`}
+            icon={Users}
+            iconColorClass="bg-blue-50 text-blue-600"
+          />
+        </Link>
 
-        {/* Vacant Plantilla Positions */}
-        <KpiCard
-          title="Vacant Positions"
-          value={kpi.vacantPositions}
-          detail="Unfilled plantilla items"
-          icon={Building}
-          iconColorClass="bg-amber-50 text-amber-600"
-          trend={
-            kpi.vacantPositions > 0
-              ? {
-                  direction: 'up',
-                  label: `${kpi.vacantPositions} position${kpi.vacantPositions !== 1 ? 's' : ''} to fill`,
-                  upIsPositive: false,
-                }
-              : { direction: 'neutral', label: 'All positions filled' }
-          }
-        />
+        {/* 2. Vacant Plantilla Positions */}
+        <Link href="/plantilla/vacancies" className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg">
+          <KpiCard
+            title="Vacant Positions"
+            value={kpi.vacantPositions}
+            detail="Unfilled plantilla items"
+            icon={Building}
+            iconColorClass="bg-amber-50 text-amber-600"
+            trend={
+              kpi.vacantPositions > 0
+                ? {
+                    direction: 'up',
+                    label: `${kpi.vacantPositions} position${kpi.vacantPositions !== 1 ? 's' : ''} to fill`,
+                    upIsPositive: false,
+                  }
+                : { direction: 'neutral', label: 'All positions filled' }
+            }
+          />
+        </Link>
 
-        {/* Pending Leave Applications */}
-        <KpiCard
-          title="Pending Leave"
-          value={kpi.pendingLeaveApplications}
-          detail="Applications awaiting approval"
-          icon={CalendarCheck}
-          iconColorClass="bg-purple-50 text-purple-600"
-          trend={
-            kpi.pendingLeaveApplications > 0
-              ? {
-                  direction: 'up',
-                  label: `${kpi.pendingLeaveApplications} for review`,
-                  upIsPositive: false,
-                }
-              : { direction: 'neutral', label: 'No pending applications' }
-          }
-        />
+        {/* 3. Pending Leave Applications */}
+        <Link href="/leave/approvals" className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg">
+          <KpiCard
+            title="Pending Leave"
+            value={kpi.pendingLeaveApplications}
+            detail="Applications awaiting approval"
+            icon={CalendarCheck}
+            iconColorClass="bg-purple-50 text-purple-600"
+            trend={
+              kpi.pendingLeaveApplications > 0
+                ? {
+                    direction: 'up',
+                    label: `${kpi.pendingLeaveApplications} for review`,
+                    upIsPositive: false,
+                  }
+                : { direction: 'neutral', label: 'No pending applications' }
+            }
+          />
+        </Link>
 
-        {/* Payroll Cutoff */}
-        <KpiCard
-          title="Payroll Cutoff"
-          value={
-            kpi.payrollCutoffDays === 0
-              ? 'Today'
-              : `${kpi.payrollCutoffDays}d`
-          }
-          detail="Days until next cutoff"
-          icon={Clock}
-          iconColorClass="bg-emerald-50 text-emerald-600"
-          trend={
-            kpi.payrollCutoffDays <= 3
-              ? { direction: 'down', label: 'Cutoff soon', upIsPositive: true }
-              : { direction: 'neutral', label: 'On schedule' }
-          }
-        />
+        {/* 4. Next Payroll Cutoff */}
+        <Link href="/payroll" className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg">
+          <KpiCard
+            title="Payroll Cutoff"
+            value={cutoffLabel}
+            detail="Days until next cutoff"
+            icon={Clock}
+            iconColorClass="bg-emerald-50 text-emerald-600"
+            trend={
+              kpi.payrollCutoffDays <= 3
+                ? { direction: 'down', label: 'Cutoff soon', upIsPositive: true }
+                : { direction: 'neutral', label: 'On schedule' }
+            }
+          />
+        </Link>
 
-        {/* Remittances Due */}
+        {/* 5. Remittances Due This Month */}
         <KpiCard
           title="Remittances Due"
           value={formatPeso(kpi.remittancesDueThisMonth)}
-          detail="Total for this month (GSIS, PhilHealth, Pag-IBIG, BIR)"
+          detail="Pending this month (GSIS, PhilHealth, Pag-IBIG, BIR)"
           icon={Landmark}
           iconColorClass="bg-rose-50 text-rose-600"
         />

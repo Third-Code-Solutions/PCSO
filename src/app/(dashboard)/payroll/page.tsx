@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layouts/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PeriodStatusBadge } from '@/components/payroll/period-status-badge';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { requirePermission } from '@/lib/auth/guards';
 import { getPayrollPeriods } from './queries';
 import type { PayrollPeriod } from '@/lib/db/schema';
@@ -82,6 +83,7 @@ export default async function PayrollPage() {
 
   return (
     <main className="space-y-8">
+      <RealtimeBoundary tables={['payroll_periods', 'payroll_records']} />
       <PageHeader
         title="Payroll"
         description="Manage payroll periods, process computations, and distribute payslips."

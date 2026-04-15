@@ -5,6 +5,7 @@
 import { requirePermission } from '@/lib/auth/guards';
 import { PageHeader } from '@/components/layouts/page-header';
 import { getAllEmployeeCreditSummaries } from '@/app/(dashboard)/leave/queries';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default async function AllEmployeeCreditsPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
+      <RealtimeBoundary tables={['leave_applications', 'leave_credits']} />
       <PageHeader
         title="Leave Credits — All Employees"
         description={`Credit summary for all active employees as of ${currentYear}.`}

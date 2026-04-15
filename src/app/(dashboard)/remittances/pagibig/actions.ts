@@ -61,7 +61,7 @@ export async function generatePagibigBatch(input: unknown) {
 
   if (existing.length > 0) {
     throw new Error(
-      `A Pag-IBIG remittance batch already exists for this period (ID: ${existing[0].id}).`,
+      `A Pag-IBIG remittance batch already exists for this period (ID: ${existing[0]?.id ?? 'unknown'}).`,
     );
   }
 
@@ -122,7 +122,7 @@ export async function generatePagibigBatch(input: unknown) {
 
   const totalAmount = roundHalfEven(totalPersonal + totalEmployer, 2);
 
-  const [batch] = await db
+  const batchRows = await db
     .insert(remittanceBatches)
     .values({
       type: 'pagibig',
@@ -136,6 +136,9 @@ export async function generatePagibigBatch(input: unknown) {
       remarks: parsed.remarks ?? null,
     })
     .returning();
+
+  const batch = batchRows[0];
+  if (!batch) throw new Error('Failed to insert Pag-IBIG remittance batch.');
 
   const linesWithBatchId = recordValues.map((rv) => ({ ...rv, batchId: batch.id }));
   await db.insert(remittanceRecords).values(linesWithBatchId);
@@ -276,7 +279,7 @@ export async function markPagibigSubmitted(input: unknown) {
   }
 
   const now = new Date().toISOString();
-  const [updated] = await db
+  const updatedRows = await db
     .update(remittanceBatches)
     .set({
       status: 'submitted',
@@ -287,6 +290,9 @@ export async function markPagibigSubmitted(input: unknown) {
     })
     .where(eq(remittanceBatches.id, parsed.batchId))
     .returning();
+
+  const updated = updatedRows[0];
+  if (!updated) throw new Error('Failed to update Pag-IBIG batch status.');
 
   await auditLog({
     userId: user.id,

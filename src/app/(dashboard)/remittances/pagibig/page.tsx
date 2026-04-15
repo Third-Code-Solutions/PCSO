@@ -5,6 +5,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layouts/page-header';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { getPagibigBatches } from './actions';
 
 export const metadata: Metadata = {
@@ -30,6 +31,7 @@ export default async function PagibigPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <RealtimeBoundary tables={['remittance_batches']} />
       <PageHeader
         title="Pag-IBIG Remittance"
         description="Virtual Pag-IBIG portal CSV export · Employee & employer contribution tracking"

@@ -29,6 +29,10 @@ export default function PagibigNewPage() {
         periodId: periodId.trim(),
         remarks: remarks.trim() || undefined,
       });
+      if (!batch) {
+        setError('Batch generation returned no data.');
+        return;
+      }
       router.push(`/remittances/pagibig/${batch.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to generate batch.');

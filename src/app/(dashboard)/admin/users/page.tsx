@@ -4,6 +4,7 @@ import { UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layouts/page-header';
 import { UsersTable, type UserRow } from '@/components/admin/users-table';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { requirePermission } from '@/lib/auth/guards';
 import { createServerClient } from '@/lib/supabase/server';
 
@@ -79,6 +80,9 @@ export default async function AdminUsersPage() {
       />
 
       <UsersTable users={users} />
+
+      {/* Realtime: re-renders the page when system_users or audit_logs change */}
+      <RealtimeBoundary tables={['system_users', 'audit_logs']} />
     </div>
   );
 }
