@@ -49,7 +49,7 @@ export default function Bir2316Page() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="BIR Form 2316"
-        subtitle="Certificate of Compensation Payment / Tax Withheld — Year-End Employee Certificate"
+        description="Certificate of Compensation Payment / Tax Withheld — Year-End Employee Certificate"
         backHref="/remittances/bir"
       />
 

@@ -123,7 +123,7 @@ export default function Bir1604CPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="BIR Form 1604-C"
-        subtitle="Annual Information Return of Income Taxes Withheld on Compensation + Alphalist"
+        description="Annual Information Return of Income Taxes Withheld on Compensation + Alphalist"
         backHref="/remittances/bir"
       />
 

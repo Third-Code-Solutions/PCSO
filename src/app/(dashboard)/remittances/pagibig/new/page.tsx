@@ -41,7 +41,7 @@ export default function PagibigNewPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Generate Pag-IBIG Batch"
-        subtitle="Creates a new Pag-IBIG remittance batch from an approved payroll period."
+        description="Creates a new Pag-IBIG remittance batch from an approved payroll period."
         backHref="/remittances/pagibig"
       />
 

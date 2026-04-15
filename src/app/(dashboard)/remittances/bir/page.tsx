@@ -55,7 +55,7 @@ export default function BirPage() {
     <div className="space-y-8 p-6">
       <PageHeader
         title="BIR Compliance"
-        subtitle="Forms 1601-C · 2316 · 1604-C — withholding tax reporting and remittance"
+        description="Forms 1601-C · 2316 · 1604-C — withholding tax reporting and remittance"
       />
 
       {/* Tax calendar note */}

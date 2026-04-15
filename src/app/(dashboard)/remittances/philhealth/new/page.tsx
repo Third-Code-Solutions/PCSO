@@ -44,7 +44,7 @@ export default function PhilHealthNewPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Generate PhilHealth Batch"
-        subtitle="Creates a new PhilHealth RF-1 remittance batch from an approved payroll period."
+        description="Creates a new PhilHealth RF-1 remittance batch from an approved payroll period."
         backHref="/remittances/philhealth"
       />
 

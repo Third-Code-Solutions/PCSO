@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Play, FileBarChart, AlertTriangle } from 'lucide-react';
+import { Play, FileBarChart, AlertTriangle, DollarSign } from 'lucide-react';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';

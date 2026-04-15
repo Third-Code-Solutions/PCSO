@@ -100,7 +100,7 @@ export default function Bir1601CPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="BIR Form 1601-C"
-        subtitle="Monthly Remittance Return of Income Taxes Withheld on Compensation"
+        description="Monthly Remittance Return of Income Taxes Withheld on Compensation"
         backHref="/remittances/bir"
       />
 

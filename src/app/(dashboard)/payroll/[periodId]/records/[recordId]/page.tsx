@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/layouts/page-header';
 import { PeriodStatusBadge } from '@/components/payroll/period-status-badge';
 import { RecordBreakdown } from '@/components/payroll/record-breakdown';
 import { requirePermission } from '@/lib/auth/guards';
-import { getPayrollRecordById, getAdjustmentsByRecord } from '../../../../queries';
+import { getPayrollRecordById, getAdjustmentsByRecord } from '../../../queries';
 import type { PayrollPeriodStatus } from '@/lib/db/schema';
 import { RecordOverrideButton } from './_components/record-override-button';
 

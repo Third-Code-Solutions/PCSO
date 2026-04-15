@@ -32,7 +32,7 @@ export default async function PagibigPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Pag-IBIG Remittance"
-        subtitle="Virtual Pag-IBIG portal CSV export · Employee & employer contribution tracking"
+        description="Virtual Pag-IBIG portal CSV export · Employee & employer contribution tracking"
         actions={
           <Link
             href="/remittances/pagibig/new"

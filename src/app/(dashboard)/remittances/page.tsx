@@ -236,7 +236,7 @@ export default async function RemittanceDashboardPage() {
     <div className="space-y-8 p-6">
       <PageHeader
         title="Government Remittances"
-        subtitle="PhilHealth · Pag-IBIG · BIR · GSIS — all agency contributions in one place"
+        description="PhilHealth · Pag-IBIG · BIR · GSIS — all agency contributions in one place"
       />
 
       {/* Agency summary cards */}

@@ -33,7 +33,7 @@ export default async function PhilHealthPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="PhilHealth Remittance"
-        subtitle="RF-1 form generation · EPRS CSV export · Contribution tracking"
+        description="RF-1 form generation · EPRS CSV export · Contribution tracking"
         actions={
           <Link
             href="/remittances/philhealth/new"

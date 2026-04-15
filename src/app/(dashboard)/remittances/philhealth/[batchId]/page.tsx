@@ -121,7 +121,7 @@ export default function PhilHealthBatchDetailPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title={`PhilHealth Batch — ${batch.periodStart} to ${batch.periodEnd}`}
-        subtitle={`${batch.employeeCount} employees · Generated ${new Date(batch.createdAt).toLocaleDateString('en-PH')}`}
+        description={`${batch.employeeCount} employees · Generated ${new Date(batch.createdAt).toLocaleDateString('en-PH')}`}
         backHref="/remittances/philhealth"
         actions={
           <div className="flex gap-2">

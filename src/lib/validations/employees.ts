@@ -90,37 +90,45 @@ export type EmployeePersonalInput = z.infer<typeof EmployeePersonalSchema>;
 // ---------------------------------------------------------------------------
 // Employment info schema
 // ---------------------------------------------------------------------------
-export const EmployeeEmploymentSchema = z
-  .object({
-    employeeNo: z.string().optional(), // auto-generated on create; present on update
-    appointmentType: z.enum(APPOINTMENT_TYPE_VALUES, {
-      required_error: 'Appointment type is required',
-    }),
-    positionTitle: z.string().min(1, 'Position title is required').max(255),
-    salaryGrade: z.coerce
-      .number()
-      .int()
-      .min(1, 'Salary grade must be between 1 and 33')
-      .max(33, 'Salary grade must be between 1 and 33'),
-    step: z.coerce
-      .number()
-      .int()
-      .min(1, 'Step must be between 1 and 8')
-      .max(8, 'Step must be between 1 and 8'),
-    officeId: z.string().uuid('Invalid office').min(1, 'Office is required'),
-    dateHired: z.string().min(1, 'Date hired is required'),
-    dateRegularized: z.string().optional(),
-    status: z.enum(EMPLOYEE_STATUS_VALUES).default('active'),
-  })
-  .superRefine((data, ctx) => {
-    if (data.appointmentType === 'permanent' && !data.dateRegularized) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Date regularized is required for permanent employees',
-        path: ['dateRegularized'],
-      });
-    }
-  });
+// Raw object (mergable, partial-able). Refinement is applied in the composite schemas below.
+const EmployeeEmploymentObject = z.object({
+  employeeNo: z.string().optional(), // auto-generated on create; present on update
+  appointmentType: z.enum(APPOINTMENT_TYPE_VALUES, {
+    required_error: 'Appointment type is required',
+  }),
+  positionTitle: z.string().min(1, 'Position title is required').max(255),
+  salaryGrade: z.coerce
+    .number()
+    .int()
+    .min(1, 'Salary grade must be between 1 and 33')
+    .max(33, 'Salary grade must be between 1 and 33'),
+  step: z.coerce
+    .number()
+    .int()
+    .min(1, 'Step must be between 1 and 8')
+    .max(8, 'Step must be between 1 and 8'),
+  officeId: z.string().uuid('Invalid office').min(1, 'Office is required'),
+  dateHired: z.string().min(1, 'Date hired is required'),
+  dateRegularized: z.string().optional(),
+  status: z.enum(EMPLOYEE_STATUS_VALUES).default('active'),
+});
+
+const refinePermanentRequiresRegularized = (
+  data: { appointmentType: string; dateRegularized?: string | undefined },
+  ctx: z.RefinementCtx,
+) => {
+  if (data.appointmentType === 'permanent' && !data.dateRegularized) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Date regularized is required for permanent employees',
+      path: ['dateRegularized'],
+    });
+  }
+};
+
+export const EmployeeEmploymentSchema = EmployeeEmploymentObject.superRefine(
+  refinePermanentRequiresRegularized,
+);
 
 export type EmployeeEmploymentInput = z.infer<typeof EmployeeEmploymentSchema>;
 
@@ -173,18 +181,21 @@ export type EmployeeDocumentsInput = z.infer<typeof EmployeeDocumentsSchema>;
 // ---------------------------------------------------------------------------
 // Composite schema (all tabs merged)
 // ---------------------------------------------------------------------------
-export const EmployeeSchema = EmployeePersonalSchema.merge(EmployeeEmploymentSchema).merge(
-  EmployeeGovIdsSchema,
-);
+export const EmployeeSchema = EmployeePersonalSchema.merge(EmployeeEmploymentObject)
+  .merge(EmployeeGovIdsSchema)
+  .superRefine(refinePermanentRequiresRegularized);
 
 export type EmployeeInput = z.infer<typeof EmployeeSchema>;
 
 // ---------------------------------------------------------------------------
 // Update schema — all fields optional except id
 // ---------------------------------------------------------------------------
-export const EmployeeUpdateSchema = EmployeeSchema.partial().extend({
-  id: z.string().uuid(),
-});
+export const EmployeeUpdateSchema = EmployeePersonalSchema.merge(EmployeeEmploymentObject)
+  .merge(EmployeeGovIdsSchema)
+  .partial()
+  .extend({
+    id: z.string().uuid(),
+  });
 
 export type EmployeeUpdateInput = z.infer<typeof EmployeeUpdateSchema>;
 
