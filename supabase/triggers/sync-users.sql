@@ -17,24 +17,9 @@
 --   - pgcrypto or uuid-ossp extension for gen_random_uuid() (provided by Supabase)
 -- =============================================================================
 
--- ─── 1. system_users table (created here as a safety net if schema agent hasn't run yet) ─
---     Remove this block once Phase 02 schema migration has been applied.
-
-CREATE TABLE IF NOT EXISTS public.system_users (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  auth_id       uuid NOT NULL UNIQUE REFERENCES auth.users (id) ON DELETE CASCADE,
-  email         varchar(255) NOT NULL,
-  role          varchar(50)  NOT NULL DEFAULT 'employee_self_service',
-  office_id     uuid,        -- FK to public.offices.id (nullable; set post-onboarding)
-  employee_id   uuid,        -- FK to public.employees.id (nullable; set post-onboarding)
-  is_active     boolean NOT NULL DEFAULT true,
-  last_sign_in  timestamptz,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  updated_at    timestamptz NOT NULL DEFAULT now()
-);
-
--- Index for fast lookup by auth UID (the most common join key)
-CREATE UNIQUE INDEX IF NOT EXISTS system_users_auth_id_idx ON public.system_users (auth_id);
+-- ─── 1. system_users table is created by the Drizzle migration (Phase 02) ─────
+--     The trigger below depends on that table. Ensure migrations have run first.
+--     `npm run db:bootstrap` handles the correct order.
 
 -- Row Level Security: users may read their own row; service role bypasses RLS.
 ALTER TABLE public.system_users ENABLE ROW LEVEL SECURITY;
