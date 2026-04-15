@@ -9,7 +9,9 @@
  *
  * Seed order matters: tables with FKs come after their dependencies.
  */
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+loadEnv({ path: '.env.local' });
+loadEnv({ path: '.env' });
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, and } from 'drizzle-orm';
