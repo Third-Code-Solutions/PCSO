@@ -1,5 +1,6 @@
 import { getOwnOvertimeRequests } from '../queries';
 import type { OvertimeRequestRow } from '../queries';
+import { requirePermission } from '@/lib/auth/guards';
 
 export const metadata = { title: 'Overtime Requests' };
 
@@ -20,6 +21,8 @@ const DAY_TYPE_LABELS: Record<string, string> = {
 };
 
 export default async function OvertimePage() {
+  // OT is a supervisor/HR workflow — not for employee_self_service
+  await requirePermission('attendance', 'approve');
   let requests: OvertimeRequestRow[] = [];
   try {
     requests = await getOwnOvertimeRequests();

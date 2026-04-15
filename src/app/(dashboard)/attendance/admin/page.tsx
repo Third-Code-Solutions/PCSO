@@ -3,6 +3,7 @@ import { getAttendanceLogsByPeriod, getAnomaliesForPeriod, getEmployeeSummaries 
 import { DtrTable } from '@/components/attendance/dtr-table';
 import { AnomalyAlerts } from '@/components/attendance/anomaly-alerts';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import { requirePermission } from '@/lib/auth/guards';
 
 interface PageProps {
   searchParams: Promise<{ year?: string; month?: string; employeeId?: string }>;
@@ -11,6 +12,8 @@ interface PageProps {
 export const metadata = { title: 'Attendance Admin' };
 
 export default async function AttendanceAdminPage({ searchParams }: PageProps) {
+  // Admin/HR/Approver only — not employee_self_service
+  await requirePermission('attendance', 'approve');
   const params = await searchParams;
   const now = new Date();
   const year = params.year ? Number(params.year) : now.getFullYear();

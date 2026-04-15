@@ -27,7 +27,7 @@ interface RoutePermission {
  *
  * Prefixes are matched with `pathname.startsWith(prefix)`.
  */
-const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; permission: RoutePermission }> = [
+const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; permission: RoutePermission | null }> = [
   // Admin panel — super_admin only
   { prefix: '/admin', permission: { resource: 'admin', action: 'view' } },
 
@@ -35,7 +35,12 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{ prefix: string; permission: RoutePermis
   { prefix: '/payroll/process', permission: { resource: 'payroll', action: 'process' } },
   { prefix: '/payroll/approve', permission: { resource: 'payroll', action: 'approve' } },
   { prefix: '/payroll/remittances', permission: { resource: 'remittances', action: 'view' } },
+  // Self-service payslips — any authenticated employee; query scopes to own records
+  { prefix: '/payroll/payslips', permission: null },
   { prefix: '/payroll', permission: { resource: 'payroll', action: 'view' } },
+
+  // Remittances (top-level)
+  { prefix: '/remittances', permission: { resource: 'remittances', action: 'view' } },
 
   // Leave management
   { prefix: '/leave/approve', permission: { resource: 'leave', action: 'approve' } },

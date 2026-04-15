@@ -13,7 +13,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AllEmployeeCreditsPage() {
-  await requirePermission('leave', 'view');
+  // Admin view of everyone's credits — requires approver/HR level
+  await requirePermission('leave', 'approve');
 
   const currentYear = new Date().getFullYear();
   const summaries = await getAllEmployeeCreditSummaries(currentYear);

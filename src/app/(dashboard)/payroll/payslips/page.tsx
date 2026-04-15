@@ -1,13 +1,15 @@
 import { FileText } from 'lucide-react';
 import { PageHeader } from '@/components/layouts/page-header';
 import { PayslipList } from './_components/payslip-list';
-import { requirePermission } from '@/lib/auth/guards';
+import { requireAuth } from '@/lib/auth/guards';
 import { getMyPayslips } from '../queries';
 
 export const metadata = { title: 'My Payslips' };
 
+// Self-service payslip view — any authenticated user with an employeeId.
+// Query scopes to their own records; no admin permission needed.
 export default async function MyPayslipsPage() {
-  const user = await requirePermission('payroll', 'view');
+  const user = await requireAuth();
 
   const payslips = user.employeeId
     ? await getMyPayslips(user.employeeId)

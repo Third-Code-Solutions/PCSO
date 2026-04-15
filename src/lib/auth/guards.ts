@@ -43,8 +43,12 @@ export async function requirePermission(
   const user = await requireAuth();
 
   if (!hasPermission(user.role, resource, action)) {
-    // Throw a plain object so callers can distinguish a 403 from other errors.
-    throw Object.assign(new Error(`Forbidden: ${resource}.${action}`), { status: 403 });
+    // Redirect to dashboard with a forbidden flag instead of throwing.
+    // This gives users a clean 307 → /dashboard?error=forbidden rather than a 500.
+    // Server Actions that want to raise a hard error should check `hasPermission`
+    // directly before doing work and throw themselves.
+    const { redirect } = await import('next/navigation');
+    redirect(`/dashboard?error=forbidden&resource=${resource}&action=${action}`);
   }
 
   return user;

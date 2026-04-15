@@ -9,6 +9,7 @@
 import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/layouts/page-header';
+import { requirePermission } from '@/lib/auth/guards';
 import { OrgChartClient } from './_client';
 
 export const metadata: Metadata = {
@@ -168,6 +169,7 @@ function buildTree(offices: RawOffice[]): OrgTreeNode[] {
 // ---------------------------------------------------------------------------
 
 export default async function OrgChartPage() {
+  await requirePermission('plantilla', 'view');
   const offices = await getOrgChartData();
   const roots = buildTree(offices);
 
