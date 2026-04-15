@@ -110,7 +110,6 @@ export async function getMyLeaveApplications(
       leave_types ( code, name )
     `)
     .eq('employee_id', employeeId)
-    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Failed to fetch leave applications: ${error.message}`);
@@ -163,7 +162,6 @@ export async function getPendingApprovals(): Promise<LeaveApplicationRow[]> {
       employees ( first_name, last_name, employee_no )
     `)
     .eq('status', 'pending')
-    .is('deleted_at', null)
     .order('created_at', { ascending: true });
 
   if (error) throw new Error(`Failed to fetch pending approvals: ${error.message}`);
@@ -218,7 +216,6 @@ export async function getLeaveApplicationDetail(
       employees ( id, first_name, last_name, employee_no, office_id )
     `)
     .eq('id', leaveApplicationId)
-    .is('deleted_at', null)
     .single();
 
   if (error) return null;
@@ -403,7 +400,6 @@ export async function getApprovedLeavesForCalendar(
       employees ( first_name, last_name, office_id )
     `)
     .eq('status', 'approved')
-    .is('deleted_at', null)
     .lte('date_from', endDate)
     .gte('date_to', startDate);
 

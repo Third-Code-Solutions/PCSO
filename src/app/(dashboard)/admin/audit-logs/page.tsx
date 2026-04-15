@@ -30,64 +30,63 @@ interface AuditQueryParams {
 }
 
 async function getAuditLogs(params: AuditQueryParams): Promise<AuditLogRow[]> {
-  const supabase = await createServerClient();
+  // Use Drizzle directly — Supabase PostgREST can't auto-resolve audit_logs->system_users
+  // without an explicit FK constraint, and we don't want one (audit logs reference
+  // potentially-deleted users).
+  const { db } = await import('@/lib/db');
+  const { auditLogs, systemUsers, employees } = await import('@/lib/db/schema');
+  const { and, eq, gte, lte, desc, sql } = await import('drizzle-orm');
 
-  let query = supabase
-    .from('audit_logs')
-    .select(
-      `
-      id,
-      created_at,
-      action,
-      table_name,
-      record_id,
-      old_values,
-      new_values,
-      ip_address,
-      user_agent,
-      user_id,
-      system_users(email, employees(first_name, last_name))
-    `,
-    )
-    .order('created_at', { ascending: false })
+  const conditions = [];
+  if (params.userId) conditions.push(eq(auditLogs.userId, params.userId));
+  if (params.tableName) conditions.push(eq(auditLogs.tableName, params.tableName));
+  if (params.action) conditions.push(eq(auditLogs.action, params.action));
+  if (params.recordId) conditions.push(eq(auditLogs.recordId, params.recordId));
+  if (params.dateFrom) conditions.push(gte(auditLogs.createdAt, new Date(params.dateFrom)));
+  if (params.dateTo)
+    conditions.push(lte(auditLogs.createdAt, new Date(params.dateTo + 'T23:59:59Z')));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const rows = await db
+    .select({
+      id: auditLogs.id,
+      createdAt: auditLogs.createdAt,
+      action: auditLogs.action,
+      tableName: auditLogs.tableName,
+      recordId: auditLogs.recordId,
+      oldValues: auditLogs.oldValues,
+      newValues: auditLogs.newValues,
+      ipAddress: auditLogs.ipAddress,
+      userAgent: auditLogs.userAgent,
+      userId: auditLogs.userId,
+      sysUserEmail: systemUsers.email,
+      empFirstName: employees.firstName,
+      empLastName: employees.lastName,
+    })
+    .from(auditLogs)
+    .leftJoin(systemUsers, eq(systemUsers.id, auditLogs.userId))
+    .leftJoin(employees, eq(employees.id, systemUsers.employeeId))
+    .where(whereClause ?? sql`true`)
+    .orderBy(desc(auditLogs.createdAt))
     .limit(500);
 
-  if (params.userId) query = query.eq('user_id', params.userId);
-  if (params.tableName) query = query.eq('table_name', params.tableName);
-  if (params.action) query = query.eq('action', params.action);
-  if (params.recordId) query = query.eq('record_id', params.recordId);
-  if (params.dateFrom) query = query.gte('created_at', params.dateFrom);
-  if (params.dateTo) query = query.lte('created_at', params.dateTo + 'T23:59:59Z');
-
-  const { data, error } = await query;
-  if (error) throw new Error(`Failed to fetch audit logs: ${error.message}`);
-
-  return (data ?? []).map((row) => {
-    const sysUser = Array.isArray(row.system_users) ? row.system_users[0] : row.system_users;
-    const emp = sysUser
-      ? Array.isArray((sysUser as Record<string, unknown>)['employees'])
-        ? ((sysUser as Record<string, unknown>)['employees'] as unknown[])[0]
-        : (sysUser as Record<string, unknown>)['employees']
-      : null;
-
-    let userName: string | null = null;
-    if (emp) {
-      const e = emp as { first_name: string; last_name: string };
-      userName = `${e.first_name} ${e.last_name}`;
-    }
+  return rows.map((row) => {
+    const userName =
+      row.empFirstName && row.empLastName ? `${row.empFirstName} ${row.empLastName}` : null;
 
     return {
-      id: row.id as string,
-      timestamp: row.created_at as string,
+      id: row.id,
+      timestamp: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
       userName,
-      userEmail: sysUser ? ((sysUser as Record<string, unknown>)['email'] as string) : null,
-      action: row.action as string,
-      tableName: row.table_name as string,
-      recordId: row.record_id as string | null,
-      oldValues: row.old_values as Record<string, unknown> | null,
-      newValues: row.new_values as Record<string, unknown> | null,
-      ipAddress: row.ip_address as string | null,
-      userAgent: row.user_agent as string | null,
+      userEmail: row.sysUserEmail ?? null,
+      action: row.action,
+      tableName: row.tableName,
+      recordId: row.recordId,
+      oldValues: row.oldValues as Record<string, unknown> | null,
+      newValues: row.newValues as Record<string, unknown> | null,
+      ipAddress: row.ipAddress,
+      userAgent: row.userAgent,
     };
   });
 }
