@@ -1,5 +1,6 @@
--- Drops everything in the public schema. Safe for a fresh Supabase project.
--- DO NOT run this against a database with real data.
+-- Drops everything in the public schema AND the drizzle migration tracker.
+-- Safe for a fresh Supabase project. DO NOT run this against a database with real data.
+DROP SCHEMA IF EXISTS drizzle CASCADE;
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO postgres;

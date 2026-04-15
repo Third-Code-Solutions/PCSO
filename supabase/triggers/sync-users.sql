@@ -27,7 +27,7 @@ ALTER TABLE public.system_users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can read own system_user row" ON public.system_users;
 CREATE POLICY "Users can read own system_user row"
   ON public.system_users FOR SELECT
-  USING (auth.uid() = auth_id);
+  USING (auth.uid()::text = auth_uid);
 
 -- ─── 2. Trigger function ─────────────────────────────────────────────────────
 
@@ -69,9 +69,9 @@ BEGIN
 
   -- Insert the system_users row. On conflict (e.g. re-running migration)
   -- update the mutable fields so the record stays in sync.
-  INSERT INTO public.system_users (auth_id, email, role, office_id, employee_id)
-  VALUES (NEW.id, NEW.email, _role, _office_id, _employee_id)
-  ON CONFLICT (auth_id) DO UPDATE
+  INSERT INTO public.system_users (auth_uid, email, role, office_id, employee_id)
+  VALUES (NEW.id::text, NEW.email, _role, _office_id, _employee_id)
+  ON CONFLICT (auth_uid) DO UPDATE
     SET
       email       = EXCLUDED.email,
       role        = EXCLUDED.role,
@@ -121,7 +121,7 @@ BEGIN
       last_sign_in = NEW.last_sign_in_at,
       email        = NEW.email, -- keep email in sync in case it changes
       updated_at   = now()
-    WHERE auth_id = NEW.id;
+    WHERE auth_uid = NEW.id::text;
   END IF;
 
   RETURN NEW;
