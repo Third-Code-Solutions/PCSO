@@ -1,0 +1,78 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  branch-naming:
+    name: Check Branch Name Convention
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        env:
+          # Safe: assigning context expression to env var, then reading $BRANCH_NAME
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          echo "Branch: $BRANCH_NAME"
+          if echo "$BRANCH_NAME" | grep -qE '^feature/phase-[0-9]+-[a-z0-9-]+$|^hotfix/[a-z0-9-]+$|^release/[0-9]+\.[0-9]+\.[0-9]+$|^chore/[a-z0-9-]+$|^docs/[a-z0-9-]+$'; then
+            echo "Branch name is valid."
+          else
+            echo "ERROR: Branch '$BRANCH_NAME' does not follow the naming convention."
+            echo ""
+            echo "Allowed patterns:"
+            echo "  feature/phase-NN-description   (e.g., feature/phase-15-cicd-pipeline)"
+            echo "  hotfix/description             (e.g., hotfix/fix-payroll-rounding)"
+            echo "  release/X.Y.Z                  (e.g., release/1.0.0)"
+            echo "  chore/description              (e.g., chore/update-deps)"
+            echo "  docs/description               (e.g., docs/add-runbook)"
+            exit 1
+          fi
+
+  pr-title:
+    name: Check PR Title Convention
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title follows Conventional Commits
+        env:
+          # Safe: assigning context expression to env var, then reading $PR_TITLE
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Checking PR title..."
+          PATTERN='^(feat|fix|refactor|docs|test|chore|perf|ci|style|build|revert)(\(([a-z0-9-]|phase-[0-9]+)+\))?: .{1,100}$'
+          if echo "$PR_TITLE" | grep -qP "$PATTERN"; then
+            echo "PR title is valid."
+          else
+            echo "ERROR: PR title does not follow Conventional Commits format."
+            echo ""
+            echo "Format: <type>(<scope>): <subject>"
+            echo ""
+            echo "Allowed types: feat, fix, refactor, docs, test, chore, perf, ci, style, build, revert"
+            echo "Scope examples: phase-15, employees, payroll, auth"
+            echo "Subject: max 100 characters"
+            echo ""
+            echo "Examples:"
+            echo "  feat(phase-15): add CI/CD pipeline with GitHub Actions"
+            echo "  fix(payroll): correct GSIS deduction rounding"
+            echo "  docs: update deployment runbook"
+            exit 1
+          fi
+
+  size-check:
+    name: Check PR Size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Count changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | wc -l)
+          echo "Files changed: $CHANGED"
+          if [ "$CHANGED" -gt 50 ]; then
+            echo "WARNING: This PR changes $CHANGED files. Consider splitting into smaller PRs for easier review."
+          fi

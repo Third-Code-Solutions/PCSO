@@ -1,0 +1,69 @@
+version: 2
+
+updates:
+  # npm dependencies
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Manila
+    open-pull-requests-limit: 10
+    reviewers:
+      - devops-team
+    labels:
+      - dependencies
+      - automated
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+      include: scope
+    groups:
+      # Keep Radix UI components together
+      radix-ui:
+        patterns:
+          - '@radix-ui/*'
+      # Keep Sentry packages together
+      sentry:
+        patterns:
+          - '@sentry/*'
+      # Keep Supabase packages together
+      supabase:
+        patterns:
+          - '@supabase/*'
+      # Keep TanStack packages together
+      tanstack:
+        patterns:
+          - '@tanstack/*'
+      # Keep testing tooling together
+      testing:
+        patterns:
+          - '@playwright/test'
+          - 'vitest'
+          - '@vitejs/*'
+    ignore:
+      # Pin Next.js major version; upgrade manually
+      - dependency-name: next
+        update-types: ['version-update:semver-major']
+      # Pin React major version; upgrade manually
+      - dependency-name: react
+        update-types: ['version-update:semver-major']
+      - dependency-name: react-dom
+        update-types: ['version-update:semver-major']
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Manila
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+      - automated
+    commit-message:
+      prefix: ci

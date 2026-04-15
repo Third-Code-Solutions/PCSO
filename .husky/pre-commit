@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run lint-staged (runs ESLint + Prettier on staged files)
+npx lint-staged
+
+# Run TypeScript type check across the entire project
+# (lint-staged only checks staged files; tsc needs the full project graph)
+echo "Running TypeScript type check..."
+npm run type-check

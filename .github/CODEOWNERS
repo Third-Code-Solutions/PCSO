@@ -1,0 +1,50 @@
+# Senate HRIS — Code Owners
+# Each line assigns ownership to a file or directory pattern.
+# Owners are automatically requested as reviewers on pull requests.
+# Format: <pattern> <owner> [<owner> ...]
+# Ref: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback — all unmatched files require review from the lead maintainer
+* @senate-hris/maintainers
+
+# CI/CD and GitHub configuration — DevOps team required
+.github/ @senate-hris/devops @senate-hris/maintainers
+
+# Database schema and migrations — reviewed by DBA + maintainers
+src/lib/db/ @senate-hris/dba @senate-hris/maintainers
+drizzle/ @senate-hris/dba @senate-hris/maintainers
+drizzle.config.ts @senate-hris/dba @senate-hris/maintainers
+supabase/ @senate-hris/dba @senate-hris/maintainers
+
+# Authentication and authorization — security-sensitive; requires security review
+src/lib/auth/ @senate-hris/security @senate-hris/maintainers
+src/middleware.ts @senate-hris/security @senate-hris/maintainers
+
+# Payroll computation engine — high-stakes; requires payroll lead + maintainer
+src/lib/payroll/ @senate-hris/payroll-lead @senate-hris/maintainers
+src/app/(dashboard)/payroll/ @senate-hris/payroll-lead @senate-hris/maintainers
+
+# Government compliance computations (GSIS, PhilHealth, Pag-IBIG, BIR)
+src/lib/utils/government-rates.ts @senate-hris/payroll-lead @senate-hris/maintainers
+src/lib/utils/deductions.ts @senate-hris/payroll-lead @senate-hris/maintainers
+src/lib/utils/tax.ts @senate-hris/payroll-lead @senate-hris/maintainers
+
+# Audit log — must not be modified without maintainer approval
+src/lib/audit.ts @senate-hris/maintainers
+src/lib/audit/ @senate-hris/maintainers
+
+# Environment and configuration
+.env.example @senate-hris/devops @senate-hris/maintainers
+next.config.mjs @senate-hris/maintainers
+
+# Sentry configuration — observability
+sentry.client.config.ts @senate-hris/devops @senate-hris/maintainers
+sentry.server.config.ts @senate-hris/devops @senate-hris/maintainers
+sentry.edge.config.ts @senate-hris/devops @senate-hris/maintainers
+instrumentation.ts @senate-hris/devops @senate-hris/maintainers
+
+# Documentation
+docs/ @senate-hris/maintainers
+
+# E2E tests
+e2e/ @senate-hris/qa @senate-hris/maintainers

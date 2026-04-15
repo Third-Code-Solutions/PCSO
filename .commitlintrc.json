@@ -1,0 +1,32 @@
+{
+  "extends": ["@commitlint/config-conventional"],
+  "rules": {
+    "type-enum": [
+      2,
+      "always",
+      [
+        "feat",
+        "fix",
+        "refactor",
+        "docs",
+        "test",
+        "chore",
+        "perf",
+        "ci",
+        "style",
+        "build",
+        "revert"
+      ]
+    ],
+    "scope-case": [2, "always", "lower-case"],
+    "scope-pattern": [
+      2,
+      "always",
+      "^(phase-\\d{2}|[a-z][a-z0-9-]*)$"
+    ],
+    "subject-max-length": [2, "always", 100],
+    "subject-case": [0],
+    "body-max-line-length": [1, "always", 200],
+    "header-max-length": [2, "always", 120]
+  }
+}
