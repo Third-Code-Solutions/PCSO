@@ -16,14 +16,25 @@ export function PhilhealthRateForm() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setPending(true);
     const fd = new FormData(e.currentTarget);
+    const effectiveDate = fd.get('effectiveDate') as string;
+    const employeeRate = fd.get('employeeRate') as string;
+    const employerRate = fd.get('employerRate') as string;
 
+    if (!window.confirm(
+      `Insert a new PhilHealth rate effective ${effectiveDate}?\n\n` +
+        `Employee: ${employeeRate} · Employer: ${employerRate}\n\n` +
+        'This row is permanent and affects all payroll periods on or after this date.',
+    )) {
+      return;
+    }
+
+    setPending(true);
     try {
       await createPhilhealthRate({
-        effectiveDate: fd.get('effectiveDate') as string,
-        employeeRate: fd.get('employeeRate') as string,
-        employerRate: fd.get('employerRate') as string,
+        effectiveDate,
+        employeeRate,
+        employerRate,
         minMsalary: fd.get('minMsalary') as string,
         maxMsalary: fd.get('maxMsalary') as string,
         minPremium: fd.get('minPremium') as string,

@@ -1,7 +1,10 @@
 /**
- * /performance/ipcrf — Employee's IPCRF list
+ * /performance/ipcrf — IPCRF list
  *
- * Employee self-service: all personal IPCRF records across periods.
+ * Dual-mode:
+ *   - HR / admin / viewer: paginated list of every employee's IPCRF,
+ *     filterable by period + status, with inline approve/disapprove.
+ *   - employee_self_service: their own IPCRF records across all cycles.
  */
 
 import Link from 'next/link';
@@ -9,13 +12,19 @@ import { requireAuth } from '@/lib/auth/guards';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Badge } from '@/components/ui/badge';
 import { RatingBadge } from '@/components/performance/rating-badge';
-import { getMyPerformanceRatings } from '../queries';
+import {
+  getMyPerformanceRatings,
+  getAllIpcrfPaginated,
+  getPerformancePeriods,
+} from '../queries';
 import type { AdjectivalRating } from '@/lib/constants/performance';
 import { ChevronRightIcon, ClipboardListIcon } from 'lucide-react';
 import type { Metadata } from 'next';
+import { hasPermission } from '@/lib/auth/permissions';
+import { ApprovalButtons } from './_client';
 
 export const metadata: Metadata = {
-  title: 'My IPCRF',
+  title: 'IPCRF',
 };
 
 const STATUS_BADGE: Record<string, 'info' | 'warning' | 'success' | 'muted' | 'destructive'> = {
@@ -26,68 +35,254 @@ const STATUS_BADGE: Record<string, 'info' | 'warning' | 'success' | 'muted' | 'd
   disapproved: 'destructive',
 };
 
-export default async function MyIpcrfPage() {
-  const user = await requireAuth();
+const STATUS_FILTERS = ['all', 'draft', 'submitted', 'reviewed', 'approved', 'disapproved'];
+const PAGE_SIZE = 25;
 
-  if (!user.employeeId) {
+interface Props {
+  searchParams: Promise<{ page?: string; status?: string; period?: string; q?: string }>;
+}
+
+export default async function IpcrfListPage({ searchParams }: Props) {
+  const user = await requireAuth();
+  const params = await searchParams;
+  const isHr = hasPermission(user.role, 'performance', 'edit');
+
+  if (!isHr) {
+    if (!user.employeeId) {
+      return (
+        <main className="mx-auto max-w-5xl px-4 py-6">
+          <div className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground">
+            <p className="text-sm">No employee record linked to your account.</p>
+            <p className="text-xs">Contact HR to resolve this.</p>
+          </div>
+        </main>
+      );
+    }
+    const ratings = await getMyPerformanceRatings(user.employeeId);
+    const ipcrf = ratings.filter((r) => r.ratingType === 'ipcrf');
     return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground">
-        <p className="text-sm">No employee record linked to your account.</p>
-        <p className="text-xs">Contact HR to resolve this.</p>
-      </div>
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        <PageHeader
+          title="My IPCRF"
+          description="Individual Performance Commitment and Review Form — all cycles."
+          breadcrumbs={[
+            { label: 'Dashboard', href: '/dashboard' },
+            { label: 'Performance', href: '/performance' },
+            { label: 'My IPCRF' },
+          ]}
+        />
+        {ipcrf.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed">
+            <ClipboardListIcon className="h-10 w-10 text-muted-foreground/40" />
+            <div className="text-center">
+              <p className="text-sm font-medium text-muted-foreground">
+                No IPCRF records yet
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground/70">
+                HR will create your IPCRF when the rating cycle opens.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40">
+                <tr>
+                  {['Period', 'KRAs', 'Final Rating', 'Status', ''].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {ipcrf.map((r) => (
+                  <tr key={r.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="font-semibold text-foreground">{r.periodLabel}</span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {r.kras ? r.kras.length : 0} KRA
+                      {(r.kras?.length ?? 0) !== 1 ? 's' : ''}
+                    </td>
+                    <td className="px-4 py-3">
+                      {r.status === 'approved' ? (
+                        <RatingBadge
+                          adjectival={r.adjectivalRating as AdjectivalRating}
+                          numerical={parseFloat(r.numericalRating)}
+                          size="sm"
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">Pending</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={STATUS_BADGE[r.status] ?? 'muted'}>
+                        {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/performance/ipcrf/${r.id}`}
+                        className="inline-flex items-center gap-1 text-xs text-senate-navy hover:underline"
+                      >
+                        View <ChevronRightIcon className="h-3 w-3" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </main>
     );
   }
 
-  const ratings = await getMyPerformanceRatings(user.employeeId);
-  const ipcrf = ratings.filter((r) => r.ratingType === 'ipcrf');
+  const page = Math.max(1, Number(params.page ?? 1) || 1);
+  const statusFilter = params.status && params.status !== 'all' ? params.status : undefined;
+  const periodFilter = params.period && params.period !== 'all' ? params.period : undefined;
+  const q = params.q?.trim() || undefined;
+
+  const [periods, { rows, total }] = await Promise.all([
+    getPerformancePeriods(),
+    getAllIpcrfPaginated(page, PAGE_SIZE, { status: statusFilter, periodId: periodFilter, q }),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pendingApproval = rows.filter((r) => r.status === 'submitted').length;
+
+  function buildHref(params: Record<string, string | number | undefined>): string {
+    const sp = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== 'all') sp.set(k, String(v));
+    });
+    const qs = sp.toString();
+    return qs ? `/performance/ipcrf?${qs}` : '/performance/ipcrf';
+  }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6">
+    <main className="mx-auto max-w-7xl px-4 py-6">
       <PageHeader
-        title="My IPCRF"
-        description="Individual Performance Commitment and Review Form — all cycles."
+        title="IPCRF — All Employees"
+        description="Individual Performance Commitment and Review Form submissions."
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },
           { label: 'Performance', href: '/performance' },
-          { label: 'My IPCRF' },
+          { label: 'IPCRF' },
         ]}
       />
 
-      {ipcrf.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed">
-          <ClipboardListIcon className="h-10 w-10 text-muted-foreground/40" />
-          <div className="text-center">
-            <p className="text-sm font-medium text-muted-foreground">No IPCRF records yet</p>
-            <p className="mt-0.5 text-xs text-muted-foreground/70">
-              HR will create your IPCRF when the rating cycle opens.
-            </p>
-          </div>
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total</p>
+          <p className="text-xl font-bold text-senate-navy">{total}</p>
+        </div>
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+            Pending Approval
+          </p>
+          <p className="text-xl font-bold text-amber-600">{pendingApproval}</p>
+        </div>
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+            Approved (page)
+          </p>
+          <p className="text-xl font-bold text-emerald-600">
+            {rows.filter((r) => r.status === 'approved').length}
+          </p>
+        </div>
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+            Rejected (page)
+          </p>
+          <p className="text-xl font-bold text-destructive">
+            {rows.filter((r) => r.status === 'disapproved').length}
+          </p>
+        </div>
+      </div>
+
+      <form
+        method="GET"
+        className="mb-4 flex flex-wrap items-center gap-2 text-sm"
+        action="/performance/ipcrf"
+      >
+        <input
+          type="text"
+          name="q"
+          defaultValue={q ?? ''}
+          placeholder="Search name or employee #"
+          className="h-9 w-56 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-senate-navy"
+        />
+        <select
+          name="period"
+          defaultValue={periodFilter ?? 'all'}
+          className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+        >
+          <option value="all">All periods</option>
+          {periods.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <select
+          name="status"
+          defaultValue={statusFilter ?? 'all'}
+          className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+        >
+          {STATUS_FILTERS.map((s) => (
+            <option key={s} value={s}>
+              {s === 'all' ? 'All statuses' : s.charAt(0).toUpperCase() + s.slice(1)}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          className="rounded-md bg-senate-navy px-3 py-1.5 text-xs font-medium text-senate-cream hover:bg-senate-navy-light transition-colors"
+        >
+          Filter
+        </button>
+      </form>
+
+      {rows.length === 0 ? (
+        <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
+          No IPCRF submissions match the filters.
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/40">
               <tr>
-                {['Period', 'KRAs', 'Final Rating', 'Status', ''].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    {h}
-                  </th>
-                ))}
+                {['Employee', 'Office', 'Period', 'KRAs', 'Rating', 'Status', 'Action'].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      {h}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody className="divide-y">
-              {ipcrf.map((r) => (
-                <tr key={r.id} className="group hover:bg-muted/20 transition-colors">
-                  <td className="px-4 py-3">
-                    <span className="font-semibold text-foreground">{r.periodLabel}</span>
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-3 py-2.5">
+                    <div className="font-medium text-foreground">{r.employeeName}</div>
+                    <div className="text-xs text-muted-foreground">{r.employeeNo}</div>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {r.kras ? r.kras.length : 0} KRA{r.kras?.length !== 1 ? 's' : ''}
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                    {r.officeName ?? '—'}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5 font-medium text-xs">{r.periodLabel}</td>
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                    {r.kras?.length ?? 0}
+                  </td>
+                  <td className="px-3 py-2.5">
                     {r.status === 'approved' ? (
                       <RatingBadge
                         adjectival={r.adjectivalRating as AdjectivalRating}
@@ -95,26 +290,57 @@ export default async function MyIpcrfPage() {
                         size="sm"
                       />
                     ) : (
-                      <span className="text-xs text-muted-foreground italic">Pending rating</span>
+                      <span className="text-xs text-muted-foreground italic">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <Badge variant={STATUS_BADGE[r.status] ?? 'muted'}>
                       {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/performance/ipcrf/${r.id}`}
-                      className="inline-flex items-center gap-1 text-xs text-senate-navy hover:underline"
-                    >
-                      View <ChevronRightIcon className="h-3 w-3" />
-                    </Link>
+                  <td className="px-3 py-2.5 text-right">
+                    <ApprovalButtons ratingId={r.id} status={r.status} />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            Page {page} of {totalPages} · {total} result{total !== 1 ? 's' : ''}
+          </span>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link
+                href={buildHref({
+                  page: page - 1,
+                  status: statusFilter,
+                  period: periodFilter,
+                  q,
+                })}
+                className="rounded-md border px-3 py-1 hover:bg-muted/40"
+              >
+                Previous
+              </Link>
+            )}
+            {page < totalPages && (
+              <Link
+                href={buildHref({
+                  page: page + 1,
+                  status: statusFilter,
+                  period: periodFilter,
+                  q,
+                })}
+                className="rounded-md border px-3 py-1 hover:bg-muted/40"
+              >
+                Next
+              </Link>
+            )}
+          </div>
         </div>
       )}
     </main>

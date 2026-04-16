@@ -67,7 +67,7 @@ export const permissionMatrix: PermissionMatrix = {
     delete: ['super_admin'], // soft-delete only (CONVENTIONS.md rule 2)
     approve: ['super_admin', 'hr_admin'],
     export: ['super_admin', 'hr_admin'],
-    process: [],
+    process: ['super_admin', 'hr_admin'],
   },
 
   // ── plantilla ─────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ export const permissionMatrix: PermissionMatrix = {
     delete: ['super_admin'],
     approve: ['super_admin'],
     export: ['super_admin', 'hr_admin'],
-    process: [],
+    process: ['super_admin', 'hr_admin'],
   },
 
   // ── attendance ────────────────────────────────────────────────────────────
@@ -87,12 +87,17 @@ export const permissionMatrix: PermissionMatrix = {
       roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer', 'employee_self_service'],
       selfOnly: SELF_ONLY,
     },
-    create: ['super_admin', 'hr_admin'],
+    // employee_self_service may clock in/out (self-only). Permission helpers
+    // must enforce the self-only constraint at the call site.
+    create: {
+      roles: ['super_admin', 'hr_admin', 'employee_self_service'],
+      selfOnly: SELF_ONLY,
+    },
     edit: ['super_admin', 'hr_admin'],
     delete: ['super_admin'],
     approve: ['super_admin', 'hr_admin', 'leave_approver'],
     export: ['super_admin', 'hr_admin'],
-    process: [],
+    process: ['super_admin', 'hr_admin'],
   },
 
   // ── leave ─────────────────────────────────────────────────────────────────
@@ -107,7 +112,7 @@ export const permissionMatrix: PermissionMatrix = {
     delete: ['super_admin'],
     approve: ['super_admin', 'hr_admin', 'leave_approver'],
     export: ['super_admin', 'hr_admin'],
-    process: [],
+    process: ['super_admin', 'hr_admin'],
   },
 
   // ── payroll ───────────────────────────────────────────────────────────────
@@ -144,7 +149,7 @@ export const permissionMatrix: PermissionMatrix = {
     delete: ['super_admin'],
     approve: ['super_admin', 'hr_admin'],
     export: ['super_admin', 'hr_admin'],
-    process: [],
+    process: ['super_admin', 'hr_admin'],
   },
 
   // ── saln (Statement of Assets, Liabilities, and Net Worth) ───────────────
@@ -160,7 +165,7 @@ export const permissionMatrix: PermissionMatrix = {
     delete: ['super_admin'],
     approve: ['super_admin'],
     export: ['super_admin'],
-    process: [],
+    process: ['super_admin'],
   },
 
   // ── reports ───────────────────────────────────────────────────────────────
@@ -171,7 +176,7 @@ export const permissionMatrix: PermissionMatrix = {
     delete: ['super_admin'],
     approve: ['super_admin'],
     export: ['super_admin', 'hr_admin', 'payroll_admin'],
-    process: [],
+    process: ['super_admin'],
   },
 
   // ── admin (system config, user management) ────────────────────────────────

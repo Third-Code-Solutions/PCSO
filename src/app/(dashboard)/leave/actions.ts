@@ -131,6 +131,29 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
     throw new Error(`Leave type '${parsed.leaveTypeCode}' not found in reference table.`);
   }
 
+  // -----------------------------------------------------------------------
+  // Overlap guard — prevent double-booking for the same employee.
+  // Any pending/approved leave that intersects the requested range blocks.
+  // Cancelled / disapproved are ignored.
+  // -----------------------------------------------------------------------
+  const { data: overlapping } = await supabase
+    .from('leave_applications')
+    .select('id, date_from, date_to, status')
+    .eq('employee_id', parsed.employeeId)
+    .in('status', ['pending', 'approved'])
+    .lte('date_from', parsed.endDate)
+    .gte('date_to', parsed.startDate)
+    .is('deleted_at', null)
+    .limit(1);
+
+  if (overlapping && overlapping.length > 0) {
+    const conflict = overlapping[0]!;
+    throw new Error(
+      `Overlap: you already have a ${String(conflict.status)} leave from ` +
+        `${String(conflict.date_from)} to ${String(conflict.date_to)}.`,
+    );
+  }
+
   // For accrued leave types (VL, SL), validate balance and deduct atomically
   const isAccruedLeave = leaveTypeRef.code === 'VL' || leaveTypeRef.code === 'SL';
   const currentYear = new Date().getFullYear();
@@ -692,7 +715,8 @@ export interface AccrualSummary {
  */
 export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSummary> {
   const parsed = AccrueMonthlyCreditsSchema.parse(input);
-  const user = await requirePermission('leave', 'process');
+  // `process` permission is empty for leave; approvers (hr_admin, super_admin) run accrual.
+  const user = await requirePermission('leave', 'approve');
   const supabase = await createServerClient();
 
   const now = new Date();
@@ -830,6 +854,142 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
   revalidatePath('/leave/credits/admin');
 
   return summary;
+}
+
+// ---------------------------------------------------------------------------
+// Action: adjustLeaveCredits (HR admin manual correction)
+// ---------------------------------------------------------------------------
+
+import { z } from 'zod';
+
+const AdjustLeaveCreditsSchema = z.object({
+  employeeId: z.string().uuid('Invalid employee ID.'),
+  year: z.number().int().min(2000).max(2100),
+  leaveTypeCode: z.enum(['VL', 'SL']),
+  delta: z
+    .number()
+    .refine((v) => v !== 0, 'Adjustment cannot be zero.')
+    .refine((v) => Math.abs(v) <= 200, 'Adjustment must be within +/- 200 days.'),
+  reason: z
+    .string()
+    .min(5, 'Please provide a reason (min 5 characters) for audit.')
+    .max(500),
+});
+
+export interface AdjustLeaveCreditsResult {
+  leaveCreditId: string;
+  previousBalance: number;
+  newBalance: number;
+}
+
+/**
+ * Manual, audited adjustment of an employee's VL or SL balance.
+ * Guarantees: only HR admin / super admin; balance cannot go negative;
+ * delta and reason are written to audit_logs.
+ */
+export async function adjustLeaveCredits(
+  input: unknown,
+): Promise<AdjustLeaveCreditsResult> {
+  const parsed = AdjustLeaveCreditsSchema.parse(input);
+  const user = await requirePermission('leave', 'approve');
+  const supabase = await createServerClient();
+
+  const { data: leaveTypeRef, error: ltError } = await supabase
+    .from('leave_types')
+    .select('id, code')
+    .eq('code', parsed.leaveTypeCode)
+    .single();
+
+  if (ltError || !leaveTypeRef) {
+    throw new Error(`Leave type '${parsed.leaveTypeCode}' not found.`);
+  }
+
+  const { data: creditRow } = await supabase
+    .from('leave_credits')
+    .select('id, balance, used_credits, total_credits, carry_over')
+    .eq('employee_id', parsed.employeeId)
+    .eq('leave_type_id', leaveTypeRef.id)
+    .eq('year', parsed.year)
+    .single();
+
+  const previousBalance = creditRow ? Number(creditRow.balance) : 0;
+  const newBalance = previousBalance + parsed.delta;
+
+  if (newBalance < 0) {
+    throw new Error(
+      `Adjustment would drive balance negative (${previousBalance.toFixed(3)} + ${parsed.delta.toFixed(3)} = ${newBalance.toFixed(3)}).`,
+    );
+  }
+
+  let creditId: string;
+  if (creditRow) {
+    const { error: updateError } = await supabase
+      .from('leave_credits')
+      .update({
+        balance: String(newBalance),
+        total_credits:
+          parsed.delta > 0
+            ? String(Number(creditRow.total_credits ?? 0) + parsed.delta)
+            : String(creditRow.total_credits ?? 0),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', creditRow.id);
+    if (updateError) throw new Error(`Adjustment failed: ${updateError.message}`);
+    creditId = String(creditRow.id);
+  } else {
+    const { data: inserted, error: insertError } = await supabase
+      .from('leave_credits')
+      .insert({
+        employee_id: parsed.employeeId,
+        leave_type_id: leaveTypeRef.id,
+        year: parsed.year,
+        balance: String(newBalance),
+        total_credits: String(Math.max(0, parsed.delta)),
+        used_credits: '0',
+        carry_over: '0',
+      })
+      .select('id')
+      .single();
+    if (insertError || !inserted) {
+      throw new Error(`Failed to seed leave_credits row: ${insertError?.message}`);
+    }
+    creditId = String(inserted.id);
+  }
+
+  await writeAuditLog(supabase, {
+    userId: user.id,
+    action: 'adjust',
+    tableName: 'leave_credits',
+    recordId: creditId,
+    oldValues: { balance: previousBalance },
+    newValues: {
+      balance: newBalance,
+      delta: parsed.delta,
+      leaveTypeCode: parsed.leaveTypeCode,
+      year: parsed.year,
+      reason: parsed.reason,
+    },
+  });
+
+  try {
+    await notifyEmployee(parsed.employeeId, {
+      type: 'generic',
+      title: 'Leave credits adjusted',
+      body: `Your ${parsed.leaveTypeCode} balance was adjusted by ${
+        parsed.delta > 0 ? '+' : ''
+      }${parsed.delta.toFixed(3)} day(s). New balance: ${newBalance.toFixed(3)}.`,
+      actionUrl: '/leave/credits',
+      entityType: 'leave_credits',
+      entityId: creditId,
+    });
+  } catch (err) {
+    console.error('[leave/actions] adjustLeaveCredits notification failed:', err);
+  }
+
+  revalidatePath('/leave/credits');
+  revalidatePath('/leave/credits/admin');
+
+  return { leaveCreditId: creditId, previousBalance, newBalance };
 }
 
 // Suppress unused import warnings for constants used via type only

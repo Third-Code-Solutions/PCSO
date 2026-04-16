@@ -747,3 +747,410 @@ export async function getPerformanceAnalytics(
     eligibleForStepIncrement,
   };
 }
+
+// ─── HR Dashboard KPIs ────────────────────────────────────────────────────────
+
+export interface PerformanceDashboardKpis {
+  activeCycles: number;
+  totalRatings: number;
+  pendingApprovals: number;
+  approvedThisYear: number;
+  eligibleForIncrement: number;
+  pendingIncrements: number;
+  stepIncrementsDueThisYear: number;
+}
+
+export async function getPerformanceDashboardKpis(): Promise<PerformanceDashboardKpis> {
+  const supabase = await createServerClient();
+  const year = new Date().getFullYear();
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+
+  const [
+    activeCyclesRes,
+    totalRatingsRes,
+    pendingRes,
+    approvedYearRes,
+    pendingIncrementsRes,
+    dueThisYearRes,
+  ] = await Promise.all([
+    supabase
+      .from('performance_periods')
+      .select('id', { count: 'exact', head: true })
+      .neq('status', 'closed'),
+    supabase.from('performance_ratings').select('id', { count: 'exact', head: true }),
+    supabase
+      .from('performance_ratings')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['submitted', 'reviewed']),
+    supabase
+      .from('performance_ratings')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'approved')
+      .gte('created_at', yearStart)
+      .lte('created_at', `${yearEnd}T23:59:59`),
+    supabase
+      .from('step_increments')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['pending', 'approved']),
+    supabase
+      .from('step_increments')
+      .select('id', { count: 'exact', head: true })
+      .gte('effectivity_date', yearStart)
+      .lte('effectivity_date', yearEnd),
+  ]);
+
+  return {
+    activeCycles: activeCyclesRes.count ?? 0,
+    totalRatings: totalRatingsRes.count ?? 0,
+    pendingApprovals: pendingRes.count ?? 0,
+    approvedThisYear: approvedYearRes.count ?? 0,
+    eligibleForIncrement: 0,
+    pendingIncrements: pendingIncrementsRes.count ?? 0,
+    stepIncrementsDueThisYear: dueThisYearRes.count ?? 0,
+  };
+}
+
+// ─── Paginated Periods ────────────────────────────────────────────────────────
+
+export interface PaginatedPeriodsResult {
+  rows: PerformancePeriodRow[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function getPerformancePeriodsPaginated(
+  page: number,
+  limit: number,
+  statusFilter?: string,
+): Promise<PaginatedPeriodsResult> {
+  const supabase = await createServerClient();
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = supabase
+    .from('performance_periods')
+    .select('id, year, semester, date_from, date_to, status, created_at', {
+      count: 'exact',
+    })
+    .order('year', { ascending: false })
+    .order('semester', { ascending: false })
+    .range(from, to);
+
+  if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`Failed to fetch periods: ${error.message}`);
+
+  return {
+    rows: (data ?? []).map((row) => toPeriodRow(row as Record<string, unknown>)),
+    total: count ?? 0,
+    page,
+    limit,
+  };
+}
+
+// ─── Paginated: All IPCRF across employees (HR view) ──────────────────────────
+
+export interface AllIpcrfRow extends PerformanceRatingRow {
+  employeeName: string;
+  employeeNo: string;
+  officeName: string | null;
+}
+
+export interface PaginatedIpcrfResult {
+  rows: AllIpcrfRow[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function getAllIpcrfPaginated(
+  page: number,
+  limit: number,
+  filters: {
+    periodId?: string;
+    status?: string;
+    q?: string;
+  } = {},
+): Promise<PaginatedIpcrfResult> {
+  const supabase = await createServerClient();
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = supabase
+    .from('performance_ratings')
+    .select(
+      `
+      id,
+      employee_id,
+      period_id,
+      rating_type,
+      numerical_rating,
+      adjectival_rating,
+      rated_by,
+      approved_by,
+      status,
+      kras,
+      created_at,
+      performance_periods ( year, semester ),
+      employees!inner ( first_name, last_name, employee_no, offices ( name ) )
+    `,
+      { count: 'exact' },
+    )
+    .eq('rating_type', 'ipcrf')
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (filters.periodId) query = query.eq('period_id', filters.periodId);
+  if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`Failed to fetch IPCRF list: ${error.message}`);
+
+  const mapped = (data ?? []).map((row) => {
+    const period = row.performance_periods as { year?: number; semester?: string } | null;
+    const emp = row.employees as {
+      first_name?: string;
+      last_name?: string;
+      employee_no?: string;
+      offices?: { name?: string } | null;
+    } | null;
+    const periodLabel = period
+      ? makePeriodLabel(Number(period.year), String(period.semester))
+      : 'Unknown';
+    return {
+      ...toRatingRow(row as Record<string, unknown>, periodLabel),
+      employeeName: `${emp?.last_name ?? ''}, ${emp?.first_name ?? ''}`.trim(),
+      employeeNo: String(emp?.employee_no ?? ''),
+      officeName: emp?.offices?.name ?? null,
+    };
+  });
+
+  const q = filters.q?.trim().toLowerCase();
+  const filtered = q
+    ? mapped.filter(
+        (r) =>
+          r.employeeName.toLowerCase().includes(q) || r.employeeNo.toLowerCase().includes(q),
+      )
+    : mapped;
+
+  return { rows: filtered, total: count ?? 0, page, limit };
+}
+
+// ─── Paginated Step Increments ────────────────────────────────────────────────
+
+export interface PaginatedStepIncrementsResult {
+  rows: StepIncrementRow[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function getStepIncrementsPaginated(
+  page: number,
+  limit: number,
+  statusFilter?: string,
+): Promise<PaginatedStepIncrementsResult> {
+  const supabase = await createServerClient();
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = supabase
+    .from('step_increments')
+    .select(
+      `
+      id,
+      employee_id,
+      from_step,
+      to_step,
+      effectivity_date,
+      basis_period_ids,
+      status,
+      approved_by,
+      remarks,
+      created_at,
+      employees ( first_name, last_name, employee_no )
+    `,
+      { count: 'exact' },
+    )
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`Failed to fetch step increments: ${error.message}`);
+
+  const rows: StepIncrementRow[] = (data ?? []).map((row) => {
+    const emp = row.employees as {
+      first_name?: string;
+      last_name?: string;
+      employee_no?: string;
+    } | null;
+    return {
+      id: String(row.id),
+      employeeId: String(row.employee_id),
+      employeeName: `${emp?.last_name ?? ''}, ${emp?.first_name ?? ''}`.trim(),
+      employeeNo: String(emp?.employee_no ?? ''),
+      fromStep: Number(row.from_step),
+      toStep: Number(row.to_step),
+      effectivityDate: String(row.effectivity_date),
+      basisPeriodIds: Array.isArray(row.basis_period_ids)
+        ? (row.basis_period_ids as string[])
+        : [],
+      status: String(row.status ?? 'pending'),
+      approvedBy: typeof row.approved_by === 'string' ? row.approved_by : null,
+      remarks: typeof row.remarks === 'string' ? row.remarks : null,
+      createdAt: String(row.created_at),
+    };
+  });
+
+  return { rows, total: count ?? 0, page, limit };
+}
+
+// ─── Office-Level Analytics ───────────────────────────────────────────────────
+
+export interface OfficeAnalyticsRow {
+  officeId: string | null;
+  officeName: string;
+  totalRatings: number;
+  averageRating: number;
+  outstanding: number;
+  verySatisfactory: number;
+  satisfactory: number;
+  belowSatisfactory: number;
+}
+
+export async function getOfficePerformanceBreakdown(
+  periodId?: string,
+): Promise<OfficeAnalyticsRow[]> {
+  const supabase = await createServerClient();
+
+  let query = supabase
+    .from('performance_ratings')
+    .select(
+      `
+      numerical_rating,
+      adjectival_rating,
+      employees!inner ( office_id, offices ( name ) )
+    `,
+    )
+    .eq('rating_type', 'ipcrf')
+    .eq('status', 'approved');
+
+  if (periodId) query = query.eq('period_id', periodId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Failed to fetch office breakdown: ${error.message}`);
+
+  const byOffice = new Map<
+    string,
+    {
+      officeId: string | null;
+      officeName: string;
+      sum: number;
+      count: number;
+      outstanding: number;
+      verySatisfactory: number;
+      satisfactory: number;
+      belowSatisfactory: number;
+    }
+  >();
+
+  for (const row of data ?? []) {
+    const emp = row.employees as {
+      office_id?: string;
+      offices?: { name?: string } | null;
+    } | null;
+    const officeId = emp?.office_id ?? null;
+    const officeName = emp?.offices?.name ?? 'Unassigned';
+    const key = officeId ?? '__unassigned__';
+    const numerical = parseFloat(String(row.numerical_rating ?? '0'));
+    const adj = String(row.adjectival_rating);
+
+    const existing = byOffice.get(key) ?? {
+      officeId,
+      officeName,
+      sum: 0,
+      count: 0,
+      outstanding: 0,
+      verySatisfactory: 0,
+      satisfactory: 0,
+      belowSatisfactory: 0,
+    };
+
+    existing.sum += numerical;
+    existing.count++;
+    if (adj === 'outstanding') existing.outstanding++;
+    else if (adj === 'very_satisfactory') existing.verySatisfactory++;
+    else if (adj === 'satisfactory') existing.satisfactory++;
+    else existing.belowSatisfactory++;
+
+    byOffice.set(key, existing);
+  }
+
+  return Array.from(byOffice.values())
+    .map((o) => ({
+      officeId: o.officeId,
+      officeName: o.officeName,
+      totalRatings: o.count,
+      averageRating: o.count > 0 ? Math.round((o.sum / o.count) * 1000) / 1000 : 0,
+      outstanding: o.outstanding,
+      verySatisfactory: o.verySatisfactory,
+      satisfactory: o.satisfactory,
+      belowSatisfactory: o.belowSatisfactory,
+    }))
+    .sort((a, b) => b.averageRating - a.averageRating);
+}
+
+// ─── Trend over cycles ────────────────────────────────────────────────────────
+
+export interface CycleTrendRow {
+  periodId: string;
+  periodLabel: string;
+  averageRating: number;
+  totalRatings: number;
+}
+
+export async function getRatingTrend(): Promise<CycleTrendRow[]> {
+  const supabase = await createServerClient();
+
+  const { data, error } = await supabase
+    .from('performance_ratings')
+    .select(
+      `
+      period_id,
+      numerical_rating,
+      performance_periods ( year, semester )
+    `,
+    )
+    .eq('rating_type', 'ipcrf')
+    .eq('status', 'approved');
+
+  if (error) throw new Error(`Failed to fetch rating trend: ${error.message}`);
+
+  const byPeriod = new Map<string, { label: string; sum: number; count: number }>();
+  for (const row of data ?? []) {
+    const period = row.performance_periods as { year?: number; semester?: string } | null;
+    const key = String(row.period_id);
+    const label = period
+      ? makePeriodLabel(Number(period.year), String(period.semester))
+      : 'Unknown';
+    const numerical = parseFloat(String(row.numerical_rating ?? '0'));
+    const existing = byPeriod.get(key) ?? { label, sum: 0, count: 0 };
+    existing.sum += numerical;
+    existing.count++;
+    byPeriod.set(key, existing);
+  }
+
+  return Array.from(byPeriod.entries())
+    .map(([periodId, { label, sum, count }]) => ({
+      periodId,
+      periodLabel: label,
+      averageRating: count > 0 ? Math.round((sum / count) * 1000) / 1000 : 0,
+      totalRatings: count,
+    }))
+    .sort((a, b) => a.periodLabel.localeCompare(b.periodLabel));
+}

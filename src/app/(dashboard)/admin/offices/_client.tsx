@@ -301,6 +301,20 @@ export function OfficesClient({ offices, employees }: OfficesClientProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<OfficeListRow | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+
+  const filteredOffices = offices.filter((o) => {
+    if (typeFilter && o.type !== typeFilter) return false;
+    if (search.trim() === '') return true;
+    const needle = search.trim().toLowerCase();
+    return (
+      o.name.toLowerCase().includes(needle) ||
+      o.code.toLowerCase().includes(needle) ||
+      (o.parentName?.toLowerCase().includes(needle) ?? false) ||
+      (o.headEmployeeName?.toLowerCase().includes(needle) ?? false)
+    );
+  });
 
   function handleCreate() {
     setEditTarget(null);
@@ -334,7 +348,31 @@ export function OfficesClient({ offices, employees }: OfficesClientProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            placeholder="Search name, code, parent, or head…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 w-full sm:w-72"
+          />
+          <Select value={typeFilter || 'all'} onValueChange={(v) => setTypeFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="h-9 w-full sm:w-40">
+              <SelectValue placeholder="Any type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any type</SelectItem>
+              {['committee', 'department', 'office', 'division', 'section'].map((t) => (
+                <SelectItem key={t} value={t} className="capitalize">
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-muted-foreground">
+            {filteredOffices.length} of {offices.length}
+          </span>
+        </div>
         <Button size="sm" onClick={handleCreate}>
           <Plus className="mr-2 h-4 w-4" />
           New Office
@@ -356,14 +394,16 @@ export function OfficesClient({ offices, employees }: OfficesClientProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {offices.length === 0 ? (
+            {filteredOffices.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                  No offices found. Create one to get started.
+                  {offices.length === 0
+                    ? 'No offices found. Create one to get started.'
+                    : 'No offices match your filters.'}
                 </TableCell>
               </TableRow>
             ) : (
-              offices.map((office) => (
+              filteredOffices.map((office) => (
                 <TableRow key={office.id}>
                   <TableCell className="font-medium flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />

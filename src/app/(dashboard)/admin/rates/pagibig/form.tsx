@@ -16,12 +16,20 @@ export function PagibigRateForm() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setPending(true);
     const fd = new FormData(e.currentTarget);
+    const effectiveDate = fd.get('effectiveDate') as string;
 
+    if (!window.confirm(
+      `Insert a new Pag-IBIG rate effective ${effectiveDate}?\n\n` +
+        'This row is permanent and affects all payroll periods on or after this date.',
+    )) {
+      return;
+    }
+
+    setPending(true);
     try {
       await createPagibigRate({
-        effectiveDate: fd.get('effectiveDate') as string,
+        effectiveDate,
         employeeRateLow: fd.get('employeeRateLow') as string,
         employeeRateHigh: fd.get('employeeRateHigh') as string,
         employerRate: fd.get('employerRate') as string,

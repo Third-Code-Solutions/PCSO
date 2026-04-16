@@ -1,7 +1,10 @@
 /**
- * /performance/step-increments — Step Increment Eligibility Tracker
+ * /performance/step-increments — Step Increment Eligibility + Processing
  *
- * Shows all employees eligible for step increment and existing records.
+ * HR admin sees:
+ *   - Summary KPIs (eligible now, pending, implemented)
+ *   - Eligible-employee list with bulk-select + process
+ *   - Paginated list of all step_increment records, filterable by status
  */
 
 import Link from 'next/link';
@@ -9,12 +12,17 @@ import { requirePermission } from '@/lib/auth/guards';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Badge } from '@/components/ui/badge';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { getEligibleEmployeesForStepIncrement, getStepIncrements } from '../queries';
-import { TrendingUpIcon, ChevronRightIcon } from 'lucide-react';
+import {
+  getEligibleEmployeesForStepIncrement,
+  getStepIncrementsPaginated,
+} from '../queries';
+import { ChevronRightIcon, TrendingUpIcon } from 'lucide-react';
 import type { Metadata } from 'next';
+import { EligibleBulkTable } from './_client';
+import { hasPermission } from '@/lib/auth/permissions';
 
 export const metadata: Metadata = {
-  title: 'Step Increment Tracker',
+  title: 'Step Increments',
 };
 
 const STATUS_BADGE: Record<string, 'info' | 'warning' | 'success' | 'muted'> = {
@@ -24,22 +32,38 @@ const STATUS_BADGE: Record<string, 'info' | 'warning' | 'success' | 'muted'> = {
   cancelled: 'muted',
 };
 
-const RULE_LABEL: Record<string, string> = {
-  three_consecutive_vs: '3x VS or Better',
-  two_consecutive_outstanding: '2x Outstanding',
-  none: '—',
-};
+const PAGE_SIZE = 25;
 
-export default async function StepIncrementsPage() {
-  await requirePermission('performance', 'view');
+interface Props {
+  searchParams: Promise<{ page?: string; status?: string }>;
+}
 
-  const [eligible, existing] = await Promise.all([
+export default async function StepIncrementsPage({ searchParams }: Props) {
+  const user = await requirePermission('performance', 'view');
+  const { page: pageRaw, status: statusRaw } = await searchParams;
+  const page = Math.max(1, Number(pageRaw ?? 1) || 1);
+  const statusFilter = statusRaw && statusRaw !== 'all' ? statusRaw : undefined;
+  const canProcess = hasPermission(user.role, 'performance', 'edit');
+
+  const [eligible, { rows: existing, total }] = await Promise.all([
     getEligibleEmployeesForStepIncrement(),
-    getStepIncrements(),
+    getStepIncrementsPaginated(page, PAGE_SIZE, statusFilter),
   ]);
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pendingCount = existing.filter((i) => i.status === 'pending').length;
   const implementedCount = existing.filter((i) => i.status === 'implemented').length;
+
+  const statusFilters = ['all', 'pending', 'approved', 'implemented', 'cancelled'];
+
+  function buildHref(params: Record<string, string | number | undefined>): string {
+    const sp = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== 'all') sp.set(k, String(v));
+    });
+    const qs = sp.toString();
+    return qs ? `/performance/step-increments?${qs}` : '/performance/step-increments';
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
@@ -54,125 +78,63 @@ export default async function StepIncrementsPage() {
         ]}
       />
 
-      {/* Summary cards */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
           { label: 'Eligible Now', value: eligible.length, color: 'text-emerald-600' },
-          { label: 'Pending Processing', value: pendingCount, color: 'text-amber-600' },
+          { label: 'Total (paged)', value: total, color: 'text-foreground' },
+          { label: 'Pending', value: pendingCount, color: 'text-amber-600' },
           { label: 'Implemented', value: implementedCount, color: 'text-senate-navy' },
         ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-xl border bg-card p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{label}</p>
+          <div key={label} className="rounded-xl border bg-card p-3 shadow-sm">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{label}</p>
             <p className={`text-2xl font-bold ${color}`}>{value}</p>
           </div>
         ))}
       </div>
 
-      {/* Eligible employees */}
-      <section className="mb-8">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-          <TrendingUpIcon className="h-4 w-4 text-emerald-600" />
-          Eligible Employees
-        </h2>
+      {canProcess && (
+        <section className="mb-8">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <TrendingUpIcon className="h-4 w-4 text-emerald-600" />
+            Eligible — Process in Bulk
+          </h2>
+          <EligibleBulkTable eligible={eligible} />
+        </section>
+      )}
 
-        {eligible.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-            No employees currently eligible for step increment.
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-xl border">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/40">
-                <tr>
-                  {[
-                    'Employee',
-                    'Position / SG',
-                    'Current Step',
-                    'Office',
-                    'Qualifying Periods',
-                    'Rule',
-                    '',
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {eligible.map((emp) => (
-                  <tr key={emp.employeeId} className="group hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-foreground">{emp.fullName}</div>
-                      <div className="text-xs text-muted-foreground">{emp.employeeNo}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-sm text-foreground truncate max-w-[180px]">
-                        {emp.positionTitle}
-                      </div>
-                      <div className="text-xs text-muted-foreground">SG {emp.salaryGrade}</div>
-                    </td>
-                    <td className="px-4 py-3 font-tabular-nums font-semibold text-senate-navy">
-                      Step {emp.currentStep}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">
-                      {emp.officeName ?? '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {emp.qualifyingPeriods.map((p) => (
-                          <span
-                            key={p}
-                            className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                          >
-                            {p}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant={
-                          emp.triggerRule === 'two_consecutive_outstanding' ? 'success' : 'info'
-                        }
-                        className="text-xs"
-                      >
-                        {RULE_LABEL[emp.triggerRule] ?? emp.triggerRule}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/performance/step-increments/${emp.employeeId}`}
-                        className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium bg-senate-navy text-senate-cream hover:bg-senate-navy-light transition-colors"
-                      >
-                        Process <ChevronRightIcon className="h-3 w-3" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* Existing step increment records */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-foreground">All Step Increment Records</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">Step Increment Records</h2>
+          <div className="flex gap-1 text-xs">
+            {statusFilters.map((f) => {
+              const active = (statusFilter ?? 'all') === f;
+              return (
+                <Link
+                  key={f}
+                  href={buildHref({ status: f })}
+                  className={`rounded-full border px-3 py-1 transition-colors ${
+                    active
+                      ? 'border-senate-navy bg-senate-navy text-senate-cream'
+                      : 'border-border text-muted-foreground hover:bg-muted/40'
+                  }`}
+                >
+                  {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
 
         {existing.length === 0 ? (
           <div className="flex h-24 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-            No step increment records yet.
+            No step increment records for this filter.
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/40">
                 <tr>
-                  {['Employee', 'Step Change', 'Effectivity Date', 'Status', ''].map((h) => (
+                  {['Employee', 'Step Change', 'Effectivity', 'Status', ''].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -196,7 +158,7 @@ export default async function StepIncrementsPage() {
                         Step {inc.toStep}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
                       {new Date(inc.effectivityDate).toLocaleDateString('en-PH', {
                         year: 'numeric',
                         month: 'short',
@@ -211,15 +173,41 @@ export default async function StepIncrementsPage() {
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/performance/step-increments/${inc.employeeId}`}
-                        className="text-xs text-senate-navy hover:underline"
+                        className="inline-flex items-center gap-1 text-xs text-senate-navy hover:underline"
                       >
-                        View
+                        View <ChevronRightIcon className="h-3 w-3" />
                       </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              Page {page} of {totalPages} · {total} record{total !== 1 ? 's' : ''}
+            </span>
+            <div className="flex gap-2">
+              {page > 1 && (
+                <Link
+                  href={buildHref({ page: page - 1, status: statusFilter })}
+                  className="rounded-md border px-3 py-1 hover:bg-muted/40"
+                >
+                  Previous
+                </Link>
+              )}
+              {page < totalPages && (
+                <Link
+                  href={buildHref({ page: page + 1, status: statusFilter })}
+                  className="rounded-md border px-3 py-1 hover:bg-muted/40"
+                >
+                  Next
+                </Link>
+              )}
+            </div>
           </div>
         )}
       </section>

@@ -8,6 +8,8 @@
 import type { Metadata } from 'next';
 import { createServerClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/layouts/page-header';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import { requirePermission } from '@/lib/auth/guards';
 import { OfficesClient } from './_client';
 
 export const metadata: Metadata = {
@@ -127,24 +129,29 @@ async function getEmployeeOptions(): Promise<
 // ---------------------------------------------------------------------------
 
 export default async function AdminOfficesPage() {
+  await requirePermission('admin', 'view');
+
   const [offices, employees] = await Promise.all([
     getOfficeList(),
     getEmployeeOptions(),
   ]);
 
   return (
-    <div>
+    <div className="space-y-6 p-6">
       <PageHeader
         title="Offices"
-        description="Manage Senate offices, committees, departments, and their hierarchy."
+        description={`Manage Senate offices, committees, departments, and their hierarchy. ${offices.length.toLocaleString()} active.`}
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin' },
+          { label: 'Admin', href: '/admin' },
           { label: 'Offices' },
         ]}
       />
 
       <OfficesClient offices={offices} employees={employees} />
+
+      {/* Realtime: re-renders when offices, plantilla, or employees change */}
+      <RealtimeBoundary tables={['offices', 'plantilla_positions', 'employees']} />
     </div>
   );
 }

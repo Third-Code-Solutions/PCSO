@@ -58,14 +58,23 @@ interface LeaveCalendarProps {
   entries: CalendarLeaveEntry[];
   /** Philippine holidays for the displayed year. ISO 8601 date strings. */
   holidays?: { date: string; name: string }[];
+  /** Optional initial month (defaults to today). Server-controlled when set. */
+  initialMonth?: Date;
+  /** Hide the internal prev/next controls if server provides navigation. */
+  hideControls?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function LeaveCalendar({ entries, holidays = [] }: LeaveCalendarProps) {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+export function LeaveCalendar({
+  entries,
+  holidays = [],
+  initialMonth,
+  hideControls = false,
+}: LeaveCalendarProps) {
+  const [currentMonth, setCurrentMonth] = useState(initialMonth ?? new Date());
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -109,26 +118,28 @@ export function LeaveCalendar({ entries, holidays = [] }: LeaveCalendarProps) {
         <h2 className="text-base font-semibold text-senate-cream">
           {format(currentMonth, 'MMMM yyyy')}
         </h2>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-senate-cream hover:bg-senate-navy-light h-8 w-8 p-0"
-            onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
-            aria-label="Previous month"
-          >
-            <ChevronLeftIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-senate-cream hover:bg-senate-navy-light h-8 w-8 p-0"
-            onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-            aria-label="Next month"
-          >
-            <ChevronRightIcon className="h-4 w-4" />
-          </Button>
-        </div>
+        {!hideControls && (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-senate-cream hover:bg-senate-navy-light h-8 w-8 p-0"
+              onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
+              aria-label="Previous month"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-senate-cream hover:bg-senate-navy-light h-8 w-8 p-0"
+              onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+              aria-label="Next month"
+            >
+              <ChevronRightIcon className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Day-of-week headers */}

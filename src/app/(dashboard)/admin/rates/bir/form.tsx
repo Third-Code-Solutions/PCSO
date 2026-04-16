@@ -53,8 +53,20 @@ export function BirTaxTableForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setPending(true);
 
+    if (!effectiveDate) {
+      toast.error('Validation error', { description: 'Effective date is required.' });
+      return;
+    }
+
+    if (!window.confirm(
+      `Insert a new BIR ${periodType.replace('_', '-')} tax table effective ${effectiveDate}?\n\n` +
+        `${brackets.length} bracket(s) will be inserted. This change is permanent and affects all payroll periods on or after this date.`,
+    )) {
+      return;
+    }
+
+    setPending(true);
     try {
       const result = await createBirTaxTableSet({
         effectiveDate,

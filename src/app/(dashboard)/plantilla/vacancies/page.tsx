@@ -11,7 +11,7 @@ import { PageHeader } from '@/components/layouts/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { ArrowRight, TrendingUp, TrendingDown, Minus, FileDown } from 'lucide-react';
 import { getVacancySummary } from '../queries';
 import { cn } from '@/lib/utils/cn';
 
@@ -64,9 +64,17 @@ export default async function VacanciesPage() {
           { label: 'Vacancies' },
         ]}
         actions={
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/plantilla?status=vacant">View All Vacancies</Link>
-          </Button>
+          <>
+            <Button variant="outline" size="sm" asChild>
+              <a href="/api/plantilla/export?status=vacant" download>
+                <FileDown className="mr-2 h-4 w-4" />
+                Export Vacancies CSV
+              </a>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/plantilla?status=vacant">View All Vacancies</Link>
+            </Button>
+          </>
         }
       />
 

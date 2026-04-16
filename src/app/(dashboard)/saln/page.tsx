@@ -103,12 +103,17 @@ export default async function MySalnPage() {
           { label: 'My SALN' },
         ]}
         actions={
-          <Button asChild className="bg-senate-navy text-white hover:bg-senate-navy-light">
-            <Link href="/saln/new">
-              <PlusIcon className="mr-2 h-4 w-4" aria-hidden />
-              File New SALN
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/saln/submissions">View All</Link>
+            </Button>
+            <Button asChild className="bg-senate-navy text-white hover:bg-senate-navy-light">
+              <Link href="/saln/new">
+                <PlusIcon className="mr-2 h-4 w-4" aria-hidden />
+                File New SALN
+              </Link>
+            </Button>
+          </div>
         }
       />
 

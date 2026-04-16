@@ -226,7 +226,12 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
 
 export async function requestOvertime(input: unknown): Promise<{ id: string }> {
   const parsed = OvertimeRequestSchema.parse(input);
-  const user = await requirePermission('attendance', 'create');
+  const user = await requireAuth();
+  const isAdmin = hasPermission(user.role, 'attendance', 'create');
+  const isSelfService = user.role === 'employee_self_service';
+  if (!isAdmin && !isSelfService) {
+    throw new Error('Forbidden: you do not have permission to request overtime.');
+  }
 
   const effectiveEmployeeId = user.employeeId;
   if (!effectiveEmployeeId) {
@@ -303,28 +308,48 @@ export async function approveOvertime(input: unknown): Promise<void> {
     newValues: { decision: parsed.decision, approvedMinutes, comments: parsed.comments },
   });
 
-  // If approved or partial, propagate approved minutes to the attendance_log row
-  if (parsed.decision !== 'denied') {
-    const { data: otRequest } = await supabase
-      .from('overtime_requests')
-      .select('employee_id, date')
-      .eq('id', parsed.overtimeRequestId)
-      .single();
+  // Resolve target employee for the notification + log propagation
+  const { data: otRequest } = await supabase
+    .from('overtime_requests')
+    .select('employee_id, date')
+    .eq('id', parsed.overtimeRequestId)
+    .single();
 
-    if (otRequest) {
-      await db
-        .update(attendanceLogs)
-        .set({
-          overtimeMinutes: approvedMinutes,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(attendanceLogs.employeeId, otRequest.employee_id as string),
-            eq(attendanceLogs.logDate, otRequest.date as string),
-          ),
-        );
-    }
+  // If approved or partial, propagate approved minutes to the attendance_log row
+  if (parsed.decision !== 'denied' && otRequest) {
+    await db
+      .update(attendanceLogs)
+      .set({
+        overtimeMinutes: approvedMinutes,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(attendanceLogs.employeeId, otRequest.employee_id as string),
+          eq(attendanceLogs.logDate, otRequest.date as string),
+        ),
+      );
+  }
+
+  // Notify the requester of the decision
+  if (otRequest) {
+    const { notifyEmployee } = await import('@/lib/notifications');
+    await notifyEmployee(otRequest.employee_id as string, {
+      type: 'attendance_anomaly',
+      title:
+        parsed.decision === 'approved'
+          ? 'Overtime Approved'
+          : parsed.decision === 'partial'
+            ? 'Overtime Partially Approved'
+            : 'Overtime Denied',
+      body:
+        parsed.decision === 'denied'
+          ? `Your OT request for ${otRequest.date} was denied.${parsed.comments ? ` Reason: ${parsed.comments}` : ''}`
+          : `Your OT request for ${otRequest.date} was ${parsed.decision} (${approvedMinutes} min).${parsed.comments ? ` Note: ${parsed.comments}` : ''}`,
+      actionUrl: '/attendance/overtime',
+      entityType: 'overtime_requests',
+      entityId: parsed.overtimeRequestId,
+    });
   }
 
   revalidatePath('/attendance/overtime');
@@ -332,124 +357,7 @@ export async function approveOvertime(input: unknown): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Biometric CSV import
+// Biometric CSV import — implementation lives in ./import/actions.ts.
+// `'use server'` files only allow async function exports, so direct re-export
+// is not permitted. Consumers should import from `./import/actions` directly.
 // ---------------------------------------------------------------------------
-
-export interface ImportResult {
-  imported: number;
-  skipped: number;
-  errors: Array<{ row: number; message: string }>;
-}
-
-interface BiometricRow {
-  employeeId: string;
-  date: string;
-  timeIn: string | null;
-  timeOut: string | null;
-}
-
-function parseBiometricCsv(
-  csvText: string,
-  config: {
-    employeeIdColumn: string;
-    dateColumn: string;
-    timeInColumn: string;
-    timeOutColumn: string;
-  },
-): { rows: BiometricRow[]; parseErrors: Array<{ row: number; message: string }> } {
-  const lines = csvText.trim().split('\n');
-  if (lines.length < 2) return { rows: [], parseErrors: [] };
-
-  const headerLine = lines[0];
-  if (!headerLine) return { rows: [], parseErrors: [] };
-
-  const headers = headerLine.split(',').map((h) => h.trim().toLowerCase());
-  const empCol = headers.indexOf(config.employeeIdColumn.toLowerCase());
-  const dateCol = headers.indexOf(config.dateColumn.toLowerCase());
-  const inCol = headers.indexOf(config.timeInColumn.toLowerCase());
-  const outCol = headers.indexOf(config.timeOutColumn.toLowerCase());
-
-  if (empCol === -1 || dateCol === -1) {
-    return {
-      rows: [],
-      parseErrors: [{ row: 0, message: 'Missing required columns: employee_id or date' }],
-    };
-  }
-
-  const rows: BiometricRow[] = [];
-  const parseErrors: Array<{ row: number; message: string }> = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line?.trim()) continue;
-    const cells = line.split(',').map((c) => c.trim());
-    rows.push({
-      employeeId: cells[empCol] ?? '',
-      date: cells[dateCol] ?? '',
-      timeIn: inCol >= 0 && cells[inCol] ? (cells[inCol] ?? null) : null,
-      timeOut: outCol >= 0 && cells[outCol] ? (cells[outCol] ?? null) : null,
-    });
-  }
-
-  return { rows, parseErrors };
-}
-
-export async function importBiometric(
-  input: unknown,
-  csvText: string,
-): Promise<ImportResult> {
-  const user = await requirePermission('attendance', 'create');
-
-  // Validate config
-  const { BiometricImportSchema } = await import('@/lib/validations/attendance');
-  const parsed = BiometricImportSchema.parse(input);
-
-  const result: ImportResult = { imported: 0, skipped: 0, errors: [] };
-  const { rows, parseErrors } = parseBiometricCsv(csvText, parsed);
-  result.errors.push(...parseErrors);
-
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row) continue;
-
-    const computed = computeDailyAttendance(
-      buildComputeInput(row.date, row.timeIn, row.timeOut, 0),
-    );
-
-    const supabase = await createServerClient();
-    const { error: upsertError } = await supabase
-      .from('attendance_logs')
-      .upsert(
-        {
-          employee_id: row.employeeId,
-          log_date: row.date,
-          time_in: row.timeIn,
-          time_out: row.timeOut,
-          source: 'biometric',
-          is_late: computed.lateMinutes > 0,
-          late_minutes: computed.lateMinutes,
-          undertime_minutes: computed.undertimeMinutes,
-          overtime_minutes: computed.overtimeMinutes,
-          remarks: null,
-        },
-        { onConflict: 'employee_id,log_date' },
-      );
-
-    if (upsertError) {
-      result.errors.push({ row: i + 2, message: upsertError.message });
-      result.skipped++;
-    } else {
-      result.imported++;
-    }
-  }
-
-  await auditLog({
-    userId: user.id,
-    action: 'biometric_import',
-    table: 'attendance_logs',
-    newValues: { imported: result.imported, skipped: result.skipped },
-  });
-
-  revalidatePath('/attendance/admin');
-  return result;
-}

@@ -43,3 +43,6 @@ export * from './users';
 
 // Holidays + system settings (no FK deps)
 export * from './holidays';
+
+// Notifications (user_id is uuid only — no FK constraint at schema level)
+export * from './notifications';

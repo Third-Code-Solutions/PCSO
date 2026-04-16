@@ -8,7 +8,9 @@ import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { requirePermission } from '@/lib/auth/guards';
 import { db } from '@/lib/db';
 import { holidays } from '@/lib/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { and, eq, asc, count } from 'drizzle-orm';
+import { HOLIDAY_TYPE_VALUES, HolidayTypeLabels } from '@/lib/validations/holidays';
+import type { HolidayType } from '@/lib/db/schema/holidays';
 
 export const metadata: Metadata = { title: 'Holiday Calendar — Admin' };
 
@@ -16,11 +18,19 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[]>>;
 }
 
-async function getHolidays(year: number): Promise<HolidayRow[]> {
+function flatten(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
+async function getHolidays(year: number, type?: HolidayType): Promise<HolidayRow[]> {
+  const conditions = [eq(holidays.year, year)];
+  if (type) conditions.push(eq(holidays.type, type));
+
   const rows = await db
     .select()
     .from(holidays)
-    .where(eq(holidays.year, year))
+    .where(and(...conditions))
     .orderBy(asc(holidays.holidayDate));
 
   return rows.map((r) => ({
@@ -33,17 +43,50 @@ async function getHolidays(year: number): Promise<HolidayRow[]> {
   }));
 }
 
+async function getTypeCounts(year: number): Promise<Record<HolidayType, number>> {
+  const rows = await db
+    .select({ type: holidays.type, value: count() })
+    .from(holidays)
+    .where(eq(holidays.year, year))
+    .groupBy(holidays.type);
+
+  const base: Record<HolidayType, number> = {
+    regular: 0,
+    special_non_working: 0,
+    special_working: 0,
+  };
+  for (const row of rows) {
+    base[row.type] = row.value;
+  }
+  return base;
+}
+
 export default async function HolidaysPage({ searchParams }: PageProps) {
   await requirePermission('admin', 'view');
 
   const raw = await searchParams;
-  const yearRaw = Array.isArray(raw.year) ? raw.year[0] : raw.year;
+  const yearRaw = flatten(raw.year);
   const year = yearRaw ? parseInt(yearRaw, 10) : new Date().getFullYear();
+  const typeRaw = flatten(raw.type);
+  const type = HOLIDAY_TYPE_VALUES.includes(typeRaw as HolidayType)
+    ? (typeRaw as HolidayType)
+    : undefined;
 
-  const holidayRows = await getHolidays(year);
+  const [holidayRows, counts] = await Promise.all([
+    getHolidays(year, type),
+    getTypeCounts(year),
+  ]);
 
   const prevYear = year - 1;
   const nextYear = year + 1;
+  const totalThisYear = counts.regular + counts.special_non_working + counts.special_working;
+
+  function typeHref(t?: HolidayType): string {
+    const sp = new URLSearchParams();
+    sp.set('year', String(year));
+    if (t) sp.set('type', t);
+    return `/admin/holidays?${sp.toString()}`;
+  }
 
   return (
     <div className="space-y-6 p-6">
@@ -69,15 +112,33 @@ export default async function HolidaysPage({ searchParams }: PageProps) {
         }
       />
 
-      {/* Year navigation */}
-      <div className="flex items-center gap-3">
-        <Button variant="outline" size="sm" asChild>
-          <Link href={`/admin/holidays?year=${prevYear}`}>&larr; {prevYear}</Link>
-        </Button>
-        <span className="text-lg font-semibold text-senate-navy">{year}</span>
-        <Button variant="outline" size="sm" asChild>
-          <Link href={`/admin/holidays?year=${nextYear}`}>{nextYear} &rarr;</Link>
-        </Button>
+      {/* Year navigation + type filter */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/admin/holidays?year=${prevYear}`}>&larr; {prevYear}</Link>
+          </Button>
+          <span className="text-lg font-semibold text-senate-navy">{year}</span>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/admin/holidays?year=${nextYear}`}>{nextYear} &rarr;</Link>
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {totalThisYear} holiday{totalThisYear !== 1 ? 's' : ''} this year
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1 rounded-md border border-border bg-card p-1">
+          <Button variant={!type ? 'default' : 'ghost'} size="sm" asChild>
+            <Link href={typeHref()}>All ({totalThisYear})</Link>
+          </Button>
+          {HOLIDAY_TYPE_VALUES.map((t) => (
+            <Button key={t} variant={type === t ? 'default' : 'ghost'} size="sm" asChild>
+              <Link href={typeHref(t)}>
+                {HolidayTypeLabels[t]} ({counts[t]})
+              </Link>
+            </Button>
+          ))}
+        </div>
       </div>
 
       <HolidayCalendar holidays={holidayRows} year={year} canDelete />

@@ -1,7 +1,10 @@
 /**
  * /performance — Performance Management Dashboard
  *
- * Shows: active cycle summary, employee's own latest rating, quick links.
+ * HR admin: KPIs for active cycles, ratings pending approval, step increments
+ *           due or pending, and deep links to all management surfaces.
+ * Employee: latest rating, next step increment date, history preview, quick
+ *           links to fill/monitor their own IPCRF.
  */
 
 import Link from 'next/link';
@@ -13,6 +16,8 @@ import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import {
   getPerformancePeriods,
   getMyPerformanceRatings,
+  getPerformanceDashboardKpis,
+  getEligibleEmployeesForStepIncrement,
 } from './queries';
 import {
   BarChart3Icon,
@@ -20,10 +25,12 @@ import {
   BuildingIcon,
   TrendingUpIcon,
   ChevronRightIcon,
+  AlertTriangleIcon,
 } from 'lucide-react';
 import type { Metadata } from 'next';
 import type { AdjectivalRating } from '@/lib/constants/performance';
 import { PERIOD_STATUS_LABEL } from '@/lib/constants/performance';
+import { hasPermission } from '@/lib/auth/permissions';
 
 export const metadata: Metadata = {
   title: 'Performance Management',
@@ -38,10 +45,15 @@ const STATUS_BADGE: Record<string, 'info' | 'warning' | 'success' | 'muted'> = {
 
 export default async function PerformanceDashboardPage() {
   const user = await requireAuth();
+  const isHr = hasPermission(user.role, 'performance', 'edit');
 
-  const [periods, myRatings] = await Promise.all([
+  const [periods, myRatings, kpis, eligible] = await Promise.all([
     getPerformancePeriods(),
     user.employeeId ? getMyPerformanceRatings(user.employeeId) : Promise.resolve([]),
+    isHr ? getPerformanceDashboardKpis() : Promise.resolve(null),
+    isHr
+      ? getEligibleEmployeesForStepIncrement()
+      : Promise.resolve([] as Awaited<ReturnType<typeof getEligibleEmployeesForStepIncrement>>),
   ]);
 
   const activePeriod = periods.find((p) => p.status !== 'closed') ?? periods[0];
@@ -57,8 +69,8 @@ export default async function PerformanceDashboardPage() {
     {
       href: '/performance/ipcrf',
       icon: TrendingUpIcon,
-      label: 'My IPCRF',
-      description: 'Individual performance commitment & review',
+      label: isHr ? 'IPCRF Submissions' : 'My IPCRF',
+      description: isHr ? 'Review and approve employees\u2019 IPCRFs' : 'Individual performance commitment & review',
     },
     {
       href: '/performance/opcrf',
@@ -81,7 +93,7 @@ export default async function PerformanceDashboardPage() {
   ];
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
+    <main className="mx-auto max-w-7xl px-4 py-6">
       <RealtimeBoundary tables={['performance_ratings', 'step_increments']} />
       <PageHeader
         title="Performance Management"
@@ -89,8 +101,60 @@ export default async function PerformanceDashboardPage() {
         breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Performance' }]}
       />
 
+      {/* HR Admin KPI band */}
+      {isHr && kpis && (
+        <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            { label: 'Active Cycles', value: kpis.activeCycles, color: 'text-info' },
+            { label: 'Total Ratings', value: kpis.totalRatings, color: 'text-foreground' },
+            {
+              label: 'Pending Approvals',
+              value: kpis.pendingApprovals,
+              color: 'text-amber-600',
+            },
+            {
+              label: 'Approved This Year',
+              value: kpis.approvedThisYear,
+              color: 'text-emerald-600',
+            },
+            {
+              label: 'Eligible Now',
+              value: eligible.length,
+              color: 'text-emerald-700',
+              href: '/performance/step-increments',
+            },
+            {
+              label: 'Pending Increments',
+              value: kpis.pendingIncrements,
+              color: 'text-senate-navy',
+              href: '/performance/step-increments?status=pending',
+            },
+          ].map(({ label, value, color, href }) =>
+            href ? (
+              <Link
+                key={label}
+                href={href}
+                className="rounded-xl border bg-card p-3 shadow-sm hover:border-senate-navy transition-colors"
+              >
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                  {label}
+                </p>
+                <p className={`text-2xl font-bold ${color}`}>{value}</p>
+              </Link>
+            ) : (
+              <div key={label} className="rounded-xl border bg-card p-3 shadow-sm">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                  {label}
+                </p>
+                <p className={`text-2xl font-bold ${color}`}>{value}</p>
+              </div>
+            ),
+          )}
+        </section>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Active Period Card */}
+        {/* Active Period + modules */}
         <div className="lg:col-span-2 space-y-6">
           {activePeriod && (
             <section className="rounded-xl border bg-card p-5 shadow-sm">
@@ -119,7 +183,29 @@ export default async function PerformanceDashboardPage() {
             </section>
           )}
 
-          {/* Quick links grid */}
+          {isHr && kpis && kpis.pendingApprovals > 0 && (
+            <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertTriangleIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">
+                    {kpis.pendingApprovals} IPCRF submission
+                    {kpis.pendingApprovals !== 1 ? 's' : ''} awaiting approval
+                  </p>
+                  <p className="mt-0.5 text-xs text-amber-800">
+                    Review and approve submissions to close out the cycle.
+                  </p>
+                  <Link
+                    href="/performance/ipcrf?status=submitted"
+                    className="mt-2 inline-block text-xs font-medium text-amber-900 hover:underline"
+                  >
+                    Open pending approvals →
+                  </Link>
+                </div>
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
               Modules
@@ -182,7 +268,20 @@ export default async function PerformanceDashboardPage() {
             )}
           </section>
 
-          {/* Recent ratings history */}
+          {user.employeeId && (
+            <section className="rounded-xl border bg-card p-5 shadow-sm">
+              <h2 className="mb-3 text-sm font-semibold text-foreground">
+                Step Increment
+              </h2>
+              <Link
+                href={`/performance/step-increments/${user.employeeId}`}
+                className="inline-block text-xs text-senate-navy hover:underline"
+              >
+                View my eligibility →
+              </Link>
+            </section>
+          )}
+
           {myRatings.length > 1 && (
             <section className="rounded-xl border bg-card p-4 shadow-sm">
               <h2 className="mb-3 text-sm font-semibold text-foreground">Rating History</h2>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState, useTransition } from 'react';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { APPOINTMENT_TYPE_OPTIONS } from '@/lib/constants/appointment-types';
+import { useDebounce } from '@/hooks/use-debounce';
 import type { OfficeSelectOption } from '@/app/(dashboard)/employees/queries';
 
 interface EmployeeFiltersProps {
@@ -35,6 +36,14 @@ export function EmployeeFilters({ offices }: EmployeeFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+
+  // Controlled search input with debounced URL sync so rapid typing
+  // does not hammer the server action.
+  const [searchValue, setSearchValue] = useState<string>(
+    searchParams.get('search') ?? '',
+  );
+  const debouncedSearch = useDebounce(searchValue, 350);
 
   const updateParam = useCallback(
     (key: string, value: string | null) => {
@@ -44,12 +53,27 @@ export function EmployeeFilters({ offices }: EmployeeFiltersProps) {
       } else {
         params.delete(key);
       }
-      // Reset to page 1 on filter change
+      // Reset to page 1 on any filter change.
       params.set('page', '1');
-      router.push(`${pathname}?${params.toString()}`);
+      startTransition(() => {
+        router.push(`${pathname}?${params.toString()}`);
+      });
     },
     [router, pathname, searchParams],
   );
+
+  // Sync debounced search back to the URL whenever it diverges.
+  useEffect(() => {
+    const current = searchParams.get('search') ?? '';
+    if (debouncedSearch === current) return;
+    updateParam('search', debouncedSearch.trim() || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
+  // Keep local state in sync if the URL changes externally (Clear button, history).
+  useEffect(() => {
+    setSearchValue(searchParams.get('search') ?? '');
+  }, [searchParams]);
 
   const hasFilters =
     searchParams.has('search') ||
@@ -59,29 +83,25 @@ export function EmployeeFilters({ offices }: EmployeeFiltersProps) {
     searchParams.has('salaryGrade');
 
   const clearFilters = () => {
-    router.push(pathname);
+    setSearchValue('');
+    startTransition(() => {
+      router.push(pathname);
+    });
   };
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
-      {/* Search */}
+    <div
+      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap"
+      aria-busy={isPending}
+    >
+      {/* Search (debounced) */}
       <div className="relative flex-1 min-w-[220px]">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search name, employee no., position…"
-          defaultValue={searchParams.get('search') ?? ''}
+          value={searchValue}
           className="pl-9"
-          onChange={(e) => {
-            const val = e.target.value.trim();
-            // Debounce via form submit on Enter; live update on clear
-            if (!val) updateParam('search', null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              const val = (e.target as HTMLInputElement).value.trim();
-              updateParam('search', val || null);
-            }
-          }}
+          onChange={(e) => setSearchValue(e.target.value)}
           aria-label="Search employees"
         />
       </div>

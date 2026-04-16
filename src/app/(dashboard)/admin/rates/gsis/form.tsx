@@ -16,15 +16,27 @@ export function GsisRateForm() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setPending(true);
     const fd = new FormData(e.currentTarget);
+    const effectiveDate = fd.get('effectiveDate') as string;
+    const employeeRate = fd.get('employeeRate') as string;
+    const employerRate = fd.get('employerRate') as string;
+    const lifeInsuranceRate = fd.get('lifeInsuranceRate') as string;
 
+    if (!window.confirm(
+      `Insert a new GSIS rate effective ${effectiveDate}?\n\n` +
+        `Employee: ${employeeRate} · Employer: ${employerRate} · Life Insurance: ${lifeInsuranceRate}\n\n` +
+        'This row is permanent and affects all payroll periods on or after this date. Historical rates are preserved.',
+    )) {
+      return;
+    }
+
+    setPending(true);
     try {
       await createGsisRate({
-        effectiveDate: fd.get('effectiveDate') as string,
-        employeeRate: fd.get('employeeRate') as string,
-        employerRate: fd.get('employerRate') as string,
-        lifeInsuranceRate: fd.get('lifeInsuranceRate') as string,
+        effectiveDate,
+        employeeRate,
+        employerRate,
+        lifeInsuranceRate,
       });
       toast.success('GSIS rate saved', { description: 'New effective-date row inserted.' });
       formRef.current?.reset();

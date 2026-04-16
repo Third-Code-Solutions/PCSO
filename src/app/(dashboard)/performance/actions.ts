@@ -335,11 +335,13 @@ export async function saveIpcrfMonitoring(input: unknown): Promise<void> {
     .single();
 
   // kras column may be: an array (legacy) or an envelope object
-  const existing = current?.kras;
+  const existing: unknown = current?.kras;
   const existingItems: unknown[] = Array.isArray(existing)
-    ? existing
-    : Array.isArray((existing as Record<string, unknown>)?.items)
-    ? (existing as Record<string, unknown[]>).items
+    ? (existing as unknown[])
+    : existing && typeof existing === 'object' && Array.isArray(
+        (existing as Record<string, unknown>).items,
+      )
+    ? ((existing as Record<string, unknown>).items as unknown[])
     : [];
 
   const envelope = {
@@ -846,4 +848,182 @@ export async function cancelStepIncrement(input: unknown): Promise<void> {
 
   revalidatePath('/performance/step-increments');
   revalidatePath(`/performance/step-increments/${String(increment.employee_id)}`);
+}
+
+// ─── Bulk Step Increment Processor ────────────────────────────────────────────
+
+/**
+ * Creates a pending step increment for every currently-eligible employee in
+ * the provided IDs list. Skips employees that already have a pending or
+ * approved increment, or that would move beyond step 8.
+ *
+ * Each created increment uses:
+ *   - fromStep = employee.step
+ *   - toStep   = employee.step + 1
+ *   - effectivityDate = caller-supplied or the first day of next month
+ *   - basisPeriodIds = most recent 3 approved IPCRF period_ids
+ *
+ * Every creation emits an audit log. Errors on individual employees are
+ * captured and returned; they do not roll back the whole batch.
+ */
+export async function bulkProcessStepIncrements(input: unknown): Promise<{
+  processed: number;
+  skipped: number;
+  failed: number;
+  errors: Array<{ employeeId: string; message: string }>;
+}> {
+  const { z } = await import('zod');
+  const BulkSchema = z.object({
+    employeeIds: z.array(z.string().uuid()).min(1).max(500),
+    effectivityDate: z.string().date().optional(),
+  });
+  const parsed = BulkSchema.parse(input);
+  const user = await requirePermission('performance', 'edit');
+  const supabase = await createServerClient();
+
+  const defaultEffectivity = (() => {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return next.toISOString().slice(0, 10);
+  })();
+  const effectivityDate = parsed.effectivityDate ?? defaultEffectivity;
+
+  let processed = 0;
+  let skipped = 0;
+  let failed = 0;
+  const errors: Array<{ employeeId: string; message: string }> = [];
+
+  for (const employeeId of parsed.employeeIds) {
+    try {
+      const { data: emp, error: empErr } = await supabase
+        .from('employees')
+        .select('id, step')
+        .eq('id', employeeId)
+        .is('deleted_at', null)
+        .single();
+
+      if (empErr || !emp) {
+        failed++;
+        errors.push({ employeeId, message: 'Employee not found' });
+        continue;
+      }
+
+      const fromStep = Number(emp.step);
+      const toStep = fromStep + 1;
+      if (fromStep >= 8) {
+        skipped++;
+        continue;
+      }
+
+      const { data: existing } = await supabase
+        .from('step_increments')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .in('status', ['pending', 'approved'])
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      const { data: recentApproved } = await supabase
+        .from('performance_ratings')
+        .select('period_id')
+        .eq('employee_id', employeeId)
+        .eq('rating_type', 'ipcrf')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      const periodIds = (recentApproved ?? [])
+        .map((r) => String(r.period_id))
+        .filter((id, idx, arr) => arr.indexOf(id) === idx);
+
+      if (periodIds.length < 2) {
+        skipped++;
+        errors.push({
+          employeeId,
+          message: 'Need at least 2 approved IPCRF periods as basis',
+        });
+        continue;
+      }
+
+      const { data: created, error: createErr } = await supabase
+        .from('step_increments')
+        .insert({
+          employee_id: employeeId,
+          from_step: fromStep,
+          to_step: toStep,
+          effectivity_date: effectivityDate,
+          basis_period_ids: periodIds,
+          status: 'pending',
+          remarks: 'Auto-processed via bulk eligibility run',
+        })
+        .select('id')
+        .single();
+
+      if (createErr || !created) {
+        failed++;
+        errors.push({
+          employeeId,
+          message: createErr?.message ?? 'Insert failed',
+        });
+        continue;
+      }
+
+      await writeAuditLog(supabase, {
+        userId: user.id,
+        action: 'bulk_create',
+        tableName: 'step_increments',
+        recordId: String(created.id),
+        newValues: {
+          employeeId,
+          fromStep,
+          toStep,
+          effectivityDate,
+          basisPeriodIds: periodIds,
+          batchBy: user.id,
+        },
+      });
+
+      processed++;
+    } catch (err: unknown) {
+      failed++;
+      errors.push({
+        employeeId,
+        message: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
+  }
+
+  revalidatePath('/performance/step-increments');
+  revalidatePath('/performance');
+
+  return { processed, skipped, failed, errors };
+}
+
+// ─── Employee-initiated IPCRF draft creation ──────────────────────────────────
+
+/**
+ * Convenience wrapper: creates (or reuses) a draft IPCRF record for the
+ * currently authenticated employee against a given period.
+ * Used by the self-service "Start my IPCRF" button.
+ */
+export async function startMyIpcrf(input: unknown): Promise<{ ratingId: string }> {
+  const { z } = await import('zod');
+  const Schema = z.object({ periodId: z.string().uuid('Invalid period ID.') });
+  const parsed = Schema.parse(input);
+  const user = await requireAuth();
+
+  if (!user.employeeId) {
+    throw new Error('No employee record is linked to your account.');
+  }
+
+  return initializePerformanceRating({
+    employeeId: user.employeeId,
+    periodId: parsed.periodId,
+    ratingType: 'ipcrf',
+  });
 }

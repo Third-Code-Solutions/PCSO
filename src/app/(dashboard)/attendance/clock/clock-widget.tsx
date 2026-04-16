@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { clockIn, clockOut } from '@/app/(dashboard)/attendance/actions';
@@ -8,19 +9,35 @@ import { clockIn, clockOut } from '@/app/(dashboard)/attendance/actions';
 interface ClockWidgetProps {
   /** The authenticated user's linked employee UUID */
   employeeId: string;
+  /** YYYY-MM-DD — today in server locale */
+  today: string;
+  /** Pre-loaded log row for today (null when nothing yet) */
+  initialLog: { id: string; timeIn: string | null; timeOut: string | null } | null;
 }
 
 /**
  * Client component: handles real-time clock display and clock-in/clock-out
- * button interactions. Receives employeeId from the server-rendered parent.
+ * button interactions. State is seeded by the server so the widget survives
+ * reloads — an employee who refreshed mid-day does not lose their session.
  */
-export function ClockWidget({ employeeId }: ClockWidgetProps) {
+export function ClockWidget({ employeeId, today, initialLog }: ClockWidgetProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [activeLogId, setActiveLogId] = useState<string | null>(null);
-  const [todayIn, setTodayIn] = useState<string | null>(null);
-  const [todayOut, setTodayOut] = useState<string | null>(null);
+  const [activeLogId, setActiveLogId] = useState<string | null>(initialLog?.id ?? null);
+  const [todayIn, setTodayIn] = useState<string | null>(initialLog?.timeIn ?? null);
+  const [todayOut, setTodayOut] = useState<string | null>(initialLog?.timeOut ?? null);
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  // Re-render the clock every 30s so the displayed time stays accurate
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const now = new Date();
+  // Displayed HH:mm refreshes on each tick
+  const currentTime = format(now, 'HH:mm');
+  const currentDate = format(now, 'EEEE, MMMM d, yyyy');
 
   function handleClockIn() {
     const nowTime = format(new Date(), 'HH:mm');
@@ -34,6 +51,7 @@ export function ClockWidget({ employeeId }: ClockWidgetProps) {
         setActiveLogId(result.id);
         setTodayIn(nowTime);
         toast.success(`Clocked in at ${nowTime}`);
+        router.refresh();
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : 'Clock-in failed');
       }
@@ -51,6 +69,7 @@ export function ClockWidget({ employeeId }: ClockWidgetProps) {
         await clockOut({ attendanceLogId: activeLogId, timeOut: nowTime });
         setTodayOut(nowTime);
         toast.success(`Clocked out at ${nowTime}`);
+        router.refresh();
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : 'Clock-out failed');
       }
@@ -68,14 +87,15 @@ export function ClockWidget({ employeeId }: ClockWidgetProps) {
           Use this only when your biometric device is unavailable.
         </p>
 
-        {/* Date/time display */}
-        <div className="mb-8 rounded-xl bg-[#0B2545] px-6 py-5 text-center">
+        {/* Date/time display — re-rendered on each tick */}
+        <div
+          key={tick}
+          className="mb-8 rounded-xl bg-[#0B2545] px-6 py-5 text-center"
+        >
           <div className="font-mono text-3xl font-bold tracking-wider text-[#C8A84B]">
-            {format(new Date(), 'HH:mm')}
+            {currentTime}
           </div>
-          <div className="mt-1 text-sm text-[#FAF4E6]/70">
-            {format(new Date(), 'EEEE, MMMM d, yyyy')}
-          </div>
+          <div className="mt-1 text-sm text-[#FAF4E6]/70">{currentDate}</div>
         </div>
 
         {/* Status */}

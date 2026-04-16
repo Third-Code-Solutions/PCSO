@@ -1,6 +1,25 @@
-import { getOwnOvertimeRequests } from '../queries';
-import type { OvertimeRequestRow } from '../queries';
-import { requirePermission } from '@/lib/auth/guards';
+/**
+ * /attendance/overtime — Overtime requests
+ *
+ * Role-aware page:
+ *  - employee_self_service : only their own requests + "File new" link
+ *  - super_admin, hr_admin, leave_approver : pending queue + all recent
+ *    requests with inline approve/deny buttons
+ *
+ * OT approval writes to attendance_logs.overtimeMinutes; see actions.ts.
+ */
+
+import { requireAuth } from '@/lib/auth/guards';
+import { hasPermission } from '@/lib/auth/permissions';
+import {
+  getOwnOvertimeRequests,
+  getOvertimeRequests,
+  getEmployeeSummaries,
+  type OvertimeRequestRow,
+} from '../queries';
+import { OvertimeQueueTable } from '@/components/attendance/overtime-queue-table';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import { approveOvertime } from '../actions';
 
 export const metadata = { title: 'Overtime Requests' };
 
@@ -21,14 +40,108 @@ const DAY_TYPE_LABELS: Record<string, string> = {
 };
 
 export default async function OvertimePage() {
-  // OT is a supervisor/HR workflow — not for employee_self_service
-  await requirePermission('attendance', 'approve');
-  let requests: OvertimeRequestRow[] = [];
-  try {
-    requests = await getOwnOvertimeRequests();
-  } catch {
-    // Not authenticated or fetch error — graceful empty state
+  const user = await requireAuth();
+  const canApprove = hasPermission(user.role, 'attendance', 'approve');
+
+  // Admin view: pending queue + recent history
+  if (canApprove) {
+    const [pending, recent, employees] = await Promise.all([
+      getOvertimeRequests(undefined, 'pending').catch(() => []),
+      getOvertimeRequests().catch(() => []),
+      getEmployeeSummaries().catch(() => []),
+    ]);
+
+    const employeeMap = new Map(
+      employees.map((e) => [e.id, `${e.lastName}, ${e.firstName} (${e.employeeNumber})`]),
+    );
+
+    return (
+      <main className="mx-auto max-w-6xl px-4 py-8">
+        <RealtimeBoundary tables={['attendance_logs']} />
+
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-[#0B2545]">Overtime Queue</h1>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Review pending OT requests and post approvals.
+            </p>
+          </div>
+          <a
+            href="/attendance/overtime/new"
+            className="rounded-lg bg-[#0B2545] px-4 py-2.5 text-sm font-semibold text-[#FAF4E6] hover:bg-[#13315C]"
+          >
+            File My OT
+          </a>
+        </div>
+
+        <section className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-700">
+            Pending ({pending.length})
+          </h2>
+          {pending.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#0B2545]/20 px-6 py-8 text-center text-sm text-gray-400">
+              No overtime requests awaiting approval.
+            </div>
+          ) : (
+            <OvertimeQueueTable
+              rows={pending}
+              employeeMap={employeeMap}
+              onApprove={approveOvertime}
+            />
+          )}
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Recent History
+          </h2>
+          {recent.length === 0 ? (
+            <div className="rounded-xl border border-[#0B2545]/10 bg-white px-6 py-8 text-center text-sm text-gray-400">
+              No overtime history yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-[#0B2545]/10">
+              <table className="w-full text-sm">
+                <thead className="bg-[#0B2545] text-[#FAF4E6]">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Employee</th>
+                    <th className="px-4 py-3 text-left font-medium">Date</th>
+                    <th className="px-4 py-3 text-right font-medium">Requested</th>
+                    <th className="px-4 py-3 text-right font-medium">Approved</th>
+                    <th className="px-4 py-3 text-center font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#0B2545]/5 bg-white">
+                  {recent.slice(0, 50).map((req) => (
+                    <tr key={req.id} className="hover:bg-[#FAF4E6]/50">
+                      <td className="px-4 py-3 text-xs text-gray-700">
+                        {employeeMap.get(req.employeeId) ?? req.employeeId.slice(0, 8)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-700">{req.date}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs">{req.requestedMinutes} min</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs">
+                        {req.approvedMinutes ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${STATUS_STYLES[req.status]}`}
+                        >
+                          {req.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </main>
+    );
   }
+
+  // Employee self-service view
+  const requests = await getOwnOvertimeRequests().catch(() => []);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
@@ -100,7 +213,6 @@ export default async function OvertimePage() {
         </div>
       )}
 
-      {/* Info box */}
       <div className="mt-6 rounded-lg border border-[#0B2545]/10 bg-[#FAF4E6] p-4 text-xs text-[#0B2545]/70">
         <p className="font-semibold">OT Premium Rates (per Labor Code and CSC Rules):</p>
         <ul className="mt-2 space-y-1">

@@ -7,14 +7,23 @@
  * Each node is rendered as a foreignObject within SVG for rich styling.
  * Edges are cubic bezier paths.
  *
+ * Performance:
+ * - Branches are collapsible. Deep branches start collapsed beyond
+ *   DEFAULT_EXPANDED_DEPTH so the initial layout covers a bounded subset of
+ *   nodes even when the total org is 1000+.
+ * - Off-screen nodes are culled before render so the DOM never holds more
+ *   than VISIBLE_NODE_BUDGET foreignObjects at once.
+ * - Layout is memoised on the expanded-set signature and re-computed only
+ *   when the user expands/collapses a branch.
+ *
  * No external charting libraries — built entirely with SVG + React.
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { OrgNode, type OrgNodeData } from './org-node';
 import { Button } from '@/components/ui/button';
-import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, FoldVertical } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +43,15 @@ const NODE_HEIGHT = 130;
 const H_GAP = 28;
 const V_GAP = 70;
 
+/** How many levels are expanded by default. Deeper nodes start collapsed. */
+const DEFAULT_EXPANDED_DEPTH = 2;
+
+/** Hard cap on DOM nodes rendered at once to keep scrolling smooth. */
+const VISIBLE_NODE_BUDGET = 500;
+
+/** Extra margin around the viewport used for culling. */
+const CULL_MARGIN_PX = 400;
+
 // ---------------------------------------------------------------------------
 // Layout computation (Reingold-Tilford style simple placement)
 // ---------------------------------------------------------------------------
@@ -42,22 +60,38 @@ interface LayoutNode {
   node: OrgTreeNode;
   x: number;
   y: number;
+  depth: number;
+  hasChildren: boolean;
+  isCollapsed: boolean;
 }
 
 function layoutTree(
   root: OrgTreeNode,
   depth: number,
   xOffset: number,
+  expanded: Set<string>,
 ): { items: LayoutNode[]; subtreeWidth: number } {
-  if (root.children.length === 0) {
+  const isCollapsed = root.children.length > 0 && !expanded.has(root.id);
+  const visibleChildren = isCollapsed ? [] : root.children;
+
+  if (visibleChildren.length === 0) {
     return {
-      items: [{ node: root, x: xOffset, y: depth * (NODE_HEIGHT + V_GAP) }],
+      items: [
+        {
+          node: root,
+          x: xOffset,
+          y: depth * (NODE_HEIGHT + V_GAP),
+          depth,
+          hasChildren: root.children.length > 0,
+          isCollapsed,
+        },
+      ],
       subtreeWidth: NODE_WIDTH,
     };
   }
 
-  const childLayouts = root.children.map((child) =>
-    layoutTree(child, depth + 1, 0),
+  const childLayouts = visibleChildren.map((child) =>
+    layoutTree(child, depth + 1, 0, expanded),
   );
 
   // Place children side by side
@@ -75,9 +109,15 @@ function layoutTree(
   // Center the root over its children
   const rootX = xOffset + totalChildrenWidth / 2 - NODE_WIDTH / 2;
 
-  // Shift children to be relative to xOffset
   const items: LayoutNode[] = [
-    { node: root, x: rootX, y: depth * (NODE_HEIGHT + V_GAP) },
+    {
+      node: root,
+      x: rootX,
+      y: depth * (NODE_HEIGHT + V_GAP),
+      depth,
+      hasChildren: true,
+      isCollapsed: false,
+    },
     ...rebasedChildren.map((item) => ({ ...item, x: item.x + xOffset })),
   ];
 
@@ -85,6 +125,32 @@ function layoutTree(
     items,
     subtreeWidth: Math.max(totalChildrenWidth, NODE_WIDTH),
   };
+}
+
+/**
+ * Compute the initial expanded set: every node whose depth is less than
+ * `DEFAULT_EXPANDED_DEPTH` is expanded by default.
+ */
+function defaultExpandedSet(roots: OrgTreeNode[]): Set<string> {
+  const set = new Set<string>();
+  function walk(node: OrgTreeNode, depth: number) {
+    if (depth < DEFAULT_EXPANDED_DEPTH) {
+      set.add(node.id);
+      for (const child of node.children) walk(child, depth + 1);
+    }
+  }
+  for (const r of roots) walk(r, 0);
+  return set;
+}
+
+function allExpandedSet(roots: OrgTreeNode[]): Set<string> {
+  const set = new Set<string>();
+  function walk(node: OrgTreeNode) {
+    set.add(node.id);
+    for (const child of node.children) walk(child);
+  }
+  for (const r of roots) walk(r);
+  return set;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +244,38 @@ function NodeInfoPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Collapse / expand toggle rendered on top of each parent node
+// ---------------------------------------------------------------------------
+
+function BranchToggle({
+  isCollapsed,
+  childCount,
+  onToggle,
+}: {
+  isCollapsed: boolean;
+  childCount: number;
+  onToggle: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={isCollapsed ? 'Expand branch' : 'Collapse branch'}
+      title={isCollapsed ? `Expand (${childCount} children)` : 'Collapse'}
+      className={cn(
+        'absolute -bottom-3 left-1/2 -translate-x-1/2 z-10',
+        'flex h-6 min-w-[28px] items-center justify-center gap-1 rounded-full',
+        'border border-border bg-card px-1.5 text-[11px] font-medium text-muted-foreground',
+        'shadow-sm transition-all hover:border-senate-navy hover:text-senate-navy',
+      )}
+    >
+      {isCollapsed ? '+' : '–'}
+      <span className="tabular-nums">{childCount}</span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main OrgChart component
 // ---------------------------------------------------------------------------
 
@@ -194,37 +292,62 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
   const [translate, setTranslate] = useState({ x: 48, y: 48 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Build layout for all root trees placed side-by-side
-  const allItems: LayoutNode[] = [];
-  let xCursor = 0;
-  for (const root of roots) {
-    const { items, subtreeWidth } = layoutTree(root, 0, xCursor);
-    for (const item of items) {
-      allItems.push(item);
+  // Expanded-set is the key state driving layout recomputation.
+  const [expanded, setExpanded] = useState<Set<string>>(() =>
+    defaultExpandedSet(roots),
+  );
+
+  // Re-seed default expansion when the roots prop changes (e.g. server revalidation).
+  useEffect(() => {
+    setExpanded(defaultExpandedSet(roots));
+  }, [roots]);
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const collapseAll = () => setExpanded(defaultExpandedSet(roots));
+  const expandAll = () => setExpanded(allExpandedSet(roots));
+
+  // Build layout for all root trees placed side-by-side.
+  // Memoised on the expanded-set signature so rapid pans do not re-layout.
+  const { allItems, totalW, totalH, edges } = useMemo(() => {
+    const items: LayoutNode[] = [];
+    let xCursor = 0;
+    for (const root of roots) {
+      const { items: layoutItems, subtreeWidth } = layoutTree(
+        root,
+        0,
+        xCursor,
+        expanded,
+      );
+      for (const item of layoutItems) items.push(item);
+      xCursor += subtreeWidth + H_GAP * 3;
     }
-    xCursor += subtreeWidth + H_GAP * 3;
-  }
 
-  const totalW = Math.max(xCursor + 80, 800);
-  const maxY = allItems.reduce((m, i) => Math.max(m, i.y), 0);
-  const totalH = Math.max(maxY + NODE_HEIGHT + 80, 600);
+    const tw = Math.max(xCursor + 80, 800);
+    const maxY = items.reduce((m, i) => Math.max(m, i.y), 0);
+    const th = Math.max(maxY + NODE_HEIGHT + 80, 600);
 
-  // Build lookup map for edge rendering
-  const posMap = new Map<string, LayoutNode>();
-  for (const item of allItems) {
-    posMap.set(item.node.id, item);
-  }
+    const posMap = new Map<string, LayoutNode>();
+    for (const item of items) posMap.set(item.node.id, item);
 
-  // Collect all edges
-  const edges: { x1: number; y1: number; x2: number; y2: number }[] = [];
-  function collectEdges(node: OrgTreeNode) {
-    const parent = posMap.get(node.id);
-    if (!parent) return;
-    for (const child of node.children) {
-      const childPos = posMap.get(child.id);
-      if (childPos) {
-        edges.push({
+    const es: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    function collectEdges(node: OrgTreeNode) {
+      const parent = posMap.get(node.id);
+      if (!parent || parent.isCollapsed) return;
+      for (const child of node.children) {
+        const childPos = posMap.get(child.id);
+        if (!childPos) continue;
+        es.push({
           x1: parent.x + NODE_WIDTH / 2,
           y1: parent.y + NODE_HEIGHT,
           x2: childPos.x + NODE_WIDTH / 2,
@@ -233,10 +356,48 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
         collectEdges(child);
       }
     }
-  }
-  for (const root of roots) {
-    collectEdges(root);
-  }
+    for (const root of roots) collectEdges(root);
+
+    return { allItems: items, totalW: tw, totalH: th, edges: es };
+  }, [roots, expanded]);
+
+  // Track the container size so we know what to cull.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect) setViewport({ w: rect.width, h: rect.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Visible set: cull items entirely outside the viewport (with margin).
+  // Falls back to first N items when viewport size is unknown.
+  const visibleItems = useMemo(() => {
+    if (allItems.length <= VISIBLE_NODE_BUDGET && viewport.w === 0) {
+      return allItems;
+    }
+    if (viewport.w === 0 || viewport.h === 0) {
+      return allItems.slice(0, VISIBLE_NODE_BUDGET);
+    }
+    const minX = (-translate.x - CULL_MARGIN_PX) / scale;
+    const maxX = (-translate.x + viewport.w + CULL_MARGIN_PX) / scale;
+    const minY = (-translate.y - CULL_MARGIN_PX) / scale;
+    const maxY = (-translate.y + viewport.h + CULL_MARGIN_PX) / scale;
+    const filtered = allItems.filter(
+      (i) =>
+        i.x + NODE_WIDTH >= minX &&
+        i.x <= maxX &&
+        i.y + NODE_HEIGHT >= minY &&
+        i.y <= maxY,
+    );
+    if (filtered.length > VISIBLE_NODE_BUDGET) {
+      return filtered.slice(0, VISIBLE_NODE_BUDGET);
+    }
+    return filtered;
+  }, [allItems, translate, scale, viewport]);
 
   // Pan handlers
   const handleMouseDown = useCallback(
@@ -267,8 +428,11 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
     router.push(`/employees?officeId=${officeId}`);
   }
 
+  const culledCount = allItems.length - visibleItems.length;
+
   return (
     <div
+      ref={containerRef}
       className={cn(
         'relative overflow-hidden rounded-xl border border-border bg-muted/30',
         className,
@@ -279,25 +443,25 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* Zoom controls */}
+      {/* Zoom + expand controls */}
       <div className="absolute left-4 top-4 z-10 flex flex-col gap-1.5">
         <Button
           size="icon"
           variant="outline"
           className="h-8 w-8 bg-card shadow-sm"
           onClick={() => setScale((s) => Math.min(s + 0.15, 2.5))}
+          aria-label="Zoom in"
         >
           <ZoomIn className="h-4 w-4" />
-          <span className="sr-only">Zoom in</span>
         </Button>
         <Button
           size="icon"
           variant="outline"
           className="h-8 w-8 bg-card shadow-sm"
           onClick={() => setScale((s) => Math.max(s - 0.15, 0.25))}
+          aria-label="Zoom out"
         >
           <ZoomOut className="h-4 w-4" />
-          <span className="sr-only">Zoom out</span>
         </Button>
         <Button
           size="icon"
@@ -307,10 +471,36 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
             setScale(0.9);
             setTranslate({ x: 48, y: 48 });
           }}
+          aria-label="Reset view"
         >
           <Maximize2 className="h-4 w-4" />
-          <span className="sr-only">Reset view</span>
         </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-8 w-8 bg-card shadow-sm"
+          onClick={collapseAll}
+          aria-label="Collapse deep branches"
+          title="Collapse deep branches"
+        >
+          <FoldVertical className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Expand-all link (separate because it can be dangerous on 1000+ nodes) */}
+      <div className="absolute left-4 bottom-4 z-10 flex flex-col gap-1 text-[11px] text-muted-foreground">
+        <span>
+          {allItems.length.toLocaleString()} visible node
+          {allItems.length !== 1 ? 's' : ''}
+          {culledCount > 0 ? ` · ${culledCount.toLocaleString()} offscreen` : ''}
+        </span>
+        <button
+          type="button"
+          onClick={expandAll}
+          className="self-start underline underline-offset-2 hover:text-senate-navy"
+        >
+          Expand all branches
+        </button>
       </div>
 
       {/* Selected node panel */}
@@ -333,13 +523,13 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
           ))}
 
           {/* Nodes as foreignObject for React rendering */}
-          {allItems.map(({ node, x, y }) => (
+          {visibleItems.map(({ node, x, y, hasChildren, isCollapsed }) => (
             <foreignObject
               key={node.id}
               x={x}
               y={y}
               width={NODE_WIDTH}
-              height={NODE_HEIGHT}
+              height={NODE_HEIGHT + 12}
             >
               {/* xmlns is required for SVG foreignObject children when rendered to string. */}
               <div
@@ -347,12 +537,23 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
                 // @ts-ignore xmlns not in React.HTMLAttributes but required by SVG spec
                 xmlns="http://www.w3.org/1999/xhtml"
                 data-org-node="true"
+                className="relative"
               >
                 <OrgNode
                   node={node}
                   isSelected={selectedNode?.id === node.id}
                   onClick={handleNodeClick}
                 />
+                {hasChildren && (
+                  <BranchToggle
+                    isCollapsed={isCollapsed}
+                    childCount={node.children.length}
+                    onToggle={(e) => {
+                      e.stopPropagation();
+                      toggleExpanded(node.id);
+                    }}
+                  />
+                )}
               </div>
             </foreignObject>
           ))}

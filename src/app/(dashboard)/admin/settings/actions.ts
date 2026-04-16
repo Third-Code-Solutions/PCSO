@@ -10,7 +10,7 @@ import { SystemSettingsSchema, type SystemSettingsInput } from '@/lib/validation
 
 // ─── Setting key constants ────────────────────────────────────────────────────
 
-export const SETTING_KEYS = {
+const SETTING_KEYS = {
   ORG_NAME: 'org_name',
   LOGO_URL: 'logo_url',
   ORG_ADDRESS: 'org_address',

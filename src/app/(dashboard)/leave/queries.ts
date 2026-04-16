@@ -428,5 +428,166 @@ export async function getApprovedLeavesForCalendar(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Query: all leave applications (hr_admin + super_admin) — paginated
+// ---------------------------------------------------------------------------
+
+export interface LeaveApplicationRowEnriched extends LeaveApplicationRow {
+  employeeFullName: string;
+  employeeNo: string;
+  approverName: string | null;
+  approvedAt: string | null;
+}
+
+export interface GetAllLeaveApplicationsFilters {
+  status?: string;
+  employeeId?: string;
+  leaveTypeCode?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  /** 1-indexed page number (defaults to 1). */
+  page?: number;
+  /** Rows per page (defaults to 50, max 200). */
+  pageSize?: number;
+}
+
+export interface PaginatedLeaveApplications {
+  rows: LeaveApplicationRowEnriched[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+async function runLeaveApplicationsQuery(
+  filters: GetAllLeaveApplicationsFilters | undefined,
+  withCount: boolean,
+): Promise<PaginatedLeaveApplications> {
+  const supabase = await createServerClient();
+
+  const page = Math.max(1, filters?.page ?? 1);
+  const pageSize = Math.min(200, Math.max(5, filters?.pageSize ?? 50));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('leave_applications')
+    .select(
+      `
+      id,
+      employee_id,
+      leave_type_id,
+      date_from,
+      date_to,
+      no_of_days,
+      reason,
+      status,
+      approved_by,
+      approved_at,
+      remarks,
+      created_at,
+      leave_types ( code, name ),
+      employees ( first_name, last_name, employee_no )
+    `,
+      withCount ? { count: 'exact' } : {},
+    )
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (filters?.status) query = query.eq('status', filters.status);
+  if (filters?.employeeId) query = query.eq('employee_id', filters.employeeId);
+  if (filters?.dateFrom) query = query.gte('date_from', filters.dateFrom);
+  if (filters?.dateTo) query = query.lte('date_to', filters.dateTo);
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`Failed to fetch leave applications: ${error.message}`);
+
+  // Resolve approver display names in one round-trip.
+  const approverIds = [
+    ...new Set(
+      (data ?? [])
+        .map((row) => (typeof row.approved_by === 'string' ? row.approved_by : null))
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+
+  const approverMap = new Map<string, string>();
+  if (approverIds.length > 0) {
+    const { data: approvers } = await supabase
+      .from('system_users')
+      .select('id, employees ( first_name, last_name )')
+      .in('id', approverIds);
+    for (const approver of approvers ?? []) {
+      const empData = approver.employees as { first_name?: string; last_name?: string } | null;
+      const name = empData
+        ? `${empData.last_name ?? ''}, ${empData.first_name ?? ''}`.trim()
+        : null;
+      if (name) approverMap.set(String(approver.id), name);
+    }
+  }
+
+  const rows: LeaveApplicationRowEnriched[] = (data ?? []).map((row) => {
+    const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
+    const empData = row.employees as {
+      first_name?: string;
+      last_name?: string;
+      employee_no?: string;
+    } | null;
+    const code = (leaveTypeData?.code ?? 'VL') as LeaveTypeCode;
+    const base = toLeaveApplication({
+      ...row,
+      leave_type_code: code,
+      date_from: row.date_from,
+      date_to: row.date_to,
+      no_of_days: row.no_of_days,
+    });
+
+    return {
+      ...base,
+      employeeFullName: empData
+        ? `${empData.last_name ?? ''}, ${empData.first_name ?? ''}`.trim()
+        : 'Unknown',
+      employeeNo: String(empData?.employee_no ?? ''),
+      approverName:
+        typeof row.approved_by === 'string'
+          ? (approverMap.get(row.approved_by) ?? null)
+          : null,
+      approvedAt: typeof row.approved_at === 'string' ? row.approved_at : null,
+    };
+  });
+
+  const total = typeof count === 'number' ? count : rows.length;
+  return {
+    rows,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+/**
+ * Paginated admin list query. Preferred over the un-paginated
+ * `getAllLeaveApplications` for tables that need totals or for workspaces
+ * with more than a few hundred rows.
+ */
+export async function getAllLeaveApplicationsPaged(
+  filters?: GetAllLeaveApplicationsFilters,
+): Promise<PaginatedLeaveApplications> {
+  return runLeaveApplicationsQuery(filters, true);
+}
+
+/**
+ * Legacy entry point — returns rows only (no totals). Backed by the paged
+ * implementation so existing callers keep working. Caps at the same pageSize.
+ */
+export async function getAllLeaveApplications(
+  filters?: GetAllLeaveApplicationsFilters,
+): Promise<LeaveApplicationRowEnriched[]> {
+  const result = await runLeaveApplicationsQuery(filters, false);
+  return result.rows;
+}
+
 // Suppress unused import warning
 void toLeaveCreditBalance;

@@ -3,6 +3,8 @@ import {
   employees,
   plantillaPositions,
   leaveApplications,
+  leaveCredits,
+  leaveTypes,
   payrollPeriods,
   auditLogs,
   systemUsers,
@@ -43,6 +45,19 @@ export interface UpcomingCutoffRow {
   payDate: string;
   status: 'draft' | 'processing';
   scope: 'regular' | 'jo_cos';
+}
+
+export interface PersonalKpis {
+  /** Total VL + SL balance across the current year */
+  leaveBalanceDays: number;
+  /** Pending leave applications submitted by this employee */
+  pendingLeaveApplications: number;
+  /** Approved leave applications in the current year */
+  approvedLeaveApplications: number;
+  /** Days until next payroll cutoff */
+  payrollCutoffDays: number;
+  /** Human-readable label for the next payroll period, if any */
+  nextPeriodName: string | null;
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -235,6 +250,96 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivityRow[]
     performedBy: row.userEmail ?? 'System',
     performedAt: row.createdAt.toISOString(),
   }));
+}
+
+/**
+ * Personal KPIs for self-service employees. Scoped to a single employee UUID.
+ * Returns zeros when the employee has no records — safe to render.
+ */
+export async function getPersonalKpis(employeeId: string): Promise<PersonalKpis> {
+  const currentYear = new Date().getFullYear();
+
+  const [balanceRows, pendingRows, approvedRows, nextPeriodRows] = await Promise.all([
+    // Sum of VL + SL balance for the current year. Gracefully falls back to 0.
+    db
+      .select({
+        total: sql<string>`COALESCE(SUM(${leaveCredits.balance}), '0')`,
+      })
+      .from(leaveCredits)
+      .leftJoin(leaveTypes, eq(leaveCredits.leaveTypeId, leaveTypes.id))
+      .where(
+        and(
+          eq(leaveCredits.employeeId, employeeId),
+          eq(leaveCredits.year, currentYear),
+          inArray(leaveTypes.code, ['VL', 'SL']),
+        ),
+      ),
+
+    // Pending applications
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
+      .where(
+        and(
+          eq(leaveApplications.employeeId, employeeId),
+          eq(leaveApplications.status, 'pending'),
+        ),
+      ),
+
+    // Approved applications this year
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
+      .where(
+        and(
+          eq(leaveApplications.employeeId, employeeId),
+          eq(leaveApplications.status, 'approved'),
+          gte(leaveApplications.dateFrom, `${currentYear}-01-01`),
+          lte(leaveApplications.dateFrom, `${currentYear}-12-31`),
+        ),
+      ),
+
+    // Next payroll cutoff (org-wide; scoped-filtering not available at employee grain)
+    db
+      .select({
+        name: payrollPeriods.name,
+        periodEnd: payrollPeriods.periodEnd,
+      })
+      .from(payrollPeriods)
+      .where(
+        and(
+          inArray(payrollPeriods.status, ['draft', 'processing']),
+          isNull(payrollPeriods.deletedAt),
+        ),
+      )
+      .orderBy(payrollPeriods.periodEnd)
+      .limit(1),
+  ]);
+
+  const leaveBalanceDays = Number(balanceRows[0]?.total ?? '0');
+  const pendingLeaveApplications = Number(pendingRows[0]?.c ?? 0);
+  const approvedLeaveApplications = Number(approvedRows[0]?.c ?? 0);
+
+  const nextPeriod = nextPeriodRows[0] ?? null;
+  let payrollCutoffDays = 0;
+  let nextPeriodName: string | null = null;
+  if (nextPeriod) {
+    nextPeriodName = nextPeriod.name;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cutoff = new Date(nextPeriod.periodEnd);
+    cutoff.setHours(0, 0, 0, 0);
+    const diffMs = cutoff.getTime() - today.getTime();
+    payrollCutoffDays = Math.max(0, Math.ceil(diffMs / 86_400_000));
+  }
+
+  return {
+    leaveBalanceDays,
+    pendingLeaveApplications,
+    approvedLeaveApplications,
+    payrollCutoffDays,
+    nextPeriodName,
+  };
 }
 
 /**

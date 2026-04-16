@@ -3,63 +3,69 @@ import Link from 'next/link';
 import { UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layouts/page-header';
-import { UsersTable, type UserRow } from '@/components/admin/users-table';
+import type { UserRow } from '@/components/admin/users-table';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { requirePermission } from '@/lib/auth/guards';
-import { createServerClient } from '@/lib/supabase/server';
+import { getUsersPage, getOfficeOptions } from './queries';
+import { UsersFilterBar, UsersPagination, UsersTableShell } from './_client';
 
 export const metadata: Metadata = {
   title: 'User Management — Admin',
 };
 
-async function getUsers(): Promise<UserRow[]> {
-  const supabase = await createServerClient();
-
-  const { data, error } = await supabase
-    .from('system_users')
-    .select(
-      `
-      id,
-      email,
-      role,
-      is_active,
-      last_login,
-      created_at,
-      offices(name),
-      employees(first_name, last_name)
-    `,
-    )
-    .order('created_at', { ascending: false });
-
-  if (error) throw new Error(`Failed to fetch users: ${error.message}`);
-
-  return (data ?? []).map((row) => {
-    const office = Array.isArray(row.offices) ? row.offices[0] : row.offices;
-    const employee = Array.isArray(row.employees) ? row.employees[0] : row.employees;
-    return {
-      id: row.id as string,
-      email: row.email as string,
-      role: row.role as string,
-      officeName: (office as { name: string } | null)?.name ?? null,
-      employeeName: employee
-        ? `${(employee as { first_name: string }).first_name} ${(employee as { last_name: string }).last_name}`
-        : null,
-      isActive: row.is_active as boolean,
-      lastLogin: row.last_login as string | null,
-      createdAt: row.created_at as string,
-    };
-  });
+interface PageProps {
+  searchParams: Promise<Record<string, string | string[]>>;
 }
 
-export default async function AdminUsersPage() {
+function flatten(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
+export default async function AdminUsersPage({ searchParams }: PageProps) {
   await requirePermission('admin', 'view');
-  const users = await getUsers();
+
+  const raw = await searchParams;
+  const flat = (k: string) => flatten(raw[k]);
+
+  const statusRaw = flat('status');
+  const status: '' | 'active' | 'inactive' =
+    statusRaw === 'active' || statusRaw === 'inactive' ? statusRaw : '';
+  const pageSizeRaw = flat('pageSize');
+  const pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
+  const pageRaw = flat('page');
+  const page = pageRaw ? parseInt(pageRaw, 10) : 1;
+
+  const queryParams = {
+    search: flat('search'),
+    role: flat('role'),
+    status,
+    officeId: flat('officeId'),
+    page,
+    pageSize,
+  };
+
+  const [result, officeOptions] = await Promise.all([
+    getUsersPage(queryParams),
+    getOfficeOptions(),
+  ]);
+
+  const rows: UserRow[] = result.rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    role: r.role,
+    officeName: r.officeName,
+    employeeName: r.employeeName,
+    isActive: r.isActive,
+    lastLogin: r.lastSignInAt ?? r.lastLogin,
+    createdAt: r.createdAt,
+  }));
 
   return (
     <div className="space-y-6 p-6">
       <PageHeader
         title="User Management"
-        description={`${users.length} system account${users.length !== 1 ? 's' : ''}`}
+        description={`${result.total.toLocaleString()} system account${result.total !== 1 ? 's' : ''} — ${result.activeCount.toLocaleString()} active, ${result.inactiveCount.toLocaleString()} inactive.`}
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },
           { label: 'Admin', href: '/admin' },
@@ -79,7 +85,32 @@ export default async function AdminUsersPage() {
         }
       />
 
-      <UsersTable users={users} />
+      <UsersFilterBar
+        initial={{
+          search: queryParams.search,
+          role: queryParams.role,
+          status: queryParams.status,
+          officeId: queryParams.officeId,
+          pageSize: result.pageSize,
+        }}
+        offices={officeOptions}
+      />
+
+      <UsersTableShell users={rows} />
+
+      <UsersPagination
+        page={result.page}
+        totalPages={result.totalPages}
+        total={result.total}
+        pageSize={result.pageSize}
+        searchParams={{
+          search: queryParams.search,
+          role: queryParams.role,
+          status: queryParams.status,
+          officeId: queryParams.officeId,
+          pageSize: String(result.pageSize),
+        }}
+      />
 
       {/* Realtime: re-renders the page when system_users or audit_logs change */}
       <RealtimeBoundary tables={['system_users', 'audit_logs']} />

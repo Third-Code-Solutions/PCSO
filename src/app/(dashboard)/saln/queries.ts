@@ -381,3 +381,86 @@ export async function getSalnNonFilers(year: number): Promise<ComplianceRow[]> {
   const rows = await getSalnComplianceForYear(year);
   return rows.filter((r) => !r.hasFiled);
 }
+
+// ---------------------------------------------------------------------------
+// Query: paginated SALN submissions for super_admin
+// ---------------------------------------------------------------------------
+
+export const SUBMISSIONS_PAGE_SIZE = 50;
+
+export interface PaginatedSubmissions {
+  rows: SalnSubmissionRow[];
+  total: number;
+  page: number;
+  perPage: number;
+}
+
+interface SubmissionsFilter {
+  status?: SalnStatus | null;
+  employeeNo?: string | null;
+  year?: number | null;
+  page?: number;
+  perPage?: number;
+}
+
+export async function getAllSubmissionsForSuperAdmin(
+  _viewerUserId: string,
+  filter: SubmissionsFilter = {},
+): Promise<PaginatedSubmissions> {
+  const supabase = await createServerClient();
+  const page = Math.max(1, filter.page ?? 1);
+  const perPage = Math.min(200, Math.max(1, filter.perPage ?? SUBMISSIONS_PAGE_SIZE));
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+
+  let q = supabase
+    .from('saln_submissions')
+    .select(
+      `
+      id,
+      employee_id,
+      year,
+      filing_type,
+      status,
+      total_assets,
+      total_liabilities,
+      net_worth,
+      date_filed,
+      document_url,
+      remarks,
+      created_at,
+      updated_at,
+      employees!inner ( employee_no, first_name, middle_name, last_name )
+    `,
+      { count: 'exact' },
+    )
+    .order('year', { ascending: false })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (filter.status) q = q.eq('status', filter.status);
+  if (filter.year) q = q.eq('year', filter.year);
+  if (filter.employeeNo) q = q.eq('employees.employee_no', filter.employeeNo);
+
+  const { data, error, count } = await q;
+  if (error) {
+    throw new Error(`Failed to load SALN submissions: ${error.message}`);
+  }
+
+  const rows = (data ?? []).map((row) => {
+    const empRaw = row.employees;
+    const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as
+      | Record<string, unknown>
+      | null ?? {};
+    const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
+      .filter(Boolean)
+      .join(' ');
+    return toSubmissionRow({
+      ...row,
+      employee_no: emp['employee_no'],
+      employee_name: name,
+    });
+  });
+
+  return { rows, total: count ?? rows.length, page, perPage };
+}

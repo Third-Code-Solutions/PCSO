@@ -7,8 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AvatarUploader } from '@/components/employees/avatar-uploader';
 import { TwoOhOneViewer } from '@/components/employees/201-viewer';
+import { ArchiveEmployeeButton } from '@/components/employees/archive-employee-button';
 import { getEmployeeById } from '../queries';
 import { APPOINTMENT_TYPE_LABELS } from '@/lib/constants/appointment-types';
+import { requireAuth } from '@/lib/auth/guards';
+import { hasPermission } from '@/lib/auth/permissions';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -61,9 +64,12 @@ interface PageProps {
 
 export default async function EmployeeProfilePage({ params }: PageProps) {
   const { id } = await params;
-  const employee = await getEmployeeById(id);
+  const [user, employee] = await Promise.all([requireAuth(), getEmployeeById(id)]);
 
   if (!employee) notFound();
+
+  const canEdit = hasPermission(user.role, 'employees', 'edit');
+  const canArchive = hasPermission(user.role, 'employees', 'delete');
 
   const fullName = [employee.firstName, employee.middleName, employee.lastName]
     .filter(Boolean)
@@ -117,12 +123,21 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
               <span className="font-mono text-xs text-muted-foreground">
                 {employee.employeeNo}
               </span>
-              <Button asChild size="sm" variant="outline" className="gap-1.5">
-                <Link href={`/employees/${employee.id}/edit`}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit
-                </Link>
-              </Button>
+              {canEdit && (
+                <Button asChild size="sm" variant="outline" className="gap-1.5">
+                  <Link href={`/employees/${employee.id}/edit`}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Link>
+                </Button>
+              )}
+              {canArchive && (
+                <ArchiveEmployeeButton
+                  employeeId={employee.id}
+                  employeeName={displayName}
+                  isAlreadyArchived={employee.status === 'resigned'}
+                />
+              )}
             </div>
           </div>
         </div>

@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { NotificationBell } from '@/components/layouts/notification-bell';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { UserMenu } from '@/components/layouts/user-menu';
@@ -16,7 +17,6 @@ interface TopNavProps {
   breadcrumbs?: BreadcrumbItem[];
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
-  // TODO: Replace with real user data from Supabase session
   user?: {
     name: string;
     email: string;
@@ -24,9 +24,6 @@ interface TopNavProps {
   };
   onSignOut?: () => void;
 }
-
-// TODO: Replace with real notification count from API
-const MOCK_NOTIFICATION_COUNT = 0;
 
 export function TopNav({
   breadcrumbs,
@@ -108,27 +105,7 @@ export function TopNav({
       <div className="flex-1" />
 
       {/* Notifications */}
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative"
-              aria-label="Notifications"
-            >
-              <Bell className="h-5 w-5" />
-              {MOCK_NOTIFICATION_COUNT > 0 && (
-                <span className="absolute right-1.5 top-1.5 flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-senate-gold opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-senate-gold" />
-                </span>
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Notifications</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <NotificationBell />
 
       <Separator orientation="vertical" className="h-6" />
 

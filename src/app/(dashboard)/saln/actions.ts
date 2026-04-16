@@ -21,9 +21,9 @@ import {
   FileSalnSchema,
   UpdateSalnSchema,
   SendRemindersSchema,
-  ExportSalnSchema,
 } from '@/lib/validations/saln';
 import { computeNetWorth } from '@/lib/utils/saln/net-worth';
+import { notifyEmployee, notifyRoles } from '@/lib/notifications';
 import { annualDeadline, daysUntilDeadline } from '@/lib/utils/saln/deadline';
 import {
   SalnReminderEmail,
@@ -149,8 +149,27 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
     },
   });
 
+  // Fan-out: notify compliance office (super_admin) when a SALN is submitted.
+  // Draft saves do not trigger notifications.
+  if (parsed.submit) {
+    try {
+      await notifyRoles(['super_admin'], {
+        type: 'saln_reminder',
+        title: `New SALN submission — CY ${parsed.year}`,
+        body: `An employee has submitted their SALN for calendar year ${parsed.year} for review.`,
+        actionUrl: `/saln/${data.id}`,
+        entityType: 'saln_submission',
+        entityId: data.id,
+      });
+    } catch (notifyErr) {
+      console.error('[saln/actions] fileSaln notifyRoles failed:', notifyErr);
+    }
+  }
+
   revalidatePath('/saln');
+  revalidatePath('/saln/submissions');
   revalidatePath('/saln/admin');
+  revalidatePath('/saln/tracking');
 
   return { id: data.id };
 }
@@ -274,7 +293,7 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
 
   await writeAuditLog(supabase, {
     userId: user.id,
-    action: parsed.submit ? 'submit' : 'update',
+    action: parsed.submit ? 'submit' : newStatus !== currentStatus ? 'review' : 'update',
     recordId: parsed.id,
     oldValues: {
       status: currentStatus,
@@ -283,12 +302,62 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
     newValues: {
       status: newStatus,
       net_worth: worth.netWorth,
+      remarks: parsed.remarks ?? undefined,
     },
   });
 
+  // Fan-out notifications
+  const ownerEmployeeId = String(existing.employee_id ?? '');
+
+  try {
+    if (parsed.submit && currentStatus === 'draft') {
+      // Newly submitted: notify super_admin compliance office
+      await notifyRoles(['super_admin'], {
+        type: 'saln_reminder',
+        title: `SALN submitted for review`,
+        body: `A SALN draft has been submitted and is now awaiting compliance review.`,
+        actionUrl: `/saln/${parsed.id}`,
+        entityType: 'saln_submission',
+        entityId: parsed.id,
+      });
+    }
+    // Admin action: notify owning employee of status changes (received/verified/deficient).
+    if (
+      user.role === 'super_admin' &&
+      newStatus !== currentStatus &&
+      (newStatus === 'received' ||
+        newStatus === 'verified' ||
+        newStatus === 'deficient') &&
+      ownerEmployeeId
+    ) {
+      const titleMap: Record<string, string> = {
+        received: 'SALN received by compliance office',
+        verified: 'SALN verified — thank you for your compliance',
+        deficient: 'SALN flagged as deficient — action required',
+      };
+      await notifyEmployee(ownerEmployeeId, {
+        type: 'saln_reminder',
+        title: titleMap[newStatus] ?? `SALN status updated: ${newStatus}`,
+        body:
+          newStatus === 'deficient'
+            ? parsed.remarks
+              ? `Remarks: ${parsed.remarks}`
+              : 'Please review the HR remarks on your SALN and re-submit.'
+            : undefined,
+        actionUrl: `/saln/${parsed.id}`,
+        entityType: 'saln_submission',
+        entityId: parsed.id,
+      });
+    }
+  } catch (notifyErr) {
+    console.error('[saln/actions] updateSaln notification failed:', notifyErr);
+  }
+
   revalidatePath('/saln');
   revalidatePath(`/saln/${parsed.id}`);
+  revalidatePath('/saln/submissions');
   revalidatePath('/saln/admin');
+  revalidatePath('/saln/tracking');
 
   return { id: parsed.id };
 }
@@ -410,6 +479,18 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
     }
 
     sent++;
+
+    // Real-time push notification to the employee
+    try {
+      await notifyEmployee(String(emp.id), {
+        type: 'saln_reminder',
+        title: `SALN filing reminder (${parsed.year})`,
+        body: `Deadline: April 30. ${days} days remaining.`,
+        actionUrl: '/saln/new',
+      });
+    } catch (notifyErr) {
+      console.error('[saln/actions] sendReminders notification failed:', notifyErr);
+    }
   }
 
   // Audit log the bulk action
@@ -426,173 +507,4 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
   });
 
   return { sent, failed, errors };
-}
-
-// ---------------------------------------------------------------------------
-// Action: exportDocuments — generate COA compliance export (super_admin only)
-// ---------------------------------------------------------------------------
-
-export interface ExportResult {
-  content: string;
-  filename: string;
-  mimeType: string;
-}
-
-export async function exportDocuments(input: unknown): Promise<ExportResult> {
-  const parsed = ExportSalnSchema.parse(input);
-  const user = await requirePermission('saln', 'export');
-
-  if (user.role !== 'super_admin') {
-    throw Object.assign(new Error('Forbidden: Only super_admin can export SALN data.'), {
-      status: 403,
-    });
-  }
-
-  const supabase = await createServerClient();
-
-  const { data, error } = await supabase
-    .from('saln_submissions')
-    .select(
-      `
-      id,
-      year,
-      filing_type,
-      status,
-      total_assets,
-      total_liabilities,
-      net_worth,
-      date_filed,
-      employees!inner (
-        employee_no,
-        first_name,
-        middle_name,
-        last_name,
-        position_title,
-        offices (name)
-      )
-    `,
-    )
-    .eq('year', parsed.year)
-    .neq('status', 'draft')
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to load SALN data for export: ${error.message}`);
-  }
-
-  // Audit log the export
-  await writeAuditLog(supabase, {
-    userId: user.id,
-    action: 'export',
-    recordId: user.id,
-    newValues: { year: parsed.year, format: parsed.format, count: (data ?? []).length },
-  });
-
-  // Build CSV
-  const headers = [
-    'Employee No.',
-    'Full Name',
-    'Position',
-    'Office',
-    'Filing Type',
-    'Status',
-    'Date Filed',
-    'Total Assets',
-    'Total Liabilities',
-    'Net Worth',
-  ];
-
-  const rows = (data ?? []).map((row) => {
-    const empRaw = row.employees;
-    const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<string, unknown> | null ?? {};
-    const officeRaw = emp['offices'];
-    const office = (Array.isArray(officeRaw) ? officeRaw[0] : officeRaw) as Record<string, unknown> | null;
-    const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
-      .filter(Boolean)
-      .join(' ');
-    return [
-      String(emp['employee_no'] ?? ''),
-      name,
-      String(emp['position_title'] ?? ''),
-      office ? String(office['name'] ?? '') : '',
-      String(row.filing_type ?? ''),
-      String(row.status ?? ''),
-      String(row.date_filed ?? ''),
-      String(row.total_assets ?? '0.00'),
-      String(row.total_liabilities ?? '0.00'),
-      String(row.net_worth ?? '0.00'),
-    ]
-      .map((v) => `"${v.replace(/"/g, '""')}"`)
-      .join(',');
-  });
-
-  const content = [headers.join(','), ...rows].join('\n');
-  const filename = `saln-compliance-${parsed.year}.csv`;
-
-  return {
-    content,
-    filename,
-    mimeType: 'text/csv',
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Action: generateSignedDocumentUrl — 1-hour signed URL for SALN documents
-// ---------------------------------------------------------------------------
-
-export async function generateSignedDocumentUrl(
-  submissionId: string,
-): Promise<{ signedUrl: string }> {
-  const user = await requirePermission('saln', 'view');
-
-  const supabase = await createServerClient();
-
-  // Fetch submission to check ownership and get document path
-  const { data, error } = await supabase
-    .from('saln_submissions')
-    .select('employee_id, document_url, year')
-    .eq('id', submissionId)
-    .single();
-
-  if (error || !data) {
-    throw new Error('SALN submission not found.');
-  }
-
-  // Enforce self-only
-  if (
-    user.role !== 'super_admin' &&
-    user.employeeId !== String(data.employee_id ?? '')
-  ) {
-    throw Object.assign(
-      new Error('Forbidden: You may only access your own SALN documents.'),
-      { status: 403 },
-    );
-  }
-
-  const storagePath = String(data.document_url ?? '');
-  if (!storagePath) {
-    throw new Error('No document is attached to this SALN submission.');
-  }
-
-  // Documents stored at saln/{year}/{employeeId}/{filename} — signed URLs only
-  const { data: signedData, error: signedError } = await supabase.storage
-    .from('saln-documents')
-    .createSignedUrl(storagePath, 60 * 60); // 1-hour expiry
-
-  if (signedError || !signedData?.signedUrl) {
-    throw new Error(`Failed to generate signed URL: ${signedError?.message ?? 'Unknown error'}`);
-  }
-
-  // Audit log document access
-  await writeAuditLog(supabase, {
-    userId: user.id,
-    action: 'access_document',
-    recordId: submissionId,
-    newValues: {
-      storage_path: storagePath,
-      note: 'Signed URL generated for SALN document — 1hr expiry',
-    },
-  });
-
-  return { signedUrl: signedData.signedUrl };
 }

@@ -4,6 +4,7 @@ import { UserPlus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmployeeFilters } from '@/components/employees/employee-filters';
 import { EmployeeListTable } from '@/components/employees/employee-list-table';
+import { EmployeeListSkeleton } from '@/components/employees/employee-list-skeleton';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { getEmployees, getOfficesForSelect } from './queries';
 import { EmployeeListParamsSchema } from '@/lib/validations/employees';
@@ -27,6 +28,17 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
 
   const params = EmployeeListParamsSchema.parse(flatParams);
 
+  // Build export QS from validated filter params only — avoids leaking
+  // unknown keys and keeps the server-side CSV query identical to what the
+  // user sees on-screen.
+  const exportParams = new URLSearchParams();
+  if (params.search) exportParams.set('search', params.search);
+  if (params.appointmentType) exportParams.set('appointmentType', params.appointmentType);
+  if (params.officeId) exportParams.set('officeId', params.officeId);
+  if (params.status) exportParams.set('status', params.status);
+  if (params.salaryGrade) exportParams.set('salaryGrade', String(params.salaryGrade));
+  const exportQS = exportParams.toString();
+
   const [listResult, offices] = await Promise.all([
     getEmployees(params),
     getOfficesForSelect(),
@@ -47,11 +59,13 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-2" asChild>
-            {/* CSV export — triggers a route handler; TODO: xlsx via exceljs */}
-            <Link href={`/api/employees/export?${new URLSearchParams(flatParams as Record<string, string>)}`}>
+            <a
+              href={exportQS ? `/api/employees/export?${exportQS}` : '/api/employees/export'}
+              download
+            >
               <Download className="h-4 w-4" />
               Export CSV
-            </Link>
+            </a>
           </Button>
           <Button
             asChild
@@ -72,7 +86,7 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
       </Suspense>
 
       {/* Table */}
-      <Suspense fallback={<div className="text-sm text-muted-foreground">Loading…</div>}>
+      <Suspense fallback={<EmployeeListSkeleton rows={Math.min(params.perPage, 10)} />}>
         <EmployeeListTable
           initialData={listResult}
           currentPage={params.page}

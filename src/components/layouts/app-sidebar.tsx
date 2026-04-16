@@ -26,6 +26,10 @@ import { Separator } from '@/components/ui/separator';
 interface NavChild {
   label: string;
   href: string;
+  /** If set, child is only shown to these roles */
+  roles?: Role[];
+  /** If set, child is only shown when the role can access this resource */
+  resource?: Parameters<typeof canAccess>[1];
 }
 
 interface NavItem {
@@ -49,9 +53,9 @@ const NAV_ITEMS: NavItem[] = [
     icon: Users,
     resource: 'employees',
     children: [
-      { label: 'Employee Records', href: '/employees' },
-      { label: 'Plantilla', href: '/plantilla' },
-      { label: 'Org Chart', href: '/org-chart' },
+      { label: 'Employee Records', href: '/employees', resource: 'employees' },
+      { label: 'Plantilla', href: '/plantilla', resource: 'plantilla' },
+      { label: 'Org Chart', href: '/org-chart', resource: 'plantilla' },
     ],
   },
   {
@@ -150,6 +154,18 @@ function isItemVisible(item: NavItem, role: Role | undefined): boolean {
   return canAccess(role, item.resource);
 }
 
+function isChildVisible(child: NavChild, role: Role | undefined): boolean {
+  // A resource constraint always takes priority — if the role cannot access
+  // the underlying resource, the link is hidden regardless of role allowlist.
+  if (child.resource) {
+    if (!role) return false;
+    if (!canAccess(role, child.resource)) return false;
+  }
+  if (!child.roles) return true; // No allowlist — visible to all remaining roles
+  if (!role) return false;
+  return child.roles.includes(role);
+}
+
 function useActiveGroup(items: NavItem[], pathname: string): string | null {
   for (const item of items) {
     if (item.children) {
@@ -198,13 +214,17 @@ function NavGroup({
   item,
   collapsed,
   defaultOpen,
+  role,
 }: {
   item: NavItem;
   collapsed: boolean;
   defaultOpen: boolean;
+  role?: Role;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const Icon = item.icon;
+  const visibleChildren =
+    item.children?.filter((child) => isChildVisible(child, role)) ?? [];
 
   const button = (
     <button
@@ -249,9 +269,9 @@ function NavGroup({
         button
       )}
 
-      {!collapsed && open && item.children && (
+      {!collapsed && open && visibleChildren.length > 0 && (
         <ul className="mt-1 space-y-0.5">
-          {item.children.map((child) => (
+          {visibleChildren.map((child) => (
             <li key={child.href}>
               <NavChildLink child={child} collapsed={collapsed} />
             </li>
@@ -322,7 +342,15 @@ export function AppSidebar({
   const pathname = usePathname();
   const activeGroup = useActiveGroup(NAV_ITEMS, pathname);
 
-  const visibleItems = NAV_ITEMS.filter((item) => isItemVisible(item, role));
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (!isItemVisible(item, role)) return false;
+    // Hide groups whose children are all gated away for this role.
+    if (item.children && item.children.length > 0) {
+      const anyVisibleChild = item.children.some((c) => isChildVisible(c, role));
+      if (!anyVisibleChild) return false;
+    }
+    return true;
+  });
 
   const sidebarContent = (
     <nav
@@ -363,6 +391,7 @@ export function AppSidebar({
                 item={item}
                 collapsed={!open}
                 defaultOpen={activeGroup === item.label}
+                role={role}
               />
             ) : (
               <NavLeaf key={item.label} item={item} collapsed={!open} />

@@ -8,14 +8,17 @@
 
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { EditIcon, DownloadIcon } from 'lucide-react';
+import { EditIcon, PrinterIcon } from 'lucide-react';
 import { requirePermission } from '@/lib/auth/guards';
 import { getSalnSubmissionById } from '@/app/(dashboard)/saln/queries';
+import { reviewSaln } from '@/app/(dashboard)/saln/admin-actions';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { formatPeso } from '@/lib/utils/saln/net-worth';
+import { SalnReviewPanel } from '@/components/saln/review-panel';
+import { PrintOnLoad } from '@/components/saln/print-on-load';
 import type {
   RealAsset,
   PersonalProperty,
@@ -179,11 +182,17 @@ function RelativesSection({ items }: { items: RelativeInGovernment[] }) {
 
 interface SalnDetailPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ print?: string }>;
 }
 
-export default async function SalnDetailPage({ params }: SalnDetailPageProps) {
+export default async function SalnDetailPage({
+  params,
+  searchParams,
+}: SalnDetailPageProps) {
   const user = await requirePermission('saln', 'view');
   const { id } = await params;
+  const { print } = await searchParams;
+  const shouldPrintOnLoad = print === '1';
 
   let submission: Awaited<ReturnType<typeof getSalnSubmissionById>> | null = null;
   try {
@@ -214,8 +223,11 @@ export default async function SalnDetailPage({ params }: SalnDetailPageProps) {
     (sub.status === 'draft' || sub.status === 'deficient') &&
     (user.role === 'super_admin' || user.employeeId === sub.employeeId);
 
+  const isSuperAdmin = user.role === 'super_admin';
+
   return (
     <div>
+      {shouldPrintOnLoad && <PrintOnLoad />}
       <PageHeader
         title={`SALN — ${sub.year}`}
         description={`${sub.employeeName} · Filed: ${sub.dateFiled ?? 'Draft'}`}
@@ -225,12 +237,24 @@ export default async function SalnDetailPage({ params }: SalnDetailPageProps) {
           { label: `SALN ${sub.year}` },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 print:hidden">
             {canEdit && (
               <Button asChild variant="outline" size="sm">
                 <Link href={`/saln/${sub.id}/edit`}>
                   <EditIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                   Edit
+                </Link>
+              </Button>
+            )}
+            {sub.status !== 'draft' && (
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={`/saln/${sub.id}?print=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <PrinterIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+                  Print / PDF
                 </Link>
               </Button>
             )}
@@ -331,6 +355,20 @@ export default async function SalnDetailPage({ params }: SalnDetailPageProps) {
         <div className="mt-8 rounded-md border border-orange-200 bg-orange-50 p-4">
           <p className="text-sm font-semibold text-orange-800">HR Remarks</p>
           <p className="mt-1 text-sm text-orange-700">{sub.remarks}</p>
+        </div>
+      )}
+
+      {isSuperAdmin && (
+        <div className="mt-8 print:hidden">
+          <SalnReviewPanel
+            submissionId={sub.id}
+            currentStatus={sub.status}
+            currentRemarks={sub.remarks}
+            onReview={async (input) => {
+              'use server';
+              return reviewSaln(input);
+            }}
+          />
         </div>
       )}
 
