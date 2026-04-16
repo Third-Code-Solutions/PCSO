@@ -6,12 +6,18 @@ import {
   leaveCredits,
   leaveTypes,
   payrollPeriods,
+  payrollRecords,
   auditLogs,
   systemUsers,
   remittanceBatches,
   gsisRemittanceBatches,
+  holidays,
+  dtrPeriods,
+  attendanceLogs,
+  salnSubmissions,
 } from '@/lib/db/schema';
-import { eq, and, isNull, count, sql, desc, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, isNull, count, sql, desc, gte, lte, inArray, notInArray } from 'drizzle-orm';
+import { createServerClient } from '@/lib/supabase/server';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -374,4 +380,354 @@ export async function getUpcomingCutoffs(): Promise<UpcomingCutoffRow[]> {
     status: row.status as 'draft' | 'processing',
     scope: row.scope as 'regular' | 'jo_cos',
   }));
+}
+
+// ─── Role-aware dashboard types ──────────────────────────────────────────────
+
+export interface AdminKpis {
+  totalEmployees: number;
+  pendingLeaves: number;
+  pendingOvertimes: number;
+  pendingDtrApprovals: number;
+  salnNonFilers: number;
+  upcomingHolidays: number;
+}
+
+export interface PayrollAdminKpis {
+  activePayrollPeriodName: string | null;
+  activePayrollPeriodId: string | null;
+  pendingPayrollEntries: number;
+  remittanceDeadlines: number;
+  payrollEmployeeCount: number;
+}
+
+export interface LeaveApproverKpis {
+  pendingMyApprovals: number;
+  approvedLeavesToday: number;
+  teamOnLeaveToday: number;
+}
+
+export interface EmployeeKpis {
+  vlBalance: number;
+  slBalance: number;
+  latestPayslipPeriodName: string | null;
+  latestPayslipPeriodId: string | null;
+  dtrTodayStatus: 'present' | 'incomplete' | 'absent';
+  salnDeadline: string | null;
+  nextHolidayName: string | null;
+  nextHolidayDate: string | null;
+}
+
+// ─── Role-aware dashboard queries ────────────────────────────────────────────
+
+/**
+ * Returns the count of pending overtime requests.
+ * Wraps the supabase call — `overtime_requests` is stored outside Drizzle schema.
+ */
+export async function getPendingOvertimeCount(): Promise<number> {
+  try {
+    const supabase = await createServerClient();
+    const { count: c } = await supabase
+      .from('overtime_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+    return c ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Count DTR periods submitted and awaiting approval.
+ */
+export async function getPendingDtrApprovalsCount(): Promise<number> {
+  const [row] = await db
+    .select({ c: count() })
+    .from(dtrPeriods)
+    .where(eq(dtrPeriods.status, 'submitted'));
+  return Number(row?.c ?? 0);
+}
+
+/**
+ * Count of holidays occurring in the next 90 days.
+ */
+export async function getUpcomingHolidaysCount(daysAhead = 90): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10);
+  const horizon = new Date(Date.now() + daysAhead * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+  const [row] = await db
+    .select({ c: count() })
+    .from(holidays)
+    .where(
+      and(gte(holidays.holidayDate, today), lte(holidays.holidayDate, horizon)),
+    );
+  return Number(row?.c ?? 0);
+}
+
+/**
+ * Returns the next upcoming holiday (name + date) from today.
+ */
+export async function getNextHoliday(): Promise<{
+  name: string;
+  date: string;
+} | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const [row] = await db
+    .select({ name: holidays.name, date: holidays.holidayDate })
+    .from(holidays)
+    .where(gte(holidays.holidayDate, today))
+    .orderBy(holidays.holidayDate)
+    .limit(1);
+
+  if (!row) return null;
+  return { name: row.name, date: row.date };
+}
+
+/**
+ * Count employees who have NOT filed SALN for the given year.
+ * Defaults to last calendar year (annual SALN is due April 30 for prior year).
+ */
+export async function getSalnNonFilersCount(year?: number): Promise<number> {
+  const targetYear = year ?? new Date().getFullYear() - 1;
+
+  const [activeRow] = await db
+    .select({ c: count() })
+    .from(employees)
+    .where(and(eq(employees.status, 'active'), isNull(employees.deletedAt)));
+
+  const activeCount = Number(activeRow?.c ?? 0);
+
+  const filerRows = await db
+    .selectDistinct({ employeeId: salnSubmissions.employeeId })
+    .from(salnSubmissions)
+    .where(
+      and(
+        eq(salnSubmissions.year, targetYear),
+        inArray(salnSubmissions.status, ['submitted', 'received', 'verified']),
+      ),
+    );
+
+  return Math.max(0, activeCount - filerRows.length);
+}
+
+/**
+ * System-wide KPIs for super_admin / hr_admin.
+ */
+export async function getAdminDashboardKpis(): Promise<AdminKpis> {
+  const [totalEmpRow, pendingLeaveRow, pendingOt, pendingDtr, upcomingHol, salnNon] =
+    await Promise.all([
+      db
+        .select({ c: count() })
+        .from(employees)
+        .where(and(eq(employees.status, 'active'), isNull(employees.deletedAt))),
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .where(eq(leaveApplications.status, 'pending')),
+      getPendingOvertimeCount(),
+      getPendingDtrApprovalsCount(),
+      getUpcomingHolidaysCount(),
+      getSalnNonFilersCount(),
+    ]);
+
+  return {
+    totalEmployees: Number(totalEmpRow[0]?.c ?? 0),
+    pendingLeaves: Number(pendingLeaveRow[0]?.c ?? 0),
+    pendingOvertimes: pendingOt,
+    pendingDtrApprovals: pendingDtr,
+    salnNonFilers: salnNon,
+    upcomingHolidays: upcomingHol,
+  };
+}
+
+/**
+ * Payroll admin dashboard KPIs.
+ */
+export async function getPayrollAdminKpis(): Promise<PayrollAdminKpis> {
+  const [activePeriodRows, totalEmpRow, remittancesActiveRow] = await Promise.all([
+    db
+      .select({
+        id: payrollPeriods.id,
+        name: payrollPeriods.name,
+      })
+      .from(payrollPeriods)
+      .where(
+        and(
+          inArray(payrollPeriods.status, ['draft', 'processing']),
+          isNull(payrollPeriods.deletedAt),
+        ),
+      )
+      .orderBy(payrollPeriods.periodEnd)
+      .limit(1),
+    db
+      .select({ c: count() })
+      .from(employees)
+      .where(and(eq(employees.status, 'active'), isNull(employees.deletedAt))),
+    db
+      .select({ c: count() })
+      .from(remittanceBatches)
+      .where(inArray(remittanceBatches.status, ['draft', 'generated'])),
+  ]);
+
+  const activePeriod = activePeriodRows[0] ?? null;
+  let pendingPayrollEntries = 0;
+
+  if (activePeriod) {
+    const [entries] = await db
+      .select({ c: count() })
+      .from(payrollRecords)
+      .where(
+        and(
+          eq(payrollRecords.periodId, activePeriod.id),
+          notInArray(payrollRecords.status, ['paid']),
+        ),
+      );
+    pendingPayrollEntries = Number(entries?.c ?? 0);
+  }
+
+  return {
+    activePayrollPeriodName: activePeriod?.name ?? null,
+    activePayrollPeriodId: activePeriod?.id ?? null,
+    pendingPayrollEntries,
+    remittanceDeadlines: Number(remittancesActiveRow[0]?.c ?? 0),
+    payrollEmployeeCount: Number(totalEmpRow[0]?.c ?? 0),
+  };
+}
+
+/**
+ * Leave-approver dashboard KPIs.
+ *
+ * `approverUserId` is the system_users.id of the current approver. At the DB
+ * level we don't have per-approver queue routing yet, so this returns the
+ * overall pending queue — callers still use role-gated access.
+ */
+export async function getLeaveApproverKpis(
+  _approverUserId: string,
+): Promise<LeaveApproverKpis> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [pendingRow, approvedTodayRow, onLeaveTodayRow] = await Promise.all([
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
+      .where(eq(leaveApplications.status, 'pending')),
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
+      .where(
+        and(
+          eq(leaveApplications.status, 'approved'),
+          gte(leaveApplications.approvedAt, new Date(`${today}T00:00:00Z`)),
+        ),
+      ),
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
+      .where(
+        and(
+          eq(leaveApplications.status, 'approved'),
+          lte(leaveApplications.dateFrom, today),
+          gte(leaveApplications.dateTo, today),
+        ),
+      ),
+  ]);
+
+  return {
+    pendingMyApprovals: Number(pendingRow[0]?.c ?? 0),
+    approvedLeavesToday: Number(approvedTodayRow[0]?.c ?? 0),
+    teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+  };
+}
+
+/**
+ * Personal dashboard KPIs for employee_self_service.
+ */
+export async function getEmployeeDashboardKpis(
+  employeeId: string,
+): Promise<EmployeeKpis> {
+  const currentYear = new Date().getFullYear();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [creditRows, latestPayrollRows, todayLog, nextHol] = await Promise.all([
+    db
+      .select({
+        code: leaveTypes.code,
+        balance: leaveCredits.balance,
+      })
+      .from(leaveCredits)
+      .leftJoin(leaveTypes, eq(leaveCredits.leaveTypeId, leaveTypes.id))
+      .where(
+        and(
+          eq(leaveCredits.employeeId, employeeId),
+          eq(leaveCredits.year, currentYear),
+          inArray(leaveTypes.code, ['VL', 'SL']),
+        ),
+      ),
+    db
+      .select({
+        periodId: payrollRecords.periodId,
+        periodName: payrollPeriods.name,
+        periodEnd: payrollPeriods.periodEnd,
+      })
+      .from(payrollRecords)
+      .leftJoin(payrollPeriods, eq(payrollRecords.periodId, payrollPeriods.id))
+      .where(
+        and(
+          eq(payrollRecords.employeeId, employeeId),
+          eq(payrollRecords.status, 'paid'),
+        ),
+      )
+      .orderBy(desc(payrollPeriods.periodEnd))
+      .limit(1),
+    db
+      .select({
+        timeIn: attendanceLogs.timeIn,
+        timeOut: attendanceLogs.timeOut,
+      })
+      .from(attendanceLogs)
+      .where(
+        and(
+          eq(attendanceLogs.employeeId, employeeId),
+          eq(attendanceLogs.logDate, today),
+        ),
+      )
+      .limit(1),
+    getNextHoliday(),
+  ]);
+
+  let vlBalance = 0;
+  let slBalance = 0;
+  for (const row of creditRows) {
+    if (row.code === 'VL') vlBalance = Number(row.balance ?? 0);
+    if (row.code === 'SL') slBalance = Number(row.balance ?? 0);
+  }
+
+  const latestPayslip = latestPayrollRows[0] ?? null;
+  const log = todayLog[0] ?? null;
+
+  let dtrTodayStatus: 'present' | 'incomplete' | 'absent' = 'absent';
+  if (log?.timeIn && log?.timeOut) dtrTodayStatus = 'present';
+  else if (log?.timeIn || log?.timeOut) dtrTodayStatus = 'incomplete';
+
+  // Annual SALN filing deadline: April 30 each year (RA 6713).
+  const now = new Date();
+  const year = now.getFullYear();
+  const deadlineThisYear = new Date(Date.UTC(year, 3, 30));
+  const salnDeadline =
+    now <= deadlineThisYear
+      ? deadlineThisYear.toISOString().slice(0, 10)
+      : new Date(Date.UTC(year + 1, 3, 30)).toISOString().slice(0, 10);
+
+  return {
+    vlBalance,
+    slBalance,
+    latestPayslipPeriodName: latestPayslip?.periodName ?? null,
+    latestPayslipPeriodId: latestPayslip?.periodId ?? null,
+    dtrTodayStatus,
+    salnDeadline,
+    nextHolidayName: nextHol?.name ?? null,
+    nextHolidayDate: nextHol?.date ?? null,
+  };
 }

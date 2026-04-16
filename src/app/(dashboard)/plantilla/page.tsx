@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { Plus, FileDown } from 'lucide-react';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Button } from '@/components/ui/button';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { PlantillaTableClient } from './_client';
 import { PlantillaListSkeleton } from '@/components/plantilla/plantilla-list-skeleton';
 import { getPlantillaPositions, getOffices, getActiveEmployees } from './queries';
@@ -60,6 +61,7 @@ export default async function PlantillaPage({ searchParams }: PlantillaPageProps
 
   return (
     <div>
+      <RealtimeBoundary tables={['plantilla_items']} />
       <PageHeader
         title="Plantilla of Personnel"
         description="Official record of authorized positions in the Senate of the Philippines."

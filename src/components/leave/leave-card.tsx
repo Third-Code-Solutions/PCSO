@@ -1,32 +1,29 @@
 /**
- * CSC Leave Card (Leave Card / Leave Record) PDF
+ * CSC Leave Card (Form 6 / Individual Leave Record) — CSV generator.
  *
- * Rendered using @react-pdf/renderer.
+ * NOTE: This file used to render a PDF via @react-pdf/renderer but React 19
+ * compatibility issues force us to ship the Leave Card as CSV instead.
+ * See CLAUDE.md handoff — Agent 7.
  *
- * Layout mirrors the official CSC Leave Card / Individual Leave Record
- * maintained by HR offices per CSC Omnibus Rules on Leave, Rule XIV, §53.
+ * The CSV mirrors the CSC Form 6 / Individual Leave Record maintained by HR
+ * offices per CSC Omnibus Rules on Leave (Rule XIV §53).
  *
- * The card shows:
- *  - Employee details
- *  - Opening balances (carry-over from prior year)
- *  - Monthly accrual schedule
- *  - Leave usages (applied leaves) listed chronologically
- *  - Running balance per entry
- *  - Terminal leave estimate
+ * Sections produced (blank rows as separators):
+ *  I.   Header (agency + employee info)
+ *  II.  Opening balances (carry-over, earned, forfeited, current)
+ *  III. Monthly accrual schedule with cumulative VL/SL running balance
+ *  IV.  Leave usage (approved applications) with running balances
+ *  V.   Terminal leave estimate
+ *  VI.  Certification footer
+ *
+ * All functions are pure and safe to call on the server or client. No DOM
+ * access, no heavy dependencies, works in any runtime.
  */
 
-import React from 'react';
-import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-} from '@react-pdf/renderer';
 import type { LeaveTypeCode } from '@/lib/constants/leave-types';
 
 // ---------------------------------------------------------------------------
-// Public prop types (exported so _client.tsx can reference them)
+// Public prop types
 // ---------------------------------------------------------------------------
 
 export interface LeaveUsageEntryForCard {
@@ -91,284 +88,18 @@ export interface LeaveCardProps {
 }
 
 // ---------------------------------------------------------------------------
-// Style constants
-// ---------------------------------------------------------------------------
-
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const CREAM = '#FAF4E6';
-const BORDER = '#d1d5db';
-const LIGHT = '#f9fafb';
-const GREEN = '#065f46';
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const styles = StyleSheet.create({
-  page: {
-    fontFamily: 'Helvetica',
-    fontSize: 7.5,
-    padding: 28,
-    color: '#111827',
-    backgroundColor: '#ffffff',
-  },
-
-  // ── Header ──
-  header: {
-    marginBottom: 6,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  headerAgency: {
-    fontSize: 6.5,
-    color: '#6b7280',
-  },
-  headerTitle: {
-    fontSize: 10,
-    fontFamily: 'Helvetica-Bold',
-    color: NAVY,
-  },
-  headerSub: {
-    fontSize: 7,
-    color: '#374151',
-    marginTop: 1,
-  },
-  formRef: {
-    fontSize: 6.5,
-    color: GOLD,
-    textAlign: 'right',
-  },
-  goldRule: {
-    borderBottomWidth: 1.5,
-    borderBottomColor: GOLD,
-    marginBottom: 6,
-  },
-
-  // ── Section header ──
-  sectionHeader: {
-    backgroundColor: NAVY,
-    color: CREAM,
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 7,
-    paddingHorizontal: 4,
-    paddingVertical: 2.5,
-    marginBottom: 4,
-    marginTop: 6,
-  },
-
-  // ── Employee info grid ──
-  infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 4,
-    gap: 4,
-  },
-  infoCell: {
-    flex: 1,
-    minWidth: '28%',
-  },
-  infoLabel: {
-    fontSize: 6,
-    color: '#6b7280',
-    marginBottom: 1,
-    textTransform: 'uppercase',
-  },
-  infoValue: {
-    fontSize: 7.5,
-    fontFamily: 'Helvetica-Bold',
-    borderBottomWidth: 0.5,
-    borderBottomColor: BORDER,
-    paddingBottom: 1.5,
-  },
-
-  // ── Tables ──
-  table: {
-    borderWidth: 0.5,
-    borderColor: BORDER,
-    marginBottom: 6,
-  },
-  tHead: {
-    flexDirection: 'row',
-    backgroundColor: LIGHT,
-    borderBottomWidth: 0.5,
-    borderBottomColor: BORDER,
-  },
-  tRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 0.3,
-    borderBottomColor: BORDER,
-  },
-  tRowAlt: {
-    backgroundColor: '#f9fafb',
-  },
-  tCell: {
-    flex: 1,
-    padding: 2.5,
-    fontSize: 6.5,
-    borderRightWidth: 0.3,
-    borderRightColor: BORDER,
-  },
-  tCellHead: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 6,
-    color: '#374151',
-  },
-  tCellRight: {
-    textAlign: 'right',
-  },
-  tCellCenter: {
-    textAlign: 'center',
-  },
-  tCellBold: {
-    fontFamily: 'Helvetica-Bold',
-  },
-  tCellNavy: {
-    color: NAVY,
-    fontFamily: 'Helvetica-Bold',
-  },
-  tCellGreen: {
-    color: GREEN,
-    fontFamily: 'Helvetica-Bold',
-  },
-  tCellAmber: {
-    color: '#92400e',
-  },
-  tCellFuture: {
-    color: '#9ca3af',
-    fontStyle: 'italic',
-  },
-
-  // ── Summary boxes ──
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 4,
-  },
-  summaryBox: {
-    flex: 1,
-    borderWidth: 0.5,
-    borderColor: BORDER,
-    padding: 5,
-    borderRadius: 3,
-  },
-  summaryBoxHighlight: {
-    borderColor: NAVY,
-    backgroundColor: '#eff6ff',
-  },
-  summaryLabel: {
-    fontSize: 6,
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  summaryValue: {
-    fontSize: 10,
-    fontFamily: 'Helvetica-Bold',
-    color: NAVY,
-    tabularNums: true,
-  },
-  summaryValueGreen: {
-    color: GREEN,
-  },
-  summaryValuePeso: {
-    color: NAVY,
-    fontSize: 9,
-  },
-
-  // ── Terminal leave ──
-  terminalBox: {
-    borderWidth: 0.5,
-    borderColor: GOLD,
-    backgroundColor: '#fffbeb',
-    padding: 6,
-    marginBottom: 6,
-    borderRadius: 2,
-  },
-  terminalTitle: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 7,
-    color: NAVY,
-    marginBottom: 4,
-  },
-  terminalRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 2,
-  },
-  terminalCell: {
-    flex: 1,
-  },
-  terminalLabel: {
-    fontSize: 6,
-    color: '#92400e',
-  },
-  terminalValue: {
-    fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
-    color: NAVY,
-  },
-  terminalDisclaimer: {
-    fontSize: 6,
-    color: '#6b7280',
-    marginTop: 3,
-    fontStyle: 'italic',
-  },
-
-  // ── Signature block ──
-  signatureArea: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 8,
-    gap: 40,
-  },
-  signatureCol: {
-    width: 160,
-    alignItems: 'center',
-  },
-  signatureLine: {
-    borderBottomWidth: 0.8,
-    borderBottomColor: '#374151',
-    width: '100%',
-    height: 18,
-    marginBottom: 2,
-  },
-  signatureLabel: {
-    fontSize: 6,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
-
-  // ── Footer ──
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 0.5,
-    borderTopColor: BORDER,
-    paddingTop: 3,
-    marginTop: 8,
-  },
-  footerText: {
-    fontSize: 5.5,
-    color: '#9ca3af',
-  },
-});
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function fmt3(n: number): string {
-  return n.toFixed(3);
+  return Number.isFinite(n) ? n.toFixed(3) : '';
 }
 
 function fmtDate(iso: string): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-PH', {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-PH', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -376,353 +107,196 @@ function fmtDate(iso: string): string {
 }
 
 function fmtPeso(amount: number): string {
-  return `\u20B1 ${amount.toLocaleString('en-PH', {
+  if (!Number.isFinite(amount)) return '';
+  return `PHP ${amount.toLocaleString('en-PH', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
+/**
+ * CSV cell escaping per RFC 4180.
+ * Quote fields containing comma, quote, CR, LF, or leading/trailing whitespace.
+ */
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  const needsQuote = /[",\r\n]/.test(s) || /^\s|\s$/.test(s);
+  if (!needsQuote) return s;
+  return `"${s.replace(/"/g, '""')}"`;
+}
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.sectionHeader}>{children}</Text>;
+function csvRow(cells: Array<unknown>): string {
+  return cells.map(csvCell).join(',');
 }
 
 // ---------------------------------------------------------------------------
-// PDF Document
+// CSV generator (Form 6)
 // ---------------------------------------------------------------------------
 
-export function LeaveCard({
-  employee,
-  credits,
-  usageEntries,
-  accrualSchedule,
-  terminalEstimate,
-  certifyingOfficer,
-}: LeaveCardProps) {
+/**
+ * Produces a CSC Form 6 (Individual Leave Record) compatible CSV string.
+ *
+ * The CSV is UTF-8 with a BOM prefix so Excel opens it with correct
+ * encoding for the peso sign and accented names.
+ *
+ * This function is deterministic and pure — same inputs always produce the
+ * same bytes. Safe to call during server rendering if needed.
+ */
+export function generateLeaveCardCSV(props: LeaveCardProps): string {
+  const { employee, credits, usageEntries, accrualSchedule, terminalEstimate, certifyingOfficer } =
+    props;
+
   const fullName = [employee.lastName, employee.firstName, employee.middleName]
     .filter(Boolean)
     .join(', ');
 
-  // Compute running balances for usage history display
-  let runningVl = credits.vlCarryOver + credits.vlEarned;
-  let runningSl = credits.slCarryOver + credits.slEarned;
-  const usageWithRunning = usageEntries.map((entry) => {
-    if (entry.leaveTypeCode === 'VL') {
-      runningVl = Math.max(0, runningVl - entry.daysDeducted);
-    } else if (entry.leaveTypeCode === 'SL') {
-      runningSl = Math.max(0, runningSl - entry.daysDeducted);
-    }
-    return { ...entry, runningVl, runningSl };
-  });
+  const rows: string[] = [];
 
-  return (
-    <Document
-      title={`Leave Card — ${fullName} — ${credits.year}`}
-      author="Senate of the Philippines HRIS"
-      subject="Individual Leave Record (Leave Card)"
-      keywords="leave,card,CSC,leave record,Senate HRIS"
-    >
-      <Page size="LETTER" orientation="landscape" style={styles.page}>
+  // ── Header ───────────────────────────────────────────────────────────────
+  rows.push(csvRow(['REPUBLIC OF THE PHILIPPINES']));
+  rows.push(csvRow(['SENATE OF THE PHILIPPINES']));
+  rows.push(csvRow(['Human Resources Information System']));
+  rows.push(csvRow(['INDIVIDUAL LEAVE RECORD (CSC Form 6)']));
+  rows.push(csvRow(['Per CSC Omnibus Rules on Leave, Rule XIV Section 53']));
+  rows.push(csvRow([`Calendar Year: ${credits.year}`]));
+  rows.push('');
 
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <View>
-              <Text style={styles.headerAgency}>Republic of the Philippines</Text>
-              <Text style={styles.headerTitle}>SENATE OF THE PHILIPPINES</Text>
-              <Text style={styles.headerSub}>Human Resources Information System</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.formRef}>INDIVIDUAL LEAVE RECORD (Leave Card)</Text>
-              <Text style={styles.formRef}>Per CSC Omnibus Rules, Rule XIV §53</Text>
-              <Text style={[styles.formRef, { marginTop: 2 }]}>
-                Calendar Year: {credits.year}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.goldRule} />
-        </View>
+  // ── I. Employee Information ──────────────────────────────────────────────
+  rows.push(csvRow(['I. EMPLOYEE INFORMATION']));
+  rows.push(csvRow(['Field', 'Value']));
+  rows.push(csvRow(['Name (Last, First, Middle)', fullName]));
+  rows.push(csvRow(['Employee No.', employee.employeeNo]));
+  rows.push(csvRow(['Position Title', employee.positionTitle]));
+  rows.push(csvRow(['Office / Department', employee.officeName]));
+  rows.push(csvRow(['Date Hired', employee.dateHired ? fmtDate(employee.dateHired) : '']));
+  rows.push(csvRow(['Monthly Basic Salary', `PHP ${employee.monthlyBasicSalary}`]));
+  rows.push('');
 
-        {/* ── I. Employee Information ─────────────────────────────────────── */}
-        <SectionHeader>I. EMPLOYEE INFORMATION</SectionHeader>
-        <View style={styles.infoGrid}>
-          {[
-            { label: 'Name (Last, First, Middle)', value: fullName },
-            { label: 'Employee No.', value: employee.employeeNo },
-            { label: 'Position Title', value: employee.positionTitle },
-            { label: 'Office / Department', value: employee.officeName },
-            {
-              label: 'Date Hired',
-              value: employee.dateHired ? fmtDate(employee.dateHired) : '—',
-            },
-            {
-              label: 'Monthly Basic Salary',
-              value: `\u20B1 ${employee.monthlyBasicSalary}`,
-            },
-          ].map(({ label, value }) => (
-            <View key={label} style={styles.infoCell}>
-              <Text style={styles.infoLabel}>{label}</Text>
-              <Text style={styles.infoValue}>{value}</Text>
-            </View>
-          ))}
-        </View>
+  // ── II. Opening Balances ─────────────────────────────────────────────────
+  rows.push(csvRow([`II. OPENING BALANCES — ${credits.year}`]));
+  rows.push(csvRow(['Item', 'Days']));
+  rows.push(csvRow([`VL Carry-over from ${credits.year - 1}`, fmt3(credits.vlCarryOver)]));
+  rows.push(csvRow([`SL Carry-over from ${credits.year - 1}`, fmt3(credits.slCarryOver)]));
+  rows.push(csvRow(['VL Earned this year', fmt3(credits.vlEarned)]));
+  rows.push(csvRow(['SL Earned this year', fmt3(credits.slEarned)]));
+  rows.push(csvRow(['VL Forfeited (cap exceeded)', fmt3(credits.vlForfeited)]));
+  rows.push(csvRow(['Current VL Balance', fmt3(credits.vlBalance)]));
+  rows.push(csvRow(['Current SL Balance', fmt3(credits.slBalance)]));
+  rows.push('');
 
-        {/* ── II. Opening Balances ────────────────────────────────────────── */}
-        <SectionHeader>{`II. OPENING BALANCES — ${credits.year}`}</SectionHeader>
-        <View style={styles.summaryRow}>
-          {[
-            {
-              label: `VL Carry-over from ${credits.year - 1}`,
-              value: fmt3(credits.vlCarryOver),
-              navy: true,
-            },
-            {
-              label: `SL Carry-over from ${credits.year - 1}`,
-              value: fmt3(credits.slCarryOver),
-              green: true,
-            },
-            {
-              label: 'VL Earned this Year',
-              value: fmt3(credits.vlEarned),
-              navy: true,
-            },
-            {
-              label: 'SL Earned this Year',
-              value: fmt3(credits.slEarned),
-              green: true,
-            },
-            credits.vlForfeited > 0
-              ? {
-                  label: 'VL Forfeited (cap exceeded)',
-                  value: fmt3(credits.vlForfeited),
-                  amber: true,
-                }
-              : {
-                  label: 'VL Forfeited',
-                  value: '—',
-                },
-            {
-              label: `Current VL Balance`,
-              value: fmt3(credits.vlBalance),
-              navy: true,
-              highlight: true,
-            },
-            {
-              label: `Current SL Balance`,
-              value: fmt3(credits.slBalance),
-              green: true,
-              highlight: true,
-            },
-          ].map(({ label, value, navy, green, amber, highlight }) => (
-            <View
-              key={label}
-              style={[styles.summaryBox, highlight ? styles.summaryBoxHighlight : {}]}
-            >
-              <Text style={styles.summaryLabel}>{label}</Text>
-              <Text
-                style={[
-                  styles.summaryValue,
-                  green ? styles.summaryValueGreen : {},
-                  amber ? { color: '#92400e' } : {},
-                ]}
-              >
-                {value}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* ── III. Monthly Accrual Schedule ──────────────────────────────── */}
-        <SectionHeader>{`III. MONTHLY ACCRUAL SCHEDULE — ${credits.year}`}</SectionHeader>
-        <View style={styles.table}>
-          <View style={styles.tHead}>
-            {['Month', 'VL Added', 'SL Added', 'VL Running Total', 'SL Running Total', 'Notes'].map(
-              (h) => (
-                <View key={h} style={styles.tCell}>
-                  <Text style={styles.tCellHead}>{h}</Text>
-                </View>
-              ),
-            )}
-          </View>
-          {accrualSchedule.map((row, i) => {
-            const isFuture = row.vlRunning === null;
-            const noAccrual = row.vlAdded === 0 && !isFuture;
-            return (
-              <View key={row.month} style={[styles.tRow, i % 2 === 0 ? styles.tRowAlt : {}]}>
-                <View style={styles.tCell}>
-                  <Text style={isFuture ? styles.tCellFuture : undefined}>{row.monthLabel}</Text>
-                </View>
-                <View style={[styles.tCell, styles.tCellRight]}>
-                  <Text style={isFuture ? styles.tCellFuture : noAccrual ? styles.tCellAmber : styles.tCellNavy}>
-                    {isFuture ? '—' : row.vlAdded > 0 ? `+${row.vlAdded.toFixed(3)}` : '0.000'}
-                  </Text>
-                </View>
-                <View style={[styles.tCell, styles.tCellRight]}>
-                  <Text style={isFuture ? styles.tCellFuture : noAccrual ? styles.tCellAmber : styles.tCellGreen}>
-                    {isFuture ? '—' : row.slAdded > 0 ? `+${row.slAdded.toFixed(3)}` : '0.000'}
-                  </Text>
-                </View>
-                <View style={[styles.tCell, styles.tCellRight]}>
-                  <Text style={isFuture ? styles.tCellFuture : styles.tCellNavy}>
-                    {row.vlRunning !== null ? fmt3(row.vlRunning) : '—'}
-                  </Text>
-                </View>
-                <View style={[styles.tCell, styles.tCellRight]}>
-                  <Text style={isFuture ? styles.tCellFuture : styles.tCellGreen}>
-                    {row.slRunning !== null ? fmt3(row.slRunning) : '—'}
-                  </Text>
-                </View>
-                <View style={styles.tCell}>
-                  <Text style={styles.tCellFuture}>
-                    {isFuture
-                      ? 'Projected (not yet credited)'
-                      : noAccrual
-                        ? 'No accrual (pre-hire)'
-                        : ''}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-
-        {/* ── IV. Leave Usage History ─────────────────────────────────────── */}
-        <SectionHeader>{`IV. LEAVE USAGE — APPROVED APPLICATIONS (${credits.year})`}</SectionHeader>
-        {usageWithRunning.length === 0 ? (
-          <Text style={{ fontSize: 7, color: '#6b7280', marginBottom: 6 }}>
-            {`No VL or SL applications recorded for ${credits.year}.`}
-          </Text>
-        ) : (
-          <View style={styles.table}>
-            <View style={styles.tHead}>
-              {[
-                'Date From',
-                'Date To',
-                'Leave Type',
-                'Days Deducted',
-                'VL Balance After',
-                'SL Balance After',
-                'Status',
-              ].map((h) => (
-                <View key={h} style={styles.tCell}>
-                  <Text style={styles.tCellHead}>{h}</Text>
-                </View>
-              ))}
-            </View>
-            {usageWithRunning.map((entry, i) => (
-              <View key={entry.id} style={[styles.tRow, i % 2 === 0 ? styles.tRowAlt : {}]}>
-                <View style={styles.tCell}>
-                  <Text>{fmtDate(entry.dateFrom)}</Text>
-                </View>
-                <View style={styles.tCell}>
-                  <Text>{fmtDate(entry.dateTo)}</Text>
-                </View>
-                <View style={styles.tCell}>
-                  <Text style={entry.leaveTypeCode === 'VL' ? styles.tCellNavy : styles.tCellGreen}>
-                    {entry.leaveTypeName}
-                  </Text>
-                </View>
-                <View style={[styles.tCell, styles.tCellRight]}>
-                  <Text style={styles.tCellBold}>({entry.daysDeducted.toFixed(3)})</Text>
-                </View>
-                <View style={[styles.tCell, styles.tCellRight]}>
-                  <Text style={styles.tCellNavy}>{fmt3(entry.runningVl)}</Text>
-                </View>
-                <View style={[styles.tCell, styles.tCellRight]}>
-                  <Text style={styles.tCellGreen}>{fmt3(entry.runningSl)}</Text>
-                </View>
-                <View style={styles.tCell}>
-                  <Text
-                    style={{
-                      fontSize: 6,
-                      color: entry.status === 'approved' ? '#065f46' : '#6b7280',
-                    }}
-                  >
-                    {entry.status.toUpperCase()}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* ── V. Terminal Leave Estimate ──────────────────────────────────── */}
-        {terminalEstimate && (
-          <>
-            <SectionHeader>V. TERMINAL LEAVE ESTIMATE (CSC Omnibus Rules, Rule XVI §56)</SectionHeader>
-            <View style={styles.terminalBox}>
-              <Text style={styles.terminalTitle}>
-                {`Terminal Leave Estimate — as of end of ${credits.year}`}
-              </Text>
-              <View style={styles.terminalRow}>
-                {[
-                  { label: 'VL Balance', value: `${fmt3(terminalEstimate.vlBalance)} days` },
-                  {
-                    label: 'SL @ 50% (CSC Rule)',
-                    value: `${fmt3(terminalEstimate.slEffectiveDays)} days`,
-                  },
-                  {
-                    label: 'Total Effective Days',
-                    value: `${fmt3(terminalEstimate.totalEffectiveDays)} days`,
-                  },
-                  {
-                    label: 'Daily Rate (Salary ÷ 22)',
-                    value: fmtPeso(terminalEstimate.dailyRate),
-                  },
-                  {
-                    label: 'Estimated Terminal Leave Pay',
-                    value: fmtPeso(terminalEstimate.terminalLeavePay),
-                    highlight: true,
-                  },
-                ].map(({ label, value }) => (
-                  <View key={label} style={styles.terminalCell}>
-                    <Text style={styles.terminalLabel}>{label}</Text>
-                    <Text style={styles.terminalValue}>{value}</Text>
-                  </View>
-                ))}
-              </View>
-              <Text style={styles.terminalDisclaimer}>
-                Formula: (VL balance + SL balance × 0.50) × (Monthly Basic Salary ÷ 22).
-                This is an estimate only. Actual amount computed at time of separation/retirement.
-                Tax treatment depends on nature of separation.
-              </Text>
-            </View>
-          </>
-        )}
-
-        {/* ── VI. Certification ──────────────────────────────────────────── */}
-        <View style={styles.signatureArea}>
-          <View style={styles.signatureCol}>
-            <View style={styles.signatureLine} />
-            <Text style={styles.signatureLabel}>Employee Signature over Printed Name / Date</Text>
-          </View>
-          <View style={styles.signatureCol}>
-            <View style={styles.signatureLine} />
-            <Text style={styles.signatureLabel}>
-              {certifyingOfficer ?? 'Authorized HR Officer'}
-            </Text>
-            <Text style={[styles.signatureLabel, { marginTop: 1 }]}>
-              Certifying Officer — Chief, Human Resources
-            </Text>
-          </View>
-        </View>
-
-        {/* ── Footer ─────────────────────────────────────────────────────── */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            {`Generated by Senate HRIS — ${new Date().toLocaleDateString('en-PH')}`}
-          </Text>
-          <Text style={styles.footerText}>
-            {`Leave Card · Calendar Year ${credits.year} · ${fullName} (${employee.employeeNo})`}
-          </Text>
-          <Text style={styles.footerText}>
-            Per CSC Omnibus Rules on Leave, MC No. 41, s. 1998
-          </Text>
-        </View>
-      </Page>
-    </Document>
+  // ── III. Monthly Accrual Schedule ────────────────────────────────────────
+  rows.push(csvRow([`III. MONTHLY ACCRUAL SCHEDULE — ${credits.year}`]));
+  rows.push(
+    csvRow(['Month', 'VL Added', 'SL Added', 'VL Running Total', 'SL Running Total', 'Notes']),
   );
+  for (const row of accrualSchedule) {
+    const isFuture = row.vlRunning === null;
+    const noAccrual = !isFuture && row.vlAdded === 0;
+    rows.push(
+      csvRow([
+        row.monthLabel,
+        isFuture ? '' : row.vlAdded.toFixed(3),
+        isFuture ? '' : row.slAdded.toFixed(3),
+        row.vlRunning !== null ? fmt3(row.vlRunning) : '',
+        row.slRunning !== null ? fmt3(row.slRunning) : '',
+        isFuture ? 'Projected (not yet credited)' : noAccrual ? 'No accrual (pre-hire)' : '',
+      ]),
+    );
+  }
+  rows.push('');
+
+  // ── IV. Leave Usage ──────────────────────────────────────────────────────
+  rows.push(csvRow([`IV. LEAVE USAGE — APPROVED APPLICATIONS (${credits.year})`]));
+  rows.push(
+    csvRow([
+      'Date From',
+      'Date To',
+      'Leave Type',
+      'Days Deducted',
+      'VL Balance After',
+      'SL Balance After',
+      'Status',
+    ]),
+  );
+
+  if (usageEntries.length === 0) {
+    rows.push(csvRow([`No VL or SL applications recorded for ${credits.year}.`]));
+  } else {
+    // Compute running balances starting from total earned + carry-over, then
+    // deducting each approved application chronologically. This gives HR an
+    // auditable trail matching the paper Form 6.
+    let runningVl = credits.vlCarryOver + credits.vlEarned;
+    let runningSl = credits.slCarryOver + credits.slEarned;
+
+    for (const entry of usageEntries) {
+      if (entry.leaveTypeCode === 'VL') {
+        runningVl = Math.max(0, runningVl - entry.daysDeducted);
+      } else if (entry.leaveTypeCode === 'SL') {
+        runningSl = Math.max(0, runningSl - entry.daysDeducted);
+      }
+      rows.push(
+        csvRow([
+          fmtDate(entry.dateFrom),
+          fmtDate(entry.dateTo),
+          entry.leaveTypeName,
+          `(${entry.daysDeducted.toFixed(3)})`,
+          fmt3(runningVl),
+          fmt3(runningSl),
+          entry.status.toUpperCase(),
+        ]),
+      );
+    }
+  }
+  rows.push('');
+
+  // ── V. Terminal Leave Estimate ───────────────────────────────────────────
+  if (terminalEstimate) {
+    rows.push(csvRow(['V. TERMINAL LEAVE ESTIMATE (CSC Omnibus Rules, Rule XVI Section 56)']));
+    rows.push(csvRow(['Item', 'Value']));
+    rows.push(csvRow(['VL Balance (days)', fmt3(terminalEstimate.vlBalance)]));
+    rows.push(csvRow(['SL @ 50% (days)', fmt3(terminalEstimate.slEffectiveDays)]));
+    rows.push(csvRow(['Total Effective Days', fmt3(terminalEstimate.totalEffectiveDays)]));
+    rows.push(csvRow(['Daily Rate (Salary / 22)', fmtPeso(terminalEstimate.dailyRate)]));
+    rows.push(csvRow(['Estimated Terminal Leave Pay', fmtPeso(terminalEstimate.terminalLeavePay)]));
+    rows.push(
+      csvRow([
+        'Formula: (VL + SL x 0.50) x (Monthly Basic Salary / 22). Estimate only — actual computed at separation.',
+      ]),
+    );
+    rows.push('');
+  }
+
+  // ── VI. Certification ────────────────────────────────────────────────────
+  rows.push(csvRow(['VI. CERTIFICATION']));
+  rows.push(csvRow(['Employee Signature over Printed Name / Date', '____________________']));
+  rows.push(
+    csvRow([
+      certifyingOfficer ?? 'Authorized HR Officer',
+      'Certifying Officer — Chief, Human Resources',
+    ]),
+  );
+  rows.push('');
+
+  // ── Footer ───────────────────────────────────────────────────────────────
+  rows.push(
+    csvRow([
+      `Generated by Senate HRIS on ${new Date().toLocaleDateString('en-PH')}`,
+    ]),
+  );
+  rows.push(
+    csvRow([`Calendar Year ${credits.year} — ${fullName} (${employee.employeeNo})`]),
+  );
+  rows.push(csvRow(['Per CSC Omnibus Rules on Leave, MC No. 41, s. 1998']));
+
+  // Join with CRLF (RFC 4180), prepend UTF-8 BOM for Excel compatibility.
+  return '\ufeff' + rows.join('\r\n') + '\r\n';
+}
+
+/**
+ * Returns a standard filename for the generated Leave Card CSV.
+ */
+export function leaveCardFilename(props: LeaveCardProps): string {
+  const safeNo = (props.employee.employeeNo || 'employee').replace(/[^A-Za-z0-9_-]/g, '_');
+  return `LeaveCard_Form6_${safeNo}_${props.credits.year}.csv`;
 }

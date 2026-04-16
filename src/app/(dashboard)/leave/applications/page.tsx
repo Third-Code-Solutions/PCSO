@@ -2,16 +2,24 @@
  * /leave/applications — Unified leave applications browser
  *
  * Tabs (via ?tab= query param):
- *  - "mine"    : My Applications — available to everyone (own pending/approved/etc.)
+ *  - "mine"    : My Applications — available to everyone
  *  - "pending" : Pending Approval queue — leave_approver, hr_admin, super_admin
  *  - "all"     : Full filterable history — hr_admin, super_admin
+ *
+ * Additional URL params (all tabs):
+ *  - ?page=N             (server-side pagination, 1-indexed)
+ *  - ?pageSize=10|25|50|100   (defaults to 50; max 200)
+ *  - ?status=<status>    (all tab only)
+ *  - ?leaveType=<code>   (all tab only; client-side filter within page)
+ *  - ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD  (all tab only; server-filtered)
+ *  - ?q=<text>           (client-side fuzzy filter on employee name/no/reason)
  *
  * Data is fetched server-side; the tab switcher uses URL state for routing.
  * A RealtimeBoundary subscribes to leave_applications for live updates.
  */
 
 import { Suspense } from 'react';
-import { requireAuth } from '@/lib/auth/guards';
+import { requirePermission } from '@/lib/auth/guards';
 import { hasPermission } from '@/lib/auth/permissions';
 import { PageHeader } from '@/components/layouts/page-header';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
@@ -31,8 +39,11 @@ import {
   MyApplicationsTable,
   PendingApprovalTable,
   AllApplicationsTable,
+  FilterToolbar,
+  Pagination,
+  TableSkeleton,
 } from './_client';
-import type { TabKey } from './_client';
+import type { TabKey, AllFilters } from './_client';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -43,10 +54,26 @@ export const metadata: Metadata = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const PAGE_SIZES = [10, 25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 50;
+
+function pickString(
+  raw: string | string[] | undefined,
+): string | undefined {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v && v.length > 0 ? v : undefined;
+}
+
 function resolveTab(raw: string | undefined, canPending: boolean, canAll: boolean): TabKey {
   if (raw === 'pending' && canPending) return 'pending';
   if (raw === 'all' && canAll) return 'all';
   return 'mine';
+}
+
+function clampPageSize(raw: string | undefined): number {
+  const n = Number.parseInt(raw ?? '', 10);
+  if (!Number.isFinite(n)) return DEFAULT_PAGE_SIZE;
+  return (PAGE_SIZES as readonly number[]).includes(n) ? n : DEFAULT_PAGE_SIZE;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,23 +85,31 @@ interface PageProps {
 }
 
 export default async function LeaveApplicationsPage({ searchParams }: PageProps) {
-  const user = await requireAuth();
+  // Role gating — everyone with `leave.view` lands here; the matrix
+  // grants `employee_self_service` view access with a self-only constraint,
+  // so the "Mine" tab is the default landing for them and the Pending /
+  // All tabs are hidden unless the role is allowed to see them.
+  const user = await requirePermission('leave', 'view');
 
   const canPending = hasPermission(user.role, 'leave', 'approve');
   const canAll = hasPermission(user.role, 'leave', 'export');
 
   const params = await searchParams;
-  const rawTab = Array.isArray(params['tab']) ? params['tab'][0] : params['tab'];
-  const rawStatus = Array.isArray(params['status']) ? params['status'][0] : params['status'];
-  const rawPage = Array.isArray(params['page']) ? params['page'][0] : params['page'];
+  const rawTab = pickString(params['tab']);
+  const rawStatus = pickString(params['status']);
+  const rawLeaveType = pickString(params['leaveType']);
+  const rawDateFrom = pickString(params['dateFrom']);
+  const rawDateTo = pickString(params['dateTo']);
+  const rawQuery = pickString(params['q']);
+  const rawPage = pickString(params['page']);
+  const rawPageSize = pickString(params['pageSize']);
+
   const activeTab = resolveTab(rawTab, canPending, canAll);
   const page = Math.max(1, Number.parseInt(rawPage ?? '1', 10) || 1);
-  const pageSize = 50;
+  const pageSize = clampPageSize(rawPageSize);
 
   // ---------------------------------------------------------------------------
   // Data fetching — only fetch what the active tab needs.
-  // Pending & All tabs are server-paginated via getAllLeaveApplicationsPaged,
-  // so a 10k-row workspace doesn't blow up the payload.
   // ---------------------------------------------------------------------------
 
   const [myApplications, pendingPaged, allPaged] = await Promise.all([
@@ -85,7 +120,13 @@ export default async function LeaveApplicationsPage({ searchParams }: PageProps)
       ? getAllLeaveApplicationsPaged({ status: 'pending', page, pageSize })
       : Promise.resolve(null),
     activeTab === 'all' && canAll
-      ? getAllLeaveApplicationsPaged({ status: rawStatus, page, pageSize })
+      ? getAllLeaveApplicationsPaged({
+          status: rawStatus,
+          dateFrom: rawDateFrom,
+          dateTo: rawDateTo,
+          page,
+          pageSize,
+        })
       : Promise.resolve(null),
   ]);
 
@@ -93,6 +134,15 @@ export default async function LeaveApplicationsPage({ searchParams }: PageProps)
   const allApplications = allPaged?.rows ?? null;
   const activePager =
     activeTab === 'pending' ? pendingPaged : activeTab === 'all' ? allPaged : null;
+
+  // Build current-filters object for client components + URL round-tripping.
+  const currentFilters: AllFilters = {
+    status: rawStatus,
+    leaveType: rawLeaveType,
+    dateFrom: rawDateFrom,
+    dateTo: rawDateTo,
+    q: rawQuery,
+  };
 
   // ---------------------------------------------------------------------------
   // Inline server actions (wrapped so the page can pass them as props)
@@ -145,89 +195,53 @@ export default async function LeaveApplicationsPage({ searchParams }: PageProps)
           showAll={canAll}
         />
 
-        <Suspense
-          fallback={
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              Loading…
-            </div>
-          }
-        >
+        <Suspense fallback={<TableSkeleton />}>
           {activeTab === 'mine' && (
             <MyApplicationsTable applications={myApplications ?? []} />
           )}
 
           {activeTab === 'pending' && canPending && (
-            <PendingApprovalTable
-              applications={pendingEnriched ?? []}
-              onApprove={handleApprove}
-              onDisapprove={handleDisapprove}
-            />
+            <>
+              <FilterToolbar
+                activeTab="pending"
+                filters={currentFilters}
+                pageSize={pageSize}
+                pageSizes={PAGE_SIZES as readonly number[]}
+              />
+              <PendingApprovalTable
+                applications={pendingEnriched ?? []}
+                filters={currentFilters}
+                onApprove={handleApprove}
+                onDisapprove={handleDisapprove}
+              />
+            </>
           )}
 
           {activeTab === 'all' && canAll && (
-            <AllApplicationsTable
-              applications={allApplications ?? []}
-              initialStatus={rawStatus}
-            />
+            <>
+              <FilterToolbar
+                activeTab="all"
+                filters={currentFilters}
+                pageSize={pageSize}
+                pageSizes={PAGE_SIZES as readonly number[]}
+              />
+              <AllApplicationsTable
+                applications={allApplications ?? []}
+                filters={currentFilters}
+              />
+            </>
           )}
         </Suspense>
 
-        {activePager && activePager.totalPages > 1 && (
-          <nav
-            aria-label="Pagination"
-            className="flex items-center justify-between rounded-lg border bg-muted/20 px-4 py-2.5"
-          >
-            <span className="text-xs text-muted-foreground">
-              Showing {(activePager.page - 1) * activePager.pageSize + 1}
-              –
-              {Math.min(activePager.page * activePager.pageSize, activePager.total)} of{' '}
-              {activePager.total}
-            </span>
-            <div className="flex items-center gap-2">
-              {(() => {
-                const prevParams = new URLSearchParams();
-                prevParams.set('tab', activeTab);
-                if (rawStatus) prevParams.set('status', rawStatus);
-                prevParams.set('page', String(Math.max(1, page - 1)));
-                const nextParams = new URLSearchParams();
-                nextParams.set('tab', activeTab);
-                if (rawStatus) nextParams.set('status', rawStatus);
-                nextParams.set('page', String(Math.min(activePager.totalPages, page + 1)));
-
-                return (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={activePager.page <= 1}
-                      asChild={activePager.page > 1}
-                    >
-                      {activePager.page > 1 ? (
-                        <Link href={`/leave/applications?${prevParams.toString()}`}>Prev</Link>
-                      ) : (
-                        <span>Prev</span>
-                      )}
-                    </Button>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {activePager.page} / {activePager.totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={activePager.page >= activePager.totalPages}
-                      asChild={activePager.page < activePager.totalPages}
-                    >
-                      {activePager.page < activePager.totalPages ? (
-                        <Link href={`/leave/applications?${nextParams.toString()}`}>Next</Link>
-                      ) : (
-                        <span>Next</span>
-                      )}
-                    </Button>
-                  </>
-                );
-              })()}
-            </div>
-          </nav>
+        {activePager && (
+          <Pagination
+            activeTab={activeTab}
+            filters={currentFilters}
+            pageSize={pageSize}
+            page={activePager.page}
+            totalPages={activePager.totalPages}
+            total={activePager.total}
+          />
         )}
       </div>
     </main>

@@ -1,11 +1,14 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
 import { salaryGrades } from '@/lib/db/schema';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import { SalaryGradeSetSchema, type SalaryGradeSetInput } from '@/lib/validations/admin';
+
+const SALARY_GRADE_INSERT_CHUNK = 200;
 
 // ---------------------------------------------------------------------------
 // createSalaryGradeSet
@@ -26,20 +29,34 @@ export async function createSalaryGradeSet(input: unknown): Promise<{ inserted: 
     effectiveDate: parsed.effectiveDate,
   }));
 
-  // Bulk insert — DB unique index (grade, step, effectiveDate) prevents duplicates.
-  const inserted = await db
-    .insert(salaryGrades)
-    .values(rows)
-    .onConflictDoNothing()
-    .returning({ id: salaryGrades.id });
+  // One transaction for the whole set. Advisory lock on effectiveDate so
+  // two admins seeding the same SSL revision simultaneously serialize —
+  // the second one either sees all their rows already present (no-ops via
+  // onConflictDoNothing) or inserts the remainder cleanly. Chunked insert
+  // for SSL-sized sets (33 grades × 8 steps = 264 rows).
+  const inserted = await withTx(async (tx) => {
+    await lockKey(tx, `admin:salary-grades:${parsed.effectiveDate}`);
 
-  await auditLog({
+    let total = 0;
+    for (let i = 0; i < rows.length; i += SALARY_GRADE_INSERT_CHUNK) {
+      const chunk = rows.slice(i, i + SALARY_GRADE_INSERT_CHUNK);
+      const ins = await tx
+        .insert(salaryGrades)
+        .values(chunk)
+        .onConflictDoNothing()
+        .returning({ id: salaryGrades.id });
+      total += ins.length;
+    }
+    return total;
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'create',
     table: 'salary_grades',
-    newValues: { effectiveDate: parsed.effectiveDate, rowCount: inserted.length },
+    newValues: { effectiveDate: parsed.effectiveDate, rowCount: inserted },
   });
 
   revalidatePath('/admin/salary-grades');
-  return { inserted: inserted.length };
+  return { inserted };
 }

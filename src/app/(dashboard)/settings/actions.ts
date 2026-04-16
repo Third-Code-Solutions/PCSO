@@ -2,13 +2,21 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
-import { systemUsers } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
 import { requireAuth } from '@/lib/auth/guards';
 import { createServerClient } from '@/lib/supabase/server';
 import { auditLog } from '@/lib/audit';
-import type { NotificationPrefs } from '@/lib/db/schema/users';
+
+// ─── Local types (settings surface owns its own shape) ──────────────────────
+// We intentionally do NOT import from `@/lib/db/schema/users` because the
+// `notification_prefs` JSONB column is written via the Supabase client against
+// a migration (supabase/migrations/add-user-prefs.sql). Keeping the type local
+// avoids coupling the self-service surface to the evolving drizzle schema.
+
+export interface NotificationPrefs {
+  emailOnLeaveApproved?: boolean;
+  emailOnPayrollReleased?: boolean;
+  inAppOnly?: boolean;
+}
 
 // ─── Validation schemas ──────────────────────────────────────────────────────
 
@@ -36,7 +44,8 @@ const NotificationPrefsSchema = z.object({
 /**
  * Updates the authenticated user's password via Supabase Auth.
  * The current password is validated by Supabase's session — the user must
- * already hold a valid session (i.e. they are logged in).
+ * already hold a valid session (i.e. they are logged in). This operation is
+ * idempotent by nature — Supabase accepts the same password twice without error.
  */
 export async function changePassword(input: unknown): Promise<void> {
   const user = await requireAuth();
@@ -64,34 +73,44 @@ export async function changePassword(input: unknown): Promise<void> {
 
 /**
  * Persists the user's notification preferences into system_users.notification_prefs.
+ * Last-write-wins is acceptable for per-user prefs.
  */
 export async function updateNotificationPrefs(input: unknown): Promise<void> {
   const user = await requireAuth();
-  const parsed: NotificationPrefs = NotificationPrefsSchema.parse(input);
+  const parsed = NotificationPrefsSchema.parse(input);
+
+  const supabase = await createServerClient();
 
   // Find the system_users row that corresponds to this Supabase auth UID.
-  const [row] = await db
-    .select({ id: systemUsers.id, notificationPrefs: systemUsers.notificationPrefs })
-    .from(systemUsers)
-    .where(eq(systemUsers.authUid, user.id))
-    .limit(1);
+  const { data: row, error: readError } = await supabase
+    .from('system_users')
+    .select('id, notification_prefs')
+    .eq('auth_uid', user.id)
+    .maybeSingle();
 
-  if (!row) {
+  if (readError || !row) {
     throw new Error('User account record not found.');
   }
 
-  const oldPrefs = row.notificationPrefs;
+  const oldPrefs = row.notification_prefs ?? {};
 
-  await db
-    .update(systemUsers)
-    .set({ notificationPrefs: parsed, updatedAt: new Date() })
-    .where(eq(systemUsers.id, row.id));
+  const { error: updateError } = await supabase
+    .from('system_users')
+    .update({
+      notification_prefs: parsed,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', row.id);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
 
   await auditLog({
     userId: user.id,
     action: 'update',
     table: 'system_users',
-    recordId: row.id,
+    recordId: String(row.id),
     oldValues: { notificationPrefs: oldPrefs },
     newValues: { notificationPrefs: parsed },
   });
@@ -127,22 +146,20 @@ export async function signOutAllSessions(): Promise<void> {
 // ─── getNotificationPrefs ────────────────────────────────────────────────────
 
 /**
- * Reads the current user's notification preferences from system_users.
- * Returns defaults when the row does not exist or the column is empty.
+ * Reads the current user's notification preferences. Returns sensible defaults
+ * when the row does not exist or the column is empty / malformed.
  */
-export async function getNotificationPrefs(): Promise<NotificationPrefs> {
+export async function getNotificationPrefs(): Promise<Required<NotificationPrefs>> {
   const user = await requireAuth();
 
-  const [row] = await db
-    .select({ notificationPrefs: systemUsers.notificationPrefs })
-    .from(systemUsers)
-    .where(eq(systemUsers.authUid, user.id))
-    .limit(1);
+  const supabase = await createServerClient();
+  const { data: row } = await supabase
+    .from('system_users')
+    .select('notification_prefs')
+    .eq('auth_uid', user.id)
+    .maybeSingle();
 
-  if (!row) return {};
-
-  // The JSONB value may be any shape from older rows — narrow safely.
-  const raw = row.notificationPrefs as Record<string, unknown>;
+  const raw = (row?.notification_prefs ?? {}) as Record<string, unknown>;
 
   return {
     emailOnLeaveApproved:

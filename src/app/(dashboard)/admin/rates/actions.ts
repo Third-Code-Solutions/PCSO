@@ -1,10 +1,11 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
 import { gsisRates, philhealthRates, pagibigRates, birTaxTables } from '@/lib/db/schema';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import {
   GsisRateSchema,
   PhilhealthRateSchema,
@@ -16,6 +17,8 @@ import {
   type BirTaxTableSetInput,
 } from '@/lib/validations/admin';
 
+const BIR_BRACKET_INSERT_CHUNK = 200;
+
 // ---------------------------------------------------------------------------
 // GSIS
 // All changes INSERT a new row with effective_date. Old rows are NEVER modified.
@@ -24,20 +27,28 @@ export async function createGsisRate(input: unknown): Promise<{ id: string }> {
   const actor = await requirePermission('admin', 'create');
   const parsed: GsisRateInput = GsisRateSchema.parse(input);
 
-  const gsisInserted = await db
-    .insert(gsisRates)
-    .values({
-      effectiveDate: parsed.effectiveDate,
-      employeeRate: parsed.employeeRate,
-      employerRate: parsed.employerRate,
-      lifeInsuranceRate: parsed.lifeInsuranceRate,
-    })
-    .returning({ id: gsisRates.id });
+  // Advisory lock on (agency, effectiveDate) prevents two admins double-inserting
+  // the same effective-date rate simultaneously — append-only model means both
+  // would succeed without the lock, creating a duplicate rate row.
+  const gsisRow = await withTx(async (tx) => {
+    await lockKey(tx, `admin:rates:gsis:${parsed.effectiveDate}`);
 
-  const gsisRow = gsisInserted[0];
-  if (!gsisRow) throw new Error('GSIS rate insert returned no row');
+    const inserted = await tx
+      .insert(gsisRates)
+      .values({
+        effectiveDate: parsed.effectiveDate,
+        employeeRate: parsed.employeeRate,
+        employerRate: parsed.employerRate,
+        lifeInsuranceRate: parsed.lifeInsuranceRate,
+      })
+      .returning({ id: gsisRates.id });
 
-  await auditLog({
+    const row = inserted[0];
+    if (!row) throw new Error('GSIS rate insert returned no row');
+    return row;
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'create',
     table: 'gsis_rates',
@@ -57,23 +68,28 @@ export async function createPhilhealthRate(input: unknown): Promise<{ id: string
   const actor = await requirePermission('admin', 'create');
   const parsed: PhilhealthRateInput = PhilhealthRateSchema.parse(input);
 
-  const philhealthInserted = await db
-    .insert(philhealthRates)
-    .values({
-      effectiveDate: parsed.effectiveDate,
-      employeeRate: parsed.employeeRate,
-      employerRate: parsed.employerRate,
-      minMsalary: parsed.minMsalary,
-      maxMsalary: parsed.maxMsalary,
-      minPremium: parsed.minPremium,
-      maxPremium: parsed.maxPremium,
-    })
-    .returning({ id: philhealthRates.id });
+  const philhealthRow = await withTx(async (tx) => {
+    await lockKey(tx, `admin:rates:philhealth:${parsed.effectiveDate}`);
 
-  const philhealthRow = philhealthInserted[0];
-  if (!philhealthRow) throw new Error('PhilHealth rate insert returned no row');
+    const inserted = await tx
+      .insert(philhealthRates)
+      .values({
+        effectiveDate: parsed.effectiveDate,
+        employeeRate: parsed.employeeRate,
+        employerRate: parsed.employerRate,
+        minMsalary: parsed.minMsalary,
+        maxMsalary: parsed.maxMsalary,
+        minPremium: parsed.minPremium,
+        maxPremium: parsed.maxPremium,
+      })
+      .returning({ id: philhealthRates.id });
 
-  await auditLog({
+    const row = inserted[0];
+    if (!row) throw new Error('PhilHealth rate insert returned no row');
+    return row;
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'create',
     table: 'philhealth_rates',
@@ -93,22 +109,27 @@ export async function createPagibigRate(input: unknown): Promise<{ id: string }>
   const actor = await requirePermission('admin', 'create');
   const parsed: PagibigRateInput = PagibigRateSchema.parse(input);
 
-  const pagibigInserted = await db
-    .insert(pagibigRates)
-    .values({
-      effectiveDate: parsed.effectiveDate,
-      employeeRateLow: parsed.employeeRateLow,
-      employeeRateHigh: parsed.employeeRateHigh,
-      employerRate: parsed.employerRate,
-      salaryThreshold: parsed.salaryThreshold,
-      maxContribution: parsed.maxContribution,
-    })
-    .returning({ id: pagibigRates.id });
+  const pagibigRow = await withTx(async (tx) => {
+    await lockKey(tx, `admin:rates:pagibig:${parsed.effectiveDate}`);
 
-  const pagibigRow = pagibigInserted[0];
-  if (!pagibigRow) throw new Error('Pag-IBIG rate insert returned no row');
+    const inserted = await tx
+      .insert(pagibigRates)
+      .values({
+        effectiveDate: parsed.effectiveDate,
+        employeeRateLow: parsed.employeeRateLow,
+        employeeRateHigh: parsed.employeeRateHigh,
+        employerRate: parsed.employerRate,
+        salaryThreshold: parsed.salaryThreshold,
+        maxContribution: parsed.maxContribution,
+      })
+      .returning({ id: pagibigRates.id });
 
-  await auditLog({
+    const row = inserted[0];
+    if (!row) throw new Error('Pag-IBIG rate insert returned no row');
+    return row;
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'create',
     table: 'pagibig_rates',
@@ -138,23 +159,36 @@ export async function createBirTaxTableSet(input: unknown): Promise<{ inserted: 
     excessRate: b.excessRate,
   }));
 
-  const inserted = await db
-    .insert(birTaxTables)
-    .values(rows)
-    .returning({ id: birTaxTables.id });
+  // Full bracket set in one tx — if any bracket fails, none are persisted.
+  // Advisory lock on (periodType, effectiveDate) so two admins seeding the
+  // same table simultaneously don't both succeed and double the bracket set.
+  const inserted = await withTx(async (tx) => {
+    await lockKey(tx, `admin:rates:bir:${parsed.periodType}:${parsed.effectiveDate}`);
 
-  await auditLog({
+    let total = 0;
+    for (let i = 0; i < rows.length; i += BIR_BRACKET_INSERT_CHUNK) {
+      const chunk = rows.slice(i, i + BIR_BRACKET_INSERT_CHUNK);
+      const ins = await tx
+        .insert(birTaxTables)
+        .values(chunk)
+        .returning({ id: birTaxTables.id });
+      total += ins.length;
+    }
+    return total;
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'create',
     table: 'bir_tax_tables',
     newValues: {
       effectiveDate: parsed.effectiveDate,
       periodType: parsed.periodType,
-      bracketCount: inserted.length,
+      bracketCount: inserted,
     },
   });
 
   revalidatePath('/admin/rates/bir');
   revalidatePath('/admin/rates');
-  return { inserted: inserted.length };
+  return { inserted };
 }

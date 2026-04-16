@@ -2,11 +2,8 @@ import { Settings } from 'lucide-react';
 import { PageHeader } from '@/components/layouts/page-header';
 import { requireAuth } from '@/lib/auth/guards';
 import { createServerClient } from '@/lib/supabase/server';
-import { db } from '@/lib/db';
-import { systemUsers } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
 import { SettingsClient } from './_client';
-import type { NotificationPrefs } from '@/lib/db/schema/users';
+import { getNotificationPrefs } from './actions';
 
 export const metadata = { title: 'Account Settings' };
 
@@ -22,26 +19,9 @@ export default async function SettingsPage() {
 
   const lastSignIn = authUser?.last_sign_in_at ?? null;
 
-  // Fetch notification prefs from system_users row.
-  const [row] = await db
-    .select({ notificationPrefs: systemUsers.notificationPrefs })
-    .from(systemUsers)
-    .where(eq(systemUsers.authUid, user.id))
-    .limit(1);
-
-  const rawPrefs = (row?.notificationPrefs ?? {}) as Record<string, unknown>;
-
-  const notificationPrefs: NotificationPrefs = {
-    emailOnLeaveApproved:
-      typeof rawPrefs['emailOnLeaveApproved'] === 'boolean'
-        ? rawPrefs['emailOnLeaveApproved']
-        : true,
-    emailOnPayrollReleased:
-      typeof rawPrefs['emailOnPayrollReleased'] === 'boolean'
-        ? rawPrefs['emailOnPayrollReleased']
-        : true,
-    inAppOnly: typeof rawPrefs['inAppOnly'] === 'boolean' ? rawPrefs['inAppOnly'] : false,
-  };
+  // Load normalized notification preferences via our own reader to ensure
+  // defaults and type narrowing are applied consistently.
+  const notificationPrefs = await getNotificationPrefs();
 
   return (
     <main className="space-y-6">

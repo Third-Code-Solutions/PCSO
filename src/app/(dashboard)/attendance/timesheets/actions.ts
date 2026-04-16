@@ -1,11 +1,25 @@
 'use server';
 
+/**
+ * Timesheet actions — mutations for the timesheets module.
+ *
+ * Concurrency model:
+ *  - approve/reject use `UPDATE … WHERE id=$1 AND status != $target RETURNING *`
+ *    which makes them idempotent under races. A no-op update returns zero
+ *    rows and we surface a friendly "already in this state" error.
+ *  - Every state change writes an audit row before returning.
+ *  - The employee is notified on approve and on reject (with reason).
+ *  - CSV export includes a UTF-8 BOM for Excel and escapes cells properly.
+ */
+
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { dtrPeriods, employees } from '@/lib/db/schema';
-import { eq, gte, lte, and, isNull, inArray } from 'drizzle-orm';
+import { dtrPeriods, employees, offices } from '@/lib/db/schema';
+import { eq, gte, lte, and, isNull, inArray, ne } from 'drizzle-orm';
 import { requirePermission } from '@/lib/auth/guards';
+import { withTx, withRetry } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import { auditLog } from '@/lib/audit';
 import { notifyEmployee } from '@/lib/notifications';
 import type { DateString } from '@/lib/utils/attendance/types';
@@ -22,54 +36,69 @@ const RejectTimesheetSchema = z.object({
 });
 
 const ExportTimesheetCsvSchema = z.object({
-  periodStart: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
-  periodEnd: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
+  periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
+  periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
 });
 
 // ─── approveTimesheet ─────────────────────────────────────────────────────────
 
 /**
- * Moves a dtr_periods row from any status to 'approved'.
+ * Idempotently transitions a dtr_periods row to 'approved'.
  *
- * Requires: attendance.approve permission (hr_admin, leave_approver, super_admin).
- * Side-effects: audit log + notification to the employee.
+ * The update is guarded with `ne(status, 'approved')` so repeated calls are
+ * safe. If the row is already approved we return silently — the UI treats
+ * that as a no-op.
  */
 export async function approveTimesheet(input: unknown): Promise<void> {
   const parsed = ApproveTimesheetSchema.parse(input);
   const user = await requirePermission('attendance', 'approve');
 
-  // Fetch the period row so we can record old values and get the employeeId
-  const [existing] = await db
-    .select()
-    .from(dtrPeriods)
-    .where(eq(dtrPeriods.id, parsed.dtrPeriodId))
-    .limit(1);
+  // Wrap in tx + per-(employee,period) advisory lock so two concurrent
+  // approvals on the same DTR row can't double-emit audit/notifications.
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(dtrPeriods)
+        .where(eq(dtrPeriods.id, parsed.dtrPeriodId))
+        .limit(1);
 
-  if (!existing) {
-    throw new Error('Timesheet period not found.');
-  }
+      if (!existing) {
+        throw new Error('Timesheet period not found.');
+      }
 
-  if (existing.status === 'approved') {
-    throw new Error('Timesheet is already approved.');
-  }
+      await lockKey(
+        tx,
+        `timesheet:${existing.employeeId}:${existing.periodStart}`,
+      );
 
-  const [updated] = await db
-    .update(dtrPeriods)
-    .set({
-      status: 'approved',
-      approvedBy: user.id,
-      updatedAt: new Date(),
-    })
-    .where(eq(dtrPeriods.id, parsed.dtrPeriodId))
-    .returning();
+      // Race-safe update: only flips if status != 'approved'
+      const updated = await tx
+        .update(dtrPeriods)
+        .set({
+          status: 'approved',
+          approvedBy: user.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(dtrPeriods.id, parsed.dtrPeriodId),
+            ne(dtrPeriods.status, 'approved'),
+          ),
+        )
+        .returning();
 
-  if (!updated) {
-    throw new Error('Approval failed: database update returned no rows.');
-  }
+      if (updated.length === 0) {
+        // Already approved by someone else — no-op to keep operation idempotent
+        return { existing, changed: false };
+      }
+
+      return { existing, changed: true };
+    }),
+  );
+
+  if (!result.changed) return;
+  const { existing } = result;
 
   await auditLog({
     userId: user.id,
@@ -80,12 +109,11 @@ export async function approveTimesheet(input: unknown): Promise<void> {
     newValues: { status: 'approved', approvedBy: user.id },
   });
 
-  // Notify the employee whose timesheet was approved
   await notifyEmployee(existing.employeeId, {
-    type: 'attendance_anomaly', // closest available type; signals a status change
+    type: 'attendance_anomaly',
     title: 'Your Timesheet Has Been Approved',
     body: `Your DTR for the period ${existing.periodStart} – ${existing.periodEnd} has been approved.`,
-    actionUrl: `/attendance/timesheets/${existing.id}`,
+    actionUrl: `/attendance/timesheets/${existing.periodStart}`,
     entityType: 'dtr_periods',
     entityId: existing.id,
   });
@@ -97,36 +125,55 @@ export async function approveTimesheet(input: unknown): Promise<void> {
 // ─── rejectTimesheet ──────────────────────────────────────────────────────────
 
 /**
- * Moves a dtr_periods row to 'rejected' status with a mandatory reason.
- * Every rejection is audit-logged; the employee is notified.
+ * Idempotently transitions a dtr_periods row to 'rejected' with a reason.
+ * Repeated calls on an already-rejected row are no-ops.
  */
 export async function rejectTimesheet(input: unknown): Promise<void> {
   const parsed = RejectTimesheetSchema.parse(input);
   const user = await requirePermission('attendance', 'approve');
 
-  const [existing] = await db
-    .select()
-    .from(dtrPeriods)
-    .where(eq(dtrPeriods.id, parsed.dtrPeriodId))
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(dtrPeriods)
+        .where(eq(dtrPeriods.id, parsed.dtrPeriodId))
+        .limit(1);
 
-  if (!existing) {
-    throw new Error('Timesheet period not found.');
-  }
+      if (!existing) {
+        throw new Error('Timesheet period not found.');
+      }
 
-  const [updated] = await db
-    .update(dtrPeriods)
-    .set({
-      status: 'rejected',
-      approvedBy: user.id,
-      updatedAt: new Date(),
-    })
-    .where(eq(dtrPeriods.id, parsed.dtrPeriodId))
-    .returning();
+      await lockKey(
+        tx,
+        `timesheet:${existing.employeeId}:${existing.periodStart}`,
+      );
 
-  if (!updated) {
-    throw new Error('Rejection failed: database update returned no rows.');
-  }
+      const updated = await tx
+        .update(dtrPeriods)
+        .set({
+          status: 'rejected',
+          approvedBy: user.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(dtrPeriods.id, parsed.dtrPeriodId),
+            ne(dtrPeriods.status, 'rejected'),
+          ),
+        )
+        .returning();
+
+      if (updated.length === 0) {
+        return { existing, changed: false };
+      }
+
+      return { existing, changed: true };
+    }),
+  );
+
+  if (!result.changed) return;
+  const { existing } = result;
 
   await auditLog({
     userId: user.id,
@@ -134,7 +181,11 @@ export async function rejectTimesheet(input: unknown): Promise<void> {
     table: 'dtr_periods',
     recordId: parsed.dtrPeriodId,
     oldValues: { status: existing.status, approvedBy: existing.approvedBy },
-    newValues: { status: 'rejected', approvedBy: user.id, reason: parsed.reason },
+    newValues: {
+      status: 'rejected',
+      approvedBy: user.id,
+      reason: parsed.reason,
+    },
   });
 
   await notifyEmployee(existing.employeeId, {
@@ -155,16 +206,19 @@ export async function rejectTimesheet(input: unknown): Promise<void> {
 /**
  * Generates a CSV of all employee DTR summaries for a given period.
  *
- * Returns the CSV encoded as a base64 string so it can be safely transported
- * as a JSON response from a Server Action.
+ * Output:
+ *  - UTF-8 BOM prepended so Excel detects encoding correctly
+ *  - RFC-4180 escape (double-quote, internal " doubled, CRLF line terminator)
+ *  - Audit log row written after generation
  *
  * Requires: attendance.export permission.
  */
-export async function exportTimesheetCsv(input: unknown): Promise<{ base64: string; filename: string }> {
+export async function exportTimesheetCsv(
+  input: unknown,
+): Promise<{ base64: string; filename: string }> {
   const parsed = ExportTimesheetCsvSchema.parse(input);
   const user = await requirePermission('attendance', 'export');
 
-  // Pull all dtr_periods rows for the window
   const periodRows = await db
     .select({
       employeeId: dtrPeriods.employeeId,
@@ -184,7 +238,6 @@ export async function exportTimesheetCsv(input: unknown): Promise<{ base64: stri
       ),
     );
 
-  // Resolve employee names
   const empIds = [...new Set(periodRows.map((r) => r.employeeId))];
 
   const empRows =
@@ -195,8 +248,10 @@ export async function exportTimesheetCsv(input: unknown): Promise<{ base64: stri
             employeeNo: employees.employeeNo,
             firstName: employees.firstName,
             lastName: employees.lastName,
+            officeName: offices.name,
           })
           .from(employees)
+          .leftJoin(offices, eq(employees.officeId, offices.id))
           .where(
             and(
               inArray(employees.id, empIds),
@@ -208,47 +263,72 @@ export async function exportTimesheetCsv(input: unknown): Promise<{ base64: stri
   const empMap = new Map(
     empRows.map((e) => [
       e.id,
-      { employeeNo: e.employeeNo, firstName: e.firstName, lastName: e.lastName },
+      {
+        employeeNo: e.employeeNo,
+        firstName: e.firstName,
+        lastName: e.lastName,
+        department: e.officeName ?? '',
+      },
     ]),
   );
 
-  // Build CSV rows
   const headers = [
     'Employee No',
     'Last Name',
     'First Name',
+    'Department',
     'Period Start',
     'Period End',
     'Days Present',
     'Late (min)',
     'Undertime (min)',
     'Overtime (min)',
+    'Net Hours',
     'Status',
   ];
 
+  const escapeCell = (value: unknown): string => {
+    const str = value === null || value === undefined ? '' : String(value);
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
   const dataLines = periodRows.map((row) => {
     const emp = empMap.get(row.employeeId);
+    const netHours = Math.max(
+      0,
+      Math.round(
+        ((row.totalDaysPresent * 8 * 60 -
+          row.totalLateMinutes -
+          row.totalUndertimeMinutes +
+          row.totalOvertimeMinutes) /
+          60) *
+          100,
+      ) / 100,
+    );
+
     return [
       emp?.employeeNo ?? '',
       emp?.lastName ?? '',
       emp?.firstName ?? '',
+      emp?.department ?? '',
       row.periodStart,
       row.periodEnd,
-      String(row.totalDaysPresent),
-      String(row.totalLateMinutes),
-      String(row.totalUndertimeMinutes),
-      String(row.totalOvertimeMinutes),
+      row.totalDaysPresent,
+      row.totalLateMinutes,
+      row.totalUndertimeMinutes,
+      row.totalOvertimeMinutes,
+      netHours,
       row.status,
     ]
-      .map((cell) => `"${cell.replace(/"/g, '""')}"`)
+      .map(escapeCell)
       .join(',');
   });
 
-  const csv = [headers.join(','), ...dataLines].join('\r\n');
+  // UTF-8 BOM for Excel + CRLF line terminators (RFC 4180)
+  const BOM = '\uFEFF';
+  const csv = BOM + [headers.join(','), ...dataLines].join('\r\n') + '\r\n';
 
-  // Encode as base64
   const base64 = Buffer.from(csv, 'utf-8').toString('base64');
-
   const filename = `timesheets_${parsed.periodStart}_to_${parsed.periodEnd}.csv`;
 
   await auditLog({

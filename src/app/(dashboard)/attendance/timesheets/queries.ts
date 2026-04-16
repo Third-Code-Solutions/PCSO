@@ -4,11 +4,13 @@
  * Timesheet queries — server-side data fetching for the timesheets module.
  *
  * Strategy:
- *  1. Try to load summaries from `dtr_periods` (pre-computed rows).
- *  2. For employees that have no dtr_periods row for the selected month,
- *     aggregate directly from `attendance_logs` on the fly.
+ *  1. Period list  — single aggregation query grouped by month.
+ *  2. Period detail — pull `dtr_periods` rows, merge with on-the-fly aggregation
+ *     from `attendance_logs` and approved `leave_applications` for any employee
+ *     that doesn't yet have a `dtr_periods` entry. All employees resolved
+ *     through a single `inArray` lookup (no N+1).
  *
- * These functions are read-only. All writes belong in actions.ts.
+ * Read-only. All writes belong in actions.ts.
  */
 
 import { db } from '@/lib/db';
@@ -16,10 +18,11 @@ import {
   attendanceLogs,
   dtrPeriods,
   employees,
+  leaveApplications,
+  offices,
 } from '@/lib/db/schema';
 import { and, eq, gte, lte, isNull, sql, inArray } from 'drizzle-orm';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { requirePermission } from '@/lib/auth/guards';
 import { requireAuth } from '@/lib/auth/guards';
 import type { DateString } from '@/lib/utils/attendance/types';
 
@@ -57,14 +60,30 @@ export interface TimesheetEmployeeRow {
   totalLateMinutes: number;
   totalUndertimeMinutes: number;
   totalOvertimeMinutes: number;
+  /** Approved leave days that fall within the period */
+  totalLeaveDays: number;
+  /** Regular hours (derived from days * 8 − late − undertime) */
+  netHours: number;
   status: DtrStatus;
   approvedBy: string | null;
 }
 
+/** Paginated detail response for the period detail page. */
+export interface TimesheetDetailPage {
+  rows: TimesheetEmployeeRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const MIN_PER_WORKDAY = 8 * 60;
+
 /** Generate a list of monthly periods (most-recent-first) going back N months. */
-function buildRecentPeriods(n: number): Array<{ start: DateString; end: DateString; label: string }> {
+function buildRecentPeriods(
+  n: number,
+): Array<{ start: DateString; end: DateString; label: string }> {
   const result: Array<{ start: DateString; end: DateString; label: string }> = [];
   const now = new Date();
 
@@ -79,88 +98,103 @@ function buildRecentPeriods(n: number): Array<{ start: DateString; end: DateStri
   return result;
 }
 
+function computeNetHours(row: {
+  totalDaysPresent: number;
+  totalLateMinutes: number;
+  totalUndertimeMinutes: number;
+  totalOvertimeMinutes: number;
+}): number {
+  const base =
+    row.totalDaysPresent * MIN_PER_WORKDAY -
+    row.totalLateMinutes -
+    row.totalUndertimeMinutes +
+    row.totalOvertimeMinutes;
+  return Math.max(0, Math.round((base / 60) * 100) / 100);
+}
+
 // ─── getTimesheetPeriods ──────────────────────────────────────────────────────
 
 /**
  * Returns the last 12 calendar months with aggregate approval status counts.
  *
- * Called by the timesheets list page.
- * For employee_self_service roles, the counts reflect only their own rows.
+ * SINGLE query grouped by (periodStart, status) across the full 12-month
+ * window — no per-month loop.
  */
 export async function getTimesheetPeriods(): Promise<TimesheetPeriod[]> {
   const user = await requireAuth();
   const isSelfService = user.role === 'employee_self_service';
 
   const periods = buildRecentPeriods(12);
+  const windowStart = periods[periods.length - 1]!.start;
+  const windowEnd = periods[0]!.end;
+
+  const baseCondition = isSelfService && user.employeeId
+    ? and(
+        gte(dtrPeriods.periodStart, windowStart),
+        lte(dtrPeriods.periodEnd, windowEnd),
+        eq(dtrPeriods.employeeId, user.employeeId),
+      )
+    : and(
+        gte(dtrPeriods.periodStart, windowStart),
+        lte(dtrPeriods.periodEnd, windowEnd),
+      );
+
+  // Single query: group by period_start + status across the whole window
+  const grouped = await db
+    .select({
+      periodStart: dtrPeriods.periodStart,
+      status: dtrPeriods.status,
+      count: sql<number>`cast(count(*) as integer)`,
+    })
+    .from(dtrPeriods)
+    .where(baseCondition)
+    .groupBy(dtrPeriods.periodStart, dtrPeriods.status);
+
+  // Bucket by period-start
+  const bucket = new Map<
+    string,
+    { approved: number; draft: number; submitted: number; rejected: number }
+  >();
+
+  for (const row of grouped) {
+    const key = row.periodStart;
+    let b = bucket.get(key);
+    if (!b) {
+      b = { approved: 0, draft: 0, submitted: 0, rejected: 0 };
+      bucket.set(key, b);
+    }
+    if (row.status === 'approved') b.approved = row.count;
+    else if (row.status === 'draft') b.draft = row.count;
+    else if (row.status === 'submitted') b.submitted = row.count;
+    else if (row.status === 'rejected') b.rejected = row.count;
+  }
+
   const result: TimesheetPeriod[] = [];
 
   for (let i = 0; i < periods.length; i++) {
     const period = periods[i]!;
-    const conditions = isSelfService && user.employeeId
-      ? and(
-          gte(dtrPeriods.periodStart, period.start),
-          lte(dtrPeriods.periodEnd, period.end),
-          eq(dtrPeriods.employeeId, user.employeeId),
-        )
-      : and(
-          gte(dtrPeriods.periodStart, period.start),
-          lte(dtrPeriods.periodEnd, period.end),
-        );
-
-    const rows = await db
-      .select({
-        status: dtrPeriods.status,
-        count: sql<number>`cast(count(*) as integer)`,
-      })
-      .from(dtrPeriods)
-      .where(conditions)
-      .groupBy(dtrPeriods.status);
-
-    const statusCounts = {
+    const counts = bucket.get(period.start) ?? {
       approved: 0,
       draft: 0,
       submitted: 0,
       rejected: 0,
     };
 
-    for (const row of rows) {
-      if (row.status in statusCounts) {
-        statusCounts[row.status as keyof typeof statusCounts] = row.count;
-      }
-    }
-
     const totalEmployees =
-      statusCounts.approved +
-      statusCounts.draft +
-      statusCounts.submitted +
-      statusCounts.rejected;
+      counts.approved + counts.draft + counts.submitted + counts.rejected;
 
-    // Only include months that have some data
-    if (totalEmployees > 0) {
+    // Always include the current month; skip older months that are empty
+    if (totalEmployees > 0 || i === 0) {
       result.push({
         periodStart: period.start,
         periodEnd: period.end,
         label: period.label,
         totalEmployees,
-        approvedCount: statusCounts.approved,
-        draftCount: statusCounts.draft,
-        submittedCount: statusCounts.submitted,
-        rejectedCount: statusCounts.rejected,
+        approvedCount: counts.approved,
+        draftCount: counts.draft,
+        submittedCount: counts.submitted,
+        rejectedCount: counts.rejected,
       });
-    } else {
-      // Include the current month even if empty
-      if (i === 0) {
-        result.push({
-          periodStart: period.start,
-          periodEnd: period.end,
-          label: period.label,
-          totalEmployees: 0,
-          approvedCount: 0,
-          draftCount: 0,
-          submittedCount: 0,
-          rejectedCount: 0,
-        });
-      }
     }
   }
 
@@ -170,23 +204,33 @@ export async function getTimesheetPeriods(): Promise<TimesheetPeriod[]> {
 // ─── getTimesheetDetail ───────────────────────────────────────────────────────
 
 /**
- * Returns per-employee timesheet summary rows for a given period.
+ * Paginated per-employee timesheet summary rows for a given period.
  *
- * For employees that already have a `dtr_periods` row: use it directly.
- * For employees that don't: aggregate from `attendance_logs` on-the-fly.
+ *  - For employees with a dtr_periods row — use it directly.
+ *  - For employees without one — aggregate attendance_logs on-the-fly.
+ *  - Approved leave_applications overlapping the window are attached.
  *
- * employee_self_service: sees only their own row.
- * hr_admin / leave_approver / super_admin: all employees.
+ * One `inArray` lookup resolves employees + offices (no N+1).
  */
+export interface GetTimesheetDetailOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+}
+
 export async function getTimesheetDetail(
   periodStart: DateString,
   periodEnd: DateString,
-): Promise<TimesheetEmployeeRow[]> {
+  options: GetTimesheetDetailOptions = {},
+): Promise<TimesheetDetailPage> {
   const user = await requireAuth();
   const isSelfService = user.role === 'employee_self_service';
 
-  // ── 1. Load existing dtr_periods rows for this date window ──────────────
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = Math.min(Math.max(options.pageSize ?? 50, 10), 200);
+  const search = options.search?.trim().toLowerCase() ?? '';
 
+  // ── 1. Existing dtr_periods rows ────────────────────────────────────────
   const dtrConditions = isSelfService && user.employeeId
     ? and(
         gte(dtrPeriods.periodStart, periodStart),
@@ -216,8 +260,7 @@ export async function getTimesheetDetail(
 
   const coveredEmployeeIds = new Set(existingPeriods.map((r) => r.employeeId));
 
-  // ── 2. Derive summaries from attendance_logs for uncovered employees ──────
-
+  // ── 2. Derive summaries from attendance_logs for uncovered employees ───
   let derivedRows: Array<{
     employeeId: string;
     totalDaysPresent: number;
@@ -227,11 +270,6 @@ export async function getTimesheetDetail(
   }> = [];
 
   if (!isSelfService) {
-    const logConditions = and(
-      gte(attendanceLogs.logDate, periodStart),
-      lte(attendanceLogs.logDate, periodEnd),
-    );
-
     const aggregated = await db
       .select({
         employeeId: attendanceLogs.employeeId,
@@ -241,21 +279,27 @@ export async function getTimesheetDetail(
         totalOvertimeMinutes: sql<number>`cast(coalesce(sum(${attendanceLogs.overtimeMinutes}), 0) as integer)`,
       })
       .from(attendanceLogs)
-      .where(logConditions)
+      .where(
+        and(
+          gte(attendanceLogs.logDate, periodStart),
+          lte(attendanceLogs.logDate, periodEnd),
+        ),
+      )
       .groupBy(attendanceLogs.employeeId);
 
     derivedRows = aggregated.filter((r) => !coveredEmployeeIds.has(r.employeeId));
   }
-
-  // ── 3. Load employee name/number/department for all relevant IDs ──────────
 
   const allEmployeeIds = [
     ...existingPeriods.map((r) => r.employeeId),
     ...derivedRows.map((r) => r.employeeId),
   ];
 
-  if (allEmployeeIds.length === 0) return [];
+  if (allEmployeeIds.length === 0) {
+    return { rows: [], total: 0, page, pageSize };
+  }
 
+  // ── 3. Resolve employees + offices in ONE inArray query ────────────────
   const empRows = await db
     .select({
       id: employees.id,
@@ -263,8 +307,10 @@ export async function getTimesheetDetail(
       firstName: employees.firstName,
       lastName: employees.lastName,
       officeId: employees.officeId,
+      officeName: offices.name,
     })
     .from(employees)
+    .leftJoin(offices, eq(employees.officeId, offices.id))
     .where(
       and(
         inArray(employees.id, allEmployeeIds),
@@ -279,13 +325,31 @@ export async function getTimesheetDetail(
         employeeNo: e.employeeNo,
         firstName: e.firstName,
         lastName: e.lastName,
-        department: e.officeId ?? 'Unassigned',
+        department: e.officeName ?? 'Unassigned',
       },
     ]),
   );
 
-  // ── 4. Merge into final rows ──────────────────────────────────────────────
+  // ── 4. Aggregate approved leave days overlapping the window ────────────
+  const leaveAgg = await db
+    .select({
+      employeeId: leaveApplications.employeeId,
+      totalDays: sql<number>`cast(coalesce(sum(${leaveApplications.noOfDays}), 0) as float)`,
+    })
+    .from(leaveApplications)
+    .where(
+      and(
+        inArray(leaveApplications.employeeId, allEmployeeIds),
+        eq(leaveApplications.status, 'approved'),
+        lte(leaveApplications.dateFrom, periodEnd),
+        gte(leaveApplications.dateTo, periodStart),
+      ),
+    )
+    .groupBy(leaveApplications.employeeId);
 
+  const leaveMap = new Map(leaveAgg.map((l) => [l.employeeId, Number(l.totalDays)]));
+
+  // ── 5. Merge into final rows ───────────────────────────────────────────
   const rows: TimesheetEmployeeRow[] = [];
 
   for (const period of existingPeriods) {
@@ -305,6 +369,8 @@ export async function getTimesheetDetail(
       totalLateMinutes: period.totalLateMinutes,
       totalUndertimeMinutes: period.totalUndertimeMinutes,
       totalOvertimeMinutes: period.totalOvertimeMinutes,
+      totalLeaveDays: leaveMap.get(period.employeeId) ?? 0,
+      netHours: computeNetHours(period),
       status: period.status as DtrStatus,
       approvedBy: period.approvedBy,
     });
@@ -327,15 +393,31 @@ export async function getTimesheetDetail(
       totalLateMinutes: derived.totalLateMinutes,
       totalUndertimeMinutes: derived.totalUndertimeMinutes,
       totalOvertimeMinutes: derived.totalOvertimeMinutes,
-      status: 'draft' as DtrStatus,
+      totalLeaveDays: leaveMap.get(derived.employeeId) ?? 0,
+      netHours: computeNetHours(derived),
+      status: 'draft',
       approvedBy: null,
     });
   }
 
+  // Search filter (name / employee no)
+  const filtered = search
+    ? rows.filter((r) =>
+        `${r.firstName} ${r.lastName} ${r.employeeNo}`
+          .toLowerCase()
+          .includes(search),
+      )
+    : rows;
+
   // Sort: last name ascending
-  rows.sort((a, b) =>
+  filtered.sort((a, b) =>
     `${a.lastName}${a.firstName}`.localeCompare(`${b.lastName}${b.firstName}`),
   );
 
-  return rows;
+  // Paginate
+  const total = filtered.length;
+  const start = (page - 1) * pageSize;
+  const pagedRows = filtered.slice(start, start + pageSize);
+
+  return { rows: pagedRows, total, page, pageSize };
 }

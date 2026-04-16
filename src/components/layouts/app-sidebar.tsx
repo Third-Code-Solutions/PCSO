@@ -13,123 +13,449 @@ import {
   TrendingUp,
   FileText,
   Settings,
+  Shield,
+  User as UserIcon,
+  Network,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import { type Role, canAccess } from '@/lib/auth/permissions';
+import {
+  type Role,
+  type Resource,
+  type Action,
+  hasPermission,
+} from '@/lib/auth/permissions';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
 
-// ─── Nav tree definition ─────────────────────────────────────────────────────
+// ─── Nav tree types ──────────────────────────────────────────────────────────
 
-interface NavChild {
-  label: string;
-  href: string;
-  /** If set, child is only shown to these roles */
-  roles?: Role[];
-  /** If set, child is only shown when the role can access this resource */
-  resource?: Parameters<typeof canAccess>[1];
+/**
+ * Permission gate for a nav item. A child or leaf is visible when:
+ *   - `permission` (resource+action) is granted for the role, AND/OR
+ *   - `roles` allowlist includes the role (if provided), AND
+ *   - `selfOnly` is false OR the user has an `employeeId`.
+ *
+ * If a child declares both `permission` and `roles`, the role must satisfy
+ * at least one of them (permissive OR). This lets us union permission-driven
+ * admin links with role-explicit self-service links inside a single group.
+ */
+interface NavGate {
+  permission?: { resource: Resource; action: Action };
+  roles?: readonly Role[];
+  /** If true, the link is hidden unless `user.employeeId` is non-null. */
+  selfOnly?: boolean;
 }
 
-interface NavItem {
+interface NavChild extends NavGate {
+  label: string;
+  href: string;
+}
+
+interface NavItem extends NavGate {
   label: string;
   href?: string;
   icon: React.ElementType;
-  /** If set, this item is only shown when the role can access this resource */
-  resource?: Parameters<typeof canAccess>[1];
   children?: NavChild[];
 }
+
+// ─── Role groupings (convenience constants) ──────────────────────────────────
+
+const ALL_ROLES: readonly Role[] = [
+  'super_admin',
+  'hr_admin',
+  'payroll_admin',
+  'leave_approver',
+  'viewer',
+  'employee_self_service',
+] as const;
+
+// ─── Nav tree definition ─────────────────────────────────────────────────────
+//
+// Visibility is controlled by an explicit `roles: Role[]` allowlist on every
+// leaf and group. A group is rendered only when at least one child is visible
+// for the current role (see `isItemVisible` / `canSeeItem`).
+//
+// Per-role spec (enforced below):
+//   - super_admin:           sees everything
+//   - hr_admin:              no payroll, no remittances, no /admin/*, no /saln/*
+//   - payroll_admin:         no plantilla, leave, performance, saln, admin;
+//                            employees read-only (no /employees/new), and no
+//                            attendance admin/timesheets/import/clock/overtime
+//   - leave_approver:        narrow — leave + own attendance + self IPCRF
+//   - employee_self_service: strictly self-service surfaces
+//   - viewer:                read-only HR, included on view-only surfaces
 
 const NAV_ITEMS: NavItem[] = [
   {
     label: 'Dashboard',
     href: '/dashboard',
     icon: Home,
-    // Accessible by all roles — no resource guard
+    roles: ALL_ROLES,
   },
+
+  // ── Employees / Plantilla / Org ───────────────────────────────────────────
   {
     label: 'Employees',
     icon: Users,
-    resource: 'employees',
+    roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
     children: [
-      { label: 'Employee Records', href: '/employees', resource: 'employees' },
-      { label: 'Plantilla', href: '/plantilla', resource: 'plantilla' },
-      { label: 'Org Chart', href: '/org-chart', resource: 'plantilla' },
+      {
+        label: 'Employee Records',
+        href: '/employees',
+        roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
+      },
+      {
+        label: 'New Employee',
+        href: '/employees/new',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'Plantilla',
+        href: '/plantilla',
+        roles: ['super_admin', 'hr_admin', 'viewer'],
+      },
+      {
+        label: 'New Position',
+        href: '/plantilla/new',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'Vacancies',
+        href: '/plantilla/vacancies',
+        roles: ['super_admin', 'hr_admin', 'viewer'],
+      },
+      {
+        label: 'Org Chart',
+        href: '/org-chart',
+        roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
+      },
     ],
   },
+
+  // ── Time & Attendance ─────────────────────────────────────────────────────
   {
     label: 'Time & Attendance',
     icon: Clock,
-    resource: 'attendance',
+    roles: [
+      'super_admin',
+      'hr_admin',
+      'payroll_admin',
+      'leave_approver',
+      'viewer',
+      'employee_self_service',
+    ],
     children: [
-      { label: 'DTR', href: '/attendance/dtr' },
-      { label: 'Overtime', href: '/attendance/overtime' },
-      { label: 'Timesheets', href: '/attendance/timesheets' },
+      {
+        label: 'Overview',
+        href: '/attendance',
+        roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
+      },
+      {
+        label: 'Admin Grid',
+        href: '/attendance/admin',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'DTR',
+        href: '/attendance/dtr',
+        // Admins/approvers see team DTR; self-service & payroll_admin see own
+        roles: [
+          'super_admin',
+          'hr_admin',
+          'payroll_admin',
+          'leave_approver',
+          'viewer',
+          'employee_self_service',
+        ],
+      },
+      {
+        label: 'Timesheets',
+        href: '/attendance/timesheets',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'Overtime Approvals',
+        href: '/attendance/overtime',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'Import Biometric',
+        href: '/attendance/import',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      // Self-service surfaces
+      {
+        label: 'Clock In / Out',
+        href: '/attendance/clock',
+        roles: ['super_admin', 'hr_admin', 'employee_self_service'],
+        selfOnly: true,
+      },
+      {
+        label: 'File Overtime',
+        href: '/attendance/overtime/new',
+        roles: ['super_admin', 'hr_admin', 'employee_self_service'],
+        selfOnly: true,
+      },
     ],
   },
+
+  // ── Leave Management ──────────────────────────────────────────────────────
   {
     label: 'Leave Management',
     icon: Palmtree,
-    resource: 'leave',
+    roles: [
+      'super_admin',
+      'hr_admin',
+      'leave_approver',
+      'viewer',
+      'employee_self_service',
+    ],
     children: [
-      { label: 'Applications', href: '/leave/applications' },
-      { label: 'Credits', href: '/leave/credits' },
-      { label: 'Calendar', href: '/leave/calendar' },
+      {
+        label: 'Applications',
+        href: '/leave/applications',
+        roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer'],
+      },
+      {
+        label: 'Approvals Queue',
+        href: '/leave/approvals',
+        roles: ['super_admin', 'hr_admin', 'leave_approver'],
+      },
+      {
+        label: 'Credits (Admin)',
+        href: '/leave/credits/admin',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'Calendar',
+        href: '/leave/calendar',
+        roles: [
+          'super_admin',
+          'hr_admin',
+          'leave_approver',
+          'viewer',
+          'employee_self_service',
+        ],
+      },
+      // Self-service
+      {
+        label: 'Apply for Leave',
+        href: '/leave/apply',
+        roles: ['super_admin', 'hr_admin', 'leave_approver', 'employee_self_service'],
+        selfOnly: true,
+      },
+      {
+        label: 'My Credits',
+        href: '/leave/credits',
+        roles: ['super_admin', 'hr_admin', 'leave_approver', 'employee_self_service'],
+        selfOnly: true,
+      },
     ],
   },
+
+  // ── Payroll ───────────────────────────────────────────────────────────────
   {
     label: 'Payroll',
     icon: Wallet,
-    resource: 'payroll',
+    roles: ['super_admin', 'payroll_admin', 'viewer', 'employee_self_service'],
     children: [
-      { label: 'Regular Payroll', href: '/payroll' },
-      { label: 'JO / COS', href: '/payroll/jo-cos' },
-      { label: 'Payslips', href: '/payroll/payslips' },
-      { label: 'History', href: '/payroll/history' },
+      {
+        label: 'Payroll Periods',
+        href: '/payroll',
+        roles: ['super_admin', 'payroll_admin'],
+      },
+      {
+        label: 'New Period',
+        href: '/payroll/new',
+        roles: ['super_admin', 'payroll_admin'],
+      },
+      {
+        label: 'Payslips (Admin)',
+        href: '/payroll/payslips',
+        roles: ['super_admin', 'payroll_admin'],
+      },
+      {
+        label: 'History',
+        href: '/payroll/history',
+        roles: ['super_admin', 'payroll_admin', 'viewer'],
+      },
+      {
+        label: 'JO / COS',
+        href: '/payroll/jo-cos',
+        roles: ['super_admin', 'payroll_admin'],
+      },
+      {
+        label: 'My Payslips',
+        href: '/payroll/payslips',
+        roles: ['super_admin', 'employee_self_service'],
+        selfOnly: true,
+      },
     ],
   },
+
+  // ── Remittances ───────────────────────────────────────────────────────────
   {
     label: 'Remittances',
     icon: Building2,
-    resource: 'remittances',
+    roles: ['super_admin', 'payroll_admin', 'viewer'],
     children: [
-      { label: 'GSIS', href: '/remittances/gsis' },
-      { label: 'PhilHealth', href: '/remittances/philhealth' },
-      { label: 'Pag-IBIG', href: '/remittances/pagibig' },
-      { label: 'BIR', href: '/remittances/bir' },
+      {
+        label: 'GSIS',
+        href: '/remittances/gsis',
+        roles: ['super_admin', 'payroll_admin', 'viewer'],
+      },
+      {
+        label: 'PhilHealth',
+        href: '/remittances/philhealth',
+        roles: ['super_admin', 'payroll_admin', 'viewer'],
+      },
+      {
+        label: 'Pag-IBIG',
+        href: '/remittances/pagibig',
+        roles: ['super_admin', 'payroll_admin', 'viewer'],
+      },
+      {
+        label: 'BIR',
+        href: '/remittances/bir',
+        roles: ['super_admin', 'payroll_admin', 'viewer'],
+      },
+      {
+        label: 'BIR 1601-C',
+        href: '/remittances/bir/1601-c',
+        roles: ['super_admin', 'payroll_admin'],
+      },
+      {
+        label: 'BIR 2316',
+        href: '/remittances/bir/2316',
+        roles: ['super_admin', 'payroll_admin'],
+      },
+      {
+        label: 'BIR 1604-C',
+        href: '/remittances/bir/1604-c',
+        roles: ['super_admin', 'payroll_admin'],
+      },
     ],
   },
+
+  // ── Performance ───────────────────────────────────────────────────────────
   {
     label: 'Performance',
     icon: TrendingUp,
-    resource: 'performance',
+    roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer', 'employee_self_service'],
     children: [
-      { label: 'IPCRF / OPCRF', href: '/performance/ipcrf' },
-      { label: 'Step Increments', href: '/performance/step-increments' },
+      {
+        label: 'Cycles',
+        href: '/performance/cycles',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'IPCRF',
+        href: '/performance/ipcrf',
+        // Admins & viewer see all; approver & self-service see self
+        roles: [
+          'super_admin',
+          'hr_admin',
+          'leave_approver',
+          'viewer',
+          'employee_self_service',
+        ],
+      },
+      {
+        label: 'OPCRF',
+        href: '/performance/opcrf',
+        roles: ['super_admin', 'hr_admin', 'viewer'],
+      },
+      {
+        label: 'Step Increments',
+        href: '/performance/step-increments',
+        roles: ['super_admin', 'hr_admin'],
+      },
+      {
+        label: 'Analytics',
+        href: '/performance/analytics',
+        roles: ['super_admin', 'hr_admin'],
+      },
     ],
   },
+
+  // ── SALN ──────────────────────────────────────────────────────────────────
   {
     label: 'SALN',
     icon: FileText,
-    resource: 'saln',
+    roles: ['super_admin', 'employee_self_service'],
     children: [
-      { label: 'Submissions', href: '/saln/submissions' },
-      { label: 'Tracking', href: '/saln/tracking' },
+      {
+        label: 'Compliance Dashboard',
+        href: '/saln/admin',
+        roles: ['super_admin'],
+      },
+      {
+        label: 'Submissions',
+        href: '/saln/submissions',
+        roles: ['super_admin', 'employee_self_service'],
+        selfOnly: true,
+      },
+      {
+        label: 'Tracking',
+        href: '/saln/tracking',
+        roles: ['super_admin'],
+      },
+      {
+        label: 'Non-Filers',
+        href: '/saln/admin/non-filers',
+        roles: ['super_admin'],
+      },
+      {
+        label: 'File New SALN',
+        href: '/saln/new',
+        roles: ['super_admin', 'employee_self_service'],
+        selfOnly: true,
+      },
     ],
   },
+
+  // ── Admin ─────────────────────────────────────────────────────────────────
   {
     label: 'Admin',
-    icon: Settings,
-    resource: 'admin',
+    icon: Shield,
+    roles: ['super_admin'],
     children: [
-      { label: 'Users', href: '/admin/users' },
-      { label: 'Offices', href: '/admin/offices' },
-      { label: 'Salary Grades', href: '/admin/salary-grades' },
-      { label: 'Rates', href: '/admin/rates' },
-      { label: 'Holidays', href: '/admin/holidays' },
-      { label: 'Audit Logs', href: '/admin/audit-logs' },
+      { label: 'Users', href: '/admin/users', roles: ['super_admin'] },
+      { label: 'Salary Grades', href: '/admin/salary-grades', roles: ['super_admin'] },
+      { label: 'Rates', href: '/admin/rates', roles: ['super_admin'] },
+      { label: 'Holidays', href: '/admin/holidays', roles: ['super_admin'] },
+      { label: 'Offices', href: '/admin/offices', roles: ['super_admin'] },
+      { label: 'Audit Logs', href: '/admin/audit-logs', roles: ['super_admin'] },
+      { label: 'System Settings', href: '/admin/settings', roles: ['super_admin'] },
     ],
+  },
+
+  // ── Org Chart (top-level shortcut) ────────────────────────────────────────
+  // Renders for employee_self_service whose Employees group is hidden.
+  {
+    label: 'Org Chart',
+    href: '/org-chart',
+    icon: Network,
+    roles: ['employee_self_service'],
+  },
+
+  // ── Profile (self) ────────────────────────────────────────────────────────
+  {
+    label: 'My Profile',
+    href: '/profile',
+    icon: UserIcon,
+    roles: ALL_ROLES,
+    selfOnly: true,
+  },
+
+  // ── Settings (personal preferences) ───────────────────────────────────────
+  {
+    label: 'Settings',
+    href: '/settings',
+    icon: Settings,
+    roles: ALL_ROLES,
   },
 ];
 
@@ -141,39 +467,82 @@ interface AppSidebarProps {
   /** Whether a mobile drawer overlay is active */
   mobileOpen?: boolean;
   /** Role of the currently logged-in user for menu filtering */
-  // TODO: Source from Supabase session via layout.tsx
   role?: Role;
+  /**
+   * Employee record id linked to the current auth user (if any).
+   * Required to surface self-service items (Clock In, Apply Leave, My Payslips,
+   * My SALN, etc.). When null, self-service-only links are hidden.
+   * TODO(layout): wire from `useCurrentUser().user.employeeId`.
+   */
+  employeeId?: string | null;
   onClose?: () => void;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Visibility helpers ───────────────────────────────────────────────────────
 
-function isItemVisible(item: NavItem, role: Role | undefined): boolean {
-  if (!item.resource) return true; // Dashboard is always shown
+/**
+ * Role-allowlist check — every leaf and group in the nav tree carries an
+ * explicit `roles: Role[]` that gates visibility. Returns true when the
+ * current role is permitted by the item's allowlist.
+ */
+function canSeeItem(item: NavGate, role: Role | undefined): boolean {
   if (!role) return false;
-  return canAccess(role, item.resource);
+  if (!item.roles) return false;
+  return item.roles.includes(role);
 }
 
-function isChildVisible(child: NavChild, role: Role | undefined): boolean {
-  // A resource constraint always takes priority — if the role cannot access
-  // the underlying resource, the link is hidden regardless of role allowlist.
-  if (child.resource) {
-    if (!role) return false;
-    if (!canAccess(role, child.resource)) return false;
-  }
-  if (!child.roles) return true; // No allowlist — visible to all remaining roles
+function matchesGate(gate: NavGate, role: Role | undefined, employeeId: string | null): boolean {
+  if (gate.selfOnly && !employeeId) return false;
   if (!role) return false;
-  return child.roles.includes(role);
+
+  // Primary gate is the role allowlist. A permission-based gate is kept for
+  // backwards compatibility on any items that still declare one (permissive OR).
+  const roleAllowed = canSeeItem(gate, role);
+  const permAllowed = gate.permission
+    ? hasPermission(role, gate.permission.resource, gate.permission.action)
+    : false;
+
+  if (!gate.roles && !gate.permission) return true;
+
+  return roleAllowed || permAllowed;
+}
+
+function isChildVisible(
+  child: NavChild,
+  role: Role | undefined,
+  employeeId: string | null,
+): boolean {
+  return matchesGate(child, role, employeeId);
+}
+
+function isItemVisible(
+  item: NavItem,
+  role: Role | undefined,
+  employeeId: string | null,
+): boolean {
+  // The item itself must clear its own gate. Groups additionally need at
+  // least one visible child below to render.
+  if (!matchesGate(item, role, employeeId)) return false;
+
+  if (item.children && item.children.length > 0) {
+    const anyVisible = item.children.some((c) => isChildVisible(c, role, employeeId));
+    if (!anyVisible) return false;
+  }
+  return true;
 }
 
 function useActiveGroup(items: NavItem[], pathname: string): string | null {
   for (const item of items) {
     if (item.children) {
       for (const child of item.children) {
-        if (pathname.startsWith(child.href)) return item.label;
+        if (pathname === child.href || pathname.startsWith(`${child.href}/`)) {
+          return item.label;
+        }
       }
     }
-    if (item.href && pathname === item.href) return item.label;
+    if (item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))) {
+      return item.label;
+    }
   }
   return null;
 }
@@ -188,7 +557,8 @@ function NavChildLink({
   collapsed: boolean;
 }) {
   const pathname = usePathname();
-  const isActive = pathname.startsWith(child.href);
+  const isActive =
+    pathname === child.href || pathname.startsWith(`${child.href}/`);
 
   if (collapsed) return null;
 
@@ -215,16 +585,18 @@ function NavGroup({
   collapsed,
   defaultOpen,
   role,
+  employeeId,
 }: {
   item: NavItem;
   collapsed: boolean;
   defaultOpen: boolean;
   role?: Role;
+  employeeId: string | null;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const Icon = item.icon;
   const visibleChildren =
-    item.children?.filter((child) => isChildVisible(child, role)) ?? [];
+    item.children?.filter((child) => isChildVisible(child, role, employeeId)) ?? [];
 
   const button = (
     <button
@@ -272,7 +644,7 @@ function NavGroup({
       {!collapsed && open && visibleChildren.length > 0 && (
         <ul className="mt-1 space-y-0.5">
           {visibleChildren.map((child) => (
-            <li key={child.href}>
+            <li key={`${item.label}:${child.href}:${child.label}`}>
               <NavChildLink child={child} collapsed={collapsed} />
             </li>
           ))}
@@ -282,7 +654,7 @@ function NavGroup({
   );
 }
 
-// ─── NavLeaf (Dashboard — no children) ───────────────────────────────────────
+// ─── NavLeaf (no children) ───────────────────────────────────────────────────
 
 function NavLeaf({
   item,
@@ -337,20 +709,13 @@ export function AppSidebar({
   // TODO: Replace with real role from session. Defaulting to super_admin so all
   //       items are visible during development.
   role = 'super_admin',
+  employeeId = null,
   onClose,
 }: AppSidebarProps) {
   const pathname = usePathname();
   const activeGroup = useActiveGroup(NAV_ITEMS, pathname);
 
-  const visibleItems = NAV_ITEMS.filter((item) => {
-    if (!isItemVisible(item, role)) return false;
-    // Hide groups whose children are all gated away for this role.
-    if (item.children && item.children.length > 0) {
-      const anyVisibleChild = item.children.some((c) => isChildVisible(c, role));
-      if (!anyVisibleChild) return false;
-    }
-    return true;
-  });
+  const visibleItems = NAV_ITEMS.filter((item) => isItemVisible(item, role, employeeId));
 
   const sidebarContent = (
     <nav
@@ -392,6 +757,7 @@ export function AppSidebar({
                 collapsed={!open}
                 defaultOpen={activeGroup === item.label}
                 role={role}
+                employeeId={employeeId}
               />
             ) : (
               <NavLeaf key={item.label} item={item} collapsed={!open} />

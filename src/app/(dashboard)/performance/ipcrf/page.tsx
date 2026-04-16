@@ -22,6 +22,7 @@ import { ChevronRightIcon, ClipboardListIcon } from 'lucide-react';
 import type { Metadata } from 'next';
 import { hasPermission } from '@/lib/auth/permissions';
 import { ApprovalButtons } from './_client';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 export const metadata: Metadata = {
   title: 'IPCRF',
@@ -62,6 +63,7 @@ export default async function IpcrfListPage({ searchParams }: Props) {
     const ipcrf = ratings.filter((r) => r.ratingType === 'ipcrf');
     return (
       <main className="mx-auto max-w-5xl px-4 py-6">
+        <RealtimeBoundary tables={['performance_ratings']} />
         <PageHeader
           title="My IPCRF"
           description="Individual Performance Commitment and Review Form — all cycles."
@@ -165,6 +167,7 @@ export default async function IpcrfListPage({ searchParams }: Props) {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
+      <RealtimeBoundary tables={['performance_ratings']} />
       <PageHeader
         title="IPCRF — All Employees"
         description="Individual Performance Commitment and Review Form submissions."

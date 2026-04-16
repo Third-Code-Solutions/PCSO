@@ -1,19 +1,68 @@
+import { cache } from 'react';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { getCurrentUser, type CurrentUser } from '@/lib/auth/get-current-user';
 import { hasPermission, type Resource, type Action } from '@/lib/auth/permissions';
+
+// ─── Request-scoped user cache ───────────────────────────────────────────────
+//
+// `React.cache` dedupes calls WITHIN a single request (server-rendered tree or
+// single server-action invocation). Across requests the cache is independent,
+// so each HTTP request resolves a fresh Supabase session — we never leak a
+// stale `user` object between users.
+const getCurrentUserCached = cache(getCurrentUser);
+
+// ─── Internal helpers ────────────────────────────────────────────────────────
+
+/**
+ * Best-effort recovery of the current request pathname. The Next.js
+ * `headers()` helper exposes `x-invoke-path` (app router) or falls back to
+ * the URL referer. Used purely for the `?path=` query hint on the
+ * unauthorized redirect — never trusted for security.
+ */
+async function getCurrentPathname(): Promise<string> {
+  try {
+    const h = await headers();
+    const invoked = h.get('x-invoke-path') ?? h.get('x-pathname');
+    if (invoked) return invoked;
+    const referer = h.get('referer');
+    if (referer) {
+      try {
+        return new URL(referer).pathname;
+      } catch {
+        // ignore malformed referer
+      }
+    }
+  } catch {
+    // headers() throws outside a request context — fall through.
+  }
+  return '/';
+}
+
+function buildUnauthorizedUrl(pathname: string): string {
+  const params = new URLSearchParams({ unauthorized: '1', path: pathname });
+  return `/login?${params.toString()}`;
+}
 
 // ─── requireAuth ─────────────────────────────────────────────────────────────
 
 /**
  * Asserts that a valid session exists.
  *
- * Redirects to `/login` when unauthenticated.
+ * 307-redirects to `/login` when unauthenticated (via `next/navigation`
+ * `redirect()` — it throws a `NEXT_REDIRECT` marker that the framework
+ * converts into a redirect response, which the caller does not need to
+ * handle).
+ *
  * Returns the current user when authenticated.
  *
  * Use at the top of Server Components or Server Actions that require login.
+ *
+ * Concurrency: session is resolved FRESH on every request. `React.cache`
+ * only dedupes calls within the same request scope, never across requests.
  */
 export async function requireAuth(): Promise<CurrentUser> {
-  const user = await getCurrentUser();
+  const user = await getCurrentUserCached();
   if (!user) redirect('/login');
   return user;
 }
@@ -23,8 +72,11 @@ export async function requireAuth(): Promise<CurrentUser> {
 /**
  * Asserts that the current user has the specified permission.
  *
- * Redirects to `/login` when unauthenticated.
- * Throws a 403 error object when the user lacks the permission.
+ * 307-redirects to `/login?unauthorized=1&path=${pathname}` when the user is
+ * authenticated but lacks the permission. 307-redirects to `/login` when
+ * unauthenticated. NEVER THROWS — middleware / Next.js handles the redirect
+ * marker internally, and a friendly unauthorized UI page is rendered from
+ * the login route using the `unauthorized` + `path` query params.
  *
  * @param resource - The resource being accessed.
  * @param action   - The action being performed.
@@ -43,12 +95,8 @@ export async function requirePermission(
   const user = await requireAuth();
 
   if (!hasPermission(user.role, resource, action)) {
-    // Redirect to dashboard with a forbidden flag instead of throwing.
-    // This gives users a clean 307 → /dashboard?error=forbidden rather than a 500.
-    // Server Actions that want to raise a hard error should check `hasPermission`
-    // directly before doing work and throw themselves.
-    const { redirect } = await import('next/navigation');
-    redirect(`/dashboard?error=forbidden&resource=${resource}&action=${action}`);
+    const pathname = await getCurrentPathname();
+    redirect(buildUnauthorizedUrl(pathname));
   }
 
   return user;

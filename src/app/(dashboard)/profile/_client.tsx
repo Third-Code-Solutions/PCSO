@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Pencil, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -70,6 +72,7 @@ function Field({
 // ─── Dialog component ─────────────────────────────────────────────────────────
 
 export function EditContactDialog({ initial }: EditContactDialogProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -118,12 +121,20 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
         const result = await updateOwnContactInfo(form);
         if (result.success) {
           setSuccessMsg('Contact information updated.');
-          setTimeout(() => setOpen(false), 800);
+          toast.success('Contact information saved');
+          // Refresh server data so the parent page reflects new values.
+          router.refresh();
+          setTimeout(() => setOpen(false), 600);
         } else {
-          setErrorMsg(result.error ?? 'An unexpected error occurred. Please try again.');
+          const msg = result.error ?? 'An unexpected error occurred. Please try again.';
+          setErrorMsg(msg);
+          toast.error('Failed to save contact info', { description: msg });
         }
-      } catch {
-        setErrorMsg('An unexpected error occurred. Please try again.');
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.';
+        setErrorMsg(msg);
+        toast.error('Failed to save contact info', { description: msg });
       }
     });
   };

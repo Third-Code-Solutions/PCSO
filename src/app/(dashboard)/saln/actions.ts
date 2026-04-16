@@ -369,6 +369,7 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
 export interface SendRemindersResult {
   sent: number;
   failed: number;
+  skipped?: number;
   errors: string[];
 }
 
@@ -428,7 +429,30 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
   const errors: string[] = [];
+
+  // Per-day dedupe: load today's already-sent reminder audit events so we
+  // skip any employee that was already reminded on this calendar day. This
+  // prevents accidental duplicate reminders when an admin fires the bulk
+  // action twice in quick succession.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const { data: alreadySentToday } = await supabase
+    .from('audit_logs')
+    .select('record_id, new_values, created_at')
+    .eq('action', 'send_reminder_individual')
+    .eq('table_name', 'saln_submissions')
+    .gte('created_at', todayStart.toISOString());
+
+  const alreadySentEmployeeIds = new Set<string>();
+  for (const row of alreadySentToday ?? []) {
+    const nv = row.new_values as Record<string, unknown> | null;
+    const empId =
+      typeof nv?.['employee_id'] === 'string' ? (nv['employee_id'] as string) : null;
+    const yr = Number(nv?.['year'] ?? 0);
+    if (empId && yr === parsed.year) alreadySentEmployeeIds.add(empId);
+  }
 
   for (const emp of employees ?? []) {
     // Check if they've filed for this year
@@ -441,6 +465,12 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
     );
 
     if (hasFiled) continue;
+
+    // Idempotency: skip if already reminded today for this coverage year.
+    if (alreadySentEmployeeIds.has(String(emp.id))) {
+      skipped++;
+      continue;
+    }
 
     const recipientEmail = typeof emp.email === 'string' ? emp.email : null;
     if (!recipientEmail) {
@@ -480,6 +510,20 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
 
     sent++;
 
+    // Record per-recipient audit row so a subsequent bulk-reminder run on
+    // the same day will see the dedupe record and skip this employee.
+    await writeAuditLog(supabase, {
+      userId: user.id,
+      action: 'send_reminder_individual',
+      recordId: String(emp.id),
+      newValues: {
+        employee_id: String(emp.id),
+        employee_no: emp.employee_no,
+        year: parsed.year,
+      },
+    });
+    alreadySentEmployeeIds.add(String(emp.id));
+
     // Real-time push notification to the employee
     try {
       await notifyEmployee(String(emp.id), {
@@ -502,9 +546,10 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
       year: parsed.year,
       sent,
       failed,
+      skipped,
       employee_ids: parsed.employeeIds ?? 'all',
     },
   });
 
-  return { sent, failed, errors };
+  return { sent, failed, skipped, errors };
 }

@@ -5,9 +5,13 @@
  * human-readable identifier. The period end is derived as the last day of
  * the same calendar month.
  *
+ * Query params:
+ *  - `page`  — 1-indexed page number (default 1)
+ *  - `q`     — search query (name / employee no)
+ *
  * Roles:
  *  - employee_self_service : sees only their own row
- *  - hr_admin, leave_approver, super_admin : all rows + approve buttons
+ *  - hr_admin, leave_approver, super_admin : all rows + approve/reject buttons
  */
 
 import { format, endOfMonth, parseISO } from 'date-fns';
@@ -16,25 +20,49 @@ import { PageHeader } from '@/components/layouts/page-header';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import { TimesheetSummaryTable } from '@/components/attendance/timesheet-summary-table';
 import { getTimesheetDetail } from '../queries';
-import { approveTimesheet, exportTimesheetCsv } from '../actions';
+import {
+  approveTimesheet,
+  exportTimesheetCsv,
+  rejectTimesheet,
+} from '../actions';
 import type { Metadata } from 'next';
 import type { DateString } from '@/lib/utils/attendance/types';
 
 interface PageProps {
   params: Promise<{ periodId: string }>;
+  searchParams: Promise<{ page?: string; q?: string }>;
 }
+
+const PAGE_SIZE = 50;
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { periodId } = await params;
+  if (!ISO_DATE.test(periodId)) return { title: 'Timesheets' };
   const label = format(parseISO(periodId), 'MMMM yyyy');
   return { title: `Timesheets – ${label}` };
 }
 
-export default async function TimesheetDetailPage({ params }: PageProps) {
+export default async function TimesheetDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { periodId } = await params;
+  const sp = (await searchParams) ?? {};
   const user = await requirePermission('attendance', 'view');
 
-  // Derive end of month from the period start
+  // Validate periodId is a YYYY-MM-DD date
+  if (!ISO_DATE.test(periodId)) {
+    return (
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Invalid period identifier.
+        </div>
+      </main>
+    );
+  }
+
   const periodStart = periodId as DateString;
   const periodEnd = format(endOfMonth(parseISO(periodId)), 'yyyy-MM-dd') as DateString;
   const monthLabel = format(parseISO(periodId), 'MMMM yyyy');
@@ -44,16 +72,30 @@ export default async function TimesheetDetailPage({ params }: PageProps) {
     user.role === 'leave_approver' ||
     user.role === 'super_admin';
 
-  let rows: Awaited<ReturnType<typeof getTimesheetDetail>> = [];
+  const parsedPage = Number.parseInt(sp.page ?? '1', 10);
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const search = (sp.q ?? '').toString();
+
+  let detail: Awaited<ReturnType<typeof getTimesheetDetail>> = {
+    rows: [],
+    total: 0,
+    page,
+    pageSize: PAGE_SIZE,
+  };
   let fetchError: string | null = null;
 
   try {
-    rows = await getTimesheetDetail(periodStart, periodEnd);
+    detail = await getTimesheetDetail(periodStart, periodEnd, {
+      page,
+      pageSize: PAGE_SIZE,
+      search,
+    });
   } catch (err: unknown) {
     fetchError =
       err instanceof Error ? err.message : 'Failed to load timesheet detail.';
   }
 
+  const { rows, total } = detail;
   const approvedCount = rows.filter((r) => r.status === 'approved').length;
   const pendingCount = rows.filter((r) => r.status !== 'approved').length;
 
@@ -63,7 +105,7 @@ export default async function TimesheetDetailPage({ params }: PageProps) {
 
       <PageHeader
         title={`Timesheets — ${monthLabel}`}
-        description={`${rows.length} employee${rows.length !== 1 ? 's' : ''}  •  ${approvedCount} approved  •  ${pendingCount} pending`}
+        description={`${total} employee${total !== 1 ? 's' : ''}  •  ${approvedCount} approved (page)  •  ${pendingCount} pending (page)`}
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },
           { label: 'Time & Attendance', href: '/attendance' },
@@ -78,27 +120,15 @@ export default async function TimesheetDetailPage({ params }: PageProps) {
         </div>
       )}
 
-      {/* Summary cards */}
+      {/* Summary cards (page-level) */}
       {rows.length > 0 && (
         <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
+            { label: 'Total (matches)', value: total, color: 'text-[#0B2545]' },
+            { label: 'Approved (page)', value: approvedCount, color: 'text-emerald-700' },
+            { label: 'Pending (page)', value: pendingCount, color: 'text-amber-700' },
             {
-              label: 'Total Employees',
-              value: rows.length,
-              color: 'text-[#0B2545]',
-            },
-            {
-              label: 'Approved',
-              value: approvedCount,
-              color: 'text-emerald-700',
-            },
-            {
-              label: 'Pending Approval',
-              value: pendingCount,
-              color: 'text-amber-700',
-            },
-            {
-              label: 'Anomalies',
+              label: 'Anomalies (page)',
               value: rows.filter(
                 (r) => r.totalLateMinutes > 240 || r.totalUndertimeMinutes > 240,
               ).length,
@@ -116,22 +146,33 @@ export default async function TimesheetDetailPage({ params }: PageProps) {
         </div>
       )}
 
-      {rows.length === 0 && !fetchError && (
+      {total === 0 && !fetchError && (
         <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[#0B2545]/20">
-          <p className="text-sm text-gray-500">No DTR data for this period.</p>
+          <p className="text-sm text-gray-500">
+            {search
+              ? `No employees match "${search}" for this period.`
+              : 'No DTR data for this period.'}
+          </p>
           <p className="text-xs text-gray-400">
-            Import biometric data or add manual entries under Attendance Admin.
+            {search
+              ? 'Try a different search.'
+              : 'Import biometric data or add manual entries under Attendance Admin.'}
           </p>
         </div>
       )}
 
-      {rows.length > 0 && (
+      {total > 0 && (
         <TimesheetSummaryTable
           rows={rows}
           periodStart={periodStart}
           periodEnd={periodEnd}
+          total={total}
+          page={page}
+          pageSize={PAGE_SIZE}
+          initialSearch={search}
           canApprove={canApprove}
           onApprove={approveTimesheet}
+          onReject={rejectTimesheet}
           onExport={exportTimesheetCsv}
         />
       )}

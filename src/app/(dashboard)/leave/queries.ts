@@ -3,11 +3,21 @@
  *
  * Used by Server Components and React Query hooks.
  * All queries go through Supabase RLS-aware client.
+ *
+ * Scoping conventions:
+ *  - Callers pass `scopeEmployeeId` when the acting user is
+ *    `employee_self_service` (or otherwise restricted to their own records).
+ *  - All queries return safe empty defaults (`[]`, `null`, `{ balance: 0 }`)
+ *    on error or missing data — they never throw on empty result sets.
  */
 
 import { createServerClient } from '@/lib/supabase/server';
-import { LEAVE_TYPES } from '@/lib/constants/leave-types';
+import { LEAVE_TYPES, LEAVE_TYPE_CODES } from '@/lib/constants/leave-types';
 import type { LeaveTypeCode } from '@/lib/constants/leave-types';
+
+// Known leave type codes we surface across the module. Used to defensively
+// filter out any junk rows the DB might have from pre-migration seed scripts.
+const KNOWN_LEAVE_CODES: readonly string[] = LEAVE_TYPE_CODES;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,6 +101,7 @@ function toLeaveCreditBalance(row: Record<string, unknown>): LeaveCreditBalanceR
 export async function getMyLeaveApplications(
   employeeId: string,
 ): Promise<LeaveApplicationRow[]> {
+  if (!employeeId) return [];
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
@@ -110,9 +121,15 @@ export async function getMyLeaveApplications(
       leave_types ( code, name )
     `)
     .eq('employee_id', employeeId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
-  if (error) throw new Error(`Failed to fetch leave applications: ${error.message}`);
+  // Defensive: never throw on empty/error — return empty list so pages keep
+  // rendering a usable shell for the user.
+  if (error) {
+    console.error('[leave/queries] getMyLeaveApplications:', error.message);
+    return [];
+  }
 
   return (data ?? []).map((row) => {
     const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
@@ -141,12 +158,62 @@ export async function getMyLeaveApplications(
 // Query: pending approvals queue (for leave_approver / hr_admin)
 // ---------------------------------------------------------------------------
 
-export async function getPendingApprovals(): Promise<LeaveApplicationRow[]> {
+export interface PendingApprovalRow extends LeaveApplicationRow {
+  employeeFullName: string;
+  employeeNo: string;
+  /** Current pre-deduction balance for VL/SL, null for non-accrued types. */
+  currentBalance: number | null;
+  /** Balance after this leave is approved (currentBalance for VL/SL since
+   *  credits are already deducted on apply). */
+  balanceAfterDeduction: number | null;
+}
+
+export interface GetPendingApprovalsOptions {
+  /** Optionally filter to a specific approver's queue. Reserved for
+   *  org-chart escalation — currently a no-op at the DB level. */
+  approverId?: string;
+  /** Restrict the queue to a single employee's applications. Pass when the
+   *  caller is `employee_self_service` so they only see their own pending
+   *  items (defence-in-depth alongside RLS). */
+  scopeEmployeeId?: string;
+  /** 1-indexed page (defaults to 1). */
+  page?: number;
+  /** Rows per page (defaults to 25, max 100). */
+  pageSize?: number;
+}
+
+export interface PaginatedPendingApprovals {
+  rows: PendingApprovalRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * Paginated pending-approvals queue. The second overload (legacy)
+ * keeps existing callers working — it returns a plain array.
+ */
+export async function getPendingApprovals(
+  options: GetPendingApprovalsOptions & { paginated: true },
+): Promise<PaginatedPendingApprovals>;
+export async function getPendingApprovals(
+  options?: GetPendingApprovalsOptions,
+): Promise<PendingApprovalRow[]>;
+export async function getPendingApprovals(
+  options?: GetPendingApprovalsOptions & { paginated?: boolean },
+): Promise<PendingApprovalRow[] | PaginatedPendingApprovals> {
   const supabase = await createServerClient();
 
-  const { data, error } = await supabase
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = Math.min(100, Math.max(5, options?.pageSize ?? 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let pendingQuery = supabase
     .from('leave_applications')
-    .select(`
+    .select(
+      `
       id,
       employee_id,
       leave_type_id,
@@ -160,23 +227,104 @@ export async function getPendingApprovals(): Promise<LeaveApplicationRow[]> {
       created_at,
       leave_types ( code, name ),
       employees ( first_name, last_name, employee_no )
-    `)
+    `,
+      { count: 'exact' },
+    )
     .eq('status', 'pending')
-    .order('created_at', { ascending: true });
+    .is('deleted_at', null);
 
-  if (error) throw new Error(`Failed to fetch pending approvals: ${error.message}`);
+  if (options?.scopeEmployeeId) {
+    pendingQuery = pendingQuery.eq('employee_id', options.scopeEmployeeId);
+  }
 
-  return (data ?? []).map((row) => {
+  const { data, error, count } = await pendingQuery
+    .order('created_at', { ascending: true })
+    .range(from, to);
+
+  // Defensive: on error we return an empty, structurally-valid payload so
+  // approver UIs can still render a "no pending" empty state.
+  if (error) {
+    console.error('[leave/queries] getPendingApprovals:', error.message);
+    if (options?.paginated) {
+      return { rows: [], total: 0, page, pageSize, totalPages: 1 };
+    }
+    return [];
+  }
+
+  // Batch-fetch current VL/SL balances for the employees we're about to show,
+  // so the approver sees balance-after-deduction without N+1 queries.
+  const rows = data ?? [];
+  const year = new Date().getFullYear();
+  const employeeIds = [...new Set(rows.map((r) => String(r.employee_id)))];
+  const balanceMap = new Map<string, { VL: number; SL: number }>();
+
+  if (employeeIds.length > 0) {
+    const { data: credits } = await supabase
+      .from('leave_credits')
+      .select('employee_id, balance, leave_types ( code )')
+      .in('employee_id', employeeIds)
+      .eq('year', year);
+
+    for (const c of credits ?? []) {
+      const empId = String(c.employee_id);
+      const code = (c.leave_types as { code?: string } | null)?.code ?? '';
+      if (code !== 'VL' && code !== 'SL') continue;
+      const existing = balanceMap.get(empId) ?? { VL: 0, SL: 0 };
+      if (code === 'VL') existing.VL = Number(c.balance ?? 0);
+      if (code === 'SL') existing.SL = Number(c.balance ?? 0);
+      balanceMap.set(empId, existing);
+    }
+  }
+
+  const enriched: PendingApprovalRow[] = rows.map((row) => {
     const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
+    const empData = row.employees as {
+      first_name?: string;
+      last_name?: string;
+      employee_no?: string;
+    } | null;
     const code = (leaveTypeData?.code ?? 'VL') as LeaveTypeCode;
-    return toLeaveApplication({
+    const base = toLeaveApplication({
       ...row,
       leave_type_code: code,
       date_from: row.date_from,
       date_to: row.date_to,
       no_of_days: row.no_of_days,
     });
+
+    const empId = String(row.employee_id);
+    let currentBalance: number | null = null;
+    if (code === 'VL') currentBalance = balanceMap.get(empId)?.VL ?? 0;
+    else if (code === 'SL') currentBalance = balanceMap.get(empId)?.SL ?? 0;
+
+    // Credits are deducted at apply time — current balance already reflects
+    // the deduction, so balanceAfterDeduction === currentBalance.
+    const balanceAfterDeduction = currentBalance;
+
+    return {
+      ...base,
+      employeeFullName: empData
+        ? `${empData.last_name ?? ''}, ${empData.first_name ?? ''}`.trim()
+        : 'Unknown',
+      employeeNo: String(empData?.employee_no ?? ''),
+      currentBalance,
+      balanceAfterDeduction,
+    };
   });
+
+  const total = typeof count === 'number' ? count : enriched.length;
+
+  if (options?.paginated) {
+    return {
+      rows: enriched,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
+  }
+
+  return enriched;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +344,7 @@ export interface LeaveApplicationDetail extends LeaveApplicationRow {
 export async function getLeaveApplicationDetail(
   leaveApplicationId: string,
 ): Promise<LeaveApplicationDetail | null> {
+  if (!leaveApplicationId) return null;
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
@@ -254,13 +403,22 @@ export async function getLeaveApplicationDetail(
 // Query: leave credit balance for an employee + year
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the VL/SL balance row for `employeeId` in `year`.
+ * Always resolves to a structurally-valid object — even when the employee has
+ * no credits on file yet — so callers can render a zero-balance state without
+ * branching on `null`. Returns `null` only when the lookup itself is invalid
+ * (no employeeId).
+ */
 export async function getLeaveCreditBalance(
   employeeId: string,
   year: number,
 ): Promise<LeaveCreditBalanceRow | null> {
+  if (!employeeId) return null;
   const supabase = await createServerClient();
 
-  // Fetch VL and SL credits from leave_credits table
+  // Filter to known leave codes so any stale/unknown rows the DB might carry
+  // don't leak into the balance summary.
   const { data, error } = await supabase
     .from('leave_credits')
     .select(`
@@ -270,12 +428,26 @@ export async function getLeaveCreditBalance(
       total_credits,
       used_credits,
       carry_over,
-      leave_types ( code )
+      leave_types!inner ( code )
     `)
     .eq('employee_id', employeeId)
-    .eq('year', year);
+    .eq('year', year)
+    .in('leave_types.code', KNOWN_LEAVE_CODES as string[]);
 
-  if (error) return null;
+  if (error) {
+    console.error('[leave/queries] getLeaveCreditBalance:', error.message);
+    return {
+      employeeId,
+      year,
+      vlBalance: 0,
+      slBalance: 0,
+      vlEarned: 0,
+      slEarned: 0,
+      vlCarryOver: 0,
+      slCarryOver: 0,
+      vlForfeited: 0,
+    };
+  }
 
   const vlRow = (data ?? []).find(
     (r) => (r.leave_types as { code?: string } | null)?.code === 'VL',
@@ -284,8 +456,8 @@ export async function getLeaveCreditBalance(
     (r) => (r.leave_types as { code?: string } | null)?.code === 'SL',
   );
 
-  if (!vlRow && !slRow) return null;
-
+  // Zero-balance default — never return `null` just because the employee
+  // hasn't received any accrual yet.
   return {
     employeeId,
     year,
@@ -313,6 +485,14 @@ export interface EmployeeCreditSummary {
   year: number;
 }
 
+export interface PaginatedEmployeeCreditSummaries {
+  rows: EmployeeCreditSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export async function getAllEmployeeCreditSummaries(
   year: number,
 ): Promise<EmployeeCreditSummary[]> {
@@ -324,13 +504,17 @@ export async function getAllEmployeeCreditSummaries(
       employee_id,
       year,
       balance,
-      leave_types ( code ),
-      employees ( id, employee_no, first_name, last_name, office_id )
+      leave_types!inner ( code ),
+      employees!inner ( id, employee_no, first_name, last_name, office_id )
     `)
     .eq('year', year)
+    .in('leave_types.code', KNOWN_LEAVE_CODES as string[])
     .is('employees.deleted_at', null);
 
-  if (error) throw new Error(`Failed to fetch credit summaries: ${error.message}`);
+  if (error) {
+    console.error('[leave/queries] getAllEmployeeCreditSummaries:', error.message);
+    return [];
+  }
 
   // Group by employee
   const byEmployee = new Map<string, EmployeeCreditSummary>();
@@ -368,6 +552,37 @@ export async function getAllEmployeeCreditSummaries(
   return Array.from(byEmployee.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
+/**
+ * Paginated variant of {@link getAllEmployeeCreditSummaries} for admin
+ * screens that render a large roster. Pagination happens in-memory after the
+ * per-row aggregation because the underlying table has two rows per employee
+ * (VL + SL) — a DB-side range() would split an employee across pages.
+ */
+export async function getAllEmployeeCreditSummariesPaged(
+  year: number,
+  options?: { page?: number; pageSize?: number; search?: string },
+): Promise<PaginatedEmployeeCreditSummaries> {
+  const all = await getAllEmployeeCreditSummaries(year);
+
+  const search = (options?.search ?? '').trim().toLowerCase();
+  const filtered = search
+    ? all.filter(
+        (r) =>
+          r.fullName.toLowerCase().includes(search) ||
+          r.employeeNo.toLowerCase().includes(search),
+      )
+    : all;
+
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = Math.min(100, Math.max(5, options?.pageSize ?? 25));
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = (page - 1) * pageSize;
+  const rows = filtered.slice(from, from + pageSize);
+
+  return { rows, total, page, pageSize, totalPages };
+}
+
 // ---------------------------------------------------------------------------
 // Query: team calendar — approved leaves in a date range
 // ---------------------------------------------------------------------------
@@ -386,6 +601,7 @@ export async function getApprovedLeavesForCalendar(
   startDate: string,
   endDate: string,
   officeId?: string,
+  scopeEmployeeId?: string,
 ): Promise<CalendarLeaveEntry[]> {
   const supabase = await createServerClient();
 
@@ -400,16 +616,23 @@ export async function getApprovedLeavesForCalendar(
       employees ( first_name, last_name, office_id )
     `)
     .eq('status', 'approved')
+    .is('deleted_at', null)
     .lte('date_from', endDate)
     .gte('date_to', startDate);
 
   if (officeId) {
     query = query.eq('employees.office_id', officeId);
   }
+  if (scopeEmployeeId) {
+    query = query.eq('employee_id', scopeEmployeeId);
+  }
 
   const { data, error } = await query.order('date_from');
 
-  if (error) throw new Error(`Failed to fetch calendar leaves: ${error.message}`);
+  if (error) {
+    console.error('[leave/queries] getApprovedLeavesForCalendar:', error.message);
+    return [];
+  }
 
   return (data ?? []).map((row) => {
     const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
@@ -445,6 +668,9 @@ export interface GetAllLeaveApplicationsFilters {
   leaveTypeCode?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** Forces every row to match this employee id. Pass when the caller is
+   *  `employee_self_service`. Overrides `employeeId` if both are provided. */
+  scopeEmployeeId?: string;
   /** 1-indexed page number (defaults to 1). */
   page?: number;
   /** Rows per page (defaults to 50, max 200). */
@@ -496,12 +722,19 @@ async function runLeaveApplicationsQuery(
     .range(from, to);
 
   if (filters?.status) query = query.eq('status', filters.status);
-  if (filters?.employeeId) query = query.eq('employee_id', filters.employeeId);
+  if (filters?.scopeEmployeeId) {
+    query = query.eq('employee_id', filters.scopeEmployeeId);
+  } else if (filters?.employeeId) {
+    query = query.eq('employee_id', filters.employeeId);
+  }
   if (filters?.dateFrom) query = query.gte('date_from', filters.dateFrom);
   if (filters?.dateTo) query = query.lte('date_to', filters.dateTo);
 
   const { data, error, count } = await query;
-  if (error) throw new Error(`Failed to fetch leave applications: ${error.message}`);
+  if (error) {
+    console.error('[leave/queries] runLeaveApplicationsQuery:', error.message);
+    return { rows: [], total: 0, page, pageSize, totalPages: 1 };
+  }
 
   // Resolve approver display names in one round-trip.
   const approverIds = [

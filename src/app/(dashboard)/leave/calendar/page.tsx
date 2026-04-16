@@ -190,7 +190,11 @@ export default async function LeaveCalendarPage({ searchParams }: PageProps) {
         hideControls
       />
 
-      <p className="mt-3 text-xs text-muted-foreground text-center">
+      <p
+        className="mt-3 text-xs text-muted-foreground text-center"
+        aria-live="polite"
+        role="status"
+      >
         Showing {entries.length} approved leave{entries.length !== 1 ? 's' : ''} for{' '}
         {format(month, 'MMMM yyyy')}. Philippine public holidays are highlighted in amber.
       </p>

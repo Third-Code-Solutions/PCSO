@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, TrendingUp, TrendingDown, Minus, FileDown } from 'lucide-react';
 import { getVacancySummary } from '../queries';
 import { cn } from '@/lib/utils/cn';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 export const metadata: Metadata = {
   title: 'Vacancy Dashboard',
@@ -55,6 +56,7 @@ export default async function VacanciesPage() {
 
   return (
     <div>
+      <RealtimeBoundary tables={['plantilla_items']} />
       <PageHeader
         title="Vacancy Dashboard"
         description="Track filled and vacant positions across all Senate offices."

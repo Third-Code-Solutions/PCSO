@@ -13,8 +13,8 @@
  */
 
 import { db } from '@/lib/db';
-import { attendanceLogs, employees } from '@/lib/db/schema';
-import { and, eq, gte, lte, isNull } from 'drizzle-orm';
+import { attendanceLogs, employees, offices } from '@/lib/db/schema';
+import { and, eq, gte, lte, isNull, or, ilike, inArray, sql } from 'drizzle-orm';
 import { createServerClient } from '@/lib/supabase/server';
 import { requireAuth } from '@/lib/auth/guards';
 import type { DateString } from '@/lib/utils/attendance/types';
@@ -277,4 +277,207 @@ export async function getEmployeeSummaries(): Promise<EmployeeSummary[]> {
     // officeId alone is available; full office name join is a future enhancement
     department: e.officeId ?? 'Unassigned',
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Offices (for admin filters)
+// ---------------------------------------------------------------------------
+
+export interface OfficeOption {
+  id: string;
+  name: string;
+}
+
+export async function getOfficeOptions(): Promise<OfficeOption[]> {
+  const rows = await db
+    .select({ id: offices.id, name: offices.name })
+    .from(offices)
+    .orderBy(offices.name);
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Paginated admin grid — one row per employee per day
+// ---------------------------------------------------------------------------
+
+export type AdminStatusFilter = 'any' | 'late' | 'undertime' | 'absent' | 'incomplete';
+
+export interface AdminGridRow {
+  employeeId: string;
+  employeeNumber: string;
+  firstName: string;
+  lastName: string;
+  officeName: string | null;
+  logId: string | null;
+  logDate: DateString | null;
+  timeIn: string | null;
+  timeOut: string | null;
+  lateMinutes: number;
+  undertimeMinutes: number;
+  overtimeMinutes: number;
+  source: string | null;
+  updatedAt: string | null;
+}
+
+export interface AdminGridResult {
+  rows: AdminGridRow[];
+  totalEmployees: number;
+  page: number;
+  pageSize: number;
+}
+
+export async function getAdminGrid(options: {
+  date: DateString;
+  page?: number;
+  pageSize?: number;
+  officeId?: string;
+  status?: AdminStatusFilter;
+  search?: string;
+}): Promise<AdminGridResult> {
+  const pageSize = Math.min(Math.max(options.pageSize ?? 50, 10), 200);
+  const page = Math.max(options.page ?? 1, 1);
+  const search = options.search?.trim() ?? '';
+
+  const empConditions = [isNull(employees.deletedAt)];
+  if (options.officeId) empConditions.push(eq(employees.officeId, options.officeId));
+  if (search) {
+    const pattern = `%${search}%`;
+    const cond = or(
+      ilike(employees.firstName, pattern),
+      ilike(employees.lastName, pattern),
+      ilike(employees.employeeNo, pattern),
+    );
+    if (cond) empConditions.push(cond);
+  }
+
+  const totalCountRow = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(employees)
+    .where(and(...empConditions));
+  const totalEmployees = totalCountRow[0]?.count ?? 0;
+
+  const empRows = await db
+    .select({
+      id: employees.id,
+      employeeNo: employees.employeeNo,
+      firstName: employees.firstName,
+      lastName: employees.lastName,
+      officeName: offices.name,
+    })
+    .from(employees)
+    .leftJoin(offices, eq(employees.officeId, offices.id))
+    .where(and(...empConditions))
+    .orderBy(employees.lastName, employees.firstName)
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  if (empRows.length === 0) {
+    return { rows: [], totalEmployees, page, pageSize };
+  }
+
+  const empIds = empRows.map((e) => e.id);
+  const logs = await db
+    .select()
+    .from(attendanceLogs)
+    .where(
+      and(
+        eq(attendanceLogs.logDate, options.date),
+        inArray(attendanceLogs.employeeId, empIds),
+      ),
+    );
+
+  const logByEmp = new Map<string, (typeof logs)[number]>();
+  for (const l of logs) logByEmp.set(l.employeeId, l);
+
+  const rows: AdminGridRow[] = empRows.map((e) => {
+    const l = logByEmp.get(e.id) ?? null;
+    return {
+      employeeId: e.id,
+      employeeNumber: e.employeeNo,
+      firstName: e.firstName,
+      lastName: e.lastName,
+      officeName: e.officeName ?? null,
+      logId: l?.id ?? null,
+      logDate: l?.logDate ?? options.date,
+      timeIn: l?.timeIn ?? null,
+      timeOut: l?.timeOut ?? null,
+      lateMinutes: l?.lateMinutes ?? 0,
+      undertimeMinutes: l?.undertimeMinutes ?? 0,
+      overtimeMinutes: l?.overtimeMinutes ?? 0,
+      source: l?.source ?? null,
+      updatedAt: l?.updatedAt.toISOString() ?? null,
+    };
+  });
+
+  const filtered = rows.filter((r) => {
+    switch (options.status) {
+      case 'late':
+        return r.lateMinutes > 0;
+      case 'undertime':
+        return r.undertimeMinutes > 0;
+      case 'absent':
+        return !r.timeIn && !r.timeOut;
+      case 'incomplete':
+        return (!!r.timeIn && !r.timeOut) || (!r.timeIn && !!r.timeOut);
+      default:
+        return true;
+    }
+  });
+
+  return {
+    rows: filtered,
+    totalEmployees,
+    page,
+    pageSize,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Today KPIs for the attendance landing page
+// ---------------------------------------------------------------------------
+
+export interface TodayKpis {
+  activeEmployees: number;
+  present: number;
+  late: number;
+  absent: number;
+  incomplete: number;
+  overtimePending: number;
+}
+
+export async function getTodayKpis(today: DateString): Promise<TodayKpis> {
+  const [activeRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(employees)
+    .where(isNull(employees.deletedAt));
+  const activeEmployees = activeRow?.count ?? 0;
+
+  const logs = await db
+    .select({
+      timeIn: attendanceLogs.timeIn,
+      timeOut: attendanceLogs.timeOut,
+      isLate: attendanceLogs.isLate,
+    })
+    .from(attendanceLogs)
+    .where(eq(attendanceLogs.logDate, today));
+
+  const present = logs.filter((l) => l.timeIn).length;
+  const late = logs.filter((l) => l.isLate).length;
+  const incomplete = logs.filter((l) => (!!l.timeIn) !== (!!l.timeOut)).length;
+  const absent = Math.max(activeEmployees - present, 0);
+
+  // Overtime pending — queried via Supabase since OT requests live there
+  let overtimePending = 0;
+  try {
+    const supabase = await createServerClient();
+    const { count } = await supabase
+      .from('overtime_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+    overtimePending = count ?? 0;
+  } catch {
+    overtimePending = 0;
+  }
+
+  return { activeEmployees, present, late, absent, incomplete, overtimePending };
 }

@@ -5,6 +5,8 @@ import { createServerClient } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import {
   CreateUserSchema,
   UpdateUserSchema,
@@ -27,62 +29,75 @@ export async function createUser(input: unknown): Promise<{ id: string }> {
   const actor = await requirePermission('admin', 'create');
   const parsed: CreateUserInput = CreateUserSchema.parse(input);
 
-  // Step 1 — Create auth.users row via service-role client.
-  // email_confirm: true skips the confirmation email for system-created accounts
-  // and immediately marks the user as confirmed so they can log in after setting
-  // their password via the password-reset flow.
-  const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
-    email: parsed.email,
-    email_confirm: true,
-    user_metadata: {
-      role: parsed.role,
-      office_id: parsed.officeId ?? null,
-      employee_id: parsed.employeeId ?? null,
-    },
+  // Advisory lock on the email so two admins creating the same user
+  // simultaneously serialize; the second will see an existing row and
+  // upsert onto it.
+  //
+  // NOTE: Auth + system_users live in different storage (auth schema vs
+  // public); we can't put them in a single drizzle transaction. The upsert
+  // on email + post-failure cleanup is the next-best atomicity guarantee.
+  const { authUid, newUserId } = await withTx(async (tx) => {
+    await lockKey(tx, `admin:user:email:${parsed.email.toLowerCase()}`);
+
+    const { data: created, error: createError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email: parsed.email,
+        email_confirm: true,
+        user_metadata: {
+          role: parsed.role,
+          office_id: parsed.officeId ?? null,
+          employee_id: parsed.employeeId ?? null,
+        },
+      });
+
+    if (createError) {
+      throw new Error(`Failed to create auth user: ${createError.message}`);
+    }
+
+    const uid = created.user.id;
+
+    const supabase = await createServerClient();
+    const { data: row, error: insertError } = await supabase
+      .from('system_users')
+      .upsert(
+        {
+          email: parsed.email,
+          role: parsed.role,
+          office_id: parsed.officeId ?? null,
+          employee_id: parsed.employeeId ?? null,
+          is_active: true,
+          auth_uid: uid,
+        },
+        { onConflict: 'email', ignoreDuplicates: false },
+      )
+      .select('id')
+      .single();
+
+    if (insertError) {
+      // Auth user was created; clean up to avoid orphaned auth rows is
+      // best-effort. Rolling back the drizzle tx does NOT undo the auth
+      // create because it's in a separate schema managed by Supabase Auth.
+      await supabaseAdmin.auth.admin.deleteUser(uid).catch(() => undefined);
+      throw new Error(
+        `Auth user created but system_users insert failed: ${insertError.message}`,
+      );
+    }
+
+    return { authUid: uid, newUserId: row.id as string };
   });
 
-  if (createError) {
-    throw new Error(`Failed to create auth user: ${createError.message}`);
-  }
-
-  const authUid = created.user.id;
-
-  // Step 2 — Insert system_users row explicitly.
-  // The DB trigger sync_auth_to_system_users may also insert, so we use
-  // onConflict(email) to upsert safely and capture the real row id.
-  const supabase = await createServerClient();
-
-  const { data: row, error: insertError } = await supabase
-    .from('system_users')
-    .upsert(
-      {
-        email: parsed.email,
-        role: parsed.role,
-        office_id: parsed.officeId ?? null,
-        employee_id: parsed.employeeId ?? null,
-        is_active: true,
-        auth_uid: authUid,
-      },
-      { onConflict: 'email', ignoreDuplicates: false },
-    )
-    .select('id')
-    .single();
-
-  if (insertError) {
-    // Auth user was created; clean up to avoid orphaned auth rows is best-effort.
-    await supabaseAdmin.auth.admin.deleteUser(authUid).catch(() => undefined);
-    throw new Error(`Auth user created but system_users insert failed: ${insertError.message}`);
-  }
-
-  const newUserId = row.id as string;
-
-  // Step 3 — Audit log.
-  await auditLog({
+  // Fire-and-forget audit — never block user creation on audit insert.
+  void auditLog({
     userId: actor.id,
     action: 'create',
     table: 'system_users',
     recordId: newUserId,
-    newValues: { email: parsed.email, role: parsed.role, officeId: parsed.officeId ?? null },
+    newValues: {
+      email: parsed.email,
+      role: parsed.role,
+      officeId: parsed.officeId ?? null,
+      authUid,
+    },
   });
 
   revalidatePath('/admin/users');
@@ -97,40 +112,53 @@ export async function updateUser(input: unknown): Promise<void> {
   const actor = await requirePermission('admin', 'edit');
   const parsed: UpdateUserInput = UpdateUserSchema.parse(input);
 
-  const supabase = await createServerClient();
+  // Lock on user id so two admins editing the same user serialize and the
+  // auth metadata update mirrors the final DB state instead of racing.
+  const { oldRow, updates } = await withTx(async (tx) => {
+    await lockKey(tx, `admin:user:${parsed.id}`);
 
-  const { data: oldRow, error: fetchError } = await supabase
-    .from('system_users')
-    .select('*')
-    .eq('id', parsed.id)
-    .single();
+    const supabase = await createServerClient();
 
-  if (fetchError || !oldRow) throw new Error('User not found');
+    const { data: row, error: fetchError } = await supabase
+      .from('system_users')
+      .select('*')
+      .eq('id', parsed.id)
+      .single();
 
-  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (parsed.role !== undefined) updates['role'] = parsed.role;
-  if (parsed.officeId !== undefined) updates['office_id'] = parsed.officeId ?? null;
-  if (parsed.employeeId !== undefined) updates['employee_id'] = parsed.employeeId ?? null;
+    if (fetchError || !row) throw new Error('User not found');
 
-  const { error } = await supabase.from('system_users').update(updates).eq('id', parsed.id);
-  if (error) throw new Error(`Failed to update user: ${error.message}`);
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (parsed.role !== undefined) patch['role'] = parsed.role;
+    if (parsed.officeId !== undefined) patch['office_id'] = parsed.officeId ?? null;
+    if (parsed.employeeId !== undefined)
+      patch['employee_id'] = parsed.employeeId ?? null;
 
-  // Keep Supabase Auth metadata in sync so `getCurrentUser()` sees fresh role/office.
-  // Must use the service-role client — the anon/user client cannot call auth.admin.*.
-  if (parsed.role !== undefined || parsed.officeId !== undefined) {
-    const authUid = oldRow['auth_uid'] as string | null;
-    if (authUid) {
-      await supabaseAdmin.auth.admin.updateUserById(authUid, {
-        user_metadata: {
-          role: parsed.role ?? (oldRow['role'] as string),
-          office_id: parsed.officeId ?? (oldRow['office_id'] as string | null),
-          employee_id: parsed.employeeId ?? (oldRow['employee_id'] as string | null),
-        },
-      });
+    const { error } = await supabase
+      .from('system_users')
+      .update(patch)
+      .eq('id', parsed.id);
+    if (error) throw new Error(`Failed to update user: ${error.message}`);
+
+    // Keep Supabase Auth metadata in sync so `getCurrentUser()` sees fresh
+    // role/office. Must use the service-role client.
+    if (parsed.role !== undefined || parsed.officeId !== undefined) {
+      const authUid = row['auth_uid'] as string | null;
+      if (authUid) {
+        await supabaseAdmin.auth.admin.updateUserById(authUid, {
+          user_metadata: {
+            role: parsed.role ?? (row['role'] as string),
+            office_id: parsed.officeId ?? (row['office_id'] as string | null),
+            employee_id:
+              parsed.employeeId ?? (row['employee_id'] as string | null),
+          },
+        });
+      }
     }
-  }
 
-  await auditLog({
+    return { oldRow: row, updates: patch };
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'update',
     table: 'system_users',
@@ -149,37 +177,48 @@ export async function updateUser(input: unknown): Promise<void> {
 export async function activateUser(userId: string): Promise<void> {
   const actor = await requirePermission('admin', 'edit');
 
-  const supabase = await createServerClient();
+  const alreadyActive = await withTx(async (tx) => {
+    await lockKey(tx, `admin:user:${userId}`);
 
-  const { data: row, error: fetchError } = await supabase
-    .from('system_users')
-    .select('id, is_active, auth_uid')
-    .eq('id', userId)
-    .single();
+    const supabase = await createServerClient();
 
-  if (fetchError || !row) throw new Error('User not found');
+    const { data: row, error: fetchError } = await supabase
+      .from('system_users')
+      .select('id, is_active, auth_uid')
+      .eq('id', userId)
+      .single();
 
-  const { error } = await supabase
-    .from('system_users')
-    .update({ is_active: true, updated_at: new Date().toISOString() })
-    .eq('id', userId);
+    if (fetchError || !row) throw new Error('User not found');
 
-  if (error) throw new Error(`Failed to activate user: ${error.message}`);
+    // Idempotent: already active → no-op + no audit spam.
+    if (row['is_active'] === true) return true;
 
-  const authUid = row['auth_uid'] as string | null;
-  if (authUid) {
-    // Requires service-role client — the anon client cannot call auth.admin.*.
-    await supabaseAdmin.auth.admin.updateUserById(authUid, { ban_duration: 'none' });
-  }
+    const { error } = await supabase
+      .from('system_users')
+      .update({ is_active: true, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (error) throw new Error(`Failed to activate user: ${error.message}`);
 
-  await auditLog({
-    userId: actor.id,
-    action: 'update',
-    table: 'system_users',
-    recordId: userId,
-    oldValues: { isActive: false },
-    newValues: { isActive: true },
+    const authUid = row['auth_uid'] as string | null;
+    if (authUid) {
+      await supabaseAdmin.auth.admin.updateUserById(authUid, {
+        ban_duration: 'none',
+      });
+    }
+
+    return false;
   });
+
+  if (!alreadyActive) {
+    void auditLog({
+      userId: actor.id,
+      action: 'update',
+      table: 'system_users',
+      recordId: userId,
+      oldValues: { isActive: false },
+      newValues: { isActive: true },
+    });
+  }
 
   revalidatePath('/admin/users');
 }
@@ -190,38 +229,47 @@ export async function activateUser(userId: string): Promise<void> {
 export async function deactivateUser(userId: string): Promise<void> {
   const actor = await requirePermission('admin', 'edit');
 
-  const supabase = await createServerClient();
+  const alreadyInactive = await withTx(async (tx) => {
+    await lockKey(tx, `admin:user:${userId}`);
 
-  const { data: row, error: fetchError } = await supabase
-    .from('system_users')
-    .select('id, is_active, auth_uid')
-    .eq('id', userId)
-    .single();
+    const supabase = await createServerClient();
 
-  if (fetchError || !row) throw new Error('User not found');
+    const { data: row, error: fetchError } = await supabase
+      .from('system_users')
+      .select('id, is_active, auth_uid')
+      .eq('id', userId)
+      .single();
 
-  const { error } = await supabase
-    .from('system_users')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('id', userId);
+    if (fetchError || !row) throw new Error('User not found');
 
-  if (error) throw new Error(`Failed to deactivate user: ${error.message}`);
+    if (row['is_active'] === false) return true;
 
-  // Ban from Supabase Auth so existing tokens are rejected.
-  // Requires service-role client — the anon client cannot call auth.admin.*.
-  const authUid = row['auth_uid'] as string | null;
-  if (authUid) {
-    await supabaseAdmin.auth.admin.updateUserById(authUid, { ban_duration: '876000h' }); // ~100 years
-  }
+    const { error } = await supabase
+      .from('system_users')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (error) throw new Error(`Failed to deactivate user: ${error.message}`);
 
-  await auditLog({
-    userId: actor.id,
-    action: 'update',
-    table: 'system_users',
-    recordId: userId,
-    oldValues: { isActive: true },
-    newValues: { isActive: false },
+    const authUid = row['auth_uid'] as string | null;
+    if (authUid) {
+      await supabaseAdmin.auth.admin.updateUserById(authUid, {
+        ban_duration: '876000h',
+      });
+    }
+
+    return false;
   });
+
+  if (!alreadyInactive) {
+    void auditLog({
+      userId: actor.id,
+      action: 'update',
+      table: 'system_users',
+      recordId: userId,
+      oldValues: { isActive: true },
+      newValues: { isActive: false },
+    });
+  }
 
   revalidatePath('/admin/users');
 }
@@ -251,7 +299,9 @@ export async function sendPasswordReset(userId: string): Promise<void> {
 
   if (error) throw new Error(`Failed to send password reset: ${error.message}`);
 
-  await auditLog({
+  // Audit is fire-and-forget — email went out already; don't block the
+  // response on the audit insert.
+  void auditLog({
     userId: actor.id,
     action: 'password_reset_sent',
     table: 'system_users',

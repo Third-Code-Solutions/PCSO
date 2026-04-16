@@ -12,6 +12,8 @@ import {
 import { eq, and, isNull, desc, asc, gte, lte, sql } from 'drizzle-orm';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import {
   GenerateBir1601CSchema,
   MarkBir1601CFiledSchema,
@@ -38,6 +40,20 @@ const SENATE_ADDRESS = 'Financial Services Department, Senate of the Philippines
  */
 const THIRTEENTH_MONTH_EXEMPT_CEILING = 90000;
 
+const REMITTANCE_RECORD_INSERT_CHUNK = 200;
+
+async function chunkInsertRemittanceRecords(
+  tx: Tx,
+  rows: (typeof remittanceRecords.$inferInsert)[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  for (let i = 0; i < rows.length; i += REMITTANCE_RECORD_INSERT_CHUNK) {
+    await tx
+      .insert(remittanceRecords)
+      .values(rows.slice(i, i + REMITTANCE_RECORD_INSERT_CHUNK));
+  }
+}
+
 // ─── BIR 1601-C: Generate Monthly Batch ──────────────────────────────────────
 
 /**
@@ -56,119 +72,130 @@ export async function generateBir1601CBatch(input: unknown) {
   const lastDay = new Date(Number(year), Number(month), 0).getDate();
   const monthEnd = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
-  // Prevent duplicates
-  const existing = await db
-    .select({ id: remittanceBatches.id })
-    .from(remittanceBatches)
-    .where(
-      and(
-        eq(remittanceBatches.type, 'bir'),
-        eq(remittanceBatches.periodStart, monthStart),
-        eq(remittanceBatches.periodEnd, monthEnd),
-      ),
-    )
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `remit:bir:1601c:${parsed.yearMonth}`);
 
-  if (existing.length > 0) {
-    throw new Error(
-      `A BIR 1601-C batch already exists for ${parsed.yearMonth} (ID: ${existing[0]?.id ?? 'unknown'}).`,
-    );
-  }
+      const existing = await tx
+        .select({ id: remittanceBatches.id })
+        .from(remittanceBatches)
+        .where(
+          and(
+            eq(remittanceBatches.type, 'bir'),
+            eq(remittanceBatches.periodStart, monthStart),
+            eq(remittanceBatches.periodEnd, monthEnd),
+          ),
+        )
+        .limit(1);
 
-  // Fetch all payroll periods overlapping this calendar month
-  const periods = await db
-    .select({ id: payrollPeriods.id })
-    .from(payrollPeriods)
-    .where(
-      and(
-        gte(payrollPeriods.periodEnd, monthStart),
-        lte(payrollPeriods.periodStart, monthEnd),
-        isNull(payrollPeriods.deletedAt),
-      ),
-    );
+      if (existing.length > 0) {
+        throw new Error(
+          `A BIR 1601-C batch already exists for ${parsed.yearMonth} (ID: ${existing[0]?.id ?? 'unknown'}).`,
+        );
+      }
 
-  if (periods.length === 0) {
-    throw new Error(`No payroll periods found for ${parsed.yearMonth}.`);
-  }
+      const periods = await tx
+        .select({ id: payrollPeriods.id })
+        .from(payrollPeriods)
+        .where(
+          and(
+            gte(payrollPeriods.periodEnd, monthStart),
+            lte(payrollPeriods.periodStart, monthEnd),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        );
 
-  const periodIds = periods.map((p) => p.id);
+      if (periods.length === 0) {
+        throw new Error(`No payroll periods found for ${parsed.yearMonth}.`);
+      }
 
-  // Aggregate withholding tax per employee across all periods in the month
-  const withholdingRows = await db
-    .select({
-      employeeId: payrollRecords.employeeId,
-      totalTax: sql<string>`SUM(${payrollRecords.withholdingTax})`,
-    })
-    .from(payrollRecords)
-    .where(
-      and(
-        sql`${payrollRecords.periodId} = ANY(${sql.raw(`ARRAY['${periodIds.join("','")}']::uuid[]`)})`,
-        isNull(employees.deletedAt),
-      ),
-    )
-    .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
-    .groupBy(payrollRecords.employeeId);
+      const periodIds = periods.map((p) => p.id);
 
-  if (withholdingRows.length === 0) {
-    throw new Error(`No withholding tax records found for ${parsed.yearMonth}.`);
-  }
+      const withholdingRows = await tx
+        .select({
+          employeeId: payrollRecords.employeeId,
+          totalTax: sql<string>`SUM(${payrollRecords.withholdingTax})`,
+        })
+        .from(payrollRecords)
+        .where(
+          and(
+            sql`${payrollRecords.periodId} = ANY(${sql.raw(`ARRAY['${periodIds.join("','")}']::uuid[]`)})`,
+            isNull(employees.deletedAt),
+          ),
+        )
+        .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
+        .groupBy(payrollRecords.employeeId);
 
-  let totalTaxWithheld = 0;
+      if (withholdingRows.length === 0) {
+        throw new Error(`No withholding tax records found for ${parsed.yearMonth}.`);
+      }
 
-  const recordValues = withholdingRows
-    .filter((r) => parseFloat(r.totalTax) > 0)
-    .map((r) => {
-      const tax = parseFloat(r.totalTax);
-      totalTaxWithheld += tax;
+      let totalTaxWithheld = 0;
+
+      const recordValues = withholdingRows
+        .filter((r) => parseFloat(r.totalTax) > 0)
+        .map((r) => {
+          const tax = parseFloat(r.totalTax);
+          totalTaxWithheld += tax;
+          return {
+            employeeId: r.employeeId,
+            personalShare: roundMoney(tax),
+            employerShare: '0.00',
+            total: roundMoney(tax),
+          };
+        });
+
+      const bir1601Rows = await tx
+        .insert(remittanceBatches)
+        .values({
+          type: 'bir',
+          periodStart: monthStart,
+          periodEnd: monthEnd,
+          totalAmount: roundMoney(totalTaxWithheld),
+          totalPersonalShare: roundMoney(totalTaxWithheld),
+          totalEmployerShare: '0.00',
+          employeeCount: recordValues.length,
+          status: 'generated',
+          remarks: parsed.remarks ?? null,
+        })
+        .returning();
+
+      const batch = bir1601Rows[0];
+      if (!batch) throw new Error('Failed to insert BIR 1601-C batch.');
+
+      if (recordValues.length > 0) {
+        const linesWithBatchId = recordValues.map((rv) => ({
+          ...rv,
+          batchId: batch.id,
+        }));
+        await chunkInsertRemittanceRecords(tx, linesWithBatchId);
+      }
+
       return {
-        batchId: '',
-        employeeId: r.employeeId,
-        personalShare: roundMoney(tax),
-        employerShare: '0.00',
-        total: roundMoney(tax),
+        batch,
+        employeeCount: recordValues.length,
+        totalAmount: roundMoney(totalTaxWithheld),
       };
-    });
+    }),
+  );
 
-  const bir1601Rows = await db
-    .insert(remittanceBatches)
-    .values({
-      type: 'bir',
-      periodStart: monthStart,
-      periodEnd: monthEnd,
-      totalAmount: roundMoney(totalTaxWithheld),
-      totalPersonalShare: roundMoney(totalTaxWithheld),
-      totalEmployerShare: '0.00',
-      employeeCount: recordValues.length,
-      status: 'generated',
-      remarks: parsed.remarks ?? null,
-    })
-    .returning();
-
-  const batch = bir1601Rows[0];
-  if (!batch) throw new Error('Failed to insert BIR 1601-C batch.');
-
-  if (recordValues.length > 0) {
-    const linesWithBatchId = recordValues.map((rv) => ({ ...rv, batchId: batch.id }));
-    await db.insert(remittanceRecords).values(linesWithBatchId);
-  }
-
-  await auditLog({
+  void auditLog({
     userId: user.id,
     action: 'create',
     table: 'remittance_batches',
-    recordId: batch.id,
+    recordId: result.batch.id,
     newValues: {
       type: 'bir',
       formType: '1601-C',
       periodStart: monthStart,
       periodEnd: monthEnd,
-      employeeCount: recordValues.length,
-      totalAmount: roundMoney(totalTaxWithheld),
+      employeeCount: result.employeeCount,
+      totalAmount: result.totalAmount,
     },
   });
 
   revalidatePath('/remittances/bir/1601-c');
-  return batch;
+  return result.batch;
 }
 
 // ─── BIR 1601-C: Mark Filed ───────────────────────────────────────────────────
@@ -177,40 +204,52 @@ export async function markBir1601CFiled(input: unknown) {
   const parsed = MarkBir1601CFiledSchema.parse(input);
   const user = await requirePermission('remittances', 'process');
 
-  const [batch] = await db
-    .select()
-    .from(remittanceBatches)
-    .where(
-      and(
-        eq(remittanceBatches.id, parsed.batchId),
-        eq(remittanceBatches.type, 'bir'),
-      ),
-    )
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `remit:bir:filed:${parsed.batchId}`);
 
-  if (!batch) throw new Error('BIR 1601-C batch not found.');
-  if (batch.status === 'submitted') throw new Error('Batch is already marked as filed.');
-  if (batch.status !== 'generated') {
-    throw new Error(`Batch must be in "generated" status to file. Current: ${batch.status}`);
-  }
+      const [batch] = await tx
+        .select()
+        .from(remittanceBatches)
+        .where(
+          and(
+            eq(remittanceBatches.id, parsed.batchId),
+            eq(remittanceBatches.type, 'bir'),
+          ),
+        )
+        .limit(1);
 
-  const now = new Date().toISOString();
-  const bir1601UpdatedRows = await db
-    .update(remittanceBatches)
-    .set({
-      status: 'submitted',
-      referenceNo: parsed.referenceNo,
-      submittedAt: now,
-      remarks: parsed.remarks ?? batch.remarks,
-      updatedAt: new Date(),
-    })
-    .where(eq(remittanceBatches.id, parsed.batchId))
-    .returning();
+      if (!batch) throw new Error('BIR 1601-C batch not found.');
+      if (batch.status === 'submitted') {
+        throw new Error('Batch is already marked as filed.');
+      }
+      if (batch.status !== 'generated') {
+        throw new Error(
+          `Batch must be in "generated" status to file. Current: ${batch.status}`,
+        );
+      }
 
-  const updated = bir1601UpdatedRows[0];
-  if (!updated) throw new Error('Failed to update BIR 1601-C batch status.');
+      const now = new Date().toISOString();
+      const bir1601UpdatedRows = await tx
+        .update(remittanceBatches)
+        .set({
+          status: 'submitted',
+          referenceNo: parsed.referenceNo,
+          submittedAt: now,
+          remarks: parsed.remarks ?? batch.remarks,
+          updatedAt: new Date(),
+        })
+        .where(eq(remittanceBatches.id, parsed.batchId))
+        .returning();
 
-  await auditLog({
+      const updated = bir1601UpdatedRows[0];
+      if (!updated) throw new Error('Failed to update BIR 1601-C batch status.');
+
+      return updated;
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'edit',
     table: 'remittance_batches',
@@ -226,7 +265,7 @@ export async function markBir1601CFiled(input: unknown) {
   });
 
   revalidatePath('/remittances/bir/1601-c');
-  return updated;
+  return result;
 }
 
 // ─── BIR 2316: Fetch employee year-end data ────────────────────────────────────
@@ -362,26 +401,9 @@ export async function generateBir1604CAnnualReturn(input: unknown) {
   const yearStart = `${parsed.year}-01-01`;
   const yearEnd = `${parsed.year}-12-31`;
 
-  // Prevent duplicates
-  const existing = await db
-    .select({ id: remittanceBatches.id })
-    .from(remittanceBatches)
-    .where(
-      and(
-        eq(remittanceBatches.type, 'bir'),
-        eq(remittanceBatches.periodStart, yearStart),
-        eq(remittanceBatches.periodEnd, yearEnd),
-      ),
-    )
-    .limit(1);
-
-  if (existing.length > 0) {
-    throw new Error(
-      `A BIR 1604-C batch already exists for ${parsed.year} (ID: ${existing[0]?.id ?? 'unknown'}).`,
-    );
-  }
-
-  // Reuse the 2316 data generator for the full annual aggregation
+  // Pull annual data FIRST (outside the tx) because getBir2316Data issues its
+  // own queries. This avoids a needless nested connection; the tx below only
+  // needs to do the duplicate guard + batch insert atomically.
   const employeeData = await getBir2316Data({ year: parsed.year });
 
   if (employeeData.length === 0) {
@@ -393,25 +415,51 @@ export async function generateBir1604CAnnualReturn(input: unknown) {
     0,
   );
 
-  const bir1604Rows = await db
-    .insert(remittanceBatches)
-    .values({
-      type: 'bir',
-      periodStart: yearStart,
-      periodEnd: yearEnd,
-      totalAmount: roundMoney(totalTax),
-      totalPersonalShare: roundMoney(totalTax),
-      totalEmployerShare: '0.00',
-      employeeCount: employeeData.length,
-      status: 'generated',
-      remarks: parsed.remarks ?? `BIR 1604-C Annual Information Return — ${parsed.year}`,
-    })
-    .returning();
+  const batch = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `remit:bir:1604c:${parsed.year}`);
 
-  const batch = bir1604Rows[0];
-  if (!batch) throw new Error('Failed to insert BIR 1604-C batch.');
+      const existing = await tx
+        .select({ id: remittanceBatches.id })
+        .from(remittanceBatches)
+        .where(
+          and(
+            eq(remittanceBatches.type, 'bir'),
+            eq(remittanceBatches.periodStart, yearStart),
+            eq(remittanceBatches.periodEnd, yearEnd),
+          ),
+        )
+        .limit(1);
 
-  await auditLog({
+      if (existing.length > 0) {
+        throw new Error(
+          `A BIR 1604-C batch already exists for ${parsed.year} (ID: ${existing[0]?.id ?? 'unknown'}).`,
+        );
+      }
+
+      const bir1604Rows = await tx
+        .insert(remittanceBatches)
+        .values({
+          type: 'bir',
+          periodStart: yearStart,
+          periodEnd: yearEnd,
+          totalAmount: roundMoney(totalTax),
+          totalPersonalShare: roundMoney(totalTax),
+          totalEmployerShare: '0.00',
+          employeeCount: employeeData.length,
+          status: 'generated',
+          remarks:
+            parsed.remarks ?? `BIR 1604-C Annual Information Return — ${parsed.year}`,
+        })
+        .returning();
+
+      const row = bir1604Rows[0];
+      if (!row) throw new Error('Failed to insert BIR 1604-C batch.');
+      return row;
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'create',
     table: 'remittance_batches',
@@ -486,43 +534,56 @@ export async function markBir1604CFiled(input: unknown) {
   const parsed = MarkBir1604CFiledSchema.parse(input);
   const user = await requirePermission('remittances', 'process');
 
-  const [batch] = await db
-    .select()
-    .from(remittanceBatches)
-    .where(
-      and(
-        eq(remittanceBatches.id, parsed.batchId),
-        eq(remittanceBatches.type, 'bir'),
-      ),
-    )
-    .limit(1);
+  const updated = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `remit:bir:filed:${parsed.batchId}`);
 
-  if (!batch) throw new Error('BIR 1604-C batch not found.');
-  if (batch.status === 'submitted') throw new Error('Batch is already marked as filed.');
+      const [batch] = await tx
+        .select()
+        .from(remittanceBatches)
+        .where(
+          and(
+            eq(remittanceBatches.id, parsed.batchId),
+            eq(remittanceBatches.type, 'bir'),
+          ),
+        )
+        .limit(1);
 
-  const now = new Date().toISOString();
-  const bir1604UpdatedRows = await db
-    .update(remittanceBatches)
-    .set({
-      status: 'submitted',
-      referenceNo: parsed.referenceNo,
-      submittedAt: now,
-      remarks: parsed.remarks ?? batch.remarks,
-      updatedAt: new Date(),
-    })
-    .where(eq(remittanceBatches.id, parsed.batchId))
-    .returning();
+      if (!batch) throw new Error('BIR 1604-C batch not found.');
+      if (batch.status === 'submitted') {
+        throw new Error('Batch is already marked as filed.');
+      }
 
-  const updated = bir1604UpdatedRows[0];
-  if (!updated) throw new Error('Failed to update BIR 1604-C batch status.');
+      const now = new Date().toISOString();
+      const bir1604UpdatedRows = await tx
+        .update(remittanceBatches)
+        .set({
+          status: 'submitted',
+          referenceNo: parsed.referenceNo,
+          submittedAt: now,
+          remarks: parsed.remarks ?? batch.remarks,
+          updatedAt: new Date(),
+        })
+        .where(eq(remittanceBatches.id, parsed.batchId))
+        .returning();
 
-  await auditLog({
+      const row = bir1604UpdatedRows[0];
+      if (!row) throw new Error('Failed to update BIR 1604-C batch status.');
+      return row;
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'edit',
     table: 'remittance_batches',
     recordId: parsed.batchId,
     oldValues: { status: 'generated' },
-    newValues: { status: 'submitted', referenceNo: parsed.referenceNo, filedDate: parsed.filedDate },
+    newValues: {
+      status: 'submitted',
+      referenceNo: parsed.referenceNo,
+      filedDate: parsed.filedDate,
+    },
   });
 
   revalidatePath('/remittances/bir/1604-c');

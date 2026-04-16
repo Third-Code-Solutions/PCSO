@@ -3,8 +3,24 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Clock, Info } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { signOutAllSessions } from './actions';
 
@@ -14,7 +30,8 @@ interface SessionsTabProps {
 
 export function SessionsTab({ lastSignIn }: SessionsTabProps) {
   const router = useRouter();
-  const [pending, setPending] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
+  const [pending, startTransition] = React.useTransition();
 
   const formattedLastSignIn = lastSignIn
     ? new Intl.DateTimeFormat('en-PH', {
@@ -24,27 +41,19 @@ export function SessionsTab({ lastSignIn }: SessionsTabProps) {
       }).format(new Date(lastSignIn))
     : 'Not available';
 
-  async function handleSignOutAll() {
-    if (
-      !window.confirm(
-        'This will sign you out of all devices and browsers. You will need to log in again. Continue?',
-      )
-    ) {
-      return;
-    }
-
-    setPending(true);
-    try {
-      await signOutAllSessions();
-      toast.success('Signed out of all sessions');
-      router.push('/login');
-    } catch (err) {
-      toast.error('Sign out failed', {
-        description: err instanceof Error ? err.message : 'Something went wrong.',
-      });
-    } finally {
-      setPending(false);
-    }
+  function handleConfirm() {
+    startTransition(async () => {
+      try {
+        await signOutAllSessions();
+        toast.success('Signed out of all sessions');
+        setOpen(false);
+        router.push('/login');
+      } catch (err) {
+        toast.error('Sign out failed', {
+          description: err instanceof Error ? err.message : 'Something went wrong.',
+        });
+      }
+    });
   }
 
   return (
@@ -55,7 +64,9 @@ export function SessionsTab({ lastSignIn }: SessionsTabProps) {
             <Clock className="h-4 w-4 text-muted-foreground" />
             Current Session
           </CardTitle>
-          <CardDescription>Details about the device and session you are signed in on.</CardDescription>
+          <CardDescription>
+            Details about the device and session you are signed in on.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
@@ -68,8 +79,8 @@ export function SessionsTab({ lastSignIn }: SessionsTabProps) {
           <div className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 p-3 text-xs text-muted-foreground">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              Individual session tracking per device is coming soon. For now, use "Sign out of all
-              sessions" below to revoke access everywhere at once.
+              Individual session tracking per device is coming soon. For now, use &ldquo;Sign out
+              of all sessions&rdquo; below to revoke access everywhere at once.
             </span>
           </div>
         </CardContent>
@@ -82,16 +93,42 @@ export function SessionsTab({ lastSignIn }: SessionsTabProps) {
             Sign Out Everywhere
           </CardTitle>
           <CardDescription>
-            Signing out of all sessions will immediately revoke access on every device where you are
-            currently logged in.
+            Signing out of all sessions will immediately revoke access on every device where you
+            are currently logged in.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="destructive" onClick={handleSignOutAll} disabled={pending}>
+          <Button
+            variant="destructive"
+            onClick={() => setOpen(true)}
+            disabled={pending}
+          >
             {pending ? 'Signing out…' : 'Sign out of all sessions'}
           </Button>
         </CardContent>
       </Card>
+
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out of all sessions?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revoke access on every device and browser where you are currently signed
+              in. You will need to log in again afterwards. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirm}
+              disabled={pending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {pending ? 'Signing out…' : 'Yes, sign me out everywhere'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -9,7 +9,7 @@
  * OT approval writes to attendance_logs.overtimeMinutes; see actions.ts.
  */
 
-import { requireAuth } from '@/lib/auth/guards';
+import { requirePermission } from '@/lib/auth/guards';
 import { hasPermission } from '@/lib/auth/permissions';
 import {
   getOwnOvertimeRequests,
@@ -19,7 +19,7 @@ import {
 } from '../queries';
 import { OvertimeQueueTable } from '@/components/attendance/overtime-queue-table';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { approveOvertime } from '../actions';
+import { decideOvertimeRequest } from './actions';
 
 export const metadata = { title: 'Overtime Requests' };
 
@@ -40,7 +40,7 @@ const DAY_TYPE_LABELS: Record<string, string> = {
 };
 
 export default async function OvertimePage() {
-  const user = await requireAuth();
+  const user = await requirePermission('attendance', 'view');
   const canApprove = hasPermission(user.role, 'attendance', 'approve');
 
   // Admin view: pending queue + recent history
@@ -57,7 +57,7 @@ export default async function OvertimePage() {
 
     return (
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <RealtimeBoundary tables={['attendance_logs']} />
+        <RealtimeBoundary tables={['attendance_logs', 'overtime_requests']} />
 
         <div className="mb-6 flex items-center justify-between">
           <div>
@@ -70,7 +70,7 @@ export default async function OvertimePage() {
             href="/attendance/overtime/new"
             className="rounded-lg bg-[#0B2545] px-4 py-2.5 text-sm font-semibold text-[#FAF4E6] hover:bg-[#13315C]"
           >
-            File My OT
+            Request Overtime
           </a>
         </div>
 
@@ -86,7 +86,8 @@ export default async function OvertimePage() {
             <OvertimeQueueTable
               rows={pending}
               employeeMap={employeeMap}
-              onApprove={approveOvertime}
+              onApprove={decideOvertimeRequest}
+              pageSize={50}
             />
           )}
         </section>
@@ -145,6 +146,8 @@ export default async function OvertimePage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
+      <RealtimeBoundary tables={['attendance_logs', 'overtime_requests']} />
+
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#0B2545]">My Overtime Requests</h1>
@@ -156,7 +159,7 @@ export default async function OvertimePage() {
           href="/attendance/overtime/new"
           className="rounded-lg bg-[#0B2545] px-4 py-2.5 text-sm font-semibold text-[#FAF4E6] hover:bg-[#13315C]"
         >
-          New OT Request
+          Request Overtime
         </a>
       </div>
 

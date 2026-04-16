@@ -3,9 +3,10 @@
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { systemSettings } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import { SystemSettingsSchema, type SystemSettingsInput } from '@/lib/validations/admin';
 
 // ─── Setting key constants ────────────────────────────────────────────────────
@@ -97,17 +98,25 @@ export async function saveSystemSettings(input: unknown): Promise<void> {
     },
   ];
 
-  for (const row of upserts) {
-    await db
-      .insert(systemSettings)
-      .values(row)
-      .onConflictDoUpdate({
-        target: systemSettings.key,
-        set: { value: row.value, updatedAt: new Date() },
-      });
-  }
+  // Wrap all upserts in a single transaction so either every setting is
+  // updated or none are. Advisory lock on the global settings key serializes
+  // simultaneous saves from two admins so the audit trail reflects the
+  // final state deterministically.
+  await withTx(async (tx) => {
+    await lockKey(tx, 'admin:settings:system');
 
-  await auditLog({
+    for (const row of upserts) {
+      await tx
+        .insert(systemSettings)
+        .values(row)
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value: row.value, updatedAt: new Date() },
+        });
+    }
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'update',
     table: 'system_settings',

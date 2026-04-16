@@ -888,6 +888,14 @@ export async function bulkProcessStepIncrements(input: unknown): Promise<{
   })();
   const effectivityDate = parsed.effectivityDate ?? defaultEffectivity;
 
+  // Serialize concurrent bulk processors for the same effectivity batch.
+  // Key follows the agent-15 spec: `step-increment:bulk:${cycleId}` — here
+  // the effectivity date acts as the cycle identifier since a bulk run is
+  // scoped to a single effectivity date.
+  const lockKey = `step-increment:bulk:${effectivityDate}`;
+  const { withSessionAdvisoryLock } = await import('@/lib/concurrency');
+
+  return withSessionAdvisoryLock(lockKey, async () => {
   let processed = 0;
   let skipped = 0;
   let failed = 0;
@@ -1002,6 +1010,7 @@ export async function bulkProcessStepIncrements(input: unknown): Promise<{
   revalidatePath('/performance');
 
   return { processed, skipped, failed, errors };
+  });
 }
 
 // ─── Employee-initiated IPCRF draft creation ──────────────────────────────────

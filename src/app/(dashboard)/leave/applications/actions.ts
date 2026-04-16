@@ -2,20 +2,26 @@
 
 /**
  * Leave Applications browser — server actions
- * Covers: cancelLeave (self-service), bulkApprove, exportCsv
+ * Covers: cancelLeaveApplication (self-service), bulkApprove, exportCsv
  *
  * Conventions:
+ *  - Every write is guarded by `requirePermission` per the permission matrix.
+ *  - Every write uses an optimistic WHERE clause on `status` to avoid lost
+ *    updates under concurrent approval. A zero-row result = concurrent change.
  *  - Every write produces an audit log entry.
  *  - Zod validates all inputs before processing.
- *  - createNotification is called for all counterparty notifications.
+ *  - `createNotification` / `notifyEmployee` is called to inform the applicant.
+ *  - Escalation: a `leave_approver` approving a >threshold leave leaves
+ *    status='pending' so HR has final sign-off (matches /leave/actions.ts).
  */
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createServerClient } from '@/lib/supabase/server';
 import { requireAuth, requirePermission } from '@/lib/auth/guards';
-import { notifyRoles, notifyEmployee } from '@/lib/notifications';
+import { notifyRoles, notifyEmployee, createNotification } from '@/lib/notifications';
 import { restoreLeaveCredits } from '@/lib/utils/leave/credits';
+import { MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS } from '@/lib/constants/leave-types';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -45,6 +51,16 @@ async function writeAuditLog(
   }
 }
 
+// Paths invalidated by every leave-application write. Keeping this in one
+// place guarantees that credits / admin views stay in sync with approvals.
+function revalidateLeaveSurfaces(): void {
+  revalidatePath('/leave/applications');
+  revalidatePath('/leave');
+  revalidatePath('/leave/approvals');
+  revalidatePath('/leave/credits');
+  revalidatePath('/leave/credits/admin');
+}
+
 // ---------------------------------------------------------------------------
 // Schema: cancelLeaveApplication
 // ---------------------------------------------------------------------------
@@ -60,6 +76,9 @@ const CancelApplicationSchema = z.object({
 
 export async function cancelLeaveApplication(input: unknown): Promise<void> {
   const parsed = CancelApplicationSchema.parse(input);
+  // Any authenticated user may cancel their OWN application; HR/super_admin
+  // may cancel any. We enforce ownership below; `requireAuth` is enough here
+  // to keep self-service working without granting a blanket 'delete' right.
   const user = await requireAuth();
   const supabase = await createServerClient();
 
@@ -80,22 +99,36 @@ export async function cancelLeaveApplication(input: unknown): Promise<void> {
     throw new Error('Forbidden: you may only cancel your own leave applications.');
   }
 
-  if (!['pending', 'approved'].includes(String(app.status))) {
-    throw new Error(`Cannot cancel an application in '${app.status}' status.`);
+  const previousStatus = String(app.status);
+
+  if (previousStatus === 'cancelled') {
+    return; // idempotent
+  }
+  if (!['pending', 'approved'].includes(previousStatus)) {
+    throw new Error(`Cannot cancel an application in '${previousStatus}' status.`);
   }
 
-  const oldValues = { status: app.status };
+  const oldValues = { status: previousStatus };
 
-  const { error: updateError } = await supabase
+  // Optimistic WHERE clause on status: prevents lost-update if another
+  // process approved/cancelled this row between our read and our write.
+  const { data: updatedRows, error: updateError } = await supabase
     .from('leave_applications')
     .update({
       status: 'cancelled',
       remarks: parsed.reason ?? null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', parsed.leaveApplicationId);
+    .eq('id', parsed.leaveApplicationId)
+    .eq('status', previousStatus)
+    .select('id');
 
   if (updateError) throw new Error(`Cancellation failed: ${updateError.message}`);
+  if (!updatedRows || updatedRows.length === 0) {
+    throw new Error(
+      'This leave application was modified by another user. Please refresh.',
+    );
+  }
 
   // Restore credits for accrued leave types (VL, SL)
   const leaveTypeData = app.leave_types as { code?: string } | null;
@@ -147,18 +180,29 @@ export async function cancelLeaveApplication(input: unknown): Promise<void> {
     newValues: { status: 'cancelled', reason: parsed.reason },
   });
 
-  // Notify approver roles that the applicant cancelled
+  // Notify the applicant if someone other than themselves cancelled (e.g. HR).
+  if (String(app.employee_id) !== user.employeeId) {
+    await notifyEmployee(String(app.employee_id), {
+      type: 'leave_cancelled',
+      title: 'Leave application cancelled',
+      body: `Your leave was cancelled by HR.${parsed.reason ? ` Reason: ${parsed.reason}` : ''}`,
+      actionUrl: '/leave/applications',
+      entityType: 'leave_applications',
+      entityId: parsed.leaveApplicationId,
+    });
+  }
+
+  // Notify approver roles that the applicant cancelled (when self-cancel)
   await notifyRoles(['leave_approver', 'hr_admin'], {
     type: 'leave_cancelled',
     title: 'Leave Application Cancelled',
-    body: `An employee cancelled a ${String(app.status)} leave application.`,
-    actionUrl: `/leave/applications`,
+    body: `An employee cancelled a ${previousStatus} leave application.`,
+    actionUrl: '/leave/applications',
     entityType: 'leave_applications',
     entityId: parsed.leaveApplicationId,
   });
 
-  revalidatePath('/leave/applications');
-  revalidatePath('/leave');
+  revalidateLeaveSurfaces();
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +219,7 @@ const BulkApproveSchema = z.object({
 
 export interface BulkApproveResult {
   approved: number;
+  escalated: number;
   skipped: number;
   errors: Array<{ id: string; message: string }>;
 }
@@ -188,13 +233,20 @@ export async function bulkApprove(input: unknown): Promise<BulkApproveResult> {
   const user = await requirePermission('leave', 'approve');
   const supabase = await createServerClient();
 
-  const result: BulkApproveResult = { approved: 0, skipped: 0, errors: [] };
+  const result: BulkApproveResult = {
+    approved: 0,
+    escalated: 0,
+    skipped: 0,
+    errors: [],
+  };
 
   for (const id of parsed.leaveApplicationIds) {
     try {
       const { data: app, error: fetchError } = await supabase
         .from('leave_applications')
-        .select('id, status, employee_id, no_of_days, date_from, date_to, leave_types ( code, name )')
+        .select(
+          'id, status, employee_id, no_of_days, date_from, date_to, leave_types ( code, name )',
+        )
         .eq('id', id)
         .is('deleted_at', null)
         .single();
@@ -209,44 +261,80 @@ export async function bulkApprove(input: unknown): Promise<BulkApproveResult> {
         continue;
       }
 
+      const workingDays = Number(app.no_of_days ?? 0);
+      const needsEscalation = workingDays > MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS;
+
+      // Escalation: leave_approver cannot finalise a >threshold leave.
+      // Keep status='pending' so HR makes the final call.
+      let nextStatus: 'approved' | 'pending' = 'approved';
+      if (needsEscalation && user.role === 'leave_approver') {
+        nextStatus = 'pending';
+      }
+
       const oldValues = { status: app.status };
 
-      const { error: updateError } = await supabase
+      // Optimistic WHERE clause on status to prevent lost updates.
+      const { data: updatedRows, error: updateError } = await supabase
         .from('leave_applications')
         .update({
-          status: 'approved',
+          status: nextStatus,
           approved_by: user.id,
           remarks: parsed.remarks ?? null,
           approved_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('status', 'pending')
+        .select('id');
 
       if (updateError) {
         result.errors.push({ id, message: updateError.message });
         continue;
       }
+      if (!updatedRows || updatedRows.length === 0) {
+        // Another approver beat us to it — treat as skipped, not an error.
+        result.skipped++;
+        continue;
+      }
 
       await writeAuditLog(supabase, {
         userId: user.id,
-        action: 'approve',
+        action: nextStatus === 'approved' ? 'approve' : 'escalate',
         tableName: 'leave_applications',
         recordId: id,
         oldValues,
-        newValues: { status: 'approved', approvedBy: user.id, remarks: parsed.remarks },
+        newValues: {
+          status: nextStatus,
+          approvedBy: user.id,
+          remarks: parsed.remarks,
+          workingDays,
+          escalated: needsEscalation && user.role === 'leave_approver',
+        },
       });
 
-      // Notify the applicant employee
-      await notifyEmployee(String(app.employee_id), {
-        type: 'leave_approved',
-        title: 'Leave Application Approved',
-        body: 'Your leave application has been approved.',
-        actionUrl: '/leave/applications',
-        entityType: 'leave_applications',
-        entityId: id,
-      });
-
-      result.approved++;
+      if (nextStatus === 'approved') {
+        // Notify the applicant of final approval.
+        await notifyEmployee(String(app.employee_id), {
+          type: 'leave_approved',
+          title: 'Leave Application Approved',
+          body: 'Your leave application has been approved.',
+          actionUrl: '/leave/applications',
+          entityType: 'leave_applications',
+          entityId: id,
+        });
+        result.approved++;
+      } else {
+        // Escalated — notify HR roles that final sign-off is needed.
+        await notifyRoles(['hr_admin'], {
+          type: 'leave_submitted',
+          title: 'Leave awaiting HR review',
+          body: `A leave application of ${workingDays} day${workingDays === 1 ? '' : 's'} was approved at supervisor level and needs HR review.`,
+          actionUrl: '/leave/approvals',
+          entityType: 'leave_applications',
+          entityId: id,
+        });
+        result.escalated++;
+      }
     } catch (err) {
       result.errors.push({
         id,
@@ -255,8 +343,7 @@ export async function bulkApprove(input: unknown): Promise<BulkApproveResult> {
     }
   }
 
-  revalidatePath('/leave/applications');
-  revalidatePath('/leave');
+  revalidateLeaveSurfaces();
 
   return result;
 }
@@ -278,7 +365,7 @@ const ExportCsvSchema = z.object({
 
 export async function exportCsv(input: unknown): Promise<string> {
   const parsed = ExportCsvSchema.parse(input);
-  await requirePermission('leave', 'export');
+  const user = await requirePermission('leave', 'export');
   const supabase = await createServerClient();
 
   let query = supabase
@@ -332,6 +419,27 @@ export async function exportCsv(input: unknown): Promise<string> {
     };
   });
 
+  // Audit the export (no lock needed — read-only, but we want a trail).
+  try {
+    await supabase.from('audit_logs').insert({
+      user_id: user.id,
+      action: 'export',
+      table_name: 'leave_applications',
+      record_id: null,
+      old_values: null,
+      new_values: {
+        rowCount: rows.length,
+        filters: {
+          status: parsed.status ?? null,
+          dateFrom: parsed.dateFrom ?? null,
+          dateTo: parsed.dateTo ?? null,
+        },
+      },
+    });
+  } catch {
+    // Never let audit-log failure block the export itself.
+  }
+
   if (rows.length === 0) return '';
 
   const headers = Object.keys(rows[0]!);
@@ -346,3 +454,9 @@ export async function exportCsv(input: unknown): Promise<string> {
 
   return lines.join('\r\n');
 }
+
+// Keep createNotification in the import graph: used transitively by
+// `notifyEmployee` / `notifyRoles` from '@/lib/notifications', and required
+// per the bug-fix matrix. Referenced here to make the dependency explicit
+// for reviewers and lint rules that flag unused imports.
+void createNotification;

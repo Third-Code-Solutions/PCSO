@@ -13,8 +13,9 @@
 import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import { useRealtimeRefresh } from '@/hooks/use-realtime-count';
-import { exportDtrPdf } from './actions';
+import { exportDtrPdf, submitDtr } from './actions';
 import type { AttendanceLogRow, EmployeeSummary } from '@/app/(dashboard)/attendance/queries';
 import { DtrTable } from '@/components/attendance/dtr-table';
 
@@ -102,12 +103,17 @@ export function DtrClient({
   minYear,
   minMonth,
 }: DtrClientProps) {
-  useRealtimeRefresh(['attendance_logs'] as const);
+  // Realtime refresh: re-query when attendance_logs or dtr_periods change.
+  // Filtering by employeeId is not supported by the shared hook; the refresh
+  // is a no-op for changes unrelated to the viewed employee since the page
+  // re-queries under the caller's auth on each refresh.
+  useRealtimeRefresh(['attendance_logs', 'dtr_periods'] as const);
 
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ── Navigation helpers ──────────────────────────────────────────────────
 
@@ -179,7 +185,10 @@ export function DtrClient({
 
       // Decode base64 → Blob → object URL → click
       const bytes = Uint8Array.from(atob(result.base64), (c) => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const mime = result.filename.endsWith('.pdf')
+        ? 'application/pdf'
+        : 'text/csv;charset=utf-8';
+      const blob = new Blob([bytes], { type: mime });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
@@ -192,6 +201,27 @@ export function DtrClient({
       setExportError(err instanceof Error ? err.message : 'Export failed. Please try again.');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // ── Submit DTR ───────────────────────────────────────────────────────────
+
+  const handleSubmitDtr = async () => {
+    setIsSubmitting(true);
+    try {
+      await submitDtr({
+        employeeId: selectedEmployeeId ?? undefined,
+        month,
+        year,
+      });
+      toast.success(`DTR submitted for ${monthLabel}.`);
+      router.refresh();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to submit DTR.';
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -214,7 +244,7 @@ export function DtrClient({
               id="dtr-employee-select"
               value={selectedEmployeeId ?? ''}
               onChange={handleEmployeeChange}
-              disabled={isPending}
+              disabled={isPending || isExporting}
               className="rounded-lg border border-[#0B2545]/20 bg-white px-3 py-2 text-sm text-[#0B2545] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C8A84B] disabled:opacity-60"
             >
               <option value="">— Select employee —</option>
@@ -239,7 +269,7 @@ export function DtrClient({
             id="dtr-month-select"
             value={selectedMonthValue}
             onChange={handleMonthChange}
-            disabled={isPending}
+            disabled={isPending || isExporting}
             className="rounded-lg border border-[#0B2545]/20 bg-white px-3 py-2 text-sm text-[#0B2545] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C8A84B] disabled:opacity-60"
           >
             {monthOptions.map((opt) => (
@@ -250,12 +280,35 @@ export function DtrClient({
           </select>
         </div>
 
+        {/* Submit DTR button — submits the period (employee or admin) */}
+        {(selectedEmployeeId || !canExport) && logs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void handleSubmitDtr()}
+            disabled={isSubmitting || isPending || isExporting}
+            className="flex items-center gap-2 rounded-lg border border-[#0B2545] bg-white px-4 py-2 text-sm font-semibold text-[#0B2545] shadow-sm transition-colors hover:bg-[#0B2545] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            aria-busy={isSubmitting}
+          >
+            {isSubmitting ? (
+              <>
+                <span
+                  className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#0B2545]/30 border-t-[#0B2545]"
+                  aria-hidden
+                />
+                Submitting…
+              </>
+            ) : (
+              'Submit DTR'
+            )}
+          </button>
+        )}
+
         {/* Export button — elevated only */}
         {canExport && (
           <button
             type="button"
             onClick={() => void handleExport()}
-            disabled={isExporting || isPending || !selectedEmployeeId}
+            disabled={isExporting || isPending || !selectedEmployeeId || isSubmitting}
             className="flex items-center gap-2 rounded-lg border border-[#C8A84B] bg-[#C8A84B] px-4 py-2 text-sm font-semibold text-[#0B2545] shadow-sm transition-colors hover:bg-[#E0C77A] disabled:cursor-not-allowed disabled:opacity-50"
             aria-busy={isExporting}
           >
@@ -268,7 +321,7 @@ export function DtrClient({
                 Generating…
               </>
             ) : (
-              'Export CSC Form 48'
+              'Export CSC Form 48 (CSV)'
             )}
           </button>
         )}
@@ -303,12 +356,22 @@ export function DtrClient({
       {/* Summary */}
       {logs.length > 0 && <SummaryCards logs={logs} />}
 
-      {/* DTR table */}
+      {/* DTR table — or guidance when admin hasn't selected an employee yet */}
       <section aria-labelledby="dtr-table-heading">
         <h3 id="dtr-table-heading" className="sr-only">
           Detailed attendance log
         </h3>
-        <DtrTable logs={logs} />
+        {canExport && !selectedEmployeeId ? (
+          <div className="rounded-lg border border-dashed border-[#0B2545]/20 bg-[#FAF4E6]/40 px-6 py-10 text-center text-sm text-gray-600">
+            <p className="font-medium text-[#0B2545]">No employee selected</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Pick an employee from the picker above to view their attendance
+              records for <span className="font-semibold">{monthLabel}</span>.
+            </p>
+          </div>
+        ) : (
+          <DtrTable logs={logs} />
+        )}
       </section>
     </div>
   );

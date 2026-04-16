@@ -26,6 +26,7 @@ import type { AdjectivalRating } from '@/lib/constants/performance';
 import type { Metadata } from 'next';
 import { DownloadIcon } from 'lucide-react';
 import { hasPermission } from '@/lib/auth/permissions';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 export const metadata: Metadata = {
   title: 'Performance Analytics',
@@ -61,6 +62,7 @@ export default async function PerformanceAnalyticsPage({ searchParams }: Props) 
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
+      <RealtimeBoundary tables={['performance_ratings', 'step_increments']} />
       <PageHeader
         title="Performance Analytics"
         description="Aggregate ratings, trends, and improvement areas across the organization."

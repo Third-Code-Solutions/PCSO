@@ -10,9 +10,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
-import { employees } from '@/lib/db/schema';
-import { inArray } from 'drizzle-orm';
-import { createServerClient } from '@/lib/supabase/server';
+import { employees, attendanceLogs } from '@/lib/db/schema';
+import { inArray, sql } from 'drizzle-orm';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
 import {
@@ -246,8 +245,9 @@ export async function importBiometric(
     };
   }
 
-  // Commit in chunks
-  const supabase = await createServerClient();
+  // Commit in chunks. Each chunk runs inside its own Drizzle transaction so
+  // partial chunk failure rolls back only that chunk, not the entire import.
+  const sqlExcluded = (column: string) => sql.raw(`excluded.${column}`);
   let imported = 0;
   let skipped = 0;
   const writeErrors: ImportRowError[] = [];
@@ -264,31 +264,46 @@ export async function importBiometric(
         approvedOvertimeMinutes: 0,
       });
       return {
-        employee_id: row.employeeId,
-        log_date: row.date,
-        time_in: row.timeIn,
-        time_out: row.timeOut,
-        source: 'biometric',
-        is_late: computed.lateMinutes > 0,
-        late_minutes: computed.lateMinutes,
-        undertime_minutes: computed.undertimeMinutes,
-        overtime_minutes: computed.overtimeMinutes,
+        employeeId: row.employeeId,
+        logDate: row.date,
+        timeIn: row.timeIn,
+        timeOut: row.timeOut,
+        source: 'biometric' as const,
+        isLate: computed.lateMinutes > 0,
+        lateMinutes: computed.lateMinutes,
+        undertimeMinutes: computed.undertimeMinutes,
+        overtimeMinutes: computed.overtimeMinutes,
         remarks: null,
       };
     });
 
-    const { error } = await supabase
-      .from('attendance_logs')
-      .upsert(records, { onConflict: 'employee_id,log_date' });
-
-    if (error) {
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .insert(attendanceLogs)
+          .values(records)
+          .onConflictDoUpdate({
+            target: [attendanceLogs.employeeId, attendanceLogs.logDate],
+            set: {
+              timeIn: sqlExcluded('time_in'),
+              timeOut: sqlExcluded('time_out'),
+              source: sqlExcluded('source'),
+              isLate: sqlExcluded('is_late'),
+              lateMinutes: sqlExcluded('late_minutes'),
+              undertimeMinutes: sqlExcluded('undertime_minutes'),
+              overtimeMinutes: sqlExcluded('overtime_minutes'),
+              updatedAt: new Date(),
+            },
+          });
+      });
+      imported += chunk.length;
+    } catch (err: unknown) {
       skipped += chunk.length;
+      const msg = err instanceof Error ? err.message : 'Chunk commit failed';
       writeErrors.push({
         row: offset + 2,
-        message: `Chunk ${Math.floor(offset / CHUNK_SIZE) + 1}: ${error.message}`,
+        message: `Chunk ${Math.floor(offset / CHUNK_SIZE) + 1}: ${msg}`,
       });
-    } else {
-      imported += chunk.length;
     }
   }
 

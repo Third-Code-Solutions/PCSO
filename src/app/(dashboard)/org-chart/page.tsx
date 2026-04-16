@@ -11,6 +11,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/layouts/page-header';
 import { requirePermission } from '@/lib/auth/guards';
 import { OrgChartClient } from './_client';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 export const metadata: Metadata = {
   title: 'Org Chart',
@@ -175,6 +176,7 @@ export default async function OrgChartPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      <RealtimeBoundary tables={['offices', 'employees']} />
       <PageHeader
         title="Organization Chart"
         description="Interactive hierarchy of Senate committees, departments, and offices."

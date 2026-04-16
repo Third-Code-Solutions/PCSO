@@ -24,6 +24,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { deadlineLabel, currentCoverageYear } from '@/lib/utils/saln/deadline';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import { SendAllRemindersButton } from './_client';
 
 // ---------------------------------------------------------------------------
 // Page
@@ -48,13 +50,23 @@ export default async function SalnNonFilersPage({ searchParams }: NonFilersPageP
   const nonFilers = await getSalnNonFilers(year);
   const deadline = deadlineLabel(year);
 
-  async function handleSendAllReminders() {
+  async function handleSendAllReminders(): Promise<{
+    sent: number;
+    failed: number;
+    skipped?: number;
+  }> {
     'use server';
-    await sendReminders({ year });
+    const result = await sendReminders({ year });
+    return {
+      sent: result.sent,
+      failed: result.failed,
+      skipped: result.skipped,
+    };
   }
 
   return (
     <div>
+      <RealtimeBoundary tables={['saln_submissions']} />
       <PageHeader
         title="SALN Non-Filers"
         description={`Employees who have not filed their Annual SALN for ${year} (Deadline: ${deadline})`}
@@ -85,11 +97,12 @@ export default async function SalnNonFilersPage({ searchParams }: NonFilersPageP
         </div>
 
         {nonFilers.length > 0 && (
-          <form action={handleSendAllReminders} className="ml-auto">
-            <Button type="submit" size="sm" variant="destructive">
-              Send Reminders to All
-            </Button>
-          </form>
+          <div className="ml-auto">
+            <SendAllRemindersButton
+              sendAll={handleSendAllReminders}
+              nonFilerCount={nonFilers.length}
+            />
+          </div>
         )}
       </div>
 

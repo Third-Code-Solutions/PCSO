@@ -1,111 +1,182 @@
 import type { Metadata } from 'next';
-import { KpiGrid } from '@/components/dashboard/kpi-grid';
-import { PersonalKpiGrid } from '@/components/dashboard/personal-kpi-grid';
-import { RecentActivity } from '@/components/dashboard/recent-activity';
-import { UpcomingCutoffs } from '@/components/dashboard/upcoming-cutoffs';
+import { Suspense } from 'react';
 import { PageHeader } from '@/components/layouts/page-header';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { getCurrentUser } from '@/lib/auth/get-current-user';
+import { requireAuth } from '@/lib/auth/guards';
+import { KpiGridSkeleton } from '@/components/common/loading-skeleton';
 import {
-  getKpiCounts,
-  getTotalRemittancesDueThisMonth,
-  getRecentActivity,
-  getUpcomingCutoffs,
-  getPersonalKpis,
+  AdminDashboard,
+  PayrollAdminDashboard,
+  LeaveApproverDashboard,
+  EmployeeDashboard,
+} from './_client';
+import {
+  getAdminDashboardKpis,
+  getPayrollAdminKpis,
+  getLeaveApproverKpis,
+  getEmployeeDashboardKpis,
 } from './queries';
+import type { Role } from '@/lib/auth/permissions';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
 };
 
-// Org-wide realtime tables (admin/HR/viewer/etc.)
-const ORG_REALTIME_TABLES = [
+// ─── Realtime subscription tables per role ───────────────────────────────────
+
+const ADMIN_REALTIME_TABLES = [
   'employees',
-  'plantilla_positions',
   'leave_applications',
-  'payroll_periods',
-  'remittance_batches',
-  'gsis_remittance_batches',
+  'attendance_logs',
+  'overtime_requests',
+  'dtr_periods',
+  'saln_submissions',
+  'holidays',
   'audit_logs',
 ] as const;
 
-// Personal realtime tables (self-service view)
+const PAYROLL_REALTIME_TABLES = [
+  'payroll_periods',
+  'payroll_records',
+  'remittance_batches',
+  'gsis_remittance_batches',
+] as const;
+
+const LEAVE_APPROVER_REALTIME_TABLES = ['leave_applications'] as const;
+
 const PERSONAL_REALTIME_TABLES = [
   'leave_applications',
   'leave_credits',
-  'payroll_periods',
+  'payroll_records',
+  'attendance_logs',
+  'saln_submissions',
   'notifications',
 ] as const;
 
-export default async function DashboardPage() {
-  const user = await getCurrentUser();
+// ─── Async KPI sections (stream within Suspense) ─────────────────────────────
 
-  // Personal dashboard for self-service employees with a linked employee record.
-  const isPersonalView =
-    user?.role === 'employee_self_service' && Boolean(user.employeeId);
+async function AdminKpisSection() {
+  const data = await getAdminDashboardKpis();
+  return <AdminDashboard data={data} />;
+}
 
-  if (isPersonalView && user?.employeeId) {
-    const personal = await getPersonalKpis(user.employeeId);
+async function PayrollKpisSection() {
+  const data = await getPayrollAdminKpis();
+  return <PayrollAdminDashboard data={data} />;
+}
 
-    return (
-      <div className="space-y-6">
-        <RealtimeBoundary tables={PERSONAL_REALTIME_TABLES} />
+async function LeaveApproverKpisSection({ userId }: { userId: string }) {
+  const data = await getLeaveApproverKpis(userId);
+  return <LeaveApproverDashboard data={data} />;
+}
 
-        <PageHeader
-          title="My Dashboard"
-          description="Your leave, attendance, and payroll at a glance"
-          breadcrumbs={[
-            { label: 'Senate HRIS', href: '/dashboard' },
-            { label: 'Dashboard' },
-          ]}
-        />
+async function EmployeeKpisSection({ employeeId }: { employeeId: string }) {
+  const data = await getEmployeeDashboardKpis(employeeId);
+  return <EmployeeDashboard data={data} />;
+}
 
-        <PersonalKpiGrid data={personal} />
-      </div>
-    );
+// ─── Role dispatch ───────────────────────────────────────────────────────────
+
+interface RoleConfig {
+  title: string;
+  description: string;
+  tables: readonly string[];
+  body: React.ReactNode;
+}
+
+function buildRoleConfig(
+  role: Role,
+  userId: string,
+  employeeId: string | null,
+): RoleConfig {
+  switch (role) {
+    case 'super_admin':
+    case 'hr_admin':
+      return {
+        title: 'Dashboard',
+        description: 'System KPIs across the HRIS',
+        tables: ADMIN_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <AdminKpisSection />
+          </Suspense>
+        ),
+      };
+
+    case 'payroll_admin':
+      return {
+        title: 'Payroll Dashboard',
+        description: 'Active payroll period, pending entries, and remittances',
+        tables: PAYROLL_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <PayrollKpisSection />
+          </Suspense>
+        ),
+      };
+
+    case 'leave_approver':
+      return {
+        title: 'Approvals Dashboard',
+        description: 'Your pending leave queue and team availability',
+        tables: LEAVE_APPROVER_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <LeaveApproverKpisSection userId={userId} />
+          </Suspense>
+        ),
+      };
+
+    case 'employee_self_service':
+      if (employeeId) {
+        return {
+          title: 'My Dashboard',
+          description:
+            'Your leave balance, payslip, attendance, and compliance status',
+          tables: PERSONAL_REALTIME_TABLES,
+          body: (
+            <Suspense fallback={<KpiGridSkeleton />}>
+              <EmployeeKpisSection employeeId={employeeId} />
+            </Suspense>
+          ),
+        };
+      }
+    // intentional fall-through for self-service without linked employee
+    // falls through
+    case 'viewer':
+    default:
+      return {
+        title: 'Dashboard',
+        description: 'Senate HRIS overview',
+        tables: ADMIN_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <AdminKpisSection />
+          </Suspense>
+        ),
+      };
   }
+}
 
-  // Org-wide dashboard for admin/HR/payroll/viewer roles.
-  const [kpi, remittancesDue, recentActivity, upcomingCutoffs] = await Promise.all([
-    getKpiCounts(),
-    getTotalRemittancesDueThisMonth(),
-    getRecentActivity(10),
-    getUpcomingCutoffs(),
-  ]);
+export default async function DashboardPage() {
+  const user = await requireAuth();
+
+  const config = buildRoleConfig(user.role, user.id, user.employeeId);
 
   return (
     <div className="space-y-6">
-      <RealtimeBoundary tables={ORG_REALTIME_TABLES} />
+      <RealtimeBoundary tables={config.tables} />
 
       <PageHeader
-        title="Dashboard"
-        description="Overview of Senate HRIS operations"
+        title={config.title}
+        description={config.description}
         breadcrumbs={[
           { label: 'Senate HRIS', href: '/dashboard' },
           { label: 'Dashboard' },
         ]}
       />
 
-      <KpiGrid
-        data={{
-          totalEmployees: kpi.totalActiveEmployees,
-          permanentCount: kpi.permanentCount,
-          joCosCount: kpi.joCosCount,
-          vacantPositions: kpi.vacantPositions,
-          pendingLeaveApplications: kpi.pendingLeaveApplications,
-          payrollCutoffDays: kpi.payrollCutoffDays,
-          remittancesDueThisMonth: remittancesDue,
-        }}
-      />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <RecentActivity entries={recentActivity} />
-        </div>
-        <div>
-          <UpcomingCutoffs items={upcomingCutoffs} />
-        </div>
-      </div>
+      {config.body}
     </div>
   );
 }

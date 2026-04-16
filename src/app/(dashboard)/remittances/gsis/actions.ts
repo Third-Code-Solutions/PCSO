@@ -14,6 +14,8 @@ import {
 import { eq, and, isNull, desc, asc } from 'drizzle-orm';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import {
   GenerateRemittanceListSchema,
   ExportForPortalSchema,
@@ -29,6 +31,18 @@ import {
   type GsisRemittanceExportRow,
   type GsisExportMeta,
 } from '@/lib/utils/remittances/gsis-export';
+
+const REMITTANCE_LINE_INSERT_CHUNK = 200;
+
+async function chunkInsertGsisLines(
+  tx: Tx,
+  rows: (typeof gsisRemittanceLines.$inferInsert)[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  for (let i = 0; i < rows.length; i += REMITTANCE_LINE_INSERT_CHUNK) {
+    await tx.insert(gsisRemittanceLines).values(rows.slice(i, i + REMITTANCE_LINE_INSERT_CHUNK));
+  }
+}
 
 // ─── Generate Remittance List ─────────────────────────────────────────────────
 
@@ -48,159 +62,174 @@ export async function generateRemittanceList(input: unknown) {
   const parsed = GenerateRemittanceListSchema.parse(input);
   const user = await requirePermission('remittances', 'create');
 
-  // Fetch period
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(and(eq(payrollPeriods.id, parsed.periodId), isNull(payrollPeriods.deletedAt)))
-    .limit(1);
+  const batch = await withRetry(() =>
+    withTx(async (tx) => {
+      // Advisory lock: two admins clicking "Generate" for the same period
+      // serialize; the second sees the duplicate-row guard and aborts cleanly.
+      await lockKey(tx, `remit:gsis:${parsed.periodId}`);
 
-  if (!period) throw new Error('Payroll period not found.');
-  if (period.status !== 'approved' && period.status !== 'paid') {
-    throw new Error(
-      `Cannot generate GSIS remittance list for a period in "${period.status}" status. ` +
-        'Period must be approved or paid first.',
-    );
-  }
+      const [period] = await tx
+        .select()
+        .from(payrollPeriods)
+        .where(
+          and(
+            eq(payrollPeriods.id, parsed.periodId),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
+        .limit(1);
 
-  // Check for existing batch for this period
-  const existingBatch = await db
-    .select({ id: gsisRemittanceBatches.id })
-    .from(gsisRemittanceBatches)
-    .where(
-      and(
-        eq(gsisRemittanceBatches.periodId, parsed.periodId),
-        isNull(gsisRemittanceBatches.deletedAt),
-      ),
-    )
-    .limit(1);
+      if (!period) throw new Error('Payroll period not found.');
+      if (period.status !== 'approved' && period.status !== 'paid') {
+        throw new Error(
+          `Cannot generate GSIS remittance list for a period in "${period.status}" status. ` +
+            'Period must be approved or paid first.',
+        );
+      }
 
-  if (existingBatch.length > 0) {
-    throw new Error(
-      `A GSIS remittance batch already exists for this period (batch ID: ${existingBatch[0]?.id ?? 'unknown'}). ` +
-        'Delete the existing batch first before regenerating.',
-    );
-  }
+      const existingBatch = await tx
+        .select({ id: gsisRemittanceBatches.id })
+        .from(gsisRemittanceBatches)
+        .where(
+          and(
+            eq(gsisRemittanceBatches.periodId, parsed.periodId),
+            isNull(gsisRemittanceBatches.deletedAt),
+          ),
+        )
+        .limit(1);
 
-  // Fetch payroll records with employee data
-  const records = await db
-    .select({
-      pr: payrollRecords,
-      emp: {
-        id: employees.id,
-        employeeNo: employees.employeeNo,
-        gsisNo: employees.gsisNo,
-        firstName: employees.firstName,
-        middleName: employees.middleName,
-        lastName: employees.lastName,
-        suffix: employees.suffix,
-      },
-    })
-    .from(payrollRecords)
-    .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
-    .where(
-      and(
-        eq(payrollRecords.periodId, parsed.periodId),
-        isNull(employees.deletedAt),
-      ),
-    )
-    .orderBy(asc(employees.lastName), asc(employees.firstName));
+      if (existingBatch.length > 0) {
+        throw new Error(
+          `A GSIS remittance batch already exists for this period (batch ID: ${existingBatch[0]?.id ?? 'unknown'}). ` +
+            'Delete the existing batch first before regenerating.',
+        );
+      }
 
-  if (records.length === 0) {
-    throw new Error('No payroll records found for the selected period.');
-  }
+      const records = await tx
+        .select({
+          pr: payrollRecords,
+          emp: {
+            id: employees.id,
+            employeeNo: employees.employeeNo,
+            gsisNo: employees.gsisNo,
+            firstName: employees.firstName,
+            middleName: employees.middleName,
+            lastName: employees.lastName,
+            suffix: employees.suffix,
+          },
+        })
+        .from(payrollRecords)
+        .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
+        .where(
+          and(
+            eq(payrollRecords.periodId, parsed.periodId),
+            isNull(employees.deletedAt),
+          ),
+        )
+        .orderBy(asc(employees.lastName), asc(employees.firstName));
 
-  // Filter to employees with a GSIS number (non-GSIS employees are excluded)
-  const gsisRecords = records.filter((r) => r.emp.gsisNo != null && r.emp.gsisNo !== '');
+      if (records.length === 0) {
+        throw new Error('No payroll records found for the selected period.');
+      }
 
-  if (gsisRecords.length === 0) {
-    throw new Error(
-      'No employees with a GSIS number found in this period. ' +
-        'Ensure GSIS numbers are encoded before generating the remittance list.',
-    );
-  }
+      const gsisRecords = records.filter(
+        (r) => r.emp.gsisNo != null && r.emp.gsisNo !== '',
+      );
 
-  // Generate batch number: GSIS-YYYY-MM-D where D = day of period start
-  const periodStart = new Date(period.periodStart);
-  const batchNo = `GSIS-${periodStart.getFullYear()}-${String(periodStart.getMonth() + 1).padStart(2, '0')}-${String(periodStart.getDate()).padStart(2, '0')}`;
+      if (gsisRecords.length === 0) {
+        throw new Error(
+          'No employees with a GSIS number found in this period. ' +
+            'Ensure GSIS numbers are encoded before generating the remittance list.',
+        );
+      }
 
-  // Compute totals across all lines
-  let totalPersonal = 0;
-  let totalEmployer = 0;
-  let totalLifeInsurance = 0;
+      const periodStart = new Date(period.periodStart);
+      const batchNo = `GSIS-${periodStart.getFullYear()}-${String(periodStart.getMonth() + 1).padStart(2, '0')}-${String(periodStart.getDate()).padStart(2, '0')}`;
 
-  const lineValues = gsisRecords.map((r) => {
-    // MSC = authorizedSalary (monthly base salary, full month)
-    // For semi-monthly payroll the GSIS MSC is the full monthly salary, not the half.
-    // We use authorizedSalary which is the full monthly SSL amount.
-    const msc = parseMoney(r.pr.authorizedSalary);
-    const personal = parseMoney(r.pr.gsisPersonal);
-    const employer = parseMoney(r.pr.gsisEmployer);
-    const lifeIns = parseMoney(r.pr.gsisLifeInsurance);
-    const total = roundHalfEven(personal + employer + lifeIns, 2);
+      let totalPersonal = 0;
+      let totalEmployer = 0;
+      let totalLifeInsurance = 0;
 
-    totalPersonal += personal;
-    totalEmployer += employer;
-    totalLifeInsurance += lifeIns;
+      const lineValues = gsisRecords.map((r) => {
+        const msc = parseMoney(r.pr.authorizedSalary);
+        const personal = parseMoney(r.pr.gsisPersonal);
+        const employer = parseMoney(r.pr.gsisEmployer);
+        const lifeIns = parseMoney(r.pr.gsisLifeInsurance);
+        const total = roundHalfEven(personal + employer + lifeIns, 2);
 
-    // GSIS name format: "LAST, FIRST MI."
-    const mi = r.emp.middleName ? ` ${r.emp.middleName.charAt(0).toUpperCase()}.` : '';
-    const suffix = r.emp.suffix ? ` ${r.emp.suffix}` : '';
-    const employeeName = `${r.emp.lastName.toUpperCase()}, ${r.emp.firstName}${mi}${suffix}`;
+        totalPersonal += personal;
+        totalEmployer += employer;
+        totalLifeInsurance += lifeIns;
 
-    return {
-      batchId: '', // filled after batch insert
-      employeeId: r.emp.id,
-      employeeNo: r.emp.employeeNo,
-      gsisNo: r.emp.gsisNo as string,
-      employeeName,
-      monthlySalaryCredit: roundMoney(msc),
-      personalShare: roundMoney(personal),
-      employerShare: roundMoney(employer),
-      lifeInsurance: roundMoney(lifeIns),
-      total: roundMoney(total),
-    };
-  });
+        const mi = r.emp.middleName
+          ? ` ${r.emp.middleName.charAt(0).toUpperCase()}.`
+          : '';
+        const suffix = r.emp.suffix ? ` ${r.emp.suffix}` : '';
+        const employeeName = `${r.emp.lastName.toUpperCase()}, ${r.emp.firstName}${mi}${suffix}`;
 
-  const totalRemittance = roundHalfEven(totalPersonal + totalEmployer + totalLifeInsurance, 2);
+        return {
+          employeeId: r.emp.id,
+          employeeNo: r.emp.employeeNo,
+          gsisNo: r.emp.gsisNo as string,
+          employeeName,
+          monthlySalaryCredit: roundMoney(msc),
+          personalShare: roundMoney(personal),
+          employerShare: roundMoney(employer),
+          lifeInsurance: roundMoney(lifeIns),
+          total: roundMoney(total),
+        };
+      });
 
-  // Insert batch
-  const inserted = await db
-    .insert(gsisRemittanceBatches)
-    .values({
-      periodId: parsed.periodId,
-      batchNo,
-      status: 'generated',
-      totalPersonalShare: roundMoney(totalPersonal),
-      totalEmployerShare: roundMoney(totalEmployer),
-      totalLifeInsurance: roundMoney(totalLifeInsurance),
-      totalRemittance: roundMoney(totalRemittance),
-      employeeCount: gsisRecords.length,
-    })
-    .returning();
+      const totalRemittance = roundHalfEven(
+        totalPersonal + totalEmployer + totalLifeInsurance,
+        2,
+      );
 
-  const batch = inserted[0];
-  if (!batch) throw new Error('Failed to insert GSIS remittance batch.');
+      const inserted = await tx
+        .insert(gsisRemittanceBatches)
+        .values({
+          periodId: parsed.periodId,
+          batchNo,
+          status: 'generated',
+          totalPersonalShare: roundMoney(totalPersonal),
+          totalEmployerShare: roundMoney(totalEmployer),
+          totalLifeInsurance: roundMoney(totalLifeInsurance),
+          totalRemittance: roundMoney(totalRemittance),
+          employeeCount: gsisRecords.length,
+        })
+        .returning();
 
-  // Insert lines
-  const linesWithBatchId = lineValues.map((l) => ({ ...l, batchId: batch.id }));
-  await db.insert(gsisRemittanceLines).values(linesWithBatchId);
+      const batchRow = inserted[0];
+      if (!batchRow) throw new Error('Failed to insert GSIS remittance batch.');
 
-  await auditLog({
+      // Chunked insert so a 1000-employee batch doesn't send one giant query.
+      const linesWithBatchId = lineValues.map((l) => ({ ...l, batchId: batchRow.id }));
+      await chunkInsertGsisLines(tx, linesWithBatchId);
+
+      return {
+        batch: batchRow,
+        batchNo,
+        employeeCount: gsisRecords.length,
+        totalRemittance: roundMoney(totalRemittance),
+      };
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'create',
     table: 'gsis_remittance_batches',
-    recordId: batch.id,
+    recordId: batch.batch.id,
     newValues: {
-      batchNo,
+      batchNo: batch.batchNo,
       periodId: parsed.periodId,
-      employeeCount: gsisRecords.length,
-      totalRemittance: roundMoney(totalRemittance),
+      employeeCount: batch.employeeCount,
+      totalRemittance: batch.totalRemittance,
     },
   });
 
   revalidatePath('/remittances/gsis');
-  return batch;
+  return batch.batch;
 }
 
 // ─── Export For Portal ────────────────────────────────────────────────────────
@@ -286,45 +315,53 @@ export async function markSubmitted(input: unknown) {
   const parsed = MarkSubmittedSchema.parse(input);
   const user = await requirePermission('remittances', 'process');
 
-  const [batch] = await db
-    .select()
-    .from(gsisRemittanceBatches)
-    .where(
-      and(
-        eq(gsisRemittanceBatches.id, parsed.batchId),
-        isNull(gsisRemittanceBatches.deletedAt),
-      ),
-    )
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `remit:gsis:submit:${parsed.batchId}`);
 
-  if (!batch) throw new Error('GSIS remittance batch not found.');
-  if (batch.status === 'submitted' || batch.status === 'accepted') {
-    throw new Error(`Batch is already in "${batch.status}" status.`);
-  }
-  if (batch.status !== 'generated') {
-    throw new Error(
-      `Batch must be in "generated" status to mark as submitted. Current: ${batch.status}`,
-    );
-  }
+      const [batch] = await tx
+        .select()
+        .from(gsisRemittanceBatches)
+        .where(
+          and(
+            eq(gsisRemittanceBatches.id, parsed.batchId),
+            isNull(gsisRemittanceBatches.deletedAt),
+          ),
+        )
+        .limit(1);
 
-  const now = new Date().toISOString();
-  const updatedRows = await db
-    .update(gsisRemittanceBatches)
-    .set({
-      status: 'submitted',
-      portalReferenceNo: parsed.portalReferenceNo,
-      submittedAt: now,
-      submittedBy: user.id,
-      notes: parsed.notes ?? batch.notes,
-      updatedAt: new Date(),
-    })
-    .where(eq(gsisRemittanceBatches.id, parsed.batchId))
-    .returning();
+      if (!batch) throw new Error('GSIS remittance batch not found.');
+      if (batch.status === 'submitted' || batch.status === 'accepted') {
+        throw new Error(`Batch is already in "${batch.status}" status.`);
+      }
+      if (batch.status !== 'generated') {
+        throw new Error(
+          `Batch must be in "generated" status to mark as submitted. Current: ${batch.status}`,
+        );
+      }
 
-  const updated = updatedRows[0];
-  if (!updated) throw new Error('Failed to update GSIS batch status.');
+      const now = new Date().toISOString();
+      const updatedRows = await tx
+        .update(gsisRemittanceBatches)
+        .set({
+          status: 'submitted',
+          portalReferenceNo: parsed.portalReferenceNo,
+          submittedAt: now,
+          submittedBy: user.id,
+          notes: parsed.notes ?? batch.notes,
+          updatedAt: new Date(),
+        })
+        .where(eq(gsisRemittanceBatches.id, parsed.batchId))
+        .returning();
 
-  await auditLog({
+      const updated = updatedRows[0];
+      if (!updated) throw new Error('Failed to update GSIS batch status.');
+
+      return { updated, submittedAt: now };
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'edit',
     table: 'gsis_remittance_batches',
@@ -333,13 +370,13 @@ export async function markSubmitted(input: unknown) {
     newValues: {
       status: 'submitted',
       portalReferenceNo: parsed.portalReferenceNo,
-      submittedAt: now,
+      submittedAt: result.submittedAt,
     },
   });
 
   revalidatePath('/remittances/gsis');
   revalidatePath(`/remittances/gsis/${parsed.batchId}`);
-  return updated;
+  return result.updated;
 }
 
 // ─── GSIS Registration ────────────────────────────────────────────────────────
@@ -348,47 +385,52 @@ export async function createGsisRegistration(input: unknown) {
   const parsed = GsisRegistrationSchema.parse(input);
   const user = await requirePermission('employees', 'edit');
 
-  const [existing] = await db
-    .select({ id: gsisRegistrations.id })
-    .from(gsisRegistrations)
-    .where(
-      and(
-        eq(gsisRegistrations.employeeId, parsed.employeeId),
-        isNull(gsisRegistrations.deletedAt),
-      ),
-    )
-    .limit(1);
+  const row = await withTx(async (tx) => {
+    const [existing] = await tx
+      .select({ id: gsisRegistrations.id })
+      .from(gsisRegistrations)
+      .where(
+        and(
+          eq(gsisRegistrations.employeeId, parsed.employeeId),
+          isNull(gsisRegistrations.deletedAt),
+        ),
+      )
+      .limit(1);
 
-  if (existing) {
-    throw new Error(
-      'A GSIS registration record already exists for this employee. Use update instead.',
-    );
-  }
+    if (existing) {
+      throw new Error(
+        'A GSIS registration record already exists for this employee. Use update instead.',
+      );
+    }
 
-  const regRows = await db
-    .insert(gsisRegistrations)
-    .values({
-      employeeId: parsed.employeeId,
-      gsisNo: parsed.gsisNo,
-      status: parsed.status,
-      registeredDate: parsed.registeredDate ?? null,
-      governmentServiceStartDate: parsed.governmentServiceStartDate,
-      isCompulsory: parsed.isCompulsory,
-      enrolledInRetirementFund: parsed.enrolledInRetirementFund,
-      notes: parsed.notes ?? null,
-    })
-    .returning();
+    const regRows = await tx
+      .insert(gsisRegistrations)
+      .values({
+        employeeId: parsed.employeeId,
+        gsisNo: parsed.gsisNo,
+        status: parsed.status,
+        registeredDate: parsed.registeredDate ?? null,
+        governmentServiceStartDate: parsed.governmentServiceStartDate,
+        isCompulsory: parsed.isCompulsory,
+        enrolledInRetirementFund: parsed.enrolledInRetirementFund,
+        notes: parsed.notes ?? null,
+      })
+      .returning();
 
-  const row = regRows[0];
-  if (!row) throw new Error('Failed to create GSIS registration.');
+    const regRow = regRows[0];
+    if (!regRow) throw new Error('Failed to create GSIS registration.');
 
-  // Sync GSIS number back to employees table for payroll use
-  await db
-    .update(employees)
-    .set({ gsisNo: parsed.gsisNo, updatedAt: new Date() })
-    .where(eq(employees.id, parsed.employeeId));
+    // Sync GSIS number back to employees table for payroll use. Done in the
+    // same tx so registration + employee sync are atomic.
+    await tx
+      .update(employees)
+      .set({ gsisNo: parsed.gsisNo, updatedAt: new Date() })
+      .where(eq(employees.id, parsed.employeeId));
 
-  await auditLog({
+    return regRow;
+  });
+
+  void auditLog({
     userId: user.id,
     action: 'create',
     table: 'gsis_registrations',
@@ -404,54 +446,60 @@ export async function updateGsisRegistration(input: unknown) {
   const parsed = GsisRegistrationUpdateSchema.parse(input);
   const user = await requirePermission('employees', 'edit');
 
-  const [existing] = await db
-    .select()
-    .from(gsisRegistrations)
-    .where(
-      and(eq(gsisRegistrations.id, parsed.id), isNull(gsisRegistrations.deletedAt)),
-    )
-    .limit(1);
+  const result = await withTx(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(gsisRegistrations)
+      .where(
+        and(eq(gsisRegistrations.id, parsed.id), isNull(gsisRegistrations.deletedAt)),
+      )
+      .limit(1);
 
-  if (!existing) throw new Error('GSIS registration record not found.');
+    if (!existing) throw new Error('GSIS registration record not found.');
 
-  const updateData: Partial<typeof gsisRegistrations.$inferInsert> = {
-    updatedAt: new Date(),
-  };
-  if (parsed.gsisNo !== undefined) updateData.gsisNo = parsed.gsisNo;
-  if (parsed.status !== undefined) updateData.status = parsed.status;
-  if (parsed.registeredDate !== undefined) updateData.registeredDate = parsed.registeredDate;
-  if (parsed.governmentServiceStartDate !== undefined)
-    updateData.governmentServiceStartDate = parsed.governmentServiceStartDate;
-  if (parsed.isCompulsory !== undefined) updateData.isCompulsory = parsed.isCompulsory;
-  if (parsed.enrolledInRetirementFund !== undefined)
-    updateData.enrolledInRetirementFund = parsed.enrolledInRetirementFund;
-  if (parsed.notes !== undefined) updateData.notes = parsed.notes;
+    const updateData: Partial<typeof gsisRegistrations.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    if (parsed.gsisNo !== undefined) updateData.gsisNo = parsed.gsisNo;
+    if (parsed.status !== undefined) updateData.status = parsed.status;
+    if (parsed.registeredDate !== undefined) updateData.registeredDate = parsed.registeredDate;
+    if (parsed.governmentServiceStartDate !== undefined)
+      updateData.governmentServiceStartDate = parsed.governmentServiceStartDate;
+    if (parsed.isCompulsory !== undefined) updateData.isCompulsory = parsed.isCompulsory;
+    if (parsed.enrolledInRetirementFund !== undefined)
+      updateData.enrolledInRetirementFund = parsed.enrolledInRetirementFund;
+    if (parsed.notes !== undefined) updateData.notes = parsed.notes;
 
-  const [updated] = await db
-    .update(gsisRegistrations)
-    .set(updateData)
-    .where(eq(gsisRegistrations.id, parsed.id))
-    .returning();
+    const [updated] = await tx
+      .update(gsisRegistrations)
+      .set(updateData)
+      .where(eq(gsisRegistrations.id, parsed.id))
+      .returning();
 
-  // Sync GSIS number to employees table if changed
-  if (parsed.gsisNo && parsed.employeeId) {
-    await db
-      .update(employees)
-      .set({ gsisNo: parsed.gsisNo, updatedAt: new Date() })
-      .where(eq(employees.id, parsed.employeeId));
-  }
+    if (!updated) throw new Error('Failed to update GSIS registration.');
 
-  await auditLog({
+    // Sync GSIS number to employees table if changed — same tx.
+    if (parsed.gsisNo && parsed.employeeId) {
+      await tx
+        .update(employees)
+        .set({ gsisNo: parsed.gsisNo, updatedAt: new Date() })
+        .where(eq(employees.id, parsed.employeeId));
+    }
+
+    return { existing, updated };
+  });
+
+  void auditLog({
     userId: user.id,
     action: 'edit',
     table: 'gsis_registrations',
     recordId: parsed.id,
-    oldValues: existing as unknown as Record<string, unknown>,
-    newValues: updated as unknown as Record<string, unknown>,
+    oldValues: result.existing as unknown as Record<string, unknown>,
+    newValues: result.updated as unknown as Record<string, unknown>,
   });
 
-  revalidatePath(`/employees/${existing.employeeId}/gsis`);
-  return updated;
+  revalidatePath(`/employees/${result.existing.employeeId}/gsis`);
+  return result.updated;
 }
 
 // ─── GSIS Loans ───────────────────────────────────────────────────────────────

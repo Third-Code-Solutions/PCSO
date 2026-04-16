@@ -6,12 +6,14 @@
  * Exports:
  *  - YearSelector:     year <select> that navigates via URL ?year=
  *  - EmployeePicker:   employee <select> for admin (navigates via ?employeeId=)
- *  - PrintLeaveCard:   button that triggers @react-pdf/renderer PDF download
+ *  - PrintLeaveCard:   button that downloads the CSC Form 6 (CSV)
  */
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback } from 'react';
-import dynamic from 'next/dynamic';
+import {
+  LeaveCardDownloader,
+} from '@/components/leave/leave-card-downloader';
 import type { LeaveCardProps } from '@/components/leave/leave-card';
 
 // ---------------------------------------------------------------------------
@@ -138,24 +140,8 @@ export function EmployeePicker({
 }
 
 // ---------------------------------------------------------------------------
-// PrintLeaveCard — lazy-loaded PDF download button
+// PrintLeaveCard — CSV download (React-19 safe; no @react-pdf/renderer)
 // ---------------------------------------------------------------------------
-
-// @react-pdf/renderer must be client-only; dynamic import avoids SSR errors.
-const LeaveCardDownloader = dynamic(
-  () => import('@/components/leave/leave-card-downloader').then((m) => m.LeaveCardDownloader),
-  {
-    ssr: false,
-    loading: () => (
-      <button
-        disabled
-        className="inline-flex h-9 items-center gap-2 rounded-md border border-senate-navy/30 bg-senate-navy/5 px-4 text-sm font-medium text-senate-navy opacity-60"
-      >
-        Loading PDF…
-      </button>
-    ),
-  },
-);
 
 interface PrintLeaveCardProps {
   leaveCardProps: LeaveCardProps;

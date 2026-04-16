@@ -1,11 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
 import { holidays } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import {
   HolidaySchema,
   HolidayUpdateSchema,
@@ -22,22 +23,29 @@ export async function createHoliday(input: unknown): Promise<{ id: string }> {
 
   const year = parseInt(parsed.holidayDate.slice(0, 4), 10);
 
-  const inserted = await db
-    .insert(holidays)
-    .values({
-      name: parsed.name,
-      holidayDate: parsed.holidayDate,
-      type: parsed.type,
-      year,
-      proclamationRef: parsed.proclamationRef ?? null,
-      remarks: parsed.remarks ?? null,
-    })
-    .returning({ id: holidays.id });
+  // Advisory lock on the date so two admins declaring the same holiday
+  // simultaneously serialize and the uniqueness constraint is meaningful.
+  const row = await withTx(async (tx) => {
+    await lockKey(tx, `admin:holidays:${parsed.holidayDate}`);
 
-  const row = inserted[0];
-  if (!row) throw new Error('Holiday insert returned no row');
+    const inserted = await tx
+      .insert(holidays)
+      .values({
+        name: parsed.name,
+        holidayDate: parsed.holidayDate,
+        type: parsed.type,
+        year,
+        proclamationRef: parsed.proclamationRef ?? null,
+        remarks: parsed.remarks ?? null,
+      })
+      .returning({ id: holidays.id });
 
-  await auditLog({
+    const r = inserted[0];
+    if (!r) throw new Error('Holiday insert returned no row');
+    return r;
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'create',
     table: 'holidays',
@@ -57,31 +65,36 @@ export async function updateHoliday(input: unknown): Promise<void> {
   const parsed: HolidayUpdateInput = HolidayUpdateSchema.parse(input);
   const { id, ...updates } = parsed;
 
-  const [existing] = await db
-    .select()
-    .from(holidays)
-    .where(eq(holidays.id, id))
-    .limit(1);
+  const { existing, patchValues } = await withTx(async (tx) => {
+    await lockKey(tx, `admin:holidays:${id}`);
 
-  if (!existing) throw new Error('Holiday not found');
+    const [row] = await tx
+      .select()
+      .from(holidays)
+      .where(eq(holidays.id, id))
+      .limit(1);
 
-  const patchValues: Partial<typeof holidays.$inferInsert> = {
-    updatedAt: new Date(),
-  };
+    if (!row) throw new Error('Holiday not found');
 
-  if (updates.name !== undefined) patchValues.name = updates.name;
-  if (updates.holidayDate !== undefined) {
-    patchValues.holidayDate = updates.holidayDate;
-    patchValues.year = parseInt(updates.holidayDate.slice(0, 4), 10);
-  }
-  if (updates.type !== undefined) patchValues.type = updates.type;
-  if (updates.proclamationRef !== undefined)
-    patchValues.proclamationRef = updates.proclamationRef ?? null;
-  if (updates.remarks !== undefined) patchValues.remarks = updates.remarks ?? null;
+    const patch: Partial<typeof holidays.$inferInsert> = {
+      updatedAt: new Date(),
+    };
 
-  await db.update(holidays).set(patchValues).where(eq(holidays.id, id));
+    if (updates.name !== undefined) patch.name = updates.name;
+    if (updates.holidayDate !== undefined) {
+      patch.holidayDate = updates.holidayDate;
+      patch.year = parseInt(updates.holidayDate.slice(0, 4), 10);
+    }
+    if (updates.type !== undefined) patch.type = updates.type;
+    if (updates.proclamationRef !== undefined)
+      patch.proclamationRef = updates.proclamationRef ?? null;
+    if (updates.remarks !== undefined) patch.remarks = updates.remarks ?? null;
 
-  await auditLog({
+    await tx.update(holidays).set(patch).where(eq(holidays.id, id));
+    return { existing: row, patchValues: patch };
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'update',
     table: 'holidays',
@@ -96,7 +109,6 @@ export async function updateHoliday(input: unknown): Promise<void> {
   });
 
   revalidatePath('/admin/holidays');
-  revalidatePath(`/admin/holidays`);
 }
 
 // ---------------------------------------------------------------------------
@@ -107,21 +119,22 @@ export async function updateHoliday(input: unknown): Promise<void> {
 export async function deleteHoliday(id: string): Promise<void> {
   const actor = await requirePermission('admin', 'delete');
 
-  const [existing] = await db
-    .select()
-    .from(holidays)
-    .where(eq(holidays.id, id))
-    .limit(1);
+  const existing = await withTx(async (tx) => {
+    await lockKey(tx, `admin:holidays:${id}`);
 
-  if (!existing) throw new Error('Holiday not found');
+    const [row] = await tx
+      .select()
+      .from(holidays)
+      .where(eq(holidays.id, id))
+      .limit(1);
 
-  // Hard-delete is allowed here since holidays are not referenced by the audit
-  // log as a foreign key, and the proclamation reference makes the record
-  // traceable. However, if historical payroll computations reference this date,
-  // deleting can corrupt records. Log the action regardless.
-  await db.delete(holidays).where(eq(holidays.id, id));
+    if (!row) throw new Error('Holiday not found');
 
-  await auditLog({
+    await tx.delete(holidays).where(eq(holidays.id, id));
+    return row;
+  });
+
+  void auditLog({
     userId: actor.id,
     action: 'delete',
     table: 'holidays',

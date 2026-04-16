@@ -17,6 +17,8 @@ import {
 } from '@/lib/validations/payroll';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import type {
   PayrollInput,
   PayrollResult,
@@ -27,26 +29,41 @@ import type {
 import { computeFullPayroll } from '@/lib/utils/payroll';
 import { roundMoney, parseMoney } from '@/lib/utils/payroll/rounding';
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/**
+ * Chunk size for bulk inserts of payroll_records. Postgres can theoretically
+ * accept thousands of rows per insert, but 200 strikes a good balance between
+ * round-trip count and keeping transaction size bounded so rollback is cheap.
+ */
+const PAYROLL_RECORD_INSERT_CHUNK = 200;
+
 // ─── Create Period ────────────────────────────────────────────────────────────
 
 export async function createPeriod(input: unknown) {
   const parsed = CreatePeriodSchema.parse(input);
   const user = await requirePermission('payroll', 'create');
 
-  const [period] = await db
-    .insert(payrollPeriods)
-    .values({
-      name: parsed.name,
-      periodStart: parsed.periodStart,
-      periodEnd: parsed.periodEnd,
-      payDate: parsed.payDate,
-      scope: parsed.scope,
-      notes: parsed.notes,
-      status: 'draft',
-    })
-    .returning();
+  const period = await withTx(async (tx) => {
+    const [inserted] = await tx
+      .insert(payrollPeriods)
+      .values({
+        name: parsed.name,
+        periodStart: parsed.periodStart,
+        periodEnd: parsed.periodEnd,
+        payDate: parsed.payDate,
+        scope: parsed.scope,
+        notes: parsed.notes,
+        status: 'draft',
+      })
+      .returning();
+    if (!inserted) throw new Error('Failed to create payroll period.');
+    return inserted;
+  });
 
-  await auditLog({
+  // Audit is fire-and-forget outside the tx so audit failures don't roll back
+  // the primary write. Errors surface to console/Sentry only.
+  void auditLog({
     userId: user.id,
     action: 'create',
     table: 'payroll_periods',
@@ -58,215 +75,256 @@ export async function createPeriod(input: unknown) {
   return period;
 }
 
-// ─── Lock Period (prevent attendance edits) ───────────────────────────────────
+// ─── Lock Period (idempotent) ────────────────────────────────────────────────
 
+/**
+ * Move a period from `draft` → `processing`. Idempotent: if the period is
+ * already in `processing` (or later), this is a no-op that returns the
+ * current row. Wrapped in a tx + advisory lock so two admins clicking
+ * simultaneously produce exactly one audit event.
+ */
 export async function lockPeriod(periodId: string) {
   const user = await requirePermission('payroll', 'edit');
 
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `payroll:lock:${periodId}`);
 
-  if (!period) throw new Error('Payroll period not found');
-  if (period.status !== 'draft') {
-    throw new Error(`Cannot lock period in status: ${period.status}`);
+      const [period] = await tx
+        .select()
+        .from(payrollPeriods)
+        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .limit(1);
+
+      if (!period) throw new Error('Payroll period not found');
+
+      // Idempotent: already locked or beyond — no-op.
+      if (period.status !== 'draft') {
+        return { period, changed: false };
+      }
+
+      const [updated] = await tx
+        .update(payrollPeriods)
+        .set({ status: 'processing', updatedAt: new Date() })
+        .where(eq(payrollPeriods.id, periodId))
+        .returning();
+      if (!updated) throw new Error('Failed to lock payroll period.');
+
+      return { period: updated, changed: true };
+    }),
+  );
+
+  if (result.changed) {
+    void auditLog({
+      userId: user.id,
+      action: 'edit',
+      table: 'payroll_periods',
+      recordId: periodId,
+      oldValues: { status: 'draft' },
+      newValues: { status: 'processing' },
+    });
   }
-
-  // Lock is represented by moving to 'processing' status
-  const [updated] = await db
-    .update(payrollPeriods)
-    .set({ status: 'processing', updatedAt: new Date() })
-    .where(eq(payrollPeriods.id, periodId))
-    .returning();
-
-  await auditLog({
-    userId: user.id,
-    action: 'edit',
-    table: 'payroll_periods',
-    recordId: periodId,
-    oldValues: { status: 'draft' },
-    newValues: { status: 'processing' },
-  });
 
   revalidatePath('/payroll');
   revalidatePath(`/payroll/${periodId}`);
-  return updated;
+  return result.period;
 }
 
 // ─── Process Payroll ──────────────────────────────────────────────────────────
 
 /**
  * Runs payroll computation for all eligible employees in the period.
- * Creates or replaces payroll_records rows.
+ *
+ * Concurrency guarantees:
+ *   1. Advisory lock on `payroll:process:${periodId}` — two admins clicking
+ *      "Process" simultaneously serialize; the second sees status != 'processing'
+ *      after the first finishes and aborts cleanly.
+ *   2. The DELETE + all INSERTs + period totals UPDATE are a single transaction.
+ *      A crash halfway leaves no half-processed period.
+ *   3. Inserts are chunked (200 rows) so the tx stays responsive even for
+ *      1000+ employee scopes.
  */
 export async function processPayroll(periodId: string) {
   const user = await requirePermission('payroll', 'process');
 
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `payroll:process:${periodId}`);
 
-  if (!period) throw new Error('Payroll period not found');
-  if (period.status !== 'processing') {
-    throw new Error(
-      `Period must be in "processing" status to run computation. Current: ${period.status}`,
-    );
-  }
+      const [period] = await tx
+        .select()
+        .from(payrollPeriods)
+        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .limit(1);
 
-  // Determine eligible appointment types based on scope
-  const eligibleTypes: AppointmentType[] =
-    period.scope === 'jo_cos'
-      ? ['job_order', 'contract_of_service']
-      : ['permanent', 'temporary', 'coterminous', 'casual'];
+      if (!period) throw new Error('Payroll period not found');
+      if (period.status !== 'processing') {
+        throw new Error(
+          `Period must be in "processing" status to run computation. Current: ${period.status}`,
+        );
+      }
 
-  const eligibleEmployees = await db
-    .select()
-    .from(employees)
-    .where(
-      and(
-        eq(employees.status, 'active'),
-        isNull(employees.deletedAt),
-        inArray(employees.appointmentType, eligibleTypes),
-      ),
-    );
+      const eligibleTypes: AppointmentType[] =
+        period.scope === 'jo_cos'
+          ? ['job_order', 'contract_of_service']
+          : ['permanent', 'temporary', 'coterminous', 'casual'];
 
-  const periodStartDate = new Date(period.periodStart);
-  const periodEndDate = new Date(period.periodEnd);
-  const periodType = 'semi-monthly' as const;
+      const eligibleEmployees = await tx
+        .select()
+        .from(employees)
+        .where(
+          and(
+            eq(employees.status, 'active'),
+            isNull(employees.deletedAt),
+            inArray(employees.appointmentType, eligibleTypes),
+          ),
+        );
 
-  let totalGrossPay = 0;
-  let totalDeductions = 0;
-  let totalNetPay = 0;
+      const periodStartDate = new Date(period.periodStart);
+      const periodEndDate = new Date(period.periodEnd);
+      const periodType = 'semi-monthly' as const;
 
-  // Delete existing draft records for re-processing
-  await db
-    .delete(payrollRecords)
-    .where(
-      and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'draft')),
-    );
+      // Delete existing draft records for re-processing (inside the tx so a
+      // failure leaves the previous snapshot untouched).
+      await tx
+        .delete(payrollRecords)
+        .where(
+          and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'draft')),
+        );
 
-  for (const emp of eligibleEmployees) {
-    const employeeInput: EmployeePayrollInput = {
-      id: emp.id,
-      appointmentType: emp.appointmentType as AppointmentType,
-      salaryGrade: emp.salaryGrade,
-      step: emp.step,
-      yearsInService: computeYearsInService(emp.dateHired),
-    };
+      // Build all rows in memory first, then chunk-insert.
+      let totalGrossPay = 0;
+      let totalDeductions = 0;
+      let totalNetPay = 0;
 
-    const attendanceInput: AttendanceInput = {
-      lateMinutes: 0,
-      undertimeMinutes: 0,
-      absenceDays: 0,
-      approvedOvertimeHours: 0,
-    };
+      const rowsToInsert: (typeof payrollRecords.$inferInsert)[] = [];
 
-    const payrollInput: PayrollInput = {
-      employee: employeeInput,
-      period: {
-        type: periodType,
-        start: periodStartDate,
-        end: periodEndDate,
-      },
-      attendance: attendanceInput,
-    };
+      for (const emp of eligibleEmployees) {
+        const employeeInput: EmployeePayrollInput = {
+          id: emp.id,
+          appointmentType: emp.appointmentType as AppointmentType,
+          salaryGrade: emp.salaryGrade,
+          step: emp.step,
+          yearsInService: computeYearsInService(emp.dateHired),
+        };
 
-    let result: PayrollResult;
-    let hasException = false;
-    let exceptionNotes: string | undefined;
+        const attendanceInput: AttendanceInput = {
+          lateMinutes: 0,
+          undertimeMinutes: 0,
+          absenceDays: 0,
+          approvedOvertimeHours: 0,
+        };
 
-    try {
-      result = computeFullPayroll(payrollInput);
-    } catch (err) {
-      hasException = true;
-      exceptionNotes =
-        err instanceof Error ? err.message : 'Unknown computation error';
+        const payrollInput: PayrollInput = {
+          employee: employeeInput,
+          period: { type: periodType, start: periodStartDate, end: periodEndDate },
+          attendance: attendanceInput,
+        };
 
-      // Create a zero record so the exception is visible in the UI
-      result = buildZeroResult(payrollInput);
-    }
+        let computed: PayrollResult;
+        let hasException = false;
+        let exceptionNotes: string | undefined;
 
-    const netPayNum = parseMoney(result.netPay);
-    if (netPayNum < 0) {
-      hasException = true;
-      exceptionNotes = (exceptionNotes ? exceptionNotes + '; ' : '') + 'Negative net pay';
-    }
+        try {
+          computed = computeFullPayroll(payrollInput);
+        } catch (err) {
+          hasException = true;
+          exceptionNotes =
+            err instanceof Error ? err.message : 'Unknown computation error';
+          computed = buildZeroResult(payrollInput);
+        }
 
-    await db.insert(payrollRecords).values({
-      periodId,
-      employeeId: emp.id,
-      status: 'draft',
-      salaryGrade: emp.salaryGrade,
-      step: emp.step,
-      positionTitle: emp.positionTitle,
-      appointmentType: emp.appointmentType,
-      lateMinutes: 0,
-      undertimeMinutes: 0,
-      absenceDays: 0,
-      approvedOvertimeHours: '0',
+        const netPayNum = parseMoney(computed.netPay);
+        if (netPayNum < 0) {
+          hasException = true;
+          exceptionNotes =
+            (exceptionNotes ? exceptionNotes + '; ' : '') + 'Negative net pay';
+        }
 
-      authorizedSalary: result.earnings.authorizedSalary,
-      basicPay: result.earnings.basicPay,
-      rata: result.earnings.rata,
-      longevityPay: result.earnings.longevityPay,
-      overtimePay: result.earnings.overtimePay,
-      pera: result.earnings.pera,
-      otherEarnings: result.earnings.otherEarnings,
-      grossPay: result.earnings.grossPay,
+        rowsToInsert.push({
+          periodId,
+          employeeId: emp.id,
+          status: 'draft',
+          salaryGrade: emp.salaryGrade,
+          step: emp.step,
+          positionTitle: emp.positionTitle,
+          appointmentType: emp.appointmentType,
+          lateMinutes: 0,
+          undertimeMinutes: 0,
+          absenceDays: 0,
+          approvedOvertimeHours: '0',
 
-      gsisPersonal: result.deductions.gsis.personal,
-      gsisEmployer: result.deductions.gsis.employer,
-      gsisLifeInsurance: result.deductions.gsis.lifeInsurance,
-      philhealthPersonal: result.deductions.philHealth.personal,
-      philhealthEmployer: result.deductions.philHealth.employer,
-      pagibigPersonal: result.deductions.pagIBIG.personal,
-      pagibigEmployer: result.deductions.pagIBIG.employer,
-      withholdingTax: result.deductions.withholdingTax,
-      lateDeduction: result.deductions.lateDeduction,
-      undertimeDeduction: result.deductions.undertimeDeduction,
-      absenceDeduction: result.deductions.absenceDeduction,
-      otherDeductions: result.deductions.otherDeductions,
-      totalDeductions: result.deductions.totalDeductions,
-      netPay: result.netPay,
+          authorizedSalary: computed.earnings.authorizedSalary,
+          basicPay: computed.earnings.basicPay,
+          rata: computed.earnings.rata,
+          longevityPay: computed.earnings.longevityPay,
+          overtimePay: computed.earnings.overtimePay,
+          pera: computed.earnings.pera,
+          otherEarnings: computed.earnings.otherEarnings,
+          grossPay: computed.earnings.grossPay,
 
-      computationSnapshot: result as unknown as Record<string, unknown>,
-      hasException,
-      exceptionNotes: exceptionNotes ?? null,
-    });
+          gsisPersonal: computed.deductions.gsis.personal,
+          gsisEmployer: computed.deductions.gsis.employer,
+          gsisLifeInsurance: computed.deductions.gsis.lifeInsurance,
+          philhealthPersonal: computed.deductions.philHealth.personal,
+          philhealthEmployer: computed.deductions.philHealth.employer,
+          pagibigPersonal: computed.deductions.pagIBIG.personal,
+          pagibigEmployer: computed.deductions.pagIBIG.employer,
+          withholdingTax: computed.deductions.withholdingTax,
+          lateDeduction: computed.deductions.lateDeduction,
+          undertimeDeduction: computed.deductions.undertimeDeduction,
+          absenceDeduction: computed.deductions.absenceDeduction,
+          otherDeductions: computed.deductions.otherDeductions,
+          totalDeductions: computed.deductions.totalDeductions,
+          netPay: computed.netPay,
 
-    totalGrossPay += parseMoney(result.earnings.grossPay);
-    totalDeductions += parseMoney(result.deductions.totalDeductions);
-    totalNetPay += parseMoney(result.netPay);
-  }
+          computationSnapshot: computed as unknown as Record<string, unknown>,
+          hasException,
+          exceptionNotes: exceptionNotes ?? null,
+        });
 
-  // Update period totals
-  const now = new Date().toISOString();
-  await db
-    .update(payrollPeriods)
-    .set({
-      totalGrossPay: roundMoney(totalGrossPay),
-      totalDeductions: roundMoney(totalDeductions),
-      totalNetPay: roundMoney(totalNetPay),
-      employeeCount: eligibleEmployees.length,
-      processedAt: now,
-      processedBy: user.id,
-      updatedAt: new Date(),
-    })
-    .where(eq(payrollPeriods.id, periodId));
+        totalGrossPay += parseMoney(computed.earnings.grossPay);
+        totalDeductions += parseMoney(computed.deductions.totalDeductions);
+        totalNetPay += parseMoney(computed.netPay);
+      }
 
-  await auditLog({
+      // Chunked bulk insert — stays within a single transaction so a failure
+      // mid-stream rolls back every chunk inserted so far.
+      await chunkInsertPayrollRecords(tx, rowsToInsert);
+
+      // Update period totals
+      const now = new Date().toISOString();
+      await tx
+        .update(payrollPeriods)
+        .set({
+          totalGrossPay: roundMoney(totalGrossPay),
+          totalDeductions: roundMoney(totalDeductions),
+          totalNetPay: roundMoney(totalNetPay),
+          employeeCount: eligibleEmployees.length,
+          processedAt: now,
+          processedBy: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(payrollPeriods.id, periodId));
+
+      return {
+        employeeCount: eligibleEmployees.length,
+        totalGrossPay: roundMoney(totalGrossPay),
+        totalDeductions: roundMoney(totalDeductions),
+        totalNetPay: roundMoney(totalNetPay),
+      };
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'process',
     table: 'payroll_periods',
     recordId: periodId,
     newValues: {
-      employeeCount: eligibleEmployees.length,
-      totalGrossPay: roundMoney(totalGrossPay),
-      totalNetPay: roundMoney(totalNetPay),
+      employeeCount: result.employeeCount,
+      totalGrossPay: result.totalGrossPay,
+      totalNetPay: result.totalNetPay,
     },
   });
 
@@ -275,9 +333,20 @@ export async function processPayroll(periodId: string) {
   revalidatePath(`/payroll/${periodId}/process`);
 
   return {
-    employeeCount: eligibleEmployees.length,
-    totalNetPay: roundMoney(totalNetPay),
+    employeeCount: result.employeeCount,
+    totalNetPay: result.totalNetPay,
   };
+}
+
+async function chunkInsertPayrollRecords(
+  tx: Tx,
+  rows: (typeof payrollRecords.$inferInsert)[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  for (let i = 0; i < rows.length; i += PAYROLL_RECORD_INSERT_CHUNK) {
+    const chunk = rows.slice(i, i + PAYROLL_RECORD_INSERT_CHUNK);
+    await tx.insert(payrollRecords).values(chunk);
+  }
 }
 
 // ─── Approve Payroll ──────────────────────────────────────────────────────────
@@ -285,49 +354,70 @@ export async function processPayroll(periodId: string) {
 export async function approvePayroll(periodId: string) {
   const user = await requirePermission('payroll', 'approve');
 
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
-    .limit(1);
+  const updated = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `payroll:approve:${periodId}`);
 
-  if (!period) throw new Error('Payroll period not found');
-  if (period.status !== 'processing') {
-    throw new Error(`Period must be in "processing" status to approve. Current: ${period.status}`);
+      const [period] = await tx
+        .select()
+        .from(payrollPeriods)
+        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .limit(1);
+
+      if (!period) throw new Error('Payroll period not found');
+      if (period.status === 'approved' || period.status === 'paid') {
+        // Idempotent: already approved or beyond.
+        return { period, changed: false };
+      }
+      if (period.status !== 'processing') {
+        throw new Error(
+          `Period must be in "processing" status to approve. Current: ${period.status}`,
+        );
+      }
+
+      const now = new Date().toISOString();
+
+      // Approve all draft + override records in a single update
+      await tx
+        .update(payrollRecords)
+        .set({ status: 'approved', updatedAt: new Date() })
+        .where(
+          and(
+            eq(payrollRecords.periodId, periodId),
+            inArray(payrollRecords.status, ['draft', 'override']),
+          ),
+        );
+
+      const [periodRow] = await tx
+        .update(payrollPeriods)
+        .set({
+          status: 'approved',
+          approvedAt: now,
+          approvedBy: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(payrollPeriods.id, periodId))
+        .returning();
+
+      if (!periodRow) throw new Error('Failed to approve payroll period.');
+      return { period: periodRow, changed: true };
+    }),
+  );
+
+  if (updated.changed) {
+    void auditLog({
+      userId: user.id,
+      action: 'approve',
+      table: 'payroll_periods',
+      recordId: periodId,
+      oldValues: { status: 'processing' },
+      newValues: { status: 'approved' },
+    });
   }
-
-  const now = new Date().toISOString();
-
-  // Mark all draft records as approved
-  await db
-    .update(payrollRecords)
-    .set({ status: 'approved', updatedAt: new Date() })
-    .where(and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'draft')));
-
-  // Also mark override records as approved
-  await db
-    .update(payrollRecords)
-    .set({ status: 'approved', updatedAt: new Date() })
-    .where(and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'override')));
-
-  const [updated] = await db
-    .update(payrollPeriods)
-    .set({ status: 'approved', approvedAt: now, approvedBy: user.id, updatedAt: new Date() })
-    .where(eq(payrollPeriods.id, periodId))
-    .returning();
-
-  await auditLog({
-    userId: user.id,
-    action: 'approve',
-    table: 'payroll_periods',
-    recordId: periodId,
-    oldValues: { status: 'processing' },
-    newValues: { status: 'approved' },
-  });
 
   revalidatePath('/payroll');
   revalidatePath(`/payroll/${periodId}`);
-  return updated;
+  return updated.period;
 }
 
 // ─── Release Payroll (mark as paid) ──────────────────────────────────────────
@@ -335,42 +425,65 @@ export async function approvePayroll(periodId: string) {
 export async function releasePayroll(periodId: string) {
   const user = await requirePermission('payroll', 'approve');
 
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
-    .limit(1);
+  const updated = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `payroll:release:${periodId}`);
 
-  if (!period) throw new Error('Payroll period not found');
-  if (period.status !== 'approved') {
-    throw new Error(`Period must be in "approved" status to release. Current: ${period.status}`);
+      const [period] = await tx
+        .select()
+        .from(payrollPeriods)
+        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .limit(1);
+
+      if (!period) throw new Error('Payroll period not found');
+      if (period.status === 'paid') {
+        return { period, changed: false };
+      }
+      if (period.status !== 'approved') {
+        throw new Error(
+          `Period must be in "approved" status to release. Current: ${period.status}`,
+        );
+      }
+
+      const now = new Date().toISOString();
+
+      await tx
+        .update(payrollRecords)
+        .set({ status: 'paid', updatedAt: new Date() })
+        .where(
+          and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'approved')),
+        );
+
+      const [periodRow] = await tx
+        .update(payrollPeriods)
+        .set({
+          status: 'paid',
+          releasedAt: now,
+          releasedBy: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(payrollPeriods.id, periodId))
+        .returning();
+
+      if (!periodRow) throw new Error('Failed to release payroll period.');
+      return { period: periodRow, changed: true };
+    }),
+  );
+
+  if (updated.changed) {
+    void auditLog({
+      userId: user.id,
+      action: 'edit',
+      table: 'payroll_periods',
+      recordId: periodId,
+      oldValues: { status: 'approved' },
+      newValues: { status: 'paid' },
+    });
   }
-
-  const now = new Date().toISOString();
-
-  await db
-    .update(payrollRecords)
-    .set({ status: 'paid', updatedAt: new Date() })
-    .where(and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'approved')));
-
-  const [updated] = await db
-    .update(payrollPeriods)
-    .set({ status: 'paid', releasedAt: now, releasedBy: user.id, updatedAt: new Date() })
-    .where(eq(payrollPeriods.id, periodId))
-    .returning();
-
-  await auditLog({
-    userId: user.id,
-    action: 'edit',
-    table: 'payroll_periods',
-    recordId: periodId,
-    oldValues: { status: 'approved' },
-    newValues: { status: 'paid' },
-  });
 
   revalidatePath('/payroll');
   revalidatePath(`/payroll/${periodId}`);
-  return updated;
+  return updated.period;
 }
 
 // ─── Override Record ──────────────────────────────────────────────────────────
@@ -379,63 +492,74 @@ export async function overrideRecord(input: unknown) {
   const parsed = OverrideRecordSchema.parse(input);
   const user = await requirePermission('payroll', 'edit');
 
-  const [record] = await db
-    .select()
-    .from(payrollRecords)
-    .where(eq(payrollRecords.id, parsed.recordId))
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      // Serialize overrides per record so two admins can't both adjust it
+      // simultaneously and race on the visible state.
+      await lockKey(tx, `payroll:override:${parsed.recordId}`);
 
-  if (!record) throw new Error('Payroll record not found');
-  if (record.status === 'paid') {
-    throw new Error('Cannot override a paid payroll record. Append an adjustment instead.');
-  }
+      const [record] = await tx
+        .select()
+        .from(payrollRecords)
+        .where(eq(payrollRecords.id, parsed.recordId))
+        .limit(1);
 
-  // Get original value from current record
-  const originalValue =
-    (record as unknown as Record<string, string | null>)[parsed.fieldName] ?? null;
+      if (!record) throw new Error('Payroll record not found');
+      if (record.status === 'paid') {
+        throw new Error(
+          'Cannot override a paid payroll record. Append an adjustment instead.',
+        );
+      }
 
-  // Insert adjustment log
-  const [adjustment] = await db
-    .insert(payrollAdjustments)
-    .values({
-      recordId: parsed.recordId,
-      periodId: record.periodId,
-      employeeId: record.employeeId,
-      fieldName: parsed.fieldName,
-      originalValue: originalValue,
-      adjustedValue: parsed.adjustedValue,
-      adjustmentType: parsed.adjustmentType,
-      description: parsed.description,
-      justification: parsed.justification,
-      createdBy: user.id,
-    })
-    .returning();
+      const originalValue =
+        (record as unknown as Record<string, string | null>)[parsed.fieldName] ?? null;
 
-  // Apply override to the record
-  await db
-    .update(payrollRecords)
-    .set({
-      [parsed.fieldName]: parsed.adjustedValue,
-      status: 'override',
-      updatedAt: new Date(),
-    })
-    .where(eq(payrollRecords.id, parsed.recordId));
+      const [adjustment] = await tx
+        .insert(payrollAdjustments)
+        .values({
+          recordId: parsed.recordId,
+          periodId: record.periodId,
+          employeeId: record.employeeId,
+          fieldName: parsed.fieldName,
+          originalValue: originalValue,
+          adjustedValue: parsed.adjustedValue,
+          adjustmentType: parsed.adjustmentType,
+          description: parsed.description,
+          justification: parsed.justification,
+          createdBy: user.id,
+        })
+        .returning();
 
-  await auditLog({
+      if (!adjustment) throw new Error('Failed to record adjustment.');
+
+      await tx
+        .update(payrollRecords)
+        .set({
+          [parsed.fieldName]: parsed.adjustedValue,
+          status: 'override',
+          updatedAt: new Date(),
+        })
+        .where(eq(payrollRecords.id, parsed.recordId));
+
+      return { adjustment, originalValue, periodId: record.periodId };
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'edit',
     table: 'payroll_records',
     recordId: parsed.recordId,
-    oldValues: { [parsed.fieldName]: originalValue },
+    oldValues: { [parsed.fieldName]: result.originalValue },
     newValues: {
       [parsed.fieldName]: parsed.adjustedValue,
-      adjustmentId: adjustment.id,
+      adjustmentId: result.adjustment.id,
     },
   });
 
-  revalidatePath(`/payroll/${record.periodId}`);
-  revalidatePath(`/payroll/${record.periodId}/records/${parsed.recordId}`);
-  return adjustment;
+  revalidatePath(`/payroll/${result.periodId}`);
+  revalidatePath(`/payroll/${result.periodId}/records/${parsed.recordId}`);
+  return result.adjustment;
 }
 
 // ─── Generate Payslip ─────────────────────────────────────────────────────────
@@ -443,30 +567,34 @@ export async function overrideRecord(input: unknown) {
 export async function generatePayslip(recordId: string) {
   const user = await requirePermission('payroll', 'export');
 
-  const [record] = await db
-    .select()
-    .from(payrollRecords)
-    .where(eq(payrollRecords.id, recordId))
-    .limit(1);
+  const result = await withTx(async (tx) => {
+    const [record] = await tx
+      .select()
+      .from(payrollRecords)
+      .where(eq(payrollRecords.id, recordId))
+      .limit(1);
 
-  if (!record) throw new Error('Payroll record not found');
+    if (!record) throw new Error('Payroll record not found');
 
-  const now = new Date().toISOString();
-  await db
-    .update(payrollRecords)
-    .set({ payslipGeneratedAt: now, updatedAt: new Date() })
-    .where(eq(payrollRecords.id, recordId));
+    const now = new Date().toISOString();
+    await tx
+      .update(payrollRecords)
+      .set({ payslipGeneratedAt: now, updatedAt: new Date() })
+      .where(eq(payrollRecords.id, recordId));
 
-  await auditLog({
+    return { recordId, generatedAt: now, periodId: record.periodId };
+  });
+
+  void auditLog({
     userId: user.id,
     action: 'export',
     table: 'payroll_records',
     recordId,
-    newValues: { payslipGeneratedAt: now },
+    newValues: { payslipGeneratedAt: result.generatedAt },
   });
 
-  revalidatePath(`/payroll/${record.periodId}/records/${recordId}`);
-  return { recordId, generatedAt: now };
+  revalidatePath(`/payroll/${result.periodId}/records/${recordId}`);
+  return { recordId, generatedAt: result.generatedAt };
 }
 
 // ─── Email Payslips ───────────────────────────────────────────────────────────
@@ -475,43 +603,44 @@ export async function emailPayslips(input: unknown) {
   const parsed = EmailPayslipsSchema.parse(input);
   const user = await requirePermission('payroll', 'export');
 
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(eq(payrollPeriods.id, parsed.periodId))
-    .limit(1);
+  const result = await withTx(async (tx) => {
+    const [period] = await tx
+      .select()
+      .from(payrollPeriods)
+      .where(eq(payrollPeriods.id, parsed.periodId))
+      .limit(1);
 
-  if (!period) throw new Error('Payroll period not found');
-  if (period.status !== 'approved' && period.status !== 'paid') {
-    throw new Error('Payslips can only be emailed for approved or paid periods.');
-  }
+    if (!period) throw new Error('Payroll period not found');
+    if (period.status !== 'approved' && period.status !== 'paid') {
+      throw new Error('Payslips can only be emailed for approved or paid periods.');
+    }
 
-  // In production: iterate records, render PayslipEmailTemplate, send via Resend
-  // For now, mark records as emailed and log the action
-  const now = new Date().toISOString();
+    const now = new Date().toISOString();
+    await tx
+      .update(payrollRecords)
+      .set({ payslipEmailedAt: now, updatedAt: new Date() })
+      .where(eq(payrollRecords.periodId, parsed.periodId));
 
-  await db
-    .update(payrollRecords)
-    .set({ payslipEmailedAt: now, updatedAt: new Date() })
-    .where(eq(payrollRecords.periodId, parsed.periodId));
+    return { periodId: parsed.periodId, emailedAt: now };
+  });
 
-  await auditLog({
+  void auditLog({
     userId: user.id,
     action: 'export',
     table: 'payroll_periods',
     recordId: parsed.periodId,
-    newValues: { payslipsEmailedAt: now },
+    newValues: { payslipsEmailedAt: result.emailedAt },
   });
 
   revalidatePath(`/payroll/${parsed.periodId}`);
-  return { periodId: parsed.periodId, emailedAt: now };
+  return result;
 }
 
 // ─── Export Register ──────────────────────────────────────────────────────────
 
 export async function exportRegister(input: unknown) {
   const parsed = ExportRegisterSchema.parse(input);
-  await requirePermission('payroll', 'export');
+  const user = await requirePermission('payroll', 'export');
 
   const [period] = await db
     .select()
@@ -521,7 +650,17 @@ export async function exportRegister(input: unknown) {
 
   if (!period) throw new Error('Payroll period not found');
 
-  // Return metadata; actual PDF rendering happens client-side with React-PDF
+  // Audit the export as a read-side event so COA can trace who pulled the
+  // register. Fire-and-forget so we don't block the response on the audit
+  // insert.
+  void auditLog({
+    userId: user.id,
+    action: 'export',
+    table: 'payroll_periods',
+    recordId: parsed.periodId,
+    newValues: { format: parsed.format, target: 'register' },
+  });
+
   return {
     periodId: parsed.periodId,
     periodName: period.name,

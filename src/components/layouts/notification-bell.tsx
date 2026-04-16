@@ -2,151 +2,302 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bell, BellRing, CheckCheck, Inbox } from 'lucide-react';
+import {
+  Bell,
+  BellRing,
+  CheckCheck,
+  Inbox,
+  Trash2,
+} from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useNotifications, type NotificationRow } from '@/hooks/use-notifications';
+import {
+  useNotifications,
+  type NotificationRow,
+} from '@/hooks/use-notifications';
 import { cn } from '@/lib/utils/cn';
 
-const VISIBLE_INITIAL = 10;
-const LOAD_MORE_STEP = 10;
+const VISIBLE_LIMIT = 20;
+const MOBILE_BREAKPOINT_PX = 640;
+
+type ConnectionStatus = 'connected' | 'polling' | 'error';
 
 /**
- * Top-bar notification bell. Subscribes to realtime updates for the current
- * user, shows an unread badge, and lets the user:
- *  - mark a single notification as read (click-through)
- *  - mark every notification as read at once
- *  - load older notifications in batches
- *  - navigate to the notification's action URL when present
+ * Top-bar notification bell.
+ *
+ * - Realtime unread badge (hidden when zero).
+ * - Popover (desktop) / full-screen Dialog (mobile) with the latest
+ *   `VISIBLE_LIMIT` notifications.
+ * - Mark-all-read, clear-all (confirm), and per-item navigate + mark-read.
+ * - Connection status dot: green realtime, yellow polling fallback, red error.
  */
 export function NotificationBell() {
-  const { items, unreadCount, markRead, markAllRead, loading } = useNotifications();
-  const [visible, setVisible] = React.useState(VISIBLE_INITIAL);
+  const {
+    items,
+    loading,
+    unreadCount,
+    markRead,
+    markAllRead,
+    clearAll,
+  } = useNotifications();
+
   const [open, setOpen] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const isMobile = useIsMobile();
+  const status = useConnectionStatus(loading);
 
-  // Reset pagination whenever the dropdown closes, so reopening starts fresh.
+  // Close on Escape (Popover/Dialog already handle this, but we guard the
+  // AlertDialog-while-open case and add belt-and-braces coverage).
   React.useEffect(() => {
-    if (!open) setVisible(VISIBLE_INITIAL);
-  }, [open]);
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !confirmOpen) setOpen(false);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, confirmOpen]);
 
-  const visibleItems = items.slice(0, visible);
-  const hasMore = items.length > visible;
+  const visibleItems = items.slice(0, VISIBLE_LIMIT);
   const BellIcon = unreadCount > 0 ? BellRing : Bell;
+  const ariaLabel =
+    unreadCount > 0
+      ? `Notifications, ${unreadCount} unread`
+      : 'Notifications, 0 unread';
 
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative"
-          aria-label={
-            unreadCount > 0
-              ? `Notifications (${unreadCount} unread)`
-              : 'Notifications'
-          }
+  const trigger = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="relative"
+      aria-label={ariaLabel}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={isMobile ? () => setOpen(true) : undefined}
+    >
+      <BellIcon
+        className={cn(
+          'h-5 w-5',
+          unreadCount > 0 && 'text-senate-navy',
+        )}
+      />
+      {unreadCount > 0 && (
+        <span
+          className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm"
+          aria-hidden
         >
-          <BellIcon
-            className={cn(
-              'h-5 w-5',
-              unreadCount > 0 && 'text-senate-navy',
-            )}
-          />
-          {unreadCount > 0 && (
-            <span
-              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm"
-              aria-hidden
-            >
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </span>
+      )}
+      <ConnectionDot
+        status={status}
+        className="absolute -bottom-0.5 -left-0.5"
+      />
+    </Button>
+  );
 
-      <DropdownMenuContent align="end" className="w-96 p-0">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">Notifications</h3>
-            {items.length > 0 && (
-              <p className="text-[11px] text-muted-foreground">
-                {unreadCount > 0
-                  ? `${unreadCount} unread`
-                  : 'All caught up'}
-              </p>
-            )}
-          </div>
-          {unreadCount > 0 && (
-            <button
-              onClick={() => void markAllRead()}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-senate-navy hover:bg-senate-cream/50 transition-colors"
-              type="button"
-            >
-              <CheckCheck className="h-3 w-3" />
-              Mark all read
-            </button>
-          )}
-        </div>
+  const panel = (
+    <NotificationPanel
+      items={visibleItems}
+      loading={loading}
+      unreadCount={unreadCount}
+      status={status}
+      onMarkAllRead={() => void markAllRead()}
+      onMarkRead={(id) => void markRead(id)}
+      onNavigate={() => setOpen(false)}
+      onClearAll={() => {
+        void clearAll();
+        setConfirmOpen(false);
+      }}
+      confirmOpen={confirmOpen}
+      onConfirmOpenChange={setConfirmOpen}
+    />
+  );
 
-        {/* List */}
-        <div className="max-h-96 overflow-y-auto">
-          {loading ? (
-            <LoadingList />
-          ) : items.length === 0 ? (
-            <EmptyNotifications />
-          ) : (
-            <ul className="divide-y">
-              {visibleItems.map((n) => (
-                <NotificationItem
-                  key={n.id}
-                  notification={n}
-                  onMarkRead={() => void markRead(n.id)}
-                  onNavigate={() => setOpen(false)}
-                />
-              ))}
+  // Mobile: full-screen Dialog (no Sheet component in this codebase — Dialog
+  // with full-viewport sizing is the closest native equivalent and preserves
+  // focus trap + aria-modal semantics out of the box).
+  if (isMobile) {
+    return (
+      <>
+        {trigger}
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent
+            className="left-0 top-0 h-[100dvh] max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 p-0 data-[state=closed]:slide-out-to-left-0 data-[state=open]:slide-in-from-left-0"
+            onEscapeKeyDown={() => setOpen(false)}
+          >
+            <DialogTitle className="sr-only">Notifications</DialogTitle>
+            <div className="flex h-full flex-col">{panel}</div>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
 
-              {hasMore && (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => setVisible((v) => v + LOAD_MORE_STEP)}
-                    className="w-full py-2.5 text-center text-xs font-medium text-senate-navy hover:bg-muted/40 transition-colors"
-                  >
-                    Load older notifications
-                  </button>
-                </li>
-              )}
-            </ul>
-          )}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+  // Desktop: Popover
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-96 p-0"
+        onEscapeKeyDown={() => setOpen(false)}
+      >
+        {panel}
+      </PopoverContent>
+    </Popover>
   );
 }
 
-// ─── Subcomponents ────────────────────────────────────────────────────────────
+// ─── Panel ────────────────────────────────────────────────────────────────────
+
+interface NotificationPanelProps {
+  items: NotificationRow[];
+  loading: boolean;
+  unreadCount: number;
+  status: ConnectionStatus;
+  onMarkAllRead: () => void;
+  onMarkRead: (id: string) => void;
+  onNavigate: () => void;
+  onClearAll: () => void;
+  confirmOpen: boolean;
+  onConfirmOpenChange: (open: boolean) => void;
+}
+
+function NotificationPanel({
+  items,
+  loading,
+  unreadCount,
+  status,
+  onMarkAllRead,
+  onMarkRead,
+  onNavigate,
+  onClearAll,
+  confirmOpen,
+  onConfirmOpenChange,
+}: NotificationPanelProps) {
+  const hasAny = items.length > 0;
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <header className="flex items-center justify-between border-b px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="text-sm font-semibold">Notifications</h3>
+          <ConnectionStatusLabel status={status} />
+        </div>
+        {unreadCount > 0 && (
+          <button
+            onClick={onMarkAllRead}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-senate-navy transition-colors hover:bg-senate-cream/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            type="button"
+          >
+            <CheckCheck className="h-3 w-3" />
+            Mark all as read
+          </button>
+        )}
+      </header>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto sm:max-h-96">
+        {loading ? (
+          <LoadingList />
+        ) : !hasAny ? (
+          <EmptyNotifications />
+        ) : (
+          <ul className="divide-y">
+            {items.map((n) => (
+              <NotificationItem
+                key={n.id}
+                notification={n}
+                onMarkRead={() => onMarkRead(n.id)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Footer */}
+      {!loading && hasAny && (
+        <div className="flex items-center justify-end gap-2 border-t bg-muted/20 px-3 py-2">
+          <AlertDialog open={confirmOpen} onOpenChange={onConfirmOpenChange}>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                aria-label={`Clear all ${items.length} notifications`}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 dark:hover:bg-red-950/30"
+              >
+                <Trash2 className="h-3 w-3" />
+                Clear all
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear all notifications?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently deletes every notification in your inbox,
+                  including unread items. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={onClearAll}
+                  className="bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600"
+                >
+                  Delete everything
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Item ─────────────────────────────────────────────────────────────────────
+
+interface NotificationItemProps {
+  notification: NotificationRow;
+  onMarkRead: () => void;
+  onNavigate: () => void;
+}
 
 function NotificationItem({
   notification,
   onMarkRead,
   onNavigate,
-}: {
-  notification: NotificationRow;
-  onMarkRead: () => void;
-  onNavigate: () => void;
-}) {
+}: NotificationItemProps) {
   const isUnread = notification.readAt === null;
 
   const body = (
     <div
       className={cn(
-        'flex gap-2 px-4 py-3 hover:bg-muted/50 transition-colors',
+        'flex gap-2 px-4 py-3 transition-colors hover:bg-muted/50',
         isUnread && 'bg-senate-cream/40',
       )}
     >
@@ -192,7 +343,7 @@ function NotificationItem({
         <button
           type="button"
           onClick={handleClick}
-          className="w-full text-left focus:outline-none focus-visible:bg-muted/60"
+          className="block w-full text-left focus:outline-none focus-visible:bg-muted/60"
         >
           {body}
         </button>
@@ -200,6 +351,8 @@ function NotificationItem({
     </li>
   );
 }
+
+// ─── States ───────────────────────────────────────────────────────────────────
 
 function LoadingList() {
   return (
@@ -226,7 +379,7 @@ function EmptyNotifications() {
       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
         <Inbox className="h-5 w-5 text-muted-foreground" aria-hidden />
       </div>
-      <p className="mt-3 text-sm font-medium">You&rsquo;re all caught up</p>
+      <p className="mt-3 text-sm font-medium">You have no notifications</p>
       <p className="mt-1 text-xs text-muted-foreground">
         New notifications will show up here in real time.
       </p>
@@ -234,9 +387,139 @@ function EmptyNotifications() {
   );
 }
 
+// ─── Connection indicator ─────────────────────────────────────────────────────
+
+interface ConnectionDotProps {
+  status: ConnectionStatus;
+  className?: string;
+}
+
+function ConnectionDot({ status, className }: ConnectionDotProps) {
+  const color =
+    status === 'connected'
+      ? 'bg-green-500'
+      : status === 'polling'
+        ? 'bg-yellow-500'
+        : 'bg-red-500';
+  const label =
+    status === 'connected'
+      ? 'Realtime connected'
+      : status === 'polling'
+        ? 'Polling fallback'
+        : 'Connection error';
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      title={label}
+      className={cn(
+        'h-2 w-2 rounded-full ring-2 ring-background',
+        color,
+        className,
+      )}
+    />
+  );
+}
+
+function ConnectionStatusLabel({ status }: { status: ConnectionStatus }) {
+  const text =
+    status === 'connected'
+      ? 'Live'
+      : status === 'polling'
+        ? 'Polling'
+        : 'Offline';
+  const color =
+    status === 'connected'
+      ? 'text-green-600'
+      : status === 'polling'
+        ? 'text-yellow-600'
+        : 'text-red-600';
+  return (
+    <span
+      className={cn(
+        'flex items-center gap-1 text-[11px] font-medium',
+        color,
+      )}
+      aria-live="polite"
+    >
+      <ConnectionDot status={status} />
+      {text}
+    </span>
+  );
+}
+
+// ─── Hooks & helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Viewport-width media query → mobile boolean. SSR-safe: starts false so the
+ * initial render matches the server, then hydrates to the real value.
+ */
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
+
+/**
+ * Best-effort realtime connection status. The hook does not expose raw channel
+ * state, so we infer from `navigator.onLine`, hydration, and a load timeout:
+ *   - red   → offline OR hook took too long to finish loading
+ *   - yellow → browser online but navigator reports no-realtime (tab hidden)
+ *   - green → everything healthy
+ */
+function useConnectionStatus(loading: boolean): ConnectionStatus {
+  const [status, setStatus] = React.useState<ConnectionStatus>('connected');
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let loadTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const compute = () => {
+      if (!navigator.onLine) {
+        setStatus('error');
+        return;
+      }
+      if (document.visibilityState === 'hidden') {
+        setStatus('polling');
+        return;
+      }
+      setStatus('connected');
+    };
+
+    compute();
+
+    // If the initial load stalls for >5s, surface a degraded state.
+    if (loading) {
+      loadTimer = setTimeout(() => {
+        if (navigator.onLine) setStatus('polling');
+        else setStatus('error');
+      }, 5000);
+    }
+
+    window.addEventListener('online', compute);
+    window.addEventListener('offline', compute);
+    document.addEventListener('visibilitychange', compute);
+    return () => {
+      if (loadTimer) clearTimeout(loadTimer);
+      window.removeEventListener('online', compute);
+      window.removeEventListener('offline', compute);
+      document.removeEventListener('visibilitychange', compute);
+    };
+  }, [loading]);
+
+  return status;
+}
+
 /**
  * `formatDistanceToNow` throws on invalid dates. Guard defensively so a
- * malformed row can never crash the bell.
+ * malformed row cannot crash the bell.
  */
 function safeTimeAgo(iso: string): string {
   try {

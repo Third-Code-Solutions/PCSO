@@ -1,10 +1,21 @@
 'use client';
 
+/**
+ * OvertimeForm — employee-facing OT request form.
+ *
+ * Uses the colocated `submitOvertimeRequest` wrapper, which:
+ *   - rejects duplicate pending/approved requests for the same date
+ *   - notifies the picked supervisor
+ *   - audits every submission
+ * On success: toast, reset, then redirect to /attendance/overtime.
+ */
+
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 import { OvertimeRequestSchema, type OvertimeRequestInput } from '@/lib/validations/attendance';
-import { requestOvertime } from '@/app/(dashboard)/attendance/actions';
+import { submitOvertimeRequest } from '@/app/(dashboard)/attendance/overtime/actions';
 
 interface OvertimeFormProps {
   employeeId: string;
@@ -22,6 +33,7 @@ const DAY_TYPE_LABELS: Record<OvertimeRequestInput['dayType'], string> = {
 };
 
 export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFormProps) {
+  const router = useRouter();
   const {
     register,
     handleSubmit,
@@ -38,10 +50,12 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
 
   async function onSubmit(data: OvertimeRequestInput) {
     try {
-      await requestOvertime(data);
-      toast.success('Overtime request submitted successfully.');
-      reset();
+      await submitOvertimeRequest(data);
+      toast.success('Overtime request submitted. Your supervisor has been notified.');
+      reset({ employeeId, dayType: 'ordinary', requestedMinutes: 60 });
       onSuccess?.();
+      router.push('/attendance/overtime');
+      router.refresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to submit OT request';
       toast.error(message);
@@ -49,7 +63,7 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" aria-busy={isSubmitting}>
       <input type="hidden" {...register('employeeId')} />
 
       {/* Date */}
@@ -60,12 +74,11 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
         <input
           id="ot-date"
           type="date"
+          disabled={isSubmitting}
           {...register('date')}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B]"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B] disabled:bg-gray-50"
         />
-        {errors.date && (
-          <p className="mt-1 text-xs text-red-600">{errors.date.message}</p>
-        )}
+        {errors.date && <p className="mt-1 text-xs text-red-600">{errors.date.message}</p>}
       </div>
 
       {/* Day type */}
@@ -75,8 +88,9 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
         </label>
         <select
           id="ot-day-type"
+          disabled={isSubmitting}
           {...register('dayType')}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B]"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B] disabled:bg-gray-50"
         >
           {(Object.entries(DAY_TYPE_LABELS) as [OvertimeRequestInput['dayType'], string][]).map(
             ([value, label]) => (
@@ -86,9 +100,7 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
             ),
           )}
         </select>
-        {errors.dayType && (
-          <p className="mt-1 text-xs text-red-600">{errors.dayType.message}</p>
-        )}
+        {errors.dayType && <p className="mt-1 text-xs text-red-600">{errors.dayType.message}</p>}
       </div>
 
       {/* Requested minutes */}
@@ -102,8 +114,9 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
           min={30}
           max={240}
           step={30}
+          disabled={isSubmitting}
           {...register('requestedMinutes', { valueAsNumber: true })}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B]"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B] disabled:bg-gray-50"
         />
         <p className="mt-0.5 text-xs text-gray-400">Maximum 240 minutes (4 hours) per day.</p>
         {errors.requestedMinutes && (
@@ -118,8 +131,9 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
         </label>
         <select
           id="ot-supervisor"
+          disabled={isSubmitting}
           {...register('supervisorId')}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B]"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B] disabled:bg-gray-50"
         >
           <option value="">Select supervisor</option>
           {supervisors.map((s) => (
@@ -141,9 +155,10 @@ export function OvertimeForm({ employeeId, supervisors, onSuccess }: OvertimeFor
         <textarea
           id="ot-justification"
           rows={4}
+          disabled={isSubmitting}
           {...register('justification')}
           placeholder="Describe the work to be performed during overtime and why it cannot be completed during regular hours..."
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B]"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-[#C8A84B] focus:outline-none focus:ring-1 focus:ring-[#C8A84B] disabled:bg-gray-50"
         />
         {errors.justification && (
           <p className="mt-1 text-xs text-red-600">{errors.justification.message}</p>

@@ -12,11 +12,13 @@
  */
 
 import Link from 'next/link';
-import { requireAuth } from '@/lib/auth/guards';
+import { Suspense } from 'react';
+import { requirePermission } from '@/lib/auth/guards';
 import { hasPermission } from '@/lib/auth/permissions';
 import { PageHeader } from '@/components/layouts/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 import {
   getMyLeaveApplications,
@@ -33,6 +35,7 @@ import {
   CheckSquareIcon,
   ClockIcon,
   TrendingUpIcon,
+  SettingsIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { format, addDays, startOfDay } from 'date-fns';
@@ -115,19 +118,23 @@ interface PageProps {
 const PAGE_SIZE = 10;
 
 export default async function LeaveDashboardPage({ searchParams }: PageProps) {
-  const user = await requireAuth();
+  const user = await requirePermission('leave', 'view');
   const params = await searchParams;
 
   const canApprove = hasPermission(user.role, 'leave', 'approve');
+  const isHrOrAdmin = user.role === 'hr_admin' || user.role === 'super_admin';
+  const isSelfService = user.role === 'employee_self_service';
   const canApply =
-    user.role === 'employee_self_service' ||
-    user.role === 'hr_admin' ||
-    user.role === 'super_admin';
+    isSelfService || user.role === 'hr_admin' || user.role === 'super_admin';
 
   const rawPage = Array.isArray(params['page']) ? params['page'][0] : params['page'];
   const page = Math.max(1, Number.parseInt(rawPage ?? '1', 10) || 1);
 
   const currentYear = new Date().getFullYear();
+
+  // Scope the calendar preview to the acting user when self-service so the
+  // dashboard never leaks other employees' upcoming leaves.
+  const calendarScopeEmployeeId = isSelfService ? user.employeeId ?? undefined : undefined;
 
   const [myApps, myCredit, pendingApprovals, upcomingWeek] = await Promise.all([
     user.employeeId ? getMyLeaveApplications(user.employeeId) : Promise.resolve([]),
@@ -138,9 +145,8 @@ export default async function LeaveDashboardPage({ searchParams }: PageProps) {
     getApprovedLeavesForCalendar(
       format(startOfDay(new Date()), 'yyyy-MM-dd'),
       format(addDays(new Date(), 7), 'yyyy-MM-dd'),
-      user.role === 'super_admin' || user.role === 'hr_admin'
-        ? undefined
-        : user.officeId ?? undefined,
+      isHrOrAdmin ? undefined : user.officeId ?? undefined,
+      calendarScopeEmployeeId,
     ),
   ]);
 
@@ -161,7 +167,7 @@ export default async function LeaveDashboardPage({ searchParams }: PageProps) {
         }
         breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Leave' }]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" asChild>
               <Link href="/leave/calendar">
                 <CalendarIcon className="mr-1.5 h-4 w-4" />
@@ -171,9 +177,25 @@ export default async function LeaveDashboardPage({ searchParams }: PageProps) {
             <Button variant="outline" size="sm" asChild>
               <Link href="/leave/credits">
                 <CreditCardIcon className="mr-1.5 h-4 w-4" />
-                My Credits
+                {isHrOrAdmin ? 'Manage Credits' : 'My Credits'}
               </Link>
             </Button>
+            {canApprove && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/leave/approvals">
+                  <CheckSquareIcon className="mr-1.5 h-4 w-4" />
+                  Approvals
+                </Link>
+              </Button>
+            )}
+            {isHrOrAdmin && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/leave/applications">
+                  <SettingsIcon className="mr-1.5 h-4 w-4" />
+                  All Applications
+                </Link>
+              </Button>
+            )}
             {canApply && (
               <Button
                 size="sm"

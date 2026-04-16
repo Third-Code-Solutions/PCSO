@@ -1,12 +1,35 @@
 'use client';
 
 import * as React from 'react';
-import { Download, FileText, ChevronRight } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { Download, FileText, ChevronRight, FileDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { PDFDownloadLink } from '@react-pdf/renderer';
-import { PayslipDocument } from '@/components/pdf/payslip';
 import type { MyPayslip } from '@/app/(dashboard)/payroll/queries';
+
+// ─── Dynamic PDF download link (client-only) ─────────────────────────────────
+// React-PDF depends on browser APIs (canvas, fonts). We load it lazily so a
+// missing runtime dependency doesn't crash the list — if this chunk fails, the
+// card still renders with the CSV fallback button available.
+
+const PayslipPdfDownload = dynamic(
+  () =>
+    import('./payslip-pdf-download').then((m) => ({ default: m.PayslipPdfDownload })),
+  {
+    ssr: false,
+    loading: () => (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled
+        className="border-[#0B2545] text-[#0B2545]"
+      >
+        <Download className="mr-1.5 h-3.5 w-3.5" />
+        PDF
+      </Button>
+    ),
+  },
+);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -21,68 +44,122 @@ function formatDate(d: string): string {
 function formatPeso(value: string | null | undefined): string {
   if (!value) return '₱0.00';
   const num = parseFloat(value);
-  return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱${num.toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function escapeCsv(value: string): string {
+  // Minimal RFC 4180 escaping.
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function payslipToCsv(item: MyPayslip): string {
+  const { record, period, employee } = item;
+  const fullName = [employee.lastName, employee.firstName, employee.middleName]
+    .filter(Boolean)
+    .join(', ');
+
+  const rows: Array<[string, string | null | undefined] | null> = [
+    ['Pay Period', period.name],
+    ['Period Start', period.periodStart],
+    ['Period End', period.periodEnd],
+    ['Pay Date', period.payDate],
+    ['Employee No.', employee.employeeNo],
+    ['Employee Name', fullName],
+    ['Position', employee.positionTitle],
+    ['Office', employee.officeName ?? ''],
+    ['Salary Grade / Step', `SG ${employee.salaryGrade} / Step ${employee.step}`],
+    null,
+    ['Earnings', ''],
+    ['Basic Pay', record.basicPay],
+    ['RATA', record.rata],
+    ['Longevity Pay', record.longevityPay],
+    ['Overtime Pay', record.overtimePay],
+    ['PERA', record.pera],
+    ['Other Earnings', record.otherEarnings],
+    ['Gross Pay', record.grossPay],
+    null,
+    ['Deductions', ''],
+    ['GSIS Personal', record.gsisPersonal],
+    ['PhilHealth Personal', record.philhealthPersonal],
+    ['Pag-IBIG Personal', record.pagibigPersonal],
+    ['Withholding Tax', record.withholdingTax],
+    ['Late Deduction', record.lateDeduction],
+    ['Undertime Deduction', record.undertimeDeduction],
+    ['Absence Deduction', record.absenceDeduction],
+    ['Other Deductions', record.otherDeductions],
+    ['Total Deductions', record.totalDeductions],
+    null,
+    ['Net Pay', record.netPay],
+  ];
+
+  return rows
+    .map((r) => (r === null ? '' : `${escapeCsv(r[0])},${escapeCsv(String(r[1] ?? ''))}`))
+    .join('\r\n');
+}
+
+function downloadCsv(item: MyPayslip) {
+  const csv = payslipToCsv(item);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `payslip-${item.period.name.toLowerCase().replace(/\s+/g, '-')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ─── PayslipCard ──────────────────────────────────────────────────────────────
 
 function PayslipCard({ item }: { item: MyPayslip }) {
-  const { record, period, employee } = item;
+  const { record, period } = item;
   const [expanded, setExpanded] = React.useState(false);
-
-  const fileName = `payslip-${period.name.toLowerCase().replace(/\s+/g, '-')}.pdf`;
 
   return (
     <article className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="flex items-center justify-between p-4">
+      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium text-[#0B2545]">{period.name}</span>
             <Badge
               variant="outline"
-              className="border-[#C8A84B] bg-[#C8A84B] text-white text-xs"
+              className="border-[#C8A84B] bg-[#C8A84B] text-xs text-white"
             >
               Paid
             </Badge>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {formatDate(period.periodStart)} – {formatDate(period.periodEnd)} · Pay
-            Date: {formatDate(period.payDate)}
+            {formatDate(period.periodStart)} – {formatDate(period.periodEnd)} · Pay Date:{' '}
+            {formatDate(period.payDate)}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Net Pay</p>
-            <p className="font-mono font-bold text-[#0B2545]">
-              {formatPeso(record.netPay)}
-            </p>
+            <p className="font-mono font-bold text-[#0B2545]">{formatPeso(record.netPay)}</p>
           </div>
 
-          <PDFDownloadLink
-            document={
-              <PayslipDocument
-                record={record}
-                period={period}
-                employee={employee}
-                generatedAt={new Date().toISOString()}
-              />
-            }
-            fileName={fileName}
+          <PayslipPdfDownload item={item} />
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => downloadCsv(item)}
+            className="border-[#0B2545] text-[#0B2545] hover:bg-[#0B2545] hover:text-white"
+            aria-label={`Download CSV for ${period.name}`}
           >
-            {({ loading }) => (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={loading}
-                className="border-[#0B2545] text-[#0B2545] hover:bg-[#0B2545] hover:text-white"
-              >
-                <Download className="mr-1.5 h-3.5 w-3.5" />
-                {loading ? '...' : 'PDF'}
-              </Button>
-            )}
-          </PDFDownloadLink>
+            <FileDown className="mr-1.5 h-3.5 w-3.5" />
+            CSV
+          </Button>
 
           <Button
             variant="ghost"

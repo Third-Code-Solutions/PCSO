@@ -89,30 +89,42 @@ export async function reviewSaln(input: unknown): Promise<{ id: string }> {
     throw new Error('Cannot review a draft SALN — it must be submitted first.');
   }
 
-  const { error: updateError } = await supabase
+  // Idempotent review: only flip status if it actually changes.
+  // Equivalent of: UPDATE saln_submissions SET status=$1 WHERE id=$2 AND status != $1
+  const statusChanged = currentStatus !== parsed.status;
+
+  const { error: updateError, data: updated } = await supabase
     .from('saln_submissions')
     .update({
       status: parsed.status,
       remarks: parsed.remarks ?? null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', parsed.id);
+    .eq('id', parsed.id)
+    .neq('status', parsed.status)
+    .select('id');
 
   if (updateError) {
     throw new Error(`Failed to review SALN: ${updateError.message}`);
   }
 
-  await writeAuditLog(supabase, {
-    userId: user.id,
-    action: parsed.status === 'deficient' ? 'flag' : 'review',
-    recordId: parsed.id,
-    oldValues: { status: currentStatus },
-    newValues: { status: parsed.status, remarks: parsed.remarks ?? null },
-  });
+  const didUpdate = Array.isArray(updated) && updated.length > 0;
 
-  // Notify owning employee
+  // Only emit audit + notification when the status actually flipped.
+  // Re-submitting the same review is a no-op.
+  if (didUpdate && statusChanged) {
+    await writeAuditLog(supabase, {
+      userId: user.id,
+      action: parsed.status === 'deficient' ? 'flag' : 'review',
+      recordId: parsed.id,
+      oldValues: { status: currentStatus },
+      newValues: { status: parsed.status, remarks: parsed.remarks ?? null },
+    });
+  }
+
+  // Notify owning employee (only on real status change — idempotent review)
   const ownerEmployeeId = String(existing.employee_id ?? '');
-  if (ownerEmployeeId) {
+  if (didUpdate && statusChanged && ownerEmployeeId) {
     const titleMap: Record<string, string> = {
       received: 'SALN received by compliance office',
       verified: 'SALN verified — thank you for your compliance',

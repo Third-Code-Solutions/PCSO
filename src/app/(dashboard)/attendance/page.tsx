@@ -16,6 +16,7 @@ import {
   getOwnAttendanceLogs,
   getAttendanceLogsByPeriod,
   getAnomaliesForPeriod,
+  getTodayKpis,
 } from './queries';
 import { DtrCalendar } from '@/components/attendance/dtr-calendar';
 import { DtrTable } from '@/components/attendance/dtr-table';
@@ -43,15 +44,18 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
   if (isAdmin) {
     // Admin / HR / Approver dashboard
-    const [periodLogs, todayLogs, anomalies] = await Promise.all([
+    const [periodLogs, anomalies, kpis] = await Promise.all([
       getAttendanceLogsByPeriod(periodStart, periodEnd).catch(() => []),
-      getAttendanceLogsByPeriod(today, today).catch(() => []),
       getAnomaliesForPeriod(periodStart, periodEnd).catch(() => []),
+      getTodayKpis(today).catch(() => ({
+        activeEmployees: 0,
+        present: 0,
+        late: 0,
+        absent: 0,
+        incomplete: 0,
+        overtimePending: 0,
+      })),
     ]);
-
-    const presentToday = todayLogs.filter((l) => l.timeIn).length;
-    const lateToday = todayLogs.filter((l) => l.isLate).length;
-    const absentToday = todayLogs.filter((l) => !l.timeIn && !l.timeOut).length;
 
     // Cutoff countdown (last day of current month)
     const cutoff = endOfMonth(now);
@@ -92,12 +96,14 @@ export default async function AttendancePage({ searchParams }: PageProps) {
           <h2 id="today-kpis" className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
             Today ({format(now, 'MMM d, yyyy')})
           </h2>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {[
-              { label: 'Clocked In', value: presentToday, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-              { label: 'Late', value: lateToday, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
-              { label: 'Absent', value: absentToday, color: 'text-red-700', bg: 'bg-red-50 border-red-200' },
-              { label: 'Anomalies (Period)', value: anomalies.length, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-200' },
+              { label: 'Active Employees', value: kpis.activeEmployees, color: 'text-[#0B2545]', bg: 'bg-[#FAF4E6] border-[#C8A84B]/40' },
+              { label: 'Clocked In', value: kpis.present, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+              { label: 'Late', value: kpis.late, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+              { label: 'Absent', value: kpis.absent, color: 'text-red-700', bg: 'bg-red-50 border-red-200' },
+              { label: 'Incomplete', value: kpis.incomplete, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-200' },
+              { label: 'OT Pending', value: kpis.overtimePending, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
             ].map(({ label, value, color, bg }) => (
               <div key={label} className={`rounded-xl border p-4 ${bg}`}>
                 <div className={`text-2xl font-bold ${color}`}>{value}</div>
@@ -105,6 +111,15 @@ export default async function AttendancePage({ searchParams }: PageProps) {
               </div>
             ))}
           </div>
+          {anomalies.length > 0 && (
+            <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm text-orange-800">
+              <strong>{anomalies.length}</strong> attendance anomal{anomalies.length === 1 ? 'y' : 'ies'} flagged this period — review in
+              <Link href="/attendance/admin" className="ml-1 underline hover:text-orange-900">
+                Admin view
+              </Link>
+              .
+            </div>
+          )}
         </section>
 
         {/* Period summary */}

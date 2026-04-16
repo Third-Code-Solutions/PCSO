@@ -17,6 +17,7 @@ import type { Metadata } from 'next';
 import { PERIOD_STATUS_LABEL } from '@/lib/constants/performance';
 import { StatusSelect } from './_client';
 import { hasPermission } from '@/lib/auth/permissions';
+import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
 
 export const metadata: Metadata = {
   title: 'Performance Cycles',
@@ -54,6 +55,7 @@ export default async function PerformanceCyclesPage({ searchParams }: Props) {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
+      <RealtimeBoundary tables={['performance_periods']} />
       <PageHeader
         title="Performance Cycles"
         description="Manage performance rating periods by semester."

@@ -12,6 +12,8 @@ import {
 import { eq, and, isNull, desc, asc } from 'drizzle-orm';
 import { requirePermission } from '@/lib/auth/guards';
 import { auditLog } from '@/lib/audit';
+import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
+import { lockKey } from '@/lib/concurrency';
 import {
   GeneratePagibigBatchSchema,
   ExportPagibigSchema,
@@ -24,6 +26,20 @@ import {
   type PagibigVirtualMeta,
 } from '@/lib/utils/remittances/pagibig-virtual';
 
+const REMITTANCE_RECORD_INSERT_CHUNK = 200;
+
+async function chunkInsertRemittanceRecords(
+  tx: Tx,
+  rows: (typeof remittanceRecords.$inferInsert)[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  for (let i = 0; i < rows.length; i += REMITTANCE_RECORD_INSERT_CHUNK) {
+    await tx
+      .insert(remittanceRecords)
+      .values(rows.slice(i, i + REMITTANCE_RECORD_INSERT_CHUNK));
+  }
+}
+
 // ─── Generate Pag-IBIG Batch ──────────────────────────────────────────────────
 
 /**
@@ -34,131 +50,153 @@ export async function generatePagibigBatch(input: unknown) {
   const parsed = GeneratePagibigBatchSchema.parse(input);
   const user = await requirePermission('remittances', 'create');
 
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(and(eq(payrollPeriods.id, parsed.periodId), isNull(payrollPeriods.deletedAt)))
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `remit:pagibig:${parsed.periodId}`);
 
-  if (!period) throw new Error('Payroll period not found.');
-  if (period.status !== 'approved' && period.status !== 'paid') {
-    throw new Error(
-      `Cannot generate Pag-IBIG remittance for a period in "${period.status}" status.`,
-    );
-  }
+      const [period] = await tx
+        .select()
+        .from(payrollPeriods)
+        .where(
+          and(
+            eq(payrollPeriods.id, parsed.periodId),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
+        .limit(1);
 
-  const existing = await db
-    .select({ id: remittanceBatches.id })
-    .from(remittanceBatches)
-    .where(
-      and(
-        eq(remittanceBatches.type, 'pagibig'),
-        eq(remittanceBatches.periodStart, period.periodStart),
-        eq(remittanceBatches.periodEnd, period.periodEnd),
-      ),
-    )
-    .limit(1);
+      if (!period) throw new Error('Payroll period not found.');
+      if (period.status !== 'approved' && period.status !== 'paid') {
+        throw new Error(
+          `Cannot generate Pag-IBIG remittance for a period in "${period.status}" status.`,
+        );
+      }
 
-  if (existing.length > 0) {
-    throw new Error(
-      `A Pag-IBIG remittance batch already exists for this period (ID: ${existing[0]?.id ?? 'unknown'}).`,
-    );
-  }
+      const existing = await tx
+        .select({ id: remittanceBatches.id })
+        .from(remittanceBatches)
+        .where(
+          and(
+            eq(remittanceBatches.type, 'pagibig'),
+            eq(remittanceBatches.periodStart, period.periodStart),
+            eq(remittanceBatches.periodEnd, period.periodEnd),
+          ),
+        )
+        .limit(1);
 
-  const records = await db
-    .select({
-      pr: payrollRecords,
-      emp: {
-        id: employees.id,
-        employeeNo: employees.employeeNo,
-        pagibigNo: employees.pagibigNo,
-        firstName: employees.firstName,
-        middleName: employees.middleName,
-        lastName: employees.lastName,
-        suffix: employees.suffix,
-      },
-    })
-    .from(payrollRecords)
-    .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
-    .where(
-      and(eq(payrollRecords.periodId, parsed.periodId), isNull(employees.deletedAt)),
-    )
-    .orderBy(asc(employees.lastName), asc(employees.firstName));
+      if (existing.length > 0) {
+        throw new Error(
+          `A Pag-IBIG remittance batch already exists for this period (ID: ${existing[0]?.id ?? 'unknown'}).`,
+        );
+      }
 
-  if (records.length === 0) {
-    throw new Error('No payroll records found for the selected period.');
-  }
+      const records = await tx
+        .select({
+          pr: payrollRecords,
+          emp: {
+            id: employees.id,
+            employeeNo: employees.employeeNo,
+            pagibigNo: employees.pagibigNo,
+            firstName: employees.firstName,
+            middleName: employees.middleName,
+            lastName: employees.lastName,
+            suffix: employees.suffix,
+          },
+        })
+        .from(payrollRecords)
+        .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
+        .where(
+          and(
+            eq(payrollRecords.periodId, parsed.periodId),
+            isNull(employees.deletedAt),
+          ),
+        )
+        .orderBy(asc(employees.lastName), asc(employees.firstName));
 
-  const pagibigRecords = records.filter(
-    (r) => r.emp.pagibigNo != null && r.emp.pagibigNo !== '',
+      if (records.length === 0) {
+        throw new Error('No payroll records found for the selected period.');
+      }
+
+      const pagibigRecords = records.filter(
+        (r) => r.emp.pagibigNo != null && r.emp.pagibigNo !== '',
+      );
+
+      if (pagibigRecords.length === 0) {
+        throw new Error(
+          'No employees with a Pag-IBIG number found. ' +
+            'Ensure Pag-IBIG numbers are encoded before generating.',
+        );
+      }
+
+      let totalPersonal = 0;
+      let totalEmployer = 0;
+
+      const recordValues = pagibigRecords.map((r) => {
+        const personal = parseMoney(r.pr.pagibigPersonal);
+        const employer = parseMoney(r.pr.pagibigEmployer);
+        const total = roundHalfEven(personal + employer, 2);
+
+        totalPersonal += personal;
+        totalEmployer += employer;
+
+        return {
+          employeeId: r.emp.id,
+          personalShare: roundMoney(personal),
+          employerShare: roundMoney(employer),
+          total: roundMoney(total),
+        };
+      });
+
+      const totalAmount = roundHalfEven(totalPersonal + totalEmployer, 2);
+
+      const batchRows = await tx
+        .insert(remittanceBatches)
+        .values({
+          type: 'pagibig',
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          totalAmount: roundMoney(totalAmount),
+          totalPersonalShare: roundMoney(totalPersonal),
+          totalEmployerShare: roundMoney(totalEmployer),
+          employeeCount: pagibigRecords.length,
+          status: 'generated',
+          remarks: parsed.remarks ?? null,
+        })
+        .returning();
+
+      const batch = batchRows[0];
+      if (!batch) throw new Error('Failed to insert Pag-IBIG remittance batch.');
+
+      const linesWithBatchId = recordValues.map((rv) => ({
+        ...rv,
+        batchId: batch.id,
+      }));
+      await chunkInsertRemittanceRecords(tx, linesWithBatchId);
+
+      return {
+        batch,
+        employeeCount: pagibigRecords.length,
+        totalAmount: roundMoney(totalAmount),
+      };
+    }),
   );
 
-  if (pagibigRecords.length === 0) {
-    throw new Error(
-      'No employees with a Pag-IBIG number found. ' +
-        'Ensure Pag-IBIG numbers are encoded before generating.',
-    );
-  }
-
-  let totalPersonal = 0;
-  let totalEmployer = 0;
-
-  const recordValues = pagibigRecords.map((r) => {
-    const personal = parseMoney(r.pr.pagibigPersonal);
-    const employer = parseMoney(r.pr.pagibigEmployer);
-    const total = roundHalfEven(personal + employer, 2);
-
-    totalPersonal += personal;
-    totalEmployer += employer;
-
-    return {
-      batchId: '',
-      employeeId: r.emp.id,
-      personalShare: roundMoney(personal),
-      employerShare: roundMoney(employer),
-      total: roundMoney(total),
-    };
-  });
-
-  const totalAmount = roundHalfEven(totalPersonal + totalEmployer, 2);
-
-  const batchRows = await db
-    .insert(remittanceBatches)
-    .values({
-      type: 'pagibig',
-      periodStart: period.periodStart,
-      periodEnd: period.periodEnd,
-      totalAmount: roundMoney(totalAmount),
-      totalPersonalShare: roundMoney(totalPersonal),
-      totalEmployerShare: roundMoney(totalEmployer),
-      employeeCount: pagibigRecords.length,
-      status: 'generated',
-      remarks: parsed.remarks ?? null,
-    })
-    .returning();
-
-  const batch = batchRows[0];
-  if (!batch) throw new Error('Failed to insert Pag-IBIG remittance batch.');
-
-  const linesWithBatchId = recordValues.map((rv) => ({ ...rv, batchId: batch.id }));
-  await db.insert(remittanceRecords).values(linesWithBatchId);
-
-  await auditLog({
+  void auditLog({
     userId: user.id,
     action: 'create',
     table: 'remittance_batches',
-    recordId: batch.id,
+    recordId: result.batch.id,
     newValues: {
       type: 'pagibig',
-      periodStart: period.periodStart,
-      periodEnd: period.periodEnd,
-      employeeCount: pagibigRecords.length,
-      totalAmount: roundMoney(totalAmount),
+      periodStart: result.batch.periodStart,
+      periodEnd: result.batch.periodEnd,
+      employeeCount: result.employeeCount,
+      totalAmount: result.totalAmount,
     },
   });
 
   revalidatePath('/remittances/pagibig');
-  return batch;
+  return result.batch;
 }
 
 // ─── Export Virtual Pag-IBIG CSV ──────────────────────────────────────────────
@@ -261,50 +299,66 @@ export async function markPagibigSubmitted(input: unknown) {
   const parsed = MarkPagibigSubmittedSchema.parse(input);
   const user = await requirePermission('remittances', 'process');
 
-  const [batch] = await db
-    .select()
-    .from(remittanceBatches)
-    .where(
-      and(
-        eq(remittanceBatches.id, parsed.batchId),
-        eq(remittanceBatches.type, 'pagibig'),
-      ),
-    )
-    .limit(1);
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      await lockKey(tx, `remit:pagibig:submit:${parsed.batchId}`);
 
-  if (!batch) throw new Error('Pag-IBIG remittance batch not found.');
-  if (batch.status === 'submitted') throw new Error('Batch is already marked as submitted.');
-  if (batch.status !== 'generated') {
-    throw new Error(`Batch must be in "generated" status to submit. Current: ${batch.status}`);
-  }
+      const [batch] = await tx
+        .select()
+        .from(remittanceBatches)
+        .where(
+          and(
+            eq(remittanceBatches.id, parsed.batchId),
+            eq(remittanceBatches.type, 'pagibig'),
+          ),
+        )
+        .limit(1);
 
-  const now = new Date().toISOString();
-  const updatedRows = await db
-    .update(remittanceBatches)
-    .set({
-      status: 'submitted',
-      referenceNo: parsed.referenceNo,
-      submittedAt: now,
-      remarks: parsed.remarks ?? batch.remarks,
-      updatedAt: new Date(),
-    })
-    .where(eq(remittanceBatches.id, parsed.batchId))
-    .returning();
+      if (!batch) throw new Error('Pag-IBIG remittance batch not found.');
+      if (batch.status === 'submitted') {
+        throw new Error('Batch is already marked as submitted.');
+      }
+      if (batch.status !== 'generated') {
+        throw new Error(
+          `Batch must be in "generated" status to submit. Current: ${batch.status}`,
+        );
+      }
 
-  const updated = updatedRows[0];
-  if (!updated) throw new Error('Failed to update Pag-IBIG batch status.');
+      const now = new Date().toISOString();
+      const updatedRows = await tx
+        .update(remittanceBatches)
+        .set({
+          status: 'submitted',
+          referenceNo: parsed.referenceNo,
+          submittedAt: now,
+          remarks: parsed.remarks ?? batch.remarks,
+          updatedAt: new Date(),
+        })
+        .where(eq(remittanceBatches.id, parsed.batchId))
+        .returning();
 
-  await auditLog({
+      const updated = updatedRows[0];
+      if (!updated) throw new Error('Failed to update Pag-IBIG batch status.');
+
+      return { updated, submittedAt: now };
+    }),
+  );
+
+  void auditLog({
     userId: user.id,
     action: 'edit',
     table: 'remittance_batches',
     recordId: parsed.batchId,
     oldValues: { status: 'generated' },
-    newValues: { status: 'submitted', referenceNo: parsed.referenceNo, submittedAt: now },
+    newValues: {
+      status: 'submitted',
+      referenceNo: parsed.referenceNo,
+      submittedAt: result.submittedAt,
+    },
   });
 
   revalidatePath('/remittances/pagibig');
-  return updated;
+  return result.updated;
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────

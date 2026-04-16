@@ -1,8 +1,10 @@
 import 'server-only';
 import { db } from '@/lib/db';
+import { withTx } from '@/lib/db/transaction';
 import { notifications, systemUsers } from '@/lib/db/schema';
-import { eq, inArray, and } from 'drizzle-orm';
+import { eq, inArray, and, isNotNull, isNull } from 'drizzle-orm';
 import type { Role } from '@/lib/auth/permissions';
+import type { Notification } from '@/lib/db/schema/notifications';
 
 export type NotificationType =
   | 'leave_submitted'
@@ -31,20 +33,29 @@ export interface CreateNotificationInput {
 /**
  * Send one notification to a single system_users recipient.
  * Non-blocking: never throws on write failure; caller's primary work is protected.
+ * Returns the inserted row so callers can log/audit it. Returns null when the
+ * insert fails (exception swallowed to preserve primary-work guarantee).
  */
-export async function createNotification(input: CreateNotificationInput): Promise<void> {
+export async function createNotification(
+  input: CreateNotificationInput,
+): Promise<Notification | null> {
   try {
-    await db.insert(notifications).values({
-      userId: input.userId,
-      type: input.type,
-      title: input.title,
-      body: input.body ?? null,
-      actionUrl: input.actionUrl ?? null,
-      entityType: input.entityType ?? null,
-      entityId: input.entityId ?? null,
-    });
+    const [row] = await db
+      .insert(notifications)
+      .values({
+        userId: input.userId,
+        type: input.type,
+        title: input.title,
+        body: input.body ?? null,
+        actionUrl: input.actionUrl ?? null,
+        entityType: input.entityType ?? null,
+        entityId: input.entityId ?? null,
+      })
+      .returning();
+    return row ?? null;
   } catch (err) {
     console.error('[notifications] failed to create:', err);
+    return null;
   }
 }
 
@@ -93,5 +104,102 @@ export async function notifyEmployee(
     await createNotification({ ...payload, userId: user.id });
   } catch (err) {
     console.error('[notifications] failed to notify employee:', err);
+  }
+}
+
+// ─── Bulk operations ─────────────────────────────────────────────────────────
+//
+// Every bulk write is a single SQL statement scoped by user_id, wrapped in
+// withTx so the UPDATE/DELETE + its returning set are committed atomically.
+// Postgres takes per-row locks, so two concurrent writes from the same user
+// (e.g. two tabs hitting "Clear all" simultaneously) are inherently
+// idempotent: the second call finds zero matching rows and returns count=0
+// without error. Different users can never collide — the WHERE clause is
+// user-scoped.
+
+export interface ClearResult {
+  deletedCount: number;
+}
+
+export interface MarkResult {
+  updatedCount: number;
+}
+
+/**
+ * Mark every UNREAD notification for a given system user as read.
+ * Atomic single-statement UPDATE wrapped in a transaction. Idempotent: the
+ * second call yields {updatedCount: 0}. Safe under concurrent invocation.
+ */
+export async function markAllNotificationsRead(
+  systemUserId: string,
+): Promise<MarkResult> {
+  if (!systemUserId) return { updatedCount: 0 };
+  try {
+    return await withTx(async (tx) => {
+      const rows = await tx
+        .update(notifications)
+        .set({ readAt: new Date() })
+        .where(
+          and(
+            eq(notifications.userId, systemUserId),
+            isNull(notifications.readAt),
+          ),
+        )
+        .returning({ id: notifications.id });
+      return { updatedCount: rows.length };
+    });
+  } catch (err) {
+    console.error('[notifications] markAllRead failed:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete every READ notification for a given system user.
+ * Idempotent: calling it twice in a row yields {deletedCount: 0} the second
+ * time. Safe under concurrent invocation by the same user.
+ */
+export async function clearReadNotifications(
+  systemUserId: string,
+): Promise<ClearResult> {
+  if (!systemUserId) return { deletedCount: 0 };
+  try {
+    return await withTx(async (tx) => {
+      const rows = await tx
+        .delete(notifications)
+        .where(
+          and(
+            eq(notifications.userId, systemUserId),
+            isNotNull(notifications.readAt),
+          ),
+        )
+        .returning({ id: notifications.id });
+      return { deletedCount: rows.length };
+    });
+  } catch (err) {
+    console.error('[notifications] clearRead failed:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete EVERY notification (read + unread) for a given system user.
+ * Destructive. Idempotent. Safe under concurrent invocation.
+ */
+export async function clearAllNotifications(
+  systemUserId: string,
+): Promise<ClearResult> {
+  if (!systemUserId) return { deletedCount: 0 };
+  try {
+    return await withTx(async (tx) => {
+      const rows = await tx
+        .delete(notifications)
+        .where(eq(notifications.userId, systemUserId))
+        .returning({ id: notifications.id });
+      return { deletedCount: rows.length };
+    });
+  } catch (err) {
+    console.error('[notifications] clearAll failed:', err);
+    throw err;
   }
 }
