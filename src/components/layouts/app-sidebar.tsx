@@ -16,6 +16,9 @@ import {
   Shield,
   User as UserIcon,
   Network,
+  UserPlus,
+  GraduationCap,
+  Award,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -458,6 +461,146 @@ const NAV_ITEMS: NavItem[] = [
         href: "/saln/new",
         roles: ["super_admin", "employee_self_service"],
         selfOnly: true,
+      },
+    ],
+  },
+
+  // ── Recruitment (RPM — PRD §4.2) ─────────────────────────────────────────
+  {
+    label: "Recruitment",
+    icon: UserPlus,
+    roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+    children: [
+      {
+        label: "Overview",
+        href: "/recruitment",
+        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+      },
+      {
+        label: "MRFs",
+        href: "/recruitment/mrf",
+        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+      },
+      {
+        label: "Vacancies",
+        href: "/recruitment/vacancies",
+        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+      },
+      {
+        label: "Applicants",
+        href: "/recruitment/applicants",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "Selection",
+        href: "/recruitment/selection",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "Appointments",
+        href: "/recruitment/appointments",
+        roles: ["super_admin", "hr_admin"],
+      },
+    ],
+  },
+
+  // ── Learning & Development (LDM — PRD §4.6 / M6) ─────────────────────────
+  {
+    label: "Learning & Development",
+    icon: GraduationCap,
+    roles: [
+      "super_admin",
+      "hr_admin",
+      "leave_approver",
+      "viewer",
+      "employee_self_service",
+    ],
+    children: [
+      {
+        label: "Overview",
+        href: "/learning",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "viewer",
+          "employee_self_service",
+        ],
+      },
+      {
+        label: "Catalog",
+        href: "/learning/catalog",
+        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+      },
+      {
+        label: "Providers",
+        href: "/learning/providers",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "Schedule",
+        href: "/learning/schedule",
+        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+      },
+      {
+        label: "TNA (Training Needs Analysis)",
+        href: "/learning/tna",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "Mandatory Compliance",
+        href: "/learning/mandatory",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "Certificates",
+        href: "/learning/certificates",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "viewer",
+          "employee_self_service",
+        ],
+      },
+      {
+        label: "Reports",
+        href: "/learning/reports",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+    ],
+  },
+
+  // ── Welfare & PRAISE (EWBM — PRD §4.10 / M10) ────────────────────────────
+  {
+    label: "Welfare & PRAISE",
+    icon: Award,
+    roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+    children: [
+      {
+        label: "Overview",
+        href: "/welfare",
+        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+      },
+      {
+        label: "Loyalty Awards",
+        href: "/welfare/loyalty",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "Retirement",
+        href: "/welfare/retirement",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "PRAISE",
+        href: "/welfare/praise",
+        roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      {
+        label: "Wellness",
+        href: "/welfare/wellness",
+        roles: ["super_admin", "hr_admin", "viewer"],
       },
     ],
   },
