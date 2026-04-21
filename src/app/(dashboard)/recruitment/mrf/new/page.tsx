@@ -1,20 +1,26 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layouts/page-header";
 import { MrfForm } from "@/components/recruitment/mrf-form";
-import { getCurrentUser } from "@/lib/auth/get-current-user";
+import { requireAuth } from "@/lib/auth/guards";
 import {
   getOffices,
   getPlantillaPositions,
 } from "@/app/(dashboard)/plantilla/queries";
 import { createMrf } from "@/lib/actions/rpm/mrf";
+import type { Role } from "@/lib/auth/permissions";
 
 export const metadata: Metadata = {
   title: "New MRF",
 };
 
+const ALLOWED_ROLES: ReadonlyArray<Role> = ["super_admin", "hr_admin"];
+
 export default async function NewMrfPage() {
-  const [user, offices, plantillaResult] = await Promise.all([
-    getCurrentUser(),
+  const user = await requireAuth();
+  if (!ALLOWED_ROLES.includes(user.role)) redirect("/recruitment/mrf");
+
+  const [offices, plantillaResult] = await Promise.all([
     getOffices(),
     getPlantillaPositions({ page: 1, perPage: 200, status: "vacant" }),
   ]);
@@ -25,7 +31,7 @@ export default async function NewMrfPage() {
     title: row.positionTitle,
   }));
 
-  const requesterEmployeeId = user?.employeeId ?? "";
+  const requesterEmployeeId = user.employeeId ?? "";
 
   return (
     <div className="max-w-3xl">

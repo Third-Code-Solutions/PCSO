@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RoleGate } from "@/components/role-gate";
+import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import {
   RunDetail,
   type RunDetailData,
@@ -42,6 +43,7 @@ const ADMIN_ROLES: ReadonlyArray<Role> = ["super_admin", "hr_admin"];
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 type ApprovalDecision = "pending" | "approved" | "rejected";
@@ -50,9 +52,16 @@ function toDecision(v: string): ApprovalDecision {
   return v === "approved" || v === "rejected" ? v : "pending";
 }
 
-export default async function RunDetailPage({ params }: PageProps) {
+export default async function RunDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
   const user = await requireAuth();
   const { id } = await params;
+  const query = await searchParams;
+  const statusRaw = Array.isArray(query["status"])
+    ? query["status"][0]
+    : query["status"];
   const isAdmin = ADMIN_ROLES.includes(user.role);
 
   const [runRow] = await db
@@ -208,6 +217,7 @@ export default async function RunDetailPage({ params }: PageProps) {
           </RoleGate>
         }
       />
+      <ActionStatusBanner status={statusRaw} entityLabel="Training Run" />
 
       <div className="mt-6">
         <RunDetail run={runDetail} />

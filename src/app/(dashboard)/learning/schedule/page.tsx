@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RoleGate } from "@/components/role-gate";
+import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import { db } from "@/lib/db";
 import {
   trainingRuns,
@@ -66,6 +67,9 @@ export default async function ScheduleListPage({ searchParams }: PageProps) {
   const user = await requireAuth();
   const params = await searchParams;
   const status = parseStatus(params["status"]);
+  const actionStatusRaw = Array.isArray(params["actionStatus"])
+    ? params["actionStatus"][0]
+    : params["actionStatus"];
 
   const filters = [isNull(trainingRuns.deletedAt)];
   if (status !== "all") {
@@ -124,6 +128,7 @@ export default async function ScheduleListPage({ searchParams }: PageProps) {
           </RoleGate>
         }
       />
+      <ActionStatusBanner status={actionStatusRaw} entityLabel="Training Run" />
 
       <div className="mt-5 flex flex-wrap gap-2">
         {STATUS_OPTIONS.map((s) => (
@@ -208,7 +213,7 @@ export default async function ScheduleListPage({ searchParams }: PageProps) {
                     {r.venue}
                   </td>
                   <td className="px-4 py-3 tabular-nums">
-                    {r.actualHeadcount}/{r.plannedHeadcount}
+                    {r.actualHeadcount ?? 0}/{r.plannedHeadcount}
                   </td>
                   <td className="px-4 py-3">
                     <Badge

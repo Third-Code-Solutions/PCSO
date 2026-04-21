@@ -54,7 +54,7 @@ export async function createProvider(
   input: unknown,
 ): Promise<Result<TrainingProvider>> {
   try {
-    await requirePermission("admin", "create");
+    await requirePermission("learning", "create");
     const parsed = createProviderSchema.parse(input);
 
     const [row] = await db.insert(trainingProviders).values(parsed).returning();
@@ -74,7 +74,7 @@ export async function updateProvider(
   input: { id: string } & Record<string, unknown>,
 ): Promise<Result<TrainingProvider>> {
   try {
-    await requirePermission("admin", "edit");
+    await requirePermission("learning", "edit");
     const { id, ...rest } = input;
     if (!id) return err("Provider id is required");
 
@@ -188,7 +188,7 @@ export async function linkProgramToProvider(
   programId: string,
 ): Promise<Result<TrainingProvider>> {
   try {
-    await requirePermission("admin", "edit");
+    await requirePermission("learning", "edit");
 
     const [current] = await db
       .select()
@@ -231,7 +231,7 @@ export async function unlinkProgramFromProvider(
   programId: string,
 ): Promise<Result<TrainingProvider>> {
   try {
-    await requirePermission("admin", "edit");
+    await requirePermission("learning", "edit");
 
     const [current] = await db
       .select()
@@ -273,7 +273,7 @@ export async function deactivateProvider(
   id: string,
 ): Promise<Result<{ id: string }>> {
   try {
-    await requirePermission("admin", "delete");
+    await requirePermission("learning", "delete");
 
     const [row] = await db
       .update(trainingProviders)

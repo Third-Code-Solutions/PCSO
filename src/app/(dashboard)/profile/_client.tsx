@@ -9,6 +9,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -157,14 +158,18 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="font-serif text-pcso-navy">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-xl rounded-xl p-0 sm:w-full sm:max-w-2xl">
+          <DialogHeader className="border-b px-4 py-3 sm:px-6 sm:py-4">
+            <DialogTitle className="font-serif text-base text-pcso-navy sm:text-lg">
               Edit Contact & Address
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Update your contact details, current address, and emergency
+              contact information.
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5 py-1">
+          <div className="max-h-[70vh] space-y-5 overflow-y-auto px-4 py-4 sm:max-h-[75vh] sm:px-6">
             {/* Contact */}
             <section>
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-pcso-navy">
@@ -201,7 +206,7 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
                   value={form.addressBarangay ?? ""}
                   onChange={set("addressBarangay")}
                 />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field
                     id="addressCity"
                     label="City / Municipality"
@@ -276,12 +281,13 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
             )}
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="border-t px-4 py-3 sm:px-6 sm:py-4">
             <Button
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
               disabled={isPending}
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
@@ -289,7 +295,7 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
               type="button"
               onClick={handleSubmit}
               disabled={isPending}
-              className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
+              className="w-full bg-pcso-navy text-white hover:bg-pcso-navy-light sm:w-auto"
             >
               {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save Changes

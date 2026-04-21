@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * Thin wrapper around Supabase Realtime that forces a simple router.refresh()
@@ -14,15 +14,15 @@
  *     `router.refresh()` every 30s until realtime recovers.
  *   - Returns a `connectionState` value for optional UI indication.
  */
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createBrowserClient } from '@/lib/supabase/client';
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 export type RealtimeConnectionState =
-  | 'connected'
-  | 'reconnecting'
-  | 'disconnected'
-  | 'polling-fallback';
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "polling-fallback";
 
 export interface UseRealtimeRefreshResult {
   connectionState: RealtimeConnectionState;
@@ -42,7 +42,7 @@ export function useRealtimeRefresh(
 ): UseRealtimeRefreshResult {
   const router = useRouter();
   const [connectionState, setConnectionState] =
-    useState<RealtimeConnectionState>('disconnected');
+    useState<RealtimeConnectionState>("disconnected");
 
   // Stable reference for the router.refresh callback so the reconnect loop
   // doesn't re-run when `router` reference changes.
@@ -53,20 +53,30 @@ export function useRealtimeRefresh(
 
   useEffect(() => {
     if (tables.length === 0) {
-      setConnectionState('disconnected');
+      setConnectionState("disconnected");
       return;
     }
 
     const supabase = createBrowserClient();
-    const channelName = `refresh:${tables.join(':')}`;
+    const channelName = `refresh:${tables.join(":")}`;
 
     let attempt = 0;
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let tearingDownChannel = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let currentChannel: any = null;
+    const teardownCurrentChannel = () => {
+      if (!currentChannel || tearingDownChannel) return;
+      tearingDownChannel = true;
+      const channel = currentChannel;
+      currentChannel = null;
+      void supabase.removeChannel(channel).finally(() => {
+        tearingDownChannel = false;
+      });
+    };
 
     const clearReconnectTimer = () => {
       if (reconnectTimer) {
@@ -88,7 +98,7 @@ export function useRealtimeRefresh(
     };
     const startPolling = () => {
       if (pollInterval) return;
-      setConnectionState('polling-fallback');
+      setConnectionState("polling-fallback");
       pollInterval = setInterval(() => {
         routerRef.current.refresh();
       }, POLLING_INTERVAL_MS);
@@ -111,43 +121,45 @@ export function useRealtimeRefresh(
     const connect = () => {
       if (disposed) return;
       setConnectionState((prev) =>
-        prev === 'polling-fallback' ? 'polling-fallback' : 'reconnecting',
+        prev === "polling-fallback" ? "polling-fallback" : "reconnecting",
       );
 
       const channel = supabase.channel(channelName);
       for (const table of tables) {
         channel.on(
           // supabase-js narrows this string literal; the runtime accepts it.
-          'postgres_changes' as never,
-          { event: '*', schema: 'public', table } as never,
+          "postgres_changes" as never,
+          { event: "*", schema: "public", table } as never,
           () => routerRef.current.refresh(),
         );
       }
 
       channel.subscribe((status: string) => {
         if (disposed) return;
-        if (status === 'SUBSCRIBED') {
+        if (status === "SUBSCRIBED") {
           attempt = 0;
           clearReconnectTimer();
           clearFallbackTimer();
           stopPolling();
-          setConnectionState('connected');
+          setConnectionState("connected");
           // Recover any missed changes during the outage.
           routerRef.current.refresh();
           return;
         }
         if (
-          status === 'CHANNEL_ERROR' ||
-          status === 'TIMED_OUT' ||
-          status === 'CLOSED'
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
         ) {
           setConnectionState((prev) =>
-            prev === 'polling-fallback' ? 'polling-fallback' : 'reconnecting',
+            prev === "polling-fallback" ? "polling-fallback" : "reconnecting",
           );
           armFallbackTimer();
-          if (currentChannel) {
-            void supabase.removeChannel(currentChannel);
+          // Avoid recursive onClose -> removeChannel -> onClose loops.
+          if (status === "CLOSED") {
             currentChannel = null;
+          } else {
+            teardownCurrentChannel();
           }
           scheduleReconnect();
         }
@@ -163,10 +175,7 @@ export function useRealtimeRefresh(
       clearReconnectTimer();
       clearFallbackTimer();
       stopPolling();
-      if (currentChannel) {
-        void supabase.removeChannel(currentChannel);
-        currentChannel = null;
-      }
+      teardownCurrentChannel();
     };
   }, [tables]);
 

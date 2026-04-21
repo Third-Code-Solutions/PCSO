@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * use-realtime-table
@@ -24,18 +24,18 @@
  *     queryKey: ['leave', 'mine', employeeId],
  *   });
  */
-import { useEffect, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { createBrowserClient } from '@/lib/supabase/client';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { createBrowserClient } from "@/lib/supabase/client";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
-type Event = 'INSERT' | 'UPDATE' | 'DELETE' | '*';
+type Event = "INSERT" | "UPDATE" | "DELETE" | "*";
 
 export type RealtimeConnectionState =
-  | 'connected'
-  | 'reconnecting'
-  | 'disconnected'
-  | 'polling-fallback';
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "polling-fallback";
 
 export interface UseRealtimeTableOptions {
   /** Postgres table in the `public` schema */
@@ -47,7 +47,9 @@ export interface UseRealtimeTableOptions {
   /** Event types to listen for. Defaults to all. */
   event?: Event;
   /** Optional callback invoked with each change payload */
-  onChange?: (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => void;
+  onChange?: (
+    payload: RealtimePostgresChangesPayload<Record<string, unknown>>,
+  ) => void;
   /** Disable the subscription without unmounting the component */
   enabled?: boolean;
 }
@@ -69,13 +71,13 @@ export function useRealtimeTable({
   table,
   queryKey,
   filter,
-  event = '*',
+  event = "*",
   onChange,
   enabled = true,
 }: UseRealtimeTableOptions): UseRealtimeTableResult {
   const qc = useQueryClient();
   const [connectionState, setConnectionState] =
-    useState<RealtimeConnectionState>('disconnected');
+    useState<RealtimeConnectionState>("disconnected");
 
   // Keep latest onChange / queryKey in refs so reconnect logic doesn't churn
   // the main useEffect on every render.
@@ -90,20 +92,30 @@ export function useRealtimeTable({
 
   useEffect(() => {
     if (!enabled) {
-      setConnectionState('disconnected');
+      setConnectionState("disconnected");
       return;
     }
 
     const supabase = createBrowserClient();
-    const channelName = `realtime:${table}:${filter ?? 'all'}`;
+    const channelName = `realtime:${table}:${filter ?? "all"}`;
 
     let attempt = 0;
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let tearingDownChannel = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let currentChannel: any = null;
+    const teardownCurrentChannel = () => {
+      if (!currentChannel || tearingDownChannel) return;
+      tearingDownChannel = true;
+      const channel = currentChannel;
+      currentChannel = null;
+      void supabase.removeChannel(channel).finally(() => {
+        tearingDownChannel = false;
+      });
+    };
 
     const clearReconnectTimer = () => {
       if (reconnectTimer) {
@@ -125,7 +137,7 @@ export function useRealtimeTable({
     };
     const startPolling = () => {
       if (pollInterval) return;
-      setConnectionState('polling-fallback');
+      setConnectionState("polling-fallback");
       pollInterval = setInterval(() => {
         qc.invalidateQueries({ queryKey: queryKeyRef.current });
       }, POLLING_INTERVAL_MS);
@@ -148,45 +160,53 @@ export function useRealtimeTable({
     const connect = () => {
       if (disposed) return;
       setConnectionState((prev) =>
-        prev === 'polling-fallback' ? 'polling-fallback' : 'reconnecting',
+        prev === "polling-fallback" ? "polling-fallback" : "reconnecting",
       );
 
       const channel = supabase
         .channel(channelName)
         .on(
           // supabase-js narrows this string literal; the runtime accepts it.
-          'postgres_changes' as never,
-          { event, schema: 'public', table, ...(filter ? { filter } : {}) } as never,
-          (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+          "postgres_changes" as never,
+          {
+            event,
+            schema: "public",
+            table,
+            ...(filter ? { filter } : {}),
+          } as never,
+          (
+            payload: RealtimePostgresChangesPayload<Record<string, unknown>>,
+          ) => {
             qc.invalidateQueries({ queryKey: queryKeyRef.current });
             onChangeRef.current?.(payload);
           },
         )
         .subscribe((status: string) => {
           if (disposed) return;
-          if (status === 'SUBSCRIBED') {
+          if (status === "SUBSCRIBED") {
             attempt = 0;
             clearReconnectTimer();
             clearFallbackTimer();
             stopPolling();
-            setConnectionState('connected');
+            setConnectionState("connected");
             // Recover any missed changes during the outage.
             qc.invalidateQueries({ queryKey: queryKeyRef.current });
             return;
           }
           if (
-            status === 'CHANNEL_ERROR' ||
-            status === 'TIMED_OUT' ||
-            status === 'CLOSED'
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
           ) {
             setConnectionState((prev) =>
-              prev === 'polling-fallback' ? 'polling-fallback' : 'reconnecting',
+              prev === "polling-fallback" ? "polling-fallback" : "reconnecting",
             );
             armFallbackTimer();
-            // Detach broken channel and schedule a fresh subscribe.
-            if (currentChannel) {
-              void supabase.removeChannel(currentChannel);
+            // Avoid recursive onClose -> removeChannel -> onClose loops.
+            if (status === "CLOSED") {
               currentChannel = null;
+            } else {
+              teardownCurrentChannel();
             }
             scheduleReconnect();
           }
@@ -202,10 +222,7 @@ export function useRealtimeTable({
       clearReconnectTimer();
       clearFallbackTimer();
       stopPolling();
-      if (currentChannel) {
-        void supabase.removeChannel(currentChannel);
-        currentChannel = null;
-      }
+      teardownCurrentChannel();
     };
   }, [table, filter, event, enabled, qc]);
 

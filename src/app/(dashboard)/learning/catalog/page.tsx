@@ -13,6 +13,7 @@ import {
   ProgramTable,
   type ProgramRow,
 } from "@/components/learning/program-table";
+import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import { db } from "@/lib/db";
 import { trainingPrograms } from "@/lib/db/schema/learning";
 import { PlusIcon } from "lucide-react";
@@ -49,8 +50,16 @@ async function listPrograms(): Promise<ProgramRow[]> {
   }));
 }
 
-export default async function CatalogListPage() {
+interface PageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function CatalogListPage({ searchParams }: PageProps) {
   const user = await requireAuth();
+  const params = await searchParams;
+  const statusRaw = Array.isArray(params["status"])
+    ? params["status"][0]
+    : params["status"];
   const rows = await listPrograms();
 
   return (
@@ -78,6 +87,7 @@ export default async function CatalogListPage() {
           </RoleGate>
         }
       />
+      <ActionStatusBanner status={statusRaw} entityLabel="Training Program" />
       <div className="mt-6">
         <ProgramTable rows={rows} />
       </div>

@@ -53,13 +53,16 @@ export function ProviderForm({ initial, mode }: ProviderFormProps) {
           ? await createProvider(values)
           : await updateProvider({ ...values, id: initial?.id ?? "" });
       if ("error" in result) {
-        setServerError(result.error);
+        setServerError(`FAILED: ${result.error}`);
         return;
       }
-      router.push("/learning/providers");
+      const status = mode === "create" ? "created" : "updated";
+      router.push(`/learning/providers?status=${status}`);
       router.refresh();
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : "Unexpected error.");
+      setServerError(
+        `FAILED: ${err instanceof Error ? err.message : "Unexpected error."}`,
+      );
     }
   }
 

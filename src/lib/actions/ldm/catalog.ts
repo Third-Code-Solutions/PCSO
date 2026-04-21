@@ -81,7 +81,7 @@ export async function createProgram(
   input: unknown,
 ): Promise<Result<TrainingProgram>> {
   try {
-    await requirePermission("admin", "create");
+    await requirePermission("learning", "create");
     const parsed = createTrainingProgramSchema.parse(input);
     const code = await generateProgramCode();
 
@@ -107,7 +107,7 @@ export async function updateProgram(
   input: unknown,
 ): Promise<Result<TrainingProgram>> {
   try {
-    await requirePermission("admin", "edit");
+    await requirePermission("learning", "edit");
     const parsed = updateTrainingProgramSchema.parse(input);
 
     const [row] = await db
@@ -225,7 +225,7 @@ export async function deactivateProgram(
   id: string,
 ): Promise<Result<{ id: string }>> {
   try {
-    await requirePermission("admin", "delete");
+    await requirePermission("learning", "delete");
 
     const [row] = await db
       .update(trainingPrograms)

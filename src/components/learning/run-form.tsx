@@ -64,13 +64,15 @@ export function RunForm({
     try {
       const result = await createTrainingRun(values);
       if ("error" in result) {
-        setServerError(result.error);
+        setServerError(`FAILED: ${result.error}`);
         return;
       }
-      router.push(`/learning/schedule/${result.data.id}`);
+      router.push(`/learning/schedule/${result.data.id}?status=created`);
       router.refresh();
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : "Unexpected error.");
+      setServerError(
+        `FAILED: ${err instanceof Error ? err.message : "Unexpected error."}`,
+      );
     }
   }
 

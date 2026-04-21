@@ -58,6 +58,7 @@ export type Resource =
   | "plantilla"
   | "attendance"
   | "leave"
+  | "learning"
   | "payroll"
   | "remittances"
   | "performance"
@@ -184,6 +185,25 @@ export const permissionMatrix: PermissionMatrix = {
     delete: ["super_admin"],
     approve: ["super_admin", "hr_admin", "leave_approver"],
     export: ["super_admin", "hr_admin"],
+    process: ["super_admin", "hr_admin"],
+  },
+
+  // ── learning (L&D catalog, providers, schedule, TNA) ─────────────────────
+  // Read is broad for dashboard visibility; writes are limited to HR admins.
+  learning: {
+    view: [
+      "super_admin",
+      "hr_admin",
+      "payroll_admin",
+      "leave_approver",
+      "viewer",
+      "employee_self_service",
+    ],
+    create: ["super_admin", "hr_admin"],
+    edit: ["super_admin", "hr_admin"],
+    delete: ["super_admin", "hr_admin"],
+    approve: ["super_admin", "hr_admin"],
+    export: ["super_admin", "hr_admin", "viewer"],
     process: ["super_admin", "hr_admin"],
   },
 

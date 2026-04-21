@@ -19,6 +19,8 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import React from "react";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { and, desc, eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import { db } from "@/lib/db";
 import {
@@ -68,6 +70,10 @@ export type {
 } from "@/lib/utils/ldm/schedule-generator";
 
 type Result<T> = { data: T } | { error: string };
+
+function rethrowIfRedirectError(error: unknown): void {
+  if (isRedirectError(error)) throw error;
+}
 
 // ─── Row mappers (DB row → domain shape) ─────────────────────────────────────
 
@@ -304,8 +310,10 @@ export async function createTrainingRun(
       return row;
     });
 
+    revalidatePath("/learning/schedule");
     return { data: { id: inserted.id, runNumber: inserted.runNumber } };
   } catch (err: unknown) {
+    rethrowIfRedirectError(err);
     return {
       error:
         err instanceof Error ? err.message : "Failed to create training run.",
@@ -356,6 +364,7 @@ export async function nominateParticipants(
 
     return { data: rows.map(mapParticipant) };
   } catch (err: unknown) {
+    rethrowIfRedirectError(err);
     return {
       error:
         err instanceof Error ? err.message : "Failed to nominate participants.",
@@ -391,6 +400,7 @@ export async function confirmParticipant(
 
     return { data: mapParticipant(row) };
   } catch (err: unknown) {
+    rethrowIfRedirectError(err);
     return {
       error:
         err instanceof Error ? err.message : "Failed to confirm participant.",
@@ -413,6 +423,7 @@ export async function removeParticipant(
     if (!row) return { error: "Participant not found." };
     return { data: mapParticipant(row) };
   } catch (err: unknown) {
+    rethrowIfRedirectError(err);
     return {
       error:
         err instanceof Error ? err.message : "Failed to remove participant.",

@@ -13,6 +13,7 @@ import {
   ProviderTable,
   type ProviderRow,
 } from "@/components/learning/provider-table";
+import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import { db } from "@/lib/db";
 import { trainingProviders } from "@/lib/db/schema/learning";
 import { PlusIcon } from "lucide-react";
@@ -49,8 +50,16 @@ async function listProviders(): Promise<ProviderRow[]> {
   }));
 }
 
-export default async function ProvidersListPage() {
+interface PageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function ProvidersListPage({ searchParams }: PageProps) {
   const user = await requireAuth();
+  const params = await searchParams;
+  const statusRaw = Array.isArray(params["status"])
+    ? params["status"][0]
+    : params["status"];
   const rows = await listProviders();
 
   return (
@@ -78,6 +87,7 @@ export default async function ProvidersListPage() {
           </RoleGate>
         }
       />
+      <ActionStatusBanner status={statusRaw} entityLabel="Training Provider" />
       <div className="mt-6">
         <ProviderTable rows={rows} />
       </div>
