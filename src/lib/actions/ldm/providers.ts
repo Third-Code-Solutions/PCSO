@@ -16,6 +16,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { db } from "@/lib/db";
 import {
   trainingProviders,
@@ -43,6 +44,10 @@ function getErrorMessage(e: unknown): string {
   return "Unexpected error";
 }
 
+function rethrowIfRedirectError(error: unknown): void {
+  if (isRedirectError(error)) throw error;
+}
+
 // ─── createProvider ───────────────────────────────────────────────────────────
 
 export async function createProvider(
@@ -58,6 +63,7 @@ export async function createProvider(
     revalidatePath("/learning/providers");
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -89,6 +95,7 @@ export async function updateProvider(
     revalidatePath(`/learning/providers/${id}`);
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -120,6 +127,7 @@ export async function listProviders(
 
     return ok(rows);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -168,6 +176,7 @@ export async function getProvider(id: string): Promise<Result<ProviderDetail>> {
 
     return ok({ provider, programs });
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -210,6 +219,7 @@ export async function linkProgramToProvider(
     revalidatePath(`/learning/providers/${providerId}`);
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -252,6 +262,7 @@ export async function unlinkProgramFromProvider(
     revalidatePath(`/learning/providers/${providerId}`);
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -275,6 +286,7 @@ export async function deactivateProvider(
     revalidatePath("/learning/providers");
     return ok({ id: row.id });
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }

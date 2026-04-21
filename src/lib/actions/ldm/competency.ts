@@ -14,6 +14,7 @@
  */
 
 import { and, desc, eq } from "drizzle-orm";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { db } from "@/lib/db";
 import {
   competencyAssessments,
@@ -38,6 +39,10 @@ function err(message: string): Err {
 function getErrorMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
   return "Unexpected error";
+}
+
+function rethrowIfRedirectError(error: unknown): void {
+  if (isRedirectError(error)) throw error;
 }
 
 // ─── recordAssessment ────────────────────────────────────────────────────────
@@ -71,6 +76,7 @@ export async function recordAssessment(
     if (!row) return err("Failed to record assessment");
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -103,6 +109,7 @@ export async function bulkRecordAssessments(
 
     return ok(rows);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -123,6 +130,7 @@ export async function listEmployeeAssessments(
 
     return ok(rows);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -153,6 +161,7 @@ export async function latestAssessmentByDomain(
 
     return ok(row ?? null);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -195,6 +204,7 @@ export async function listByCycleYear(
 
     return ok(rows.map((r) => r.assessment));
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }

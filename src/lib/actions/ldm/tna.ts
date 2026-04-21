@@ -16,6 +16,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { db } from "@/lib/db";
 import {
   competencyAssessments,
@@ -50,6 +51,10 @@ function err(message: string): Err {
 function getErrorMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
   return "Unexpected error";
+}
+
+function rethrowIfRedirectError(error: unknown): void {
+  if (isRedirectError(error)) throw error;
 }
 
 // ─── Internal: generate gaps for a single employee context ───────────────────
@@ -201,6 +206,7 @@ export async function generateTnaForEmployee(
     revalidatePath(`/learning/tna/${employeeId}`);
     return ok(result);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -257,6 +263,7 @@ export async function generateTnaForOffice(
       totalGapsInserted,
     });
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -293,6 +300,7 @@ export async function listGaps(
 
     return ok(rows);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -327,6 +335,7 @@ export async function resolveGap(
     revalidatePath("/learning/tna");
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -349,6 +358,7 @@ export async function listGapsByIds(
 
     return ok(rows);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }

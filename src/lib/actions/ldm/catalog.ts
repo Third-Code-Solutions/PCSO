@@ -16,6 +16,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { db } from "@/lib/db";
 import {
   trainingPrograms,
@@ -70,6 +71,10 @@ function getErrorMessage(e: unknown): string {
   return "Unexpected error";
 }
 
+function rethrowIfRedirectError(error: unknown): void {
+  if (isRedirectError(error)) throw error;
+}
+
 // ─── createProgram ────────────────────────────────────────────────────────────
 
 export async function createProgram(
@@ -90,6 +95,7 @@ export async function createProgram(
     revalidatePath("/learning/catalog");
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -116,6 +122,7 @@ export async function updateProgram(
     revalidatePath(`/learning/catalog/${id}`);
     return ok(row);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -167,6 +174,7 @@ export async function listPrograms(
 
     return ok(rows);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -206,6 +214,7 @@ export async function getProgram(id: string): Promise<Result<ProgramDetail>> {
 
     return ok({ program, providerPreviews, recentRuns: [] });
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -229,6 +238,7 @@ export async function deactivateProgram(
     revalidatePath("/learning/catalog");
     return ok({ id: row.id });
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
@@ -258,6 +268,7 @@ export async function searchPrograms(
 
     return ok(rows);
   } catch (e) {
+    rethrowIfRedirectError(e);
     return err(getErrorMessage(e));
   }
 }
