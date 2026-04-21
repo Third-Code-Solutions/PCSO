@@ -1,7 +1,7 @@
-# Senate HRIS — Contributing Guide
+# PCSO HRIS — Contributing Guide
 
 This guide covers the development workflow, branching strategy, commit
-conventions, PR process, and code quality standards for the Senate HRIS
+conventions, PR process, and code quality standards for the PCSO HRIS
 project.
 
 Read `docs/CONVENTIONS.md` before writing any code — it defines the
@@ -15,7 +15,7 @@ that all contributors must follow.
 - Node.js >= 20 (use `nvm` or `fnm` to manage versions)
 - npm >= 10
 - A Supabase account with a local or dev project for testing
-- Git configured with your Senate email address
+- Git configured with your PCSO/project email address
 
 ---
 
@@ -56,13 +56,13 @@ or `main`.**
 Branches must follow one of these patterns or the `pr-checks.yml` workflow
 will fail:
 
-| Pattern | Example | Use For |
-|---|---|---|
-| `feature/phase-NN-description` | `feature/phase-15-cicd-pipeline` | Phase feature work |
-| `hotfix/description` | `hotfix/fix-gsis-rounding-error` | Production bug fixes |
-| `release/X.Y.Z` | `release/1.0.0` | Release preparation |
-| `chore/description` | `chore/update-deps` | Maintenance tasks |
-| `docs/description` | `docs/add-runbook` | Documentation only |
+| Pattern                        | Example                          | Use For              |
+| ------------------------------ | -------------------------------- | -------------------- |
+| `feature/phase-NN-description` | `feature/phase-15-cicd-pipeline` | Phase feature work   |
+| `hotfix/description`           | `hotfix/fix-gsis-rounding-error` | Production bug fixes |
+| `release/X.Y.Z`                | `release/1.0.0`                  | Release preparation  |
+| `chore/description`            | `chore/update-deps`              | Maintenance tasks    |
+| `docs/description`             | `docs/add-runbook`               | Documentation only   |
 
 ```bash
 # Create and switch to a new branch
@@ -96,19 +96,19 @@ The `commit-msg` Husky hook enforces this via commitlint.
 
 ### Allowed Types
 
-| Type | When to Use |
-|---|---|
-| `feat` | New feature or capability |
-| `fix` | Bug fix |
-| `refactor` | Code restructure, no behavior change |
-| `docs` | Documentation only |
-| `test` | Adding or modifying tests |
-| `chore` | Build process, tooling, dependency updates |
-| `perf` | Performance improvement |
-| `ci` | CI/CD pipeline changes |
-| `style` | Formatting, whitespace (no logic change) |
-| `build` | Build system changes |
-| `revert` | Reverting a previous commit |
+| Type       | When to Use                                |
+| ---------- | ------------------------------------------ |
+| `feat`     | New feature or capability                  |
+| `fix`      | Bug fix                                    |
+| `refactor` | Code restructure, no behavior change       |
+| `docs`     | Documentation only                         |
+| `test`     | Adding or modifying tests                  |
+| `chore`    | Build process, tooling, dependency updates |
+| `perf`     | Performance improvement                    |
+| `ci`       | CI/CD pipeline changes                     |
+| `style`    | Formatting, whitespace (no logic change)   |
+| `build`    | Build system changes                       |
+| `revert`   | Reverting a previous commit                |
 
 ### Scope Examples
 
@@ -164,11 +164,11 @@ ci: add Dependabot configuration for weekly dependency updates
 
 ### PR Review SLA
 
-| Priority | Review Within |
-|---|---|
-| P1 hotfix | 2 hours |
+| Priority        | Review Within   |
+| --------------- | --------------- |
+| P1 hotfix       | 2 hours         |
 | Regular feature | 2 business days |
-| Docs-only | 3 business days |
+| Docs-only       | 3 business days |
 
 ### Merging
 

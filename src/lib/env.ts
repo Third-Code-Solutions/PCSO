@@ -5,6 +5,7 @@ const ServerEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   DATABASE_URL: z.string().url().optional(),
+  JWT_SECRET: z.string().min(32).optional(),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),

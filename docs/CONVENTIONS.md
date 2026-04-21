@@ -1,4 +1,4 @@
-# Senate HRIS — Shared Conventions (READ BEFORE WRITING CODE)
+# PCSO HRIS — Shared Conventions (READ BEFORE WRITING CODE)
 
 All subagents and future contributors MUST follow these conventions to keep the codebase cohesive.
 

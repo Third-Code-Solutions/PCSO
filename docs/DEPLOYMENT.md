@@ -1,6 +1,6 @@
-# Senate HRIS — Deployment Guide
+# PCSO HRIS — Deployment Guide
 
-This guide covers the full end-to-end setup of the Senate HRIS system using
+This guide covers the full end-to-end setup of the PCSO HRIS system using
 Supabase (database + auth) and Vercel (hosting).
 
 ---
@@ -8,48 +8,49 @@ Supabase (database + auth) and Vercel (hosting).
 ## Required GitHub Secrets
 
 Configure all secrets in **Settings > Secrets and variables > Actions** for
-the `senate-hris` GitHub repository before running any workflow.
+the `pcso-hris` GitHub repository before running any workflow.
 
 ### Shared Across Environments
 
-| Secret Name | Description |
-|---|---|
-| `VERCEL_TOKEN` | Vercel personal access token (from vercel.com/account/tokens) |
-| `VERCEL_ORG_ID` | Vercel team or personal org ID (from `.vercel/project.json` or dashboard) |
-| `VERCEL_PROJECT_ID` | Vercel project ID (from `.vercel/project.json` or project settings) |
-| `RESEND_API_KEY` | Resend API key for transactional email (payslip delivery, SALN reminders) |
-| `SENTRY_DSN` | Sentry DSN for error monitoring (from Sentry project settings) |
-| `SENTRY_AUTH_TOKEN` | Sentry auth token for source map upload during production builds |
+| Secret Name         | Description                                                               |
+| ------------------- | ------------------------------------------------------------------------- |
+| `VERCEL_TOKEN`      | Vercel personal access token (from vercel.com/account/tokens)             |
+| `VERCEL_ORG_ID`     | Vercel team or personal org ID (from `.vercel/project.json` or dashboard) |
+| `VERCEL_PROJECT_ID` | Vercel project ID (from `.vercel/project.json` or project settings)       |
+| `RESEND_API_KEY`    | Resend API key for transactional email (payslip delivery, SALN reminders) |
+| `SENTRY_DSN`        | Sentry DSN for error monitoring (from Sentry project settings)            |
+| `SENTRY_AUTH_TOKEN` | Sentry auth token for source map upload during production builds          |
+| `JWT_SECRET`        | 32+ character random secret for server-side certificate JWT signing       |
 
 ### Staging Environment
 
-| Secret Name | Description |
-|---|---|
-| `STAGING_DATABASE_URL` | Full PostgreSQL connection string for the staging Supabase project |
-| `STAGING_NEXT_PUBLIC_SUPABASE_URL` | Staging Supabase project URL (`https://<ref>.supabase.co`) |
-| `STAGING_NEXT_PUBLIC_SUPABASE_ANON_KEY` | Staging Supabase anon/public key |
-| `STAGING_SUPABASE_SERVICE_ROLE_KEY` | Staging Supabase service role key (never expose client-side) |
+| Secret Name                             | Description                                                        |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `STAGING_DATABASE_URL`                  | Full PostgreSQL connection string for the staging Supabase project |
+| `STAGING_NEXT_PUBLIC_SUPABASE_URL`      | Staging Supabase project URL (`https://<ref>.supabase.co`)         |
+| `STAGING_NEXT_PUBLIC_SUPABASE_ANON_KEY` | Staging Supabase anon/public key                                   |
+| `STAGING_SUPABASE_SERVICE_ROLE_KEY`     | Staging Supabase service role key (never expose client-side)       |
 
 ### Production Environment
 
-| Secret Name | Description |
-|---|---|
-| `PRODUCTION_DATABASE_URL` | Full PostgreSQL connection string for the production Supabase project |
-| `NEXT_PUBLIC_SUPABASE_URL` | Production Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Production Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Production Supabase service role key (never expose client-side) |
+| Secret Name                     | Description                                                           |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `PRODUCTION_DATABASE_URL`       | Full PostgreSQL connection string for the production Supabase project |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Production Supabase project URL                                       |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Production Supabase anon/public key                                   |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Production Supabase service role key (never expose client-side)       |
 
 ### E2E Testing (optional — required if running E2E workflow)
 
-| Secret Name | Description |
-|---|---|
-| `E2E_NEXT_PUBLIC_SUPABASE_URL` | Supabase URL for the dedicated E2E test project |
-| `E2E_NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for E2E project |
-| `E2E_SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for E2E project |
-| `E2E_ADMIN_EMAIL` | Email of the seeded admin user in the E2E project |
-| `E2E_ADMIN_PASSWORD` | Password of the seeded admin user |
-| `E2E_EMPLOYEE_EMAIL` | Email of the seeded employee user in the E2E project |
-| `E2E_EMPLOYEE_PASSWORD` | Password of the seeded employee user |
+| Secret Name                         | Description                                          |
+| ----------------------------------- | ---------------------------------------------------- |
+| `E2E_NEXT_PUBLIC_SUPABASE_URL`      | Supabase URL for the dedicated E2E test project      |
+| `E2E_NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for E2E project                    |
+| `E2E_SUPABASE_SERVICE_ROLE_KEY`     | Supabase service role key for E2E project            |
+| `E2E_ADMIN_EMAIL`                   | Email of the seeded admin user in the E2E project    |
+| `E2E_ADMIN_PASSWORD`                | Password of the seeded admin user                    |
+| `E2E_EMPLOYEE_EMAIL`                | Email of the seeded employee user in the E2E project |
+| `E2E_EMPLOYEE_PASSWORD`             | Password of the seeded employee user                 |
 
 ---
 
@@ -59,10 +60,11 @@ the `senate-hris` GitHub repository before running any workflow.
 
 Create two Supabase projects at [supabase.com/dashboard](https://supabase.com/dashboard):
 
-- `senate-hris-staging`
-- `senate-hris-production`
+- `pcso-hris-staging`
+- `pcso-hris-production`
 
 For each project, note:
+
 - **Project URL** (`NEXT_PUBLIC_SUPABASE_URL`)
 - **Anon / public key** (`NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 - **Service role key** (`SUPABASE_SERVICE_ROLE_KEY`)
@@ -78,7 +80,7 @@ In each Supabase project go to **Authentication > Settings**:
 
 - Set **Site URL** to your Vercel deployment URL
 - Add Vercel preview URL pattern to **Additional Redirect URLs**:
-  `https://*-senate-hris.vercel.app/**`
+  `https://*-pcso-hris.vercel.app/**`
 - Disable **Email confirmations** for internal staff accounts (optional — HR
   admins create accounts manually)
 - Enable **Leaked password protection**
@@ -100,6 +102,7 @@ DATABASE_URL="postgresql://..." npm run db:seed
 ```
 
 The seed script populates:
+
 - Salary grades (SG 1–33, all steps per DBM)
 - GSIS contribution table
 - PhilHealth premium table
@@ -143,19 +146,20 @@ Add all production secrets. Set the **Environment** scope appropriately:
 - `Preview` — staging Supabase keys (so preview deploys from PRs use staging)
 - `Development` — not required (local `.env.local` is used)
 
-| Variable | Production | Preview | Development |
-|---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | prod URL | staging URL | local URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | prod key | staging key | local key |
-| `SUPABASE_SERVICE_ROLE_KEY` | prod key | staging key | local key |
-| `RESEND_API_KEY` | real key | test key | test key |
-| `SENTRY_DSN` | real DSN | real DSN | optional |
-| `SENTRY_AUTH_TOKEN` | real token | skip | skip |
-| `NEXT_PUBLIC_SENTRY_DSN` | same as SENTRY_DSN | same | optional |
+| Variable                        | Production         | Preview     | Development |
+| ------------------------------- | ------------------ | ----------- | ----------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | prod URL           | staging URL | local URL   |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | prod key           | staging key | local key   |
+| `SUPABASE_SERVICE_ROLE_KEY`     | prod key           | staging key | local key   |
+| `RESEND_API_KEY`                | real key           | test key    | test key    |
+| `SENTRY_DSN`                    | real DSN           | real DSN    | optional    |
+| `SENTRY_AUTH_TOKEN`             | real token         | skip        | skip        |
+| `NEXT_PUBLIC_SENTRY_DSN`        | same as SENTRY_DSN | same        | optional    |
 
 ### 2c. Connect Custom Domain
 
 In Vercel **Settings > Domains**, add:
+
 - `hris.senate.gov.ph` (production)
 - `hris-staging.senate.gov.ph` (staging, optional)
 

@@ -1,12 +1,12 @@
-# Senate HRIS — System Architecture
+# PCSO HRIS — System Architecture
 
 ---
 
 ## System Overview
 
-Senate HRIS is a Next.js 15 full-stack application serving as the primary
-HR, payroll, and government compliance platform for the Senate of the
-Philippines. It runs on Vercel (serverless edge + Node.js runtime) backed by
+PCSO HRIS is a Next.js 15 full-stack application serving as the primary
+HR, payroll, and government compliance platform for the Philippine Charity
+Sweepstakes Office. It runs on Vercel (serverless edge + Node.js runtime) backed by
 a Supabase-managed PostgreSQL database.
 
 ---
@@ -64,7 +64,7 @@ a Supabase-managed PostgreSQL database.
 ## Component Architecture
 
 ```
-senate-hris/
+pcso-hris/
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/                    # Public auth routes (login, reset-password)
@@ -175,17 +175,17 @@ Drizzle ORM → Supabase PostgreSQL
 
 ## Key Technology Decisions
 
-| Decision | Choice | Rationale |
-|---|---|---|
-| Framework | Next.js 15 (App Router) | Server Components + Server Actions eliminate separate API layer; RSC reduces client JS bundle |
-| Database ORM | Drizzle ORM | Type-safe SQL; no magic; migrations are plain SQL files suitable for COA audit |
-| Auth | Supabase Auth (JWT) | Handles session management, refresh tokens, MFA; integrates with RLS |
-| Database | Supabase PostgreSQL | Managed Postgres with built-in RLS, PITR backups, and Edge Functions if needed |
-| PDF Generation | @react-pdf/renderer | Server-side PDF; no browser required; consistent output for payslips and government forms |
-| Email | Resend | Reliable deliverability; developer-friendly API; transactional only |
-| Error Monitoring | Sentry | Full-stack coverage (client, server, edge); source map support; Philippine server region available |
-| Validation | Zod | Runtime schema validation at every input boundary |
-| State Management | TanStack Query + Zustand | Server state (React Query); minimal client state (Zustand) |
+| Decision         | Choice                   | Rationale                                                                                          |
+| ---------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| Framework        | Next.js 15 (App Router)  | Server Components + Server Actions eliminate separate API layer; RSC reduces client JS bundle      |
+| Database ORM     | Drizzle ORM              | Type-safe SQL; no magic; migrations are plain SQL files suitable for COA audit                     |
+| Auth             | Supabase Auth (JWT)      | Handles session management, refresh tokens, MFA; integrates with RLS                               |
+| Database         | Supabase PostgreSQL      | Managed Postgres with built-in RLS, PITR backups, and Edge Functions if needed                     |
+| PDF Generation   | @react-pdf/renderer      | Server-side PDF; no browser required; consistent output for payslips and government forms          |
+| Email            | Resend                   | Reliable deliverability; developer-friendly API; transactional only                                |
+| Error Monitoring | Sentry                   | Full-stack coverage (client, server, edge); source map support; Philippine server region available |
+| Validation       | Zod                      | Runtime schema validation at every input boundary                                                  |
+| State Management | TanStack Query + Zustand | Server state (React Query); minimal client state (Zustand)                                         |
 
 ---
 
@@ -198,7 +198,7 @@ GitHub (source of truth)
   │
   └── push to main   → GitHub Actions CI → Manual Approval Gate
                                           → deploy to Vercel Production
-                                            (custom domain: hris.senate.gov.ph)
+                                            (custom domain: hris.pcso.gov.ph)
 
 Vercel environments:
   Production  ── Supabase Production project

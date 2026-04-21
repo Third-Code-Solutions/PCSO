@@ -1,4 +1,4 @@
-# Senate HRIS — Operations Runbook
+# PCSO HRIS — Operations Runbook
 
 This runbook covers common operational tasks for HR administrators, payroll
 administrators, and system operators. Reference this document during routine
@@ -46,11 +46,11 @@ operations and incident response.
 
 ### Common Errors
 
-| Error | Likely Cause | Resolution |
-|---|---|---|
-| "Employee has no salary grade" | Employee record missing SG assignment | Edit employee → assign SG + step |
-| "Government rates not found for period" | Rates table not seeded for this year | Run `npm run db:seed` or manually add rates via Admin > Government Rates |
-| "Period already approved" | Attempting to re-process an approved period | Do not re-process; create an adjustment record instead |
+| Error                                   | Likely Cause                                | Resolution                                                               |
+| --------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| "Employee has no salary grade"          | Employee record missing SG assignment       | Edit employee → assign SG + step                                         |
+| "Government rates not found for period" | Rates table not seeded for this year        | Run `npm run db:seed` or manually add rates via Admin > Government Rates |
+| "Period already approved"               | Attempting to re-process an approved period | Do not re-process; create an adjustment record instead                   |
 
 ---
 
@@ -65,7 +65,7 @@ the effective year.
 - [ ] Download the official circular from the issuing agency website
 - [ ] Note the **effective date** — rates apply from that date forward
 - [ ] Confirm with the Finance/Accounting office that the circular applies
-      to Senate personnel
+      to PCSO personnel
 
 ### Updating Rates via Admin Panel
 
@@ -79,12 +79,12 @@ the effective year.
 
 ### Circular References
 
-| Agency | Rate Type | Where to Find |
-|---|---|---|
-| GSIS | Contribution rate (employee + government share) | gsis.gov.ph > Circulars |
-| PhilHealth | Premium contribution table | philhealth.gov.ph > Circulars |
-| HDMF (Pag-IBIG) | Monthly contribution table | pagibig-fund.gov.ph > Circulars |
-| BIR | Withholding tax table | bir.gov.ph > Revenue Regulations |
+| Agency          | Rate Type                                       | Where to Find                    |
+| --------------- | ----------------------------------------------- | -------------------------------- |
+| GSIS            | Contribution rate (employee + government share) | gsis.gov.ph > Circulars          |
+| PhilHealth      | Premium contribution table                      | philhealth.gov.ph > Circulars    |
+| HDMF (Pag-IBIG) | Monthly contribution table                      | pagibig-fund.gov.ph > Circulars  |
+| BIR             | Withholding tax table                           | bir.gov.ph > Revenue Regulations |
 
 ### Post-Update Checklist
 
@@ -131,14 +131,14 @@ all government officials and employees under RA 6713.
 
 ### Annual Timeline
 
-| Date | Action |
-|---|---|
-| January 2 | System sends **SALN filing reminder** email to all employees |
-| January 15 | First reminder for employees who have not yet filed |
-| January 25 | Final reminder — 5 days before deadline |
-| January 30 | Statutory deadline for SALN submission |
-| February 1 | HR Admin runs **SALN Compliance Report** — flags non-filers |
-| February 10 | Non-filers referred to Legal/HR for appropriate action |
+| Date        | Action                                                       |
+| ----------- | ------------------------------------------------------------ |
+| January 2   | System sends **SALN filing reminder** email to all employees |
+| January 15  | First reminder for employees who have not yet filed          |
+| January 25  | Final reminder — 5 days before deadline                      |
+| January 30  | Statutory deadline for SALN submission                       |
+| February 1  | HR Admin runs **SALN Compliance Report** — flags non-filers  |
+| February 10 | Non-filers referred to Legal/HR for appropriate action       |
 
 ### Running the SALN Reminder Emails
 
@@ -165,12 +165,12 @@ SALN records are confidential per RA 6713 Section 8. Access is restricted to
 
 ### Severity Levels
 
-| Level | Description | Response Time |
-|---|---|---|
-| P1 — Critical | System down, data breach, payroll cannot be processed | Immediate (< 30 min) |
-| P2 — High | Major feature broken, payroll delayed | < 2 hours |
-| P3 — Medium | Feature degraded, workaround exists | < 8 hours (business hours) |
-| P4 — Low | Minor bug, cosmetic issue | Next sprint |
+| Level         | Description                                           | Response Time              |
+| ------------- | ----------------------------------------------------- | -------------------------- |
+| P1 — Critical | System down, data breach, payroll cannot be processed | Immediate (< 30 min)       |
+| P2 — High     | Major feature broken, payroll delayed                 | < 2 hours                  |
+| P3 — Medium   | Feature degraded, workaround exists                   | < 8 hours (business hours) |
+| P4 — Low      | Minor bug, cosmetic issue                             | Next sprint                |
 
 ### P1 / P2 Response Steps
 
@@ -219,12 +219,12 @@ Follow-up Actions (with owners and due dates):
 
 ### Key Contacts
 
-| Role | Responsibility |
-|---|---|
-| System Administrator | Deployment, infrastructure, Supabase, Vercel |
-| DPO (Data Protection Officer) | RA 10173 breach notifications to NPC |
-| Payroll Admin Lead | Payroll continuity decisions |
-| HR Admin Lead | Employee data decisions |
+| Role                              | Responsibility                                |
+| --------------------------------- | --------------------------------------------- |
+| System Administrator              | Deployment, infrastructure, Supabase, Vercel  |
+| DPO (Data Protection Officer)     | RA 10173 breach notifications to NPC          |
+| Payroll Admin Lead                | Payroll continuity decisions                  |
+| HR Admin Lead                     | Employee data decisions                       |
 | NPC (National Privacy Commission) | Report breaches: gov.ph/npc or (02) 8234-2228 |
 
 ---

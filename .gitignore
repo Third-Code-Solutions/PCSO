@@ -41,6 +41,8 @@ drizzle/
 
 # Agentmemory local data (dev only)
 data/
+echo/
+dirs created/
 
 # Sentry
 .sentryclirc

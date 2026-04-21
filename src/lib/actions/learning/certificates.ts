@@ -35,7 +35,12 @@ function generateQrToken(certificateData: {
   issuedAt: Date;
   issuedBy: string;
 }): string {
-  const secret = process.env.JWT_SECRET || "pcso-hris-secret-key";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error(
+      "Missing env: JWT_SECRET. Set a 32+ character random secret for certificate signing.",
+    );
+  }
 
   const payload = {
     document_type: "CT",

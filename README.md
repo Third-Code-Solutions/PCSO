@@ -1,6 +1,6 @@
-# Senate of the Philippines HRIS
+# Philippine Charity Sweepstakes Office (PCSO) HRIS
 
-Enterprise HR, payroll, and government-compliance platform for the Senate.
+Enterprise HR, payroll, and government-compliance platform for PCSO.
 
 **Status:** Scaffolded via parallel multi-agent implementation (phases P0–P11 of the PCSO HRS PRD — `CLAUDE.md`).
 
@@ -41,7 +41,11 @@ Open http://localhost:3000.
 
 ## Project structure
 
-See [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) for shared conventions across modules.
+Use these references:
+
+- [`docs/README.md`](docs/README.md) as the documentation entry point for handoff
+- [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) for folder-by-folder handoff navigation
+- [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) for coding and module conventions
 
 ```
 src/
@@ -100,4 +104,4 @@ src/
 
 ## License
 
-Proprietary — Senate of the Philippines. Not for redistribution.
+Proprietary — Philippine Charity Sweepstakes Office (PCSO). Not for redistribution.
