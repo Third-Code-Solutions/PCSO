@@ -5,28 +5,28 @@
  * Fields: institution, type, year, amount.
  */
 
-'use client';
+"use client";
 
-import { useFieldArray, useFormContext } from 'react-hook-form';
-import { PlusIcon, TrashIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import type { FileSalnInput } from '@/lib/validations/saln';
+import { useFieldArray, useFormContext } from "react-hook-form";
+import { PlusIcon, TrashIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { FileSalnInput } from "@/lib/validations/saln";
 
 const INVESTMENT_TYPES = [
-  'Bank Deposit / Savings',
-  'Time Deposit',
-  'Stocks / Equities',
-  'Mutual Fund',
-  'UITF',
-  'Government Bonds',
-  'Corporate Bonds',
-  'Insurance / Annuity',
-  'GSIS Contributions',
-  'Pag-IBIG Contributions',
-  'Pension Fund',
-  'Other',
+  "Bank Deposit / Savings",
+  "Time Deposit",
+  "Stocks / Equities",
+  "Mutual Fund",
+  "UITF",
+  "Government Bonds",
+  "Corporate Bonds",
+  "Insurance / Annuity",
+  "GSIS Contributions",
+  "Pag-IBIG Contributions",
+  "Pension Fund",
+  "Other",
 ];
 
 const currentYear = new Date().getFullYear();
@@ -40,15 +40,15 @@ export function SalnFormInvestments() {
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'investments',
+    name: "investments",
   });
 
   function addItem() {
     append({
-      institution: '',
-      type: '',
+      institution: "",
+      type: "",
       year: currentYear,
-      amount: '0.00',
+      amount: "0.00",
     });
   }
 
@@ -60,12 +60,13 @@ export function SalnFormInvestments() {
         <div>
           <h3
             id="investments-heading"
-            className="text-base font-semibold text-senate-navy"
+            className="text-base font-semibold text-pcso-navy"
           >
             C. Investments / Financial Assets
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Bank deposits, stocks, bonds, insurance proceeds, and other financial instruments.
+            Bank deposits, stocks, bonds, insurance proceeds, and other
+            financial instruments.
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={addItem}>
@@ -76,13 +77,16 @@ export function SalnFormInvestments() {
 
       {fields.length === 0 && (
         <p className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-          No investments declared. Click &ldquo;Add Investment&rdquo; to add one.
+          No investments declared. Click &ldquo;Add Investment&rdquo; to add
+          one.
         </p>
       )}
 
       <div className="space-y-4">
         {fields.map((field, index) => {
-          const itemErrors = Array.isArray(fieldErrors) ? fieldErrors[index] : undefined;
+          const itemErrors = Array.isArray(fieldErrors)
+            ? fieldErrors[index]
+            : undefined;
 
           return (
             <div
@@ -119,7 +123,7 @@ export function SalnFormInvestments() {
                   />
                   {itemErrors?.institution && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.institution.message ?? '')}
+                      {String(itemErrors.institution.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -143,7 +147,7 @@ export function SalnFormInvestments() {
                   </datalist>
                   {itemErrors?.type && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.type.message ?? '')}
+                      {String(itemErrors.type.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -156,12 +160,14 @@ export function SalnFormInvestments() {
                     type="number"
                     min={1900}
                     max={currentYear}
-                    {...register(`investments.${index}.year`, { valueAsNumber: true })}
+                    {...register(`investments.${index}.year`, {
+                      valueAsNumber: true,
+                    })}
                     aria-invalid={!!itemErrors?.year}
                   />
                   {itemErrors?.year && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.year.message ?? '')}
+                      {String(itemErrors.year.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -179,7 +185,7 @@ export function SalnFormInvestments() {
                   />
                   {itemErrors?.amount && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.amount.message ?? '')}
+                      {String(itemErrors.amount.message ?? "")}
                     </p>
                   )}
                 </div>

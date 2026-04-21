@@ -8,26 +8,26 @@
  * Fields: name, relationship, position, agency and address.
  */
 
-'use client';
+"use client";
 
-import { useFieldArray, useFormContext } from 'react-hook-form';
-import { PlusIcon, TrashIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import type { FileSalnInput } from '@/lib/validations/saln';
+import { useFieldArray, useFormContext } from "react-hook-form";
+import { PlusIcon, TrashIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { FileSalnInput } from "@/lib/validations/saln";
 
 const RELATIONSHIPS = [
-  'Spouse',
-  'Child',
-  'Parent',
-  'Sibling',
-  'Grandparent',
-  'Grandchild',
-  'Uncle / Aunt',
-  'Nephew / Niece',
-  'First Cousin',
-  'Other',
+  "Spouse",
+  "Child",
+  "Parent",
+  "Sibling",
+  "Grandparent",
+  "Grandchild",
+  "Uncle / Aunt",
+  "Nephew / Niece",
+  "First Cousin",
+  "Other",
 ];
 
 export function SalnFormRelatives() {
@@ -39,15 +39,15 @@ export function SalnFormRelatives() {
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'relatives',
+    name: "relatives",
   });
 
   function addItem() {
     append({
-      name: '',
-      relationship: '',
-      position: '',
-      agencyAddress: '',
+      name: "",
+      relationship: "",
+      position: "",
+      agencyAddress: "",
     });
   }
 
@@ -59,13 +59,13 @@ export function SalnFormRelatives() {
         <div>
           <h3
             id="relatives-heading"
-            className="text-base font-semibold text-senate-navy"
+            className="text-base font-semibold text-pcso-navy"
           >
             F. Relatives in Government Service
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Relatives within the fourth civil degree of consanguinity or affinity who
-            are in government service (Section 8, RA 6713).
+            Relatives within the fourth civil degree of consanguinity or
+            affinity who are in government service (Section 8, RA 6713).
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={addItem}>
@@ -82,7 +82,9 @@ export function SalnFormRelatives() {
 
       <div className="space-y-4">
         {fields.map((field, index) => {
-          const itemErrors = Array.isArray(fieldErrors) ? fieldErrors[index] : undefined;
+          const itemErrors = Array.isArray(fieldErrors)
+            ? fieldErrors[index]
+            : undefined;
 
           return (
             <div
@@ -117,7 +119,7 @@ export function SalnFormRelatives() {
                   />
                   {itemErrors?.name && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.name.message ?? '')}
+                      {String(itemErrors.name.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -141,7 +143,7 @@ export function SalnFormRelatives() {
                   </datalist>
                   {itemErrors?.relationship && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.relationship.message ?? '')}
+                      {String(itemErrors.relationship.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -159,7 +161,7 @@ export function SalnFormRelatives() {
                   />
                   {itemErrors?.position && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.position.message ?? '')}
+                      {String(itemErrors.position.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -177,7 +179,7 @@ export function SalnFormRelatives() {
                   />
                   {itemErrors?.agencyAddress && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.agencyAddress.message ?? '')}
+                      {String(itemErrors.agencyAddress.message ?? "")}
                     </p>
                   )}
                 </div>

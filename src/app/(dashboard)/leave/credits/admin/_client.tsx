@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * Admin credits client components:
@@ -7,26 +7,42 @@
  *  - CreditsTableClient: search + pagination over credit summaries
  */
 
-import { useMemo, useState, useTransition } from 'react';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils/cn';
-import { PlayIcon, ScaleIcon, SearchIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils/cn";
+import {
+  PlayIcon,
+  ScaleIcon,
+  SearchIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from "lucide-react";
 import {
   accrueMonthlyCredits,
   adjustLeaveCredits,
   type AccrualSummary,
-} from '@/app/(dashboard)/leave/actions';
+} from "@/app/(dashboard)/leave/actions";
 
 // ---------------------------------------------------------------------------
 // AccrualRunner
 // ---------------------------------------------------------------------------
 
 const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 export function AccrualRunner({
@@ -53,7 +69,7 @@ export function AccrualRunner({
           `Processed ${result.processed}, skipped ${result.skipped}, errors ${result.errors.length}.`,
         );
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Accrual failed.');
+        toast.error(err instanceof Error ? err.message : "Accrual failed.");
       }
     });
   }
@@ -66,49 +82,57 @@ export function AccrualRunner({
   return (
     <section
       aria-labelledby="accrual-runner-heading"
-      className="overflow-hidden rounded-xl border border-senate-navy/20 bg-card shadow-sm"
+      className="overflow-hidden rounded-xl border border-pcso-navy/20 bg-card shadow-sm"
     >
-      <div className="border-b bg-senate-navy/5 px-5 py-3">
+      <div className="border-b bg-pcso-navy/5 px-5 py-3">
         <h2
           id="accrual-runner-heading"
-          className="flex items-center gap-2 text-sm font-semibold text-senate-navy"
+          className="flex items-center gap-2 text-sm font-semibold text-pcso-navy"
         >
           <PlayIcon className="h-4 w-4" />
           Monthly Accrual Runner
         </h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Credits every eligible employee with 1.25 VL + 1.25 SL for the chosen month.
-          Already-credited employees are skipped automatically.
+          Credits every eligible employee with 1.25 VL + 1.25 SL for the chosen
+          month. Already-credited employees are skipped automatically.
         </p>
       </div>
 
       <div className="flex flex-wrap items-end gap-4 p-5">
         <div className="space-y-1.5">
-          <Label htmlFor="accrual-month" className="text-xs">Month</Label>
+          <Label htmlFor="accrual-month" className="text-xs">
+            Month
+          </Label>
           <select
             id="accrual-month"
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
             disabled={isPending}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
           >
             {MONTHS.map((m, i) => (
-              <option key={m} value={i + 1}>{m}</option>
+              <option key={m} value={i + 1}>
+                {m}
+              </option>
             ))}
           </select>
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="accrual-year" className="text-xs">Year</Label>
+          <Label htmlFor="accrual-year" className="text-xs">
+            Year
+          </Label>
           <select
             id="accrual-year"
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
             disabled={isPending}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
           >
             {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
+              <option key={y} value={y}>
+                {y}
+              </option>
             ))}
           </select>
         </div>
@@ -117,9 +141,9 @@ export function AccrualRunner({
           type="button"
           onClick={handleRun}
           disabled={isPending}
-          className="bg-senate-navy hover:bg-senate-navy-light text-senate-cream"
+          className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream"
         >
-          {isPending ? 'Accruing…' : 'Run Accrual'}
+          {isPending ? "Accruing…" : "Run Accrual"}
         </Button>
       </div>
 
@@ -127,22 +151,38 @@ export function AccrualRunner({
         <div className="border-t bg-muted/20 p-5">
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg bg-emerald-50 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Processed</p>
-              <p className="mt-0.5 text-2xl font-bold tabular-nums text-emerald-800">{summary.processed}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Processed
+              </p>
+              <p className="mt-0.5 text-2xl font-bold tabular-nums text-emerald-800">
+                {summary.processed}
+              </p>
             </div>
             <div className="rounded-lg bg-amber-50 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Skipped</p>
-              <p className="mt-0.5 text-2xl font-bold tabular-nums text-amber-800">{summary.skipped}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                Skipped
+              </p>
+              <p className="mt-0.5 text-2xl font-bold tabular-nums text-amber-800">
+                {summary.skipped}
+              </p>
             </div>
-            <div className={cn(
-              'rounded-lg p-3',
-              summary.errors.length === 0 ? 'bg-muted/40' : 'bg-red-50',
-            )}>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Errors</p>
-              <p className={cn(
-                'mt-0.5 text-2xl font-bold tabular-nums',
-                summary.errors.length > 0 ? 'text-red-700' : 'text-muted-foreground',
-              )}>
+            <div
+              className={cn(
+                "rounded-lg p-3",
+                summary.errors.length === 0 ? "bg-muted/40" : "bg-red-50",
+              )}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Errors
+              </p>
+              <p
+                className={cn(
+                  "mt-0.5 text-2xl font-bold tabular-nums",
+                  summary.errors.length > 0
+                    ? "text-red-700"
+                    : "text-muted-foreground",
+                )}
+              >
                 {summary.errors.length}
               </p>
             </div>
@@ -155,8 +195,14 @@ export function AccrualRunner({
               </summary>
               <ul className="mt-2 space-y-1 text-xs">
                 {summary.errors.slice(0, 20).map((e) => (
-                  <li key={e.employeeId} className="rounded bg-red-50 px-2 py-1 text-red-800">
-                    <span className="font-mono">{e.employeeId.slice(0, 8)}</span> — {e.message}
+                  <li
+                    key={e.employeeId}
+                    className="rounded bg-red-50 px-2 py-1 text-red-800"
+                  >
+                    <span className="font-mono">
+                      {e.employeeId.slice(0, 8)}
+                    </span>{" "}
+                    — {e.message}
                   </li>
                 ))}
                 {summary.errors.length > 20 && (
@@ -181,7 +227,7 @@ interface AdjustFormProps {
   employeeId: string;
   employeeName: string;
   currentYear: number;
-  leaveTypeCode: 'VL' | 'SL';
+  leaveTypeCode: "VL" | "SL";
   currentBalance: number;
   onDone?: () => void;
 }
@@ -195,8 +241,8 @@ function AdjustDialog({
   onDone,
 }: AdjustFormProps) {
   const [open, setOpen] = useState(false);
-  const [delta, setDelta] = useState('');
-  const [reason, setReason] = useState('');
+  const [delta, setDelta] = useState("");
+  const [reason, setReason] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const deltaNum = Number(delta);
@@ -211,7 +257,9 @@ function AdjustDialog({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!isValid) {
-      toast.error('Provide a non-zero delta and a reason (min 5 chars). Balance cannot go negative.');
+      toast.error(
+        "Provide a non-zero delta and a reason (min 5 chars). Balance cannot go negative.",
+      );
       return;
     }
     startTransition(async () => {
@@ -226,12 +274,12 @@ function AdjustDialog({
         toast.success(
           `Adjusted ${leaveTypeCode}: ${result.previousBalance.toFixed(3)} → ${result.newBalance.toFixed(3)}`,
         );
-        setDelta('');
-        setReason('');
+        setDelta("");
+        setReason("");
         setOpen(false);
         onDone?.();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Adjustment failed.');
+        toast.error(err instanceof Error ? err.message : "Adjustment failed.");
       }
     });
   }
@@ -242,7 +290,7 @@ function AdjustDialog({
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 px-2 text-xs text-senate-navy hover:bg-senate-navy/5"
+        className="h-7 px-2 text-xs text-pcso-navy hover:bg-pcso-navy/5"
         onClick={() => setOpen(true)}
       >
         <ScaleIcon className="mr-1 h-3 w-3" />
@@ -255,19 +303,20 @@ function AdjustDialog({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4',
-        isPending && 'pointer-events-none opacity-80',
+        "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4",
+        isPending && "pointer-events-none opacity-80",
       )}
       onClick={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
     >
       <div className="w-full max-w-sm rounded-xl border bg-card p-5 shadow-xl">
-        <h3 className="mb-1 text-sm font-semibold text-senate-navy">
+        <h3 className="mb-1 text-sm font-semibold text-pcso-navy">
           Adjust {leaveTypeCode} — {employeeName}
         </h3>
         <p className="mb-4 text-xs text-muted-foreground">
-          Current {leaveTypeCode} balance (year {currentYear}): {currentBalance.toFixed(3)}
+          Current {leaveTypeCode} balance (year {currentYear}):{" "}
+          {currentBalance.toFixed(3)}
         </p>
 
         <div className="space-y-3">
@@ -287,12 +336,12 @@ function AdjustDialog({
             {delta && Number.isFinite(deltaNum) && (
               <p
                 className={cn(
-                  'text-xs tabular-nums',
-                  projected < 0 ? 'text-destructive' : 'text-muted-foreground',
+                  "text-xs tabular-nums",
+                  projected < 0 ? "text-destructive" : "text-muted-foreground",
                 )}
               >
                 New balance: <strong>{projected.toFixed(3)}</strong>
-                {projected < 0 && ' — cannot go negative'}
+                {projected < 0 && " — cannot go negative"}
               </p>
             )}
           </div>
@@ -309,23 +358,28 @@ function AdjustDialog({
               minLength={5}
               maxLength={500}
               required
-              className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+              className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
               placeholder="e.g. Correcting erroneous deduction from 2024 audit…"
             />
           </div>
         </div>
 
         <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setOpen(false)}
+          >
             Cancel
           </Button>
           <Button
             type="submit"
             size="sm"
             disabled={!isValid || isPending}
-            className="bg-senate-navy hover:bg-senate-navy-light text-senate-cream"
+            className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream"
           >
-            {isPending ? 'Saving…' : 'Save Adjustment'}
+            {isPending ? "Saving…" : "Save Adjustment"}
           </Button>
         </div>
       </div>
@@ -354,8 +408,11 @@ interface CreditsTableClientProps {
 
 const PAGE_SIZE = 20;
 
-export function CreditsTableClient({ rows, currentYear }: CreditsTableClientProps) {
-  const [query, setQuery] = useState('');
+export function CreditsTableClient({
+  rows,
+  currentYear,
+}: CreditsTableClientProps) {
+  const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -370,11 +427,14 @@ export function CreditsTableClient({ rows, currentYear }: CreditsTableClientProp
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paged = filtered.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
 
   function refresh() {
     // Server data updates via revalidatePath; force a soft refresh.
-    if (typeof window !== 'undefined') window.location.reload();
+    if (typeof window !== "undefined") window.location.reload();
   }
 
   return (
@@ -391,7 +451,7 @@ export function CreditsTableClient({ rows, currentYear }: CreditsTableClientProp
               setPage(1);
             }}
             placeholder="Search by name or employee no…"
-            className="h-9 w-72 rounded-md border bg-background pl-7 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+            className="h-9 w-72 rounded-md border bg-background pl-7 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
           />
         </div>
         <span className="text-xs text-muted-foreground">
@@ -402,24 +462,32 @@ export function CreditsTableClient({ rows, currentYear }: CreditsTableClientProp
       {/* Table */}
       <div className="overflow-hidden rounded-xl border shadow-sm">
         <table className="w-full text-sm">
-          <thead className="border-b bg-senate-navy text-senate-cream">
+          <thead className="border-b bg-pcso-navy text-pcso-cream">
             <tr>
-              {['Employee No.', 'Full Name', `VL (${currentYear})`, `SL (${currentYear})`, 'Total', 'Actions'].map(
-                (h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide"
-                  >
-                    {h}
-                  </th>
-                ),
-              )}
+              {[
+                "Employee No.",
+                "Full Name",
+                `VL (${currentYear})`,
+                `SL (${currentYear})`,
+                "Total",
+                "Actions",
+              ].map((h) => (
+                <th
+                  key={h}
+                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide"
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y">
             {paged.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td
+                  colSpan={6}
+                  className="px-4 py-10 text-center text-sm text-muted-foreground"
+                >
                   No matching employees.
                 </td>
               </tr>
@@ -427,13 +495,16 @@ export function CreditsTableClient({ rows, currentYear }: CreditsTableClientProp
               paged.map((s) => {
                 const totalDays = s.vlBalance + s.slBalance;
                 return (
-                  <tr key={s.employeeId} className="hover:bg-muted/20 transition-colors">
+                  <tr
+                    key={s.employeeId}
+                    className="hover:bg-muted/20 transition-colors"
+                  >
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                       {s.employeeNo}
                     </td>
                     <td className="px-4 py-3 font-medium">{s.fullName}</td>
                     <td className="px-4 py-3 tabular-nums">
-                      <span className="font-semibold text-senate-navy">
+                      <span className="font-semibold text-pcso-navy">
                         {s.vlBalance.toFixed(3)}
                       </span>
                     </td>
@@ -472,10 +543,13 @@ export function CreditsTableClient({ rows, currentYear }: CreditsTableClientProp
           </tbody>
           <tfoot className="border-t bg-muted/30">
             <tr>
-              <td colSpan={2} className="px-4 py-3 text-xs font-semibold text-muted-foreground">
+              <td
+                colSpan={2}
+                className="px-4 py-3 text-xs font-semibold text-muted-foreground"
+              >
                 Totals (filtered)
               </td>
-              <td className="px-4 py-3 tabular-nums font-bold text-senate-navy">
+              <td className="px-4 py-3 tabular-nums font-bold text-pcso-navy">
                 {filtered.reduce((sum, s) => sum + s.vlBalance, 0).toFixed(3)}
               </td>
               <td className="px-4 py-3 tabular-nums font-bold text-emerald-700">

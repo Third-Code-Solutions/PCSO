@@ -75,7 +75,7 @@ export function TnaGapCard({ gaps, employeeLabel, onAssignHref }: Props) {
                 {g.suggestedProgramId && g.suggestedProgramTitle ? (
                   <Link
                     href={`/learning/catalog/${g.suggestedProgramId}`}
-                    className="text-xs font-medium text-senate-navy hover:underline"
+                    className="text-xs font-medium text-pcso-navy hover:underline"
                   >
                     {g.suggestedProgramTitle}
                   </Link>

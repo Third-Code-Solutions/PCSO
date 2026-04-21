@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { Users, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils/cn';
+import { Users, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,19 +29,19 @@ interface OrgNodeProps {
 // ---------------------------------------------------------------------------
 
 const TYPE_STYLES: Record<string, string> = {
-  committee: 'border-senate-gold bg-senate-gold/10',
-  department: 'border-senate-navy bg-senate-navy/10',
-  office: 'border-blue-500 bg-blue-50',
-  division: 'border-emerald-500 bg-emerald-50',
-  section: 'border-slate-400 bg-slate-50',
+  committee: "border-pcso-gold bg-pcso-gold/10",
+  department: "border-pcso-navy bg-pcso-navy/10",
+  office: "border-blue-500 bg-blue-50",
+  division: "border-emerald-500 bg-emerald-50",
+  section: "border-slate-400 bg-slate-50",
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  committee: 'Committee',
-  department: 'Department',
-  office: 'Office',
-  division: 'Division',
-  section: 'Section',
+  committee: "Committee",
+  department: "Department",
+  office: "Office",
+  division: "Division",
+  section: "Section",
 };
 
 // ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ const TYPE_LABELS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export function OrgNode({ node, isSelected, onClick }: OrgNodeProps) {
-  const typeStyle = TYPE_STYLES[node.type] ?? 'border-slate-400 bg-slate-50';
+  const typeStyle = TYPE_STYLES[node.type] ?? "border-slate-400 bg-slate-50";
   const typeLabel = TYPE_LABELS[node.type] ?? node.type;
   const fillRate =
     node.totalPositions > 0
@@ -61,13 +61,13 @@ export function OrgNode({ node, isSelected, onClick }: OrgNodeProps) {
       type="button"
       onClick={() => onClick(node)}
       className={cn(
-        'group relative flex flex-col items-start gap-1.5 rounded-lg border-2 bg-card px-4 py-3 text-left',
-        'shadow-sm transition-all duration-150',
-        'hover:shadow-md hover:-translate-y-0.5',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'min-w-[160px] max-w-[200px]',
+        "group relative flex flex-col items-start gap-1.5 rounded-lg border-2 bg-card px-4 py-3 text-left",
+        "shadow-sm transition-all duration-150",
+        "hover:shadow-md hover:-translate-y-0.5",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "min-w-[160px] max-w-[200px]",
         typeStyle,
-        isSelected && 'ring-2 ring-ring ring-offset-2',
+        isSelected && "ring-2 ring-ring ring-offset-2",
       )}
     >
       {/* Type badge */}
@@ -81,23 +81,27 @@ export function OrgNode({ node, isSelected, onClick }: OrgNodeProps) {
       </span>
 
       {/* Code */}
-      <span className="font-mono text-[11px] text-muted-foreground">{node.code}</span>
+      <span className="font-mono text-[11px] text-muted-foreground">
+        {node.code}
+      </span>
 
       {/* Stats row */}
       <div className="flex w-full items-center gap-2 pt-1 border-t border-border/50 mt-0.5">
         <Users className="h-3 w-3 text-muted-foreground shrink-0" />
-        <span className="text-xs text-muted-foreground">{node.memberCount} members</span>
+        <span className="text-xs text-muted-foreground">
+          {node.memberCount} members
+        </span>
         {node.totalPositions > 0 && (
           <>
             <span className="text-muted-foreground/40 text-xs">·</span>
             <span
               className={cn(
-                'text-xs font-medium',
+                "text-xs font-medium",
                 fillRate >= 80
-                  ? 'text-emerald-600'
+                  ? "text-emerald-600"
                   : fillRate >= 50
-                    ? 'text-amber-600'
-                    : 'text-rose-600',
+                    ? "text-amber-600"
+                    : "text-rose-600",
               )}
             >
               {fillRate}% filled

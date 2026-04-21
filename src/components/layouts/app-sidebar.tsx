@@ -783,7 +783,7 @@ function NavChildLink({
       className={cn(
         "flex items-center rounded-md px-3 py-1.5 text-sm transition-colors ml-6",
         isActive
-          ? "bg-white/10 text-white font-medium border-l-2 border-senate-gold"
+          ? "bg-white/10 text-white font-medium border-l-2 border-pcso-gold"
           : "text-white/60 hover:text-white hover:bg-white/5",
       )}
       aria-current={isActive ? "page" : undefined}
@@ -883,7 +883,7 @@ function NavLeaf({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
       className={cn(
         "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
         isActive
-          ? "text-white bg-white/10 border-l-2 border-senate-gold"
+          ? "text-white bg-white/10 border-l-2 border-pcso-gold"
           : "text-white/70 hover:text-white hover:bg-white/5",
       )}
       aria-current={isActive ? "page" : undefined}
@@ -932,7 +932,7 @@ export function AppSidebar({
   const sidebarContent = (
     <nav
       className={cn(
-        "flex h-full flex-col bg-senate-navy transition-all duration-200",
+        "flex h-full flex-col bg-pcso-navy transition-all duration-200",
         open ? "w-64" : "w-16",
       )}
       aria-label="Main navigation"

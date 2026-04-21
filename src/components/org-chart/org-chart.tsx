@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * OrgChart — pure SVG-based interactive tree.
@@ -19,12 +19,12 @@
  * No external charting libraries — built entirely with SVG + React.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { OrgNode, type OrgNodeData } from './org-node';
-import { Button } from '@/components/ui/button';
-import { ZoomIn, ZoomOut, Maximize2, FoldVertical } from 'lucide-react';
-import { cn } from '@/lib/utils/cn';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { OrgNode, type OrgNodeData } from "./org-node";
+import { Button } from "@/components/ui/button";
+import { ZoomIn, ZoomOut, Maximize2, FoldVertical } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 // ---------------------------------------------------------------------------
 // Tree data shape
@@ -201,34 +201,40 @@ function NodeInfoPanel({
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground capitalize">
           {node.type}
         </div>
-        <h3 className="font-semibold text-foreground mt-0.5 leading-snug">{node.name}</h3>
+        <h3 className="font-semibold text-foreground mt-0.5 leading-snug">
+          {node.name}
+        </h3>
         <p className="font-mono text-xs text-muted-foreground">{node.code}</p>
       </div>
 
       {node.headEmployeeName && (
         <div className="text-sm border-t border-border pt-2">
-          <span className="text-xs text-muted-foreground block">Office Head</span>
+          <span className="text-xs text-muted-foreground block">
+            Office Head
+          </span>
           <p className="font-medium text-sm">{node.headEmployeeName}</p>
         </div>
       )}
 
       <div className="grid grid-cols-3 gap-1.5 text-center">
         {[
-          { label: 'Members', value: node.memberCount, className: '' },
-          { label: 'Positions', value: node.totalPositions, className: '' },
+          { label: "Members", value: node.memberCount, className: "" },
+          { label: "Positions", value: node.totalPositions, className: "" },
           {
-            label: 'Fill Rate',
+            label: "Fill Rate",
             value: `${fillRate}%`,
             className:
               fillRate >= 80
-                ? 'text-emerald-600'
+                ? "text-emerald-600"
                 : fillRate >= 50
-                  ? 'text-amber-600'
-                  : 'text-rose-600',
+                  ? "text-amber-600"
+                  : "text-rose-600",
           },
         ].map(({ label, value, className }) => (
           <div key={label} className="rounded-md bg-muted px-1 py-1.5">
-            <div className={cn('text-base font-bold tabular-nums', className)}>{value}</div>
+            <div className={cn("text-base font-bold tabular-nums", className)}>
+              {value}
+            </div>
             <div className="text-[9px] text-muted-foreground uppercase tracking-wide">
               {label}
             </div>
@@ -236,7 +242,11 @@ function NodeInfoPanel({
         ))}
       </div>
 
-      <Button size="sm" className="w-full" onClick={() => onViewEmployees(node.id)}>
+      <Button
+        size="sm"
+        className="w-full"
+        onClick={() => onViewEmployees(node.id)}
+      >
         View Employees
       </Button>
     </div>
@@ -260,16 +270,16 @@ function BranchToggle({
     <button
       type="button"
       onClick={onToggle}
-      aria-label={isCollapsed ? 'Expand branch' : 'Collapse branch'}
-      title={isCollapsed ? `Expand (${childCount} children)` : 'Collapse'}
+      aria-label={isCollapsed ? "Expand branch" : "Collapse branch"}
+      title={isCollapsed ? `Expand (${childCount} children)` : "Collapse"}
       className={cn(
-        'absolute -bottom-3 left-1/2 -translate-x-1/2 z-10',
-        'flex h-6 min-w-[28px] items-center justify-center gap-1 rounded-full',
-        'border border-border bg-card px-1.5 text-[11px] font-medium text-muted-foreground',
-        'shadow-sm transition-all hover:border-senate-navy hover:text-senate-navy',
+        "absolute -bottom-3 left-1/2 -translate-x-1/2 z-10",
+        "flex h-6 min-w-[28px] items-center justify-center gap-1 rounded-full",
+        "border border-border bg-card px-1.5 text-[11px] font-medium text-muted-foreground",
+        "shadow-sm transition-all hover:border-pcso-navy hover:text-pcso-navy",
       )}
     >
-      {isCollapsed ? '+' : '–'}
+      {isCollapsed ? "+" : "–"}
       <span className="tabular-nums">{childCount}</span>
     </button>
   );
@@ -434,7 +444,7 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
     <div
       ref={containerRef}
       className={cn(
-        'relative overflow-hidden rounded-xl border border-border bg-muted/30',
+        "relative overflow-hidden rounded-xl border border-border bg-muted/30",
         className,
       )}
       style={style}
@@ -491,13 +501,15 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
       <div className="absolute left-4 bottom-4 z-10 flex flex-col gap-1 text-[11px] text-muted-foreground">
         <span>
           {allItems.length.toLocaleString()} visible node
-          {allItems.length !== 1 ? 's' : ''}
-          {culledCount > 0 ? ` · ${culledCount.toLocaleString()} offscreen` : ''}
+          {allItems.length !== 1 ? "s" : ""}
+          {culledCount > 0
+            ? ` · ${culledCount.toLocaleString()} offscreen`
+            : ""}
         </span>
         <button
           type="button"
           onClick={expandAll}
-          className="self-start underline underline-offset-2 hover:text-senate-navy"
+          className="self-start underline underline-offset-2 hover:text-pcso-navy"
         >
           Expand all branches
         </button>
@@ -505,7 +517,10 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
 
       {/* Selected node panel */}
       {selectedNode && (
-        <NodeInfoPanel node={selectedNode} onViewEmployees={handleViewEmployees} />
+        <NodeInfoPanel
+          node={selectedNode}
+          onViewEmployees={handleViewEmployees}
+        />
       )}
 
       {/* SVG canvas — viewBox allows content to scroll if window is smaller */}
@@ -514,9 +529,15 @@ export function OrgChart({ roots, className, style }: OrgChartProps) {
         height="100%"
         viewBox={`0 0 ${totalW} ${totalH}`}
         preserveAspectRatio="xMinYMin meet"
-        style={{ display: 'block', minHeight: 420, cursor: isDragging ? 'grabbing' : 'grab' }}
+        style={{
+          display: "block",
+          minHeight: 420,
+          cursor: isDragging ? "grabbing" : "grab",
+        }}
       >
-        <g transform={`translate(${translate.x}, ${translate.y}) scale(${scale})`}>
+        <g
+          transform={`translate(${translate.x}, ${translate.y}) scale(${scale})`}
+        >
           {/* Edges first (behind nodes) */}
           {edges.map((edge, idx) => (
             <TreeEdge key={idx} {...edge} />

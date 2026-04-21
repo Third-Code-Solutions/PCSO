@@ -1,8 +1,7 @@
 /**
- * /learning/mandatory — Mandatory program compliance (LDM-011).
+ * /learning/mandatory — Mandatory program compliance (LDM-007, LDM-011).
  */
 
-import { and, countDistinct, eq, isNull, sql } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/guards";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Button } from "@/components/ui/button";
@@ -11,13 +10,11 @@ import {
   type ComplianceRow,
 } from "@/components/learning/compliance-table";
 import { MandatoryComplianceGauge } from "@/components/learning/mandatory-compliance-gauge";
+import { getComplianceSummary } from "@/lib/actions/learning";
+import { listMandatoryPrograms } from "@/lib/actions/learning";
 import { db } from "@/lib/db";
-import {
-  trainingPrograms,
-  trainingRuns,
-  trainingParticipants,
-} from "@/lib/db/schema/learning";
-import { employees } from "@/lib/db/schema/employees";
+import { trainingRuns, trainingParticipants } from "@/lib/db/schema/learning";
+import { eq, sql } from "drizzle-orm";
 import { DownloadIcon } from "lucide-react";
 import type { Metadata } from "next";
 
@@ -26,29 +23,12 @@ export const metadata: Metadata = { title: "Mandatory Compliance" };
 export default async function MandatoryCompliancePage() {
   await requireAuth();
 
-  // Active employee baseline — used as the compliance denominator.
-  const [{ total: activeCount } = { total: 0 }] = await db
-    .select({ total: countDistinct(employees.id) })
-    .from(employees)
-    .where(and(isNull(employees.deletedAt), eq(employees.status, "active")));
+  // Get compliance summary using the new server action
+  const summary = await getComplianceSummary();
+  const programs = await listMandatoryPrograms();
 
-  const programs = await db
-    .select({
-      id: trainingPrograms.id,
-      code: trainingPrograms.code,
-      title: trainingPrograms.title,
-    })
-    .from(trainingPrograms)
-    .where(
-      and(
-        isNull(trainingPrograms.deletedAt),
-        eq(trainingPrograms.mandatoryFlag, true),
-      ),
-    );
-
+  // Build compliance rows per program
   const rows: ComplianceRow[] = [];
-  let grandCompliant = 0;
-  let grandTarget = 0;
   for (const p of programs) {
     const [row] = await db
       .select({
@@ -57,10 +37,10 @@ export default async function MandatoryCompliancePage() {
       .from(trainingParticipants)
       .innerJoin(trainingRuns, eq(trainingRuns.id, trainingParticipants.runId))
       .where(eq(trainingRuns.programId, p.id));
+
     const compliantCount = Number(row?.compliant ?? 0);
-    const targetCount = Number(activeCount ?? 0);
-    grandCompliant += compliantCount;
-    grandTarget += targetCount;
+    const targetCount = summary.totalEmployees;
+
     rows.push({
       programId: p.id,
       programCode: p.code,
@@ -92,8 +72,8 @@ export default async function MandatoryCompliancePage() {
 
       <section className="mt-6 grid gap-6 lg:grid-cols-3">
         <MandatoryComplianceGauge
-          compliantCount={grandCompliant}
-          totalRequired={grandTarget}
+          compliantCount={summary.totalCompliantCompletions}
+          totalRequired={summary.totalRequiredCompletions}
           size="lg"
           label="Overall mandatory compliance"
         />

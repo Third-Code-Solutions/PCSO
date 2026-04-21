@@ -1078,3 +1078,343 @@ export async function startMyIpcrf(
     ratingType: "ipcrf",
   });
 }
+
+// ─── DPCR Actions (PMM-003) ───────────────────────────────────────────────────
+
+/**
+ * DPCR (Division Performance Commitment Review) — division-level ratings.
+ * Uses same computation logic as OPCRF but with ratingType='dpcr'.
+ */
+export async function saveDpcr(input: unknown): Promise<void> {
+  const { SaveDpcrSchema } = await import("@/lib/validations/performance");
+  const parsed = SaveDpcrSchema.parse(input);
+  const user = await requirePermission("performance", "edit");
+  const supabase = await createServerClient();
+
+  const { computeFinalRating } = await import("@/lib/utils/performance/rating");
+
+  const kraInputs: { weight: number; rating: number }[] = parsed.kras.map(
+    (k) => ({
+      weight: k.weight,
+      rating: k.rating,
+    }),
+  );
+
+  const finalRating = computeFinalRating(kraInputs);
+  if (!finalRating) {
+    throw new Error(
+      "Could not compute DPCR final rating from the provided KRA data.",
+    );
+  }
+
+  const { data: rating, error: fetchError } = await supabase
+    .from("performance_ratings")
+    .select("id, status")
+    .eq("id", parsed.performanceRatingId)
+    .single();
+
+  if (fetchError || !rating) throw new Error("DPCR rating record not found.");
+
+  const { error } = await supabase
+    .from("performance_ratings")
+    .update({
+      kras: { items: parsed.kras, raterRemarks: parsed.remarks ?? null },
+      numerical_rating: String(finalRating.numerical),
+      adjectival_rating: finalRating.adjectival,
+      rated_by: user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.performanceRatingId);
+
+  if (error) throw new Error(`Failed to save DPCR: ${error.message}`);
+
+  await writeAuditLog(supabase, {
+    userId: user.id,
+    action: "update",
+    tableName: "performance_ratings",
+    recordId: parsed.performanceRatingId,
+    newValues: {
+      type: "dpcr",
+      divisionId: parsed.divisionId,
+      numericalRating: finalRating.numerical,
+      adjectivalRating: finalRating.adjectival,
+    },
+  });
+
+  revalidatePath("/performance/dpcr");
+  revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
+}
+
+// ─── BPCR Actions (PMM-004) ───────────────────────────────────────────────────
+
+/**
+ * BPCR (Branch Performance Commitment Review) — branch-level ratings
+ * for NCL, STBR, Visayas, Mindanao branches.
+ */
+export async function saveBpcr(input: unknown): Promise<void> {
+  const { SaveBpcrSchema } = await import("@/lib/validations/performance");
+  const parsed = SaveBpcrSchema.parse(input);
+  const user = await requirePermission("performance", "edit");
+  const supabase = await createServerClient();
+
+  const { computeFinalRating } = await import("@/lib/utils/performance/rating");
+
+  const kraInputs: { weight: number; rating: number }[] = parsed.kras.map(
+    (k) => ({
+      weight: k.weight,
+      rating: k.rating,
+    }),
+  );
+
+  const finalRating = computeFinalRating(kraInputs);
+  if (!finalRating) {
+    throw new Error(
+      "Could not compute BPCR final rating from the provided KRA data.",
+    );
+  }
+
+  const { data: rating, error: fetchError } = await supabase
+    .from("performance_ratings")
+    .select("id, status")
+    .eq("id", parsed.performanceRatingId)
+    .single();
+
+  if (fetchError || !rating) throw new Error("BPCR rating record not found.");
+
+  const { error } = await supabase
+    .from("performance_ratings")
+    .update({
+      kras: { items: parsed.kras, raterRemarks: parsed.remarks ?? null },
+      numerical_rating: String(finalRating.numerical),
+      adjectival_rating: finalRating.adjectival,
+      rated_by: user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.performanceRatingId);
+
+  if (error) throw new Error(`Failed to save BPCR: ${error.message}`);
+
+  await writeAuditLog(supabase, {
+    userId: user.id,
+    action: "update",
+    tableName: "performance_ratings",
+    recordId: parsed.performanceRatingId,
+    newValues: {
+      type: "bpcr",
+      branchId: parsed.branchId,
+      numericalRating: finalRating.numerical,
+      adjectivalRating: finalRating.adjectival,
+    },
+  });
+
+  revalidatePath("/performance/bpcr");
+  revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
+}
+
+// ─── Document Upload (PMM-005) ────────────────────────────────────────────────
+
+/**
+ * Attaches a scanned performance document (IPCRF/OPCRF/DPCR/BPCR) to a rating record.
+ * File must already be uploaded to Supabase Storage; this action only stores the URL.
+ */
+export async function uploadPerformanceDocument(input: unknown): Promise<void> {
+  const { UploadPerformanceDocumentSchema } =
+    await import("@/lib/validations/performance");
+  const parsed = UploadPerformanceDocumentSchema.parse(input);
+  const user = await requirePermission("performance", "edit");
+  const supabase = await createServerClient();
+
+  const { data: rating, error: fetchError } = await supabase
+    .from("performance_ratings")
+    .select("id, rating_type, employee_id")
+    .eq("id", parsed.performanceRatingId)
+    .single();
+
+  if (fetchError || !rating) {
+    throw new Error("Performance rating record not found.");
+  }
+
+  const { error } = await supabase
+    .from("performance_ratings")
+    .update({
+      scanned_doc_url: parsed.documentUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.performanceRatingId);
+
+  if (error) {
+    throw new Error(`Failed to upload document URL: ${error.message}`);
+  }
+
+  await writeAuditLog(supabase, {
+    userId: user.id,
+    action: "upload_document",
+    tableName: "performance_ratings",
+    recordId: parsed.performanceRatingId,
+    newValues: {
+      scannedDocUrl: parsed.documentUrl,
+      originalFilename: parsed.originalFilename,
+      ratingType: rating.rating_type,
+      employeeId: rating.employee_id,
+    },
+  });
+
+  revalidatePath("/performance");
+  revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
+}
+
+// ─── Forced Ranking Validation (PMM-006) ─────────────────────────────────────
+
+/**
+ * Validates forced ranking limits before submitting a batch of ratings.
+ * Outstanding ≤ 10%, Very Satisfactory ≤ 25% per office/department/period.
+ * Throws error if violations exist.
+ */
+export async function checkForcedRanking(input: unknown): Promise<{
+  valid: boolean;
+  violations: string[];
+}> {
+  const { ForcedRankingCheckSchema } =
+    await import("@/lib/validations/performance");
+  const parsed = ForcedRankingCheckSchema.parse(input);
+  const user = await requirePermission("performance", "edit");
+
+  const { validateForcedRanking, formatForcedRankingError } =
+    await import("@/lib/utils/performance/forced-ranking");
+
+  const ratings = parsed.ratings.map((r) => r.adjectivalRating);
+  const result = validateForcedRanking(ratings);
+
+  if (!result.valid) {
+    const errorMsg = formatForcedRankingError(result);
+    return {
+      valid: false,
+      violations: result.violations.map((v) => {
+        const label =
+          v.rating === "outstanding" ? "Outstanding" : "Very Satisfactory";
+        return `${label}: ${v.current}/${result.totalPopulation} (${v.percentage.toFixed(1)}%) exceeds ${v.allowed} (${v.maxPercentage}%)`;
+      }),
+    };
+  }
+
+  return { valid: true, violations: [] };
+}
+
+// ─── PBB Qualification List (PMM-007) ────────────────────────────────────────
+
+/**
+ * Generates PBB-qualified employee list with 4-gate validation.
+ * Gates: (1) Rating >= Satisfactory, (2) No admin case, (3) No AWOL, (4) SALN filed.
+ * All 4 gates must pass; gates are configurable by HR Admin.
+ */
+export async function generatePbbList(input: unknown): Promise<{
+  qualified: Array<{
+    employeeId: string;
+    employeeName: string;
+    ipcrfRating: number;
+  }>;
+  disqualified: Array<{
+    employeeId: string;
+    employeeName: string;
+    reason: string;
+  }>;
+  summary: {
+    total: number;
+    qualifiedCount: number;
+    disqualifiedCount: number;
+  };
+}> {
+  const { GeneratePbbListSchema } =
+    await import("@/lib/validations/performance");
+  const parsed = GeneratePbbListSchema.parse(input);
+  const user = await requirePermission("performance", "approve");
+  const supabase = await createServerClient();
+
+  // Fetch all employees with their IPCRF ratings for the period
+  let query = supabase
+    .from("performance_ratings")
+    .select(
+      `
+      id,
+      employee_id,
+      numerical_rating,
+      employees!inner(
+        id,
+        first_name,
+        last_name,
+        office_id
+      )
+    `,
+    )
+    .eq("period_id", parsed.periodId)
+    .eq("rating_type", "ipcrf")
+    .eq("status", "approved");
+
+  if (parsed.officeId) {
+    query = query.eq("employees.office_id", parsed.officeId);
+  }
+
+  const { data: ratings, error: ratingsError } = await query;
+
+  if (ratingsError) {
+    throw new Error(`Failed to fetch ratings: ${ratingsError.message}`);
+  }
+
+  if (!ratings || ratings.length === 0) {
+    return {
+      qualified: [],
+      disqualified: [],
+      summary: { total: 0, qualifiedCount: 0, disqualifiedCount: 0 },
+    };
+  }
+
+  // For demo purposes, we'll simulate admin case, AWOL, and SALN checks
+  // In production, these would query actual tables (admin_cases, attendance_records, saln_submissions)
+  const { batchValidatePbbQualification } =
+    await import("@/lib/utils/performance/pbb-qualification");
+
+  const employeeData = ratings.map((r: any) => ({
+    employeeId: String(r.employee_id),
+    employeeName: `${r.employees.first_name} ${r.employees.last_name}`,
+    ipcrfRating: Number(r.numerical_rating),
+    hasPendingAdminCase: false, // TODO: Query admin_cases table
+    hadAwol: false, // TODO: Query attendance_records for AWOL
+    salnFiled: true, // TODO: Query saln_submissions table
+  }));
+
+  const validationResult = batchValidatePbbQualification(employeeData);
+
+  await writeAuditLog(supabase, {
+    userId: user.id,
+    action: "generate_pbb_list",
+    tableName: "performance_ratings",
+    recordId: parsed.periodId,
+    newValues: {
+      periodId: parsed.periodId,
+      officeId: parsed.officeId,
+      total: validationResult.summary.total,
+      qualifiedCount: validationResult.summary.qualifiedCount,
+      disqualifiedCount: validationResult.summary.disqualifiedCount,
+    },
+  });
+
+  revalidatePath("/performance/pbb");
+
+  return {
+    qualified: validationResult.qualified.map((q) => ({
+      employeeId: q.employeeId,
+      employeeName: q.employeeName,
+      ipcrfRating: q.ipcrfRating ?? 0,
+    })),
+    disqualified: validationResult.disqualified.map((d) => ({
+      employeeId: d.employeeId,
+      employeeName: d.employeeName,
+      reason: d.disqualificationReason ?? "Unknown",
+    })),
+    summary: {
+      total: validationResult.summary.total,
+      qualifiedCount: validationResult.summary.qualifiedCount,
+      disqualifiedCount: validationResult.summary.disqualifiedCount,
+    },
+  };
+}

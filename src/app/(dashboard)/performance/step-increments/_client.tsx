@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { bulkProcessStepIncrements } from '../actions';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { bulkProcessStepIncrements } from "../actions";
 
 interface EligibleEmployee {
   employeeId: string;
@@ -23,9 +23,9 @@ interface Props {
 }
 
 const RULE_LABEL: Record<string, string> = {
-  three_consecutive_vs: '3x VS or Better',
-  two_consecutive_outstanding: '2x Outstanding',
-  none: '—',
+  three_consecutive_vs: "3x VS or Better",
+  two_consecutive_outstanding: "2x Outstanding",
+  none: "—",
 };
 
 /**
@@ -84,8 +84,9 @@ export function EligibleBulkTable({ eligible }: Props) {
         failed: selected.size,
         errors: [
           {
-            employeeId: '*',
-            message: err instanceof Error ? err.message : 'Bulk processing failed',
+            employeeId: "*",
+            message:
+              err instanceof Error ? err.message : "Bulk processing failed",
           },
         ],
       });
@@ -109,7 +110,10 @@ export function EligibleBulkTable({ eligible }: Props) {
       {/* Bulk toolbar */}
       <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-muted/20 p-3">
         <div className="flex flex-col">
-          <label htmlFor="bulk-effectivity" className="text-[11px] font-medium text-muted-foreground">
+          <label
+            htmlFor="bulk-effectivity"
+            className="text-[11px] font-medium text-muted-foreground"
+          >
             Effectivity date
           </label>
           <input
@@ -128,17 +132,18 @@ export function EligibleBulkTable({ eligible }: Props) {
           size="sm"
           disabled={selected.size === 0 || processing}
           onClick={handleBulk}
-          className="bg-senate-navy hover:bg-senate-navy-light text-senate-cream"
+          className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream"
         >
-          {processing ? 'Processing…' : 'Process Selected'}
+          {processing ? "Processing…" : "Process Selected"}
         </Button>
       </div>
 
       {result && (
-        <div className="rounded-xl border border-senate-navy/40 bg-senate-navy/5 p-3 text-xs">
-          <p className="font-medium text-senate-navy">Bulk run complete</p>
+        <div className="rounded-xl border border-pcso-navy/40 bg-pcso-navy/5 p-3 text-xs">
+          <p className="font-medium text-pcso-navy">Bulk run complete</p>
           <p className="mt-1 text-muted-foreground">
-            {result.processed} processed · {result.skipped} skipped · {result.failed} failed
+            {result.processed} processed · {result.skipped} skipped ·{" "}
+            {result.failed} failed
           </p>
           {result.errors.length > 0 && (
             <details className="mt-2">
@@ -148,7 +153,9 @@ export function EligibleBulkTable({ eligible }: Props) {
               <ul className="mt-1 space-y-0.5">
                 {result.errors.slice(0, 10).map((e, i) => (
                   <li key={i} className="text-[11px] text-muted-foreground">
-                    {e.employeeId === '*' ? '' : `${e.employeeId.slice(0, 8)}…: `}
+                    {e.employeeId === "*"
+                      ? ""
+                      : `${e.employeeId.slice(0, 8)}…: `}
                     {e.message}
                   </li>
                 ))}
@@ -169,7 +176,14 @@ export function EligibleBulkTable({ eligible }: Props) {
                   aria-label="Select all eligible"
                 />
               </th>
-              {['Employee', 'Position / SG', 'Step', 'Office', 'Periods', 'Rule'].map((h) => (
+              {[
+                "Employee",
+                "Position / SG",
+                "Step",
+                "Office",
+                "Periods",
+                "Rule",
+              ].map((h) => (
                 <th
                   key={h}
                   className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -184,7 +198,7 @@ export function EligibleBulkTable({ eligible }: Props) {
               <tr
                 key={emp.employeeId}
                 className={`hover:bg-muted/20 transition-colors ${
-                  selected.has(emp.employeeId) ? 'bg-senate-navy/5' : ''
+                  selected.has(emp.employeeId) ? "bg-pcso-navy/5" : ""
                 }`}
               >
                 <td className="px-3 py-3">
@@ -195,20 +209,26 @@ export function EligibleBulkTable({ eligible }: Props) {
                   />
                 </td>
                 <td className="px-3 py-3">
-                  <div className="font-medium text-foreground">{emp.fullName}</div>
-                  <div className="text-xs text-muted-foreground">{emp.employeeNo}</div>
+                  <div className="font-medium text-foreground">
+                    {emp.fullName}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {emp.employeeNo}
+                  </div>
                 </td>
                 <td className="px-3 py-3">
                   <div className="text-sm text-foreground truncate max-w-[160px]">
                     {emp.positionTitle}
                   </div>
-                  <div className="text-xs text-muted-foreground">SG {emp.salaryGrade}</div>
+                  <div className="text-xs text-muted-foreground">
+                    SG {emp.salaryGrade}
+                  </div>
                 </td>
-                <td className="px-3 py-3 font-tabular-nums font-semibold text-senate-navy text-sm">
+                <td className="px-3 py-3 font-tabular-nums font-semibold text-pcso-navy text-sm">
                   Step {emp.currentStep} → {emp.currentStep + 1}
                 </td>
                 <td className="px-3 py-3 text-xs text-muted-foreground">
-                  {emp.officeName ?? '—'}
+                  {emp.officeName ?? "—"}
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex flex-wrap gap-1">

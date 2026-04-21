@@ -15,20 +15,20 @@
  * Employee self-service typically returns <10 rows/user so client-side grouping suffices.
  */
 
-import { redirect } from 'next/navigation';
-import { requirePermission } from '@/lib/auth/guards';
+import { redirect } from "next/navigation";
+import { requirePermission } from "@/lib/auth/guards";
 import {
   getMySalnSubmissions,
   getAllSubmissionsForSuperAdmin,
   SUBMISSIONS_PAGE_SIZE,
-} from '@/app/(dashboard)/saln/queries';
-import { PageHeader } from '@/components/layouts/page-header';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import { PlusIcon } from 'lucide-react';
-import { SubmissionsBrowser } from './_client';
-import type { SalnStatus } from '@/lib/validations/saln';
+} from "@/app/(dashboard)/saln/queries";
+import { PageHeader } from "@/components/layouts/page-header";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { PlusIcon } from "lucide-react";
+import { SubmissionsBrowser } from "./_client";
+import type { SalnStatus } from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Page props
@@ -47,22 +47,30 @@ interface SubmissionsPageProps {
 // Page
 // ---------------------------------------------------------------------------
 
-export default async function SalnSubmissionsPage({ searchParams }: SubmissionsPageProps) {
+export default async function SalnSubmissionsPage({
+  searchParams,
+}: SubmissionsPageProps) {
   // Gate: only super_admin and employee_self_service may access SALN.
   // requirePermission redirects all other roles to /dashboard?error=forbidden.
-  const user = await requirePermission('saln', 'view');
+  const user = await requirePermission("saln", "view");
 
-  const isSuperAdmin = user.role === 'super_admin';
+  const isSuperAdmin = user.role === "super_admin";
 
   // employee_self_service must have an employeeId to view their own SALN.
   if (!isSuperAdmin && !user.employeeId) {
-    redirect('/dashboard');
+    redirect("/dashboard");
   }
 
   const resolvedParams = await searchParams;
 
   // Validate status filter against the known enum values.
-  const VALID_STATUSES: SalnStatus[] = ['draft', 'submitted', 'received', 'verified', 'deficient'];
+  const VALID_STATUSES: SalnStatus[] = [
+    "draft",
+    "submitted",
+    "received",
+    "verified",
+    "deficient",
+  ];
   const rawStatus = resolvedParams.status;
   const statusFilter =
     rawStatus && (VALID_STATUSES as string[]).includes(rawStatus)
@@ -77,7 +85,8 @@ export default async function SalnSubmissionsPage({ searchParams }: SubmissionsP
   const yearFilter = (() => {
     if (!isSuperAdmin || !resolvedParams.year) return undefined;
     const parsed = parseInt(resolvedParams.year, 10);
-    if (Number.isNaN(parsed) || parsed < 2000 || parsed > 2100) return undefined;
+    if (Number.isNaN(parsed) || parsed < 2000 || parsed > 2100)
+      return undefined;
     return parsed;
   })();
 
@@ -105,7 +114,10 @@ export default async function SalnSubmissionsPage({ searchParams }: SubmissionsP
     total = result.total;
     perPage = result.perPage;
   } else {
-    submissions = await getMySalnSubmissions(user.id, user.employeeId as string);
+    submissions = await getMySalnSubmissions(
+      user.id,
+      user.employeeId as string,
+    );
     total = submissions.length;
   }
 
@@ -117,18 +129,21 @@ export default async function SalnSubmissionsPage({ searchParams }: SubmissionsP
 
   return (
     <div>
-      <RealtimeBoundary tables={['saln_submissions']} />
+      <RealtimeBoundary tables={["saln_submissions"]} />
 
       <PageHeader
-        title={isSuperAdmin ? 'SALN Submissions' : 'My SALN Submissions'}
+        title={isSuperAdmin ? "SALN Submissions" : "My SALN Submissions"}
         description="Statement of Assets, Liabilities, and Net Worth — RA 6713 / EO 17"
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'SALN', href: '/saln' },
-          { label: 'Submissions' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "SALN", href: "/saln" },
+          { label: "Submissions" },
         ]}
         actions={
-          <Button asChild className="bg-senate-navy text-white hover:bg-senate-navy-light">
+          <Button
+            asChild
+            className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
+          >
             <Link href="/saln/new">
               <PlusIcon className="mr-2 h-4 w-4" aria-hidden />
               New Submission
@@ -141,7 +156,7 @@ export default async function SalnSubmissionsPage({ searchParams }: SubmissionsP
         submissions={filtered}
         isSuperAdmin={isSuperAdmin}
         activeStatus={statusFilter}
-        activeEmployeeNo={employeeNoFilter ?? ''}
+        activeEmployeeNo={employeeNoFilter ?? ""}
         activeYear={yearFilter}
         page={pageNum}
         perPage={perPage}
@@ -149,8 +164,8 @@ export default async function SalnSubmissionsPage({ searchParams }: SubmissionsP
       />
 
       <p className="mt-4 text-xs text-muted-foreground">
-        SALN data is strictly confidential under Republic Act No. 6713. All access is logged
-        and audited.
+        SALN data is strictly confidential under Republic Act No. 6713. All
+        access is logged and audited.
       </p>
     </div>
   );

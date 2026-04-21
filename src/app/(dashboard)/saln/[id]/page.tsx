@@ -6,19 +6,19 @@
  * Every view of a submitted (non-draft) SALN is audit-logged per SALN security policy.
  */
 
-import { notFound, redirect } from 'next/navigation';
-import Link from 'next/link';
-import { EditIcon, PrinterIcon } from 'lucide-react';
-import { requirePermission } from '@/lib/auth/guards';
-import { getSalnSubmissionById } from '@/app/(dashboard)/saln/queries';
-import { reviewSaln } from '@/app/(dashboard)/saln/admin-actions';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { formatPeso } from '@/lib/utils/saln/net-worth';
-import { SalnReviewPanel } from '@/components/saln/review-panel';
-import { PrintOnLoad } from '@/components/saln/print-on-load';
+import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
+import { EditIcon, PrinterIcon } from "lucide-react";
+import { requirePermission } from "@/lib/auth/guards";
+import { getSalnSubmissionById } from "@/app/(dashboard)/saln/queries";
+import { reviewSaln } from "@/app/(dashboard)/saln/admin-actions";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { formatPeso } from "@/lib/utils/saln/net-worth";
+import { SalnReviewPanel } from "@/components/saln/review-panel";
+import { PrintOnLoad } from "@/components/saln/print-on-load";
 import type {
   RealAsset,
   PersonalProperty,
@@ -27,23 +27,32 @@ import type {
   BusinessInterest,
   RelativeInGovernment,
   SalnStatus,
-} from '@/lib/validations/saln';
+} from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function statusBadge(status: SalnStatus) {
-  type BadgeVariant = 'secondary' | 'outline' | 'destructive';
+  type BadgeVariant = "secondary" | "outline" | "destructive";
 
-  function getBadgeConfig(s: SalnStatus): { label: string; variant: BadgeVariant } {
+  function getBadgeConfig(s: SalnStatus): {
+    label: string;
+    variant: BadgeVariant;
+  } {
     switch (s) {
-      case 'draft': return { label: 'Draft', variant: 'secondary' };
-      case 'submitted': return { label: 'Submitted', variant: 'outline' };
-      case 'received': return { label: 'Received', variant: 'outline' };
-      case 'verified': return { label: 'Verified', variant: 'outline' };
-      case 'deficient': return { label: 'Deficient', variant: 'destructive' };
-      default: return { label: String(s), variant: 'secondary' };
+      case "draft":
+        return { label: "Draft", variant: "secondary" };
+      case "submitted":
+        return { label: "Submitted", variant: "outline" };
+      case "received":
+        return { label: "Received", variant: "outline" };
+      case "verified":
+        return { label: "Verified", variant: "outline" };
+      case "deficient":
+        return { label: "Deficient", variant: "destructive" };
+      default:
+        return { label: String(s), variant: "secondary" };
     }
   }
 
@@ -62,7 +71,10 @@ function RealAssetsSection({ items }: { items: RealAsset[] }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={i} className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+        <div
+          key={i}
+          className="rounded-md border border-border bg-muted/20 p-3 text-sm"
+        >
           <p className="font-medium">{item.description}</p>
           <p className="text-muted-foreground">
             {item.kind} — {item.location}
@@ -87,7 +99,10 @@ function PersonalPropertiesSection({ items }: { items: PersonalProperty[] }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={i} className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+        <div
+          key={i}
+          className="rounded-md border border-border bg-muted/20 p-3 text-sm"
+        >
           <p className="font-medium">{item.description}</p>
           <div className="mt-1 grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
             <span>Year Acquired: {item.yearAcquired}</span>
@@ -107,10 +122,17 @@ function InvestmentsSection({ items }: { items: Investment[] }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={i} className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+        <div
+          key={i}
+          className="rounded-md border border-border bg-muted/20 p-3 text-sm"
+        >
           <p className="font-medium">{item.institution}</p>
-          <p className="text-muted-foreground">{item.type} ({item.year})</p>
-          <p className="mt-1 text-xs font-semibold">{formatPeso(item.amount)}</p>
+          <p className="text-muted-foreground">
+            {item.type} ({item.year})
+          </p>
+          <p className="mt-1 text-xs font-semibold">
+            {formatPeso(item.amount)}
+          </p>
         </div>
       ))}
     </div>
@@ -124,7 +146,10 @@ function LiabilitiesSection({ items }: { items: Liability[] }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={i} className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+        <div
+          key={i}
+          className="rounded-md border border-border bg-muted/20 p-3 text-sm"
+        >
           <p className="font-medium">{item.nature}</p>
           <p className="text-muted-foreground">Creditor: {item.creditor}</p>
           <p className="mt-1 text-xs font-semibold text-destructive">
@@ -143,7 +168,10 @@ function BusinessInterestsSection({ items }: { items: BusinessInterest[] }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={i} className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+        <div
+          key={i}
+          className="rounded-md border border-border bg-muted/20 p-3 text-sm"
+        >
           <p className="font-medium">{item.entityName}</p>
           <p className="text-muted-foreground">
             {item.nature} — {item.businessAddress}
@@ -164,12 +192,17 @@ function RelativesSection({ items }: { items: RelativeInGovernment[] }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={i} className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+        <div
+          key={i}
+          className="rounded-md border border-border bg-muted/20 p-3 text-sm"
+        >
           <p className="font-medium">{item.name}</p>
           <p className="text-muted-foreground">
             {item.relationship} — {item.position}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{item.agencyAddress}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {item.agencyAddress}
+          </p>
         </div>
       ))}
     </div>
@@ -189,26 +222,27 @@ export default async function SalnDetailPage({
   params,
   searchParams,
 }: SalnDetailPageProps) {
-  const user = await requirePermission('saln', 'view');
+  const user = await requirePermission("saln", "view");
   const { id } = await params;
   const { print } = await searchParams;
-  const shouldPrintOnLoad = print === '1';
+  const shouldPrintOnLoad = print === "1";
 
-  let submission: Awaited<ReturnType<typeof getSalnSubmissionById>> | null = null;
+  let submission: Awaited<ReturnType<typeof getSalnSubmissionById>> | null =
+    null;
   try {
     submission = await getSalnSubmissionById(
       user.id,
       user.employeeId,
       id,
-      user.role === 'super_admin',
+      user.role === "super_admin",
     );
   } catch (err) {
     if (
       err instanceof Error &&
-      'status' in err &&
+      "status" in err &&
       (err as Error & { status: number }).status === 403
     ) {
-      redirect('/saln');
+      redirect("/saln");
     }
     throw err;
   }
@@ -220,20 +254,20 @@ export default async function SalnDetailPage({
   // Matches editableStatuses in [id]/edit/page.tsx — drafts and deficient submissions
   // can be edited by the owning employee or super_admin.
   const canEdit =
-    (sub.status === 'draft' || sub.status === 'deficient') &&
-    (user.role === 'super_admin' || user.employeeId === sub.employeeId);
+    (sub.status === "draft" || sub.status === "deficient") &&
+    (user.role === "super_admin" || user.employeeId === sub.employeeId);
 
-  const isSuperAdmin = user.role === 'super_admin';
+  const isSuperAdmin = user.role === "super_admin";
 
   return (
     <div>
       {shouldPrintOnLoad && <PrintOnLoad />}
       <PageHeader
         title={`SALN — ${sub.year}`}
-        description={`${sub.employeeName} · Filed: ${sub.dateFiled ?? 'Draft'}`}
+        description={`${sub.employeeName} · Filed: ${sub.dateFiled ?? "Draft"}`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'My SALN', href: '/saln' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "My SALN", href: "/saln" },
           { label: `SALN ${sub.year}` },
         ]}
         actions={
@@ -246,7 +280,7 @@ export default async function SalnDetailPage({
                 </Link>
               </Button>
             )}
-            {sub.status !== 'draft' && (
+            {sub.status !== "draft" && (
               <Button asChild variant="outline" size="sm">
                 <Link
                   href={`/saln/${sub.id}?print=1`}
@@ -272,13 +306,13 @@ export default async function SalnDetailPage({
         <div>
           <p className="text-xs text-muted-foreground">Filing Type</p>
           <p className="text-sm font-medium capitalize">
-            {sub.filingType.replace('_', ' ')}
+            {sub.filingType.replace("_", " ")}
           </p>
         </div>
         <Separator orientation="vertical" className="h-8" />
         <div>
           <p className="text-xs text-muted-foreground">Net Worth</p>
-          <p className="text-sm font-mono font-semibold text-senate-navy">
+          <p className="text-sm font-mono font-semibold text-pcso-navy">
             {formatPeso(sub.netWorth)}
           </p>
         </div>
@@ -299,7 +333,10 @@ export default async function SalnDetailPage({
       {/* SALN sections */}
       <div className="space-y-8">
         <section aria-labelledby="real-assets-view">
-          <h2 id="real-assets-view" className="mb-3 text-base font-semibold text-senate-navy">
+          <h2
+            id="real-assets-view"
+            className="mb-3 text-base font-semibold text-pcso-navy"
+          >
             A. Real Properties
           </h2>
           <RealAssetsSection items={sub.realAssets as RealAsset[]} />
@@ -308,16 +345,24 @@ export default async function SalnDetailPage({
         <Separator />
 
         <section aria-labelledby="personal-props-view">
-          <h2 id="personal-props-view" className="mb-3 text-base font-semibold text-senate-navy">
+          <h2
+            id="personal-props-view"
+            className="mb-3 text-base font-semibold text-pcso-navy"
+          >
             B. Personal Properties
           </h2>
-          <PersonalPropertiesSection items={sub.personalProperties as PersonalProperty[]} />
+          <PersonalPropertiesSection
+            items={sub.personalProperties as PersonalProperty[]}
+          />
         </section>
 
         <Separator />
 
         <section aria-labelledby="investments-view">
-          <h2 id="investments-view" className="mb-3 text-base font-semibold text-senate-navy">
+          <h2
+            id="investments-view"
+            className="mb-3 text-base font-semibold text-pcso-navy"
+          >
             C. Investments / Financial Assets
           </h2>
           <InvestmentsSection items={sub.investments as Investment[]} />
@@ -326,7 +371,10 @@ export default async function SalnDetailPage({
         <Separator />
 
         <section aria-labelledby="liabilities-view">
-          <h2 id="liabilities-view" className="mb-3 text-base font-semibold text-senate-navy">
+          <h2
+            id="liabilities-view"
+            className="mb-3 text-base font-semibold text-pcso-navy"
+          >
             D. Liabilities
           </h2>
           <LiabilitiesSection items={sub.liabilities as Liability[]} />
@@ -335,16 +383,24 @@ export default async function SalnDetailPage({
         <Separator />
 
         <section aria-labelledby="business-view">
-          <h2 id="business-view" className="mb-3 text-base font-semibold text-senate-navy">
+          <h2
+            id="business-view"
+            className="mb-3 text-base font-semibold text-pcso-navy"
+          >
             E. Business Interests and Financial Connections
           </h2>
-          <BusinessInterestsSection items={sub.businessInterests as BusinessInterest[]} />
+          <BusinessInterestsSection
+            items={sub.businessInterests as BusinessInterest[]}
+          />
         </section>
 
         <Separator />
 
         <section aria-labelledby="relatives-view">
-          <h2 id="relatives-view" className="mb-3 text-base font-semibold text-senate-navy">
+          <h2
+            id="relatives-view"
+            className="mb-3 text-base font-semibold text-pcso-navy"
+          >
             F. Relatives in Government Service
           </h2>
           <RelativesSection items={sub.relatives as RelativeInGovernment[]} />
@@ -365,7 +421,7 @@ export default async function SalnDetailPage({
             currentStatus={sub.status}
             currentRemarks={sub.remarks}
             onReview={async (input) => {
-              'use server';
+              "use server";
               return reviewSaln(input);
             }}
           />

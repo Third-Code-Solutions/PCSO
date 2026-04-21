@@ -1,18 +1,24 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
-import { Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layouts/page-header';
-import { HolidayCalendar, type HolidayRow } from '@/components/admin/holiday-calendar';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { requirePermission } from '@/lib/auth/guards';
-import { db } from '@/lib/db';
-import { holidays } from '@/lib/db/schema';
-import { and, eq, asc, count } from 'drizzle-orm';
-import { HOLIDAY_TYPE_VALUES, HolidayTypeLabels } from '@/lib/validations/holidays';
-import type { HolidayType } from '@/lib/db/schema/holidays';
+import type { Metadata } from "next";
+import Link from "next/link";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layouts/page-header";
+import {
+  HolidayCalendar,
+  type HolidayRow,
+} from "@/components/admin/holiday-calendar";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requirePermission } from "@/lib/auth/guards";
+import { db } from "@/lib/db";
+import { holidays } from "@/lib/db/schema";
+import { and, eq, asc, count } from "drizzle-orm";
+import {
+  HOLIDAY_TYPE_VALUES,
+  HolidayTypeLabels,
+} from "@/lib/validations/holidays";
+import type { HolidayType } from "@/lib/db/schema/holidays";
 
-export const metadata: Metadata = { title: 'Holiday Calendar — Admin' };
+export const metadata: Metadata = { title: "Holiday Calendar — Admin" };
 
 interface PageProps {
   searchParams: Promise<Record<string, string | string[]>>;
@@ -23,7 +29,10 @@ function flatten(v: string | string[] | undefined): string | undefined {
   return v;
 }
 
-async function getHolidays(year: number, type?: HolidayType): Promise<HolidayRow[]> {
+async function getHolidays(
+  year: number,
+  type?: HolidayType,
+): Promise<HolidayRow[]> {
   const conditions = [eq(holidays.year, year)];
   if (type) conditions.push(eq(holidays.type, type));
 
@@ -43,7 +52,9 @@ async function getHolidays(year: number, type?: HolidayType): Promise<HolidayRow
   }));
 }
 
-async function getTypeCounts(year: number): Promise<Record<HolidayType, number>> {
+async function getTypeCounts(
+  year: number,
+): Promise<Record<HolidayType, number>> {
   const rows = await db
     .select({ type: holidays.type, value: count() })
     .from(holidays)
@@ -62,7 +73,7 @@ async function getTypeCounts(year: number): Promise<Record<HolidayType, number>>
 }
 
 export default async function HolidaysPage({ searchParams }: PageProps) {
-  await requirePermission('admin', 'view');
+  await requirePermission("admin", "view");
 
   const raw = await searchParams;
   const yearRaw = flatten(raw.year);
@@ -79,12 +90,13 @@ export default async function HolidaysPage({ searchParams }: PageProps) {
 
   const prevYear = year - 1;
   const nextYear = year + 1;
-  const totalThisYear = counts.regular + counts.special_non_working + counts.special_working;
+  const totalThisYear =
+    counts.regular + counts.special_non_working + counts.special_working;
 
   function typeHref(t?: HolidayType): string {
     const sp = new URLSearchParams();
-    sp.set('year', String(year));
-    if (t) sp.set('type', t);
+    sp.set("year", String(year));
+    if (t) sp.set("type", t);
     return `/admin/holidays?${sp.toString()}`;
   }
 
@@ -94,15 +106,15 @@ export default async function HolidaysPage({ searchParams }: PageProps) {
         title="Holiday Calendar"
         description="Philippine public holidays by proclamation. Regular, special non-working, and special working days."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin', href: '/admin' },
-          { label: 'Holidays' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Admin", href: "/admin" },
+          { label: "Holidays" },
         ]}
         actions={
           <Button
             asChild
             size="sm"
-            className="gap-2 bg-senate-navy text-white hover:bg-senate-navy-light"
+            className="gap-2 bg-pcso-navy text-white hover:bg-pcso-navy-light"
           >
             <Link href="/admin/holidays/new">
               <Plus className="h-4 w-4" />
@@ -116,23 +128,32 @@ export default async function HolidaysPage({ searchParams }: PageProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/admin/holidays?year=${prevYear}`}>&larr; {prevYear}</Link>
+            <Link href={`/admin/holidays?year=${prevYear}`}>
+              &larr; {prevYear}
+            </Link>
           </Button>
-          <span className="text-lg font-semibold text-senate-navy">{year}</span>
+          <span className="text-lg font-semibold text-pcso-navy">{year}</span>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/admin/holidays?year=${nextYear}`}>{nextYear} &rarr;</Link>
+            <Link href={`/admin/holidays?year=${nextYear}`}>
+              {nextYear} &rarr;
+            </Link>
           </Button>
           <span className="text-sm text-muted-foreground">
-            {totalThisYear} holiday{totalThisYear !== 1 ? 's' : ''} this year
+            {totalThisYear} holiday{totalThisYear !== 1 ? "s" : ""} this year
           </span>
         </div>
 
         <div className="flex items-center gap-1 rounded-md border border-border bg-card p-1">
-          <Button variant={!type ? 'default' : 'ghost'} size="sm" asChild>
+          <Button variant={!type ? "default" : "ghost"} size="sm" asChild>
             <Link href={typeHref()}>All ({totalThisYear})</Link>
           </Button>
           {HOLIDAY_TYPE_VALUES.map((t) => (
-            <Button key={t} variant={type === t ? 'default' : 'ghost'} size="sm" asChild>
+            <Button
+              key={t}
+              variant={type === t ? "default" : "ghost"}
+              size="sm"
+              asChild
+            >
               <Link href={typeHref(t)}>
                 {HolidayTypeLabels[t]} ({counts[t]})
               </Link>
@@ -144,7 +165,7 @@ export default async function HolidaysPage({ searchParams }: PageProps) {
       <HolidayCalendar holidays={holidayRows} year={year} canDelete />
 
       {/* Realtime: auto-refreshes when holidays are added, updated, or deleted */}
-      <RealtimeBoundary tables={['holidays']} />
+      <RealtimeBoundary tables={["holidays"]} />
     </div>
   );
 }

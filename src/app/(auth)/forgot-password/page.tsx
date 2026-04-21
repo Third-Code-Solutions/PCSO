@@ -52,7 +52,7 @@ function Input({
       disabled={disabled}
       className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm
                  text-slate-900 placeholder:text-slate-400 shadow-sm
-                 focus:outline-none focus:ring-2 focus:ring-senate-navy focus:border-transparent
+                 focus:outline-none focus:ring-2 focus:ring-pcso-navy focus:border-transparent
                  disabled:opacity-60 disabled:cursor-not-allowed transition"
       {...rest}
     />
@@ -103,7 +103,7 @@ export default function ForgotPasswordPage() {
       <div>
         <Link
           href="/login"
-          className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-senate-navy
+          className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-pcso-navy
                      transition-colors font-sans mb-5"
         >
           <svg
@@ -122,8 +122,8 @@ export default function ForgotPasswordPage() {
           Back to sign in
         </Link>
 
-        <div className="w-8 h-0.5 bg-senate-gold mb-4" />
-        <h2 className="font-serif text-2xl font-semibold text-senate-navy leading-snug">
+        <div className="w-8 h-0.5 bg-pcso-gold mb-4" />
+        <h2 className="font-serif text-2xl font-semibold text-pcso-navy leading-snug">
           Reset your password
         </h2>
         <p className="mt-1.5 text-sm text-slate-500 font-sans">
@@ -134,13 +134,13 @@ export default function ForgotPasswordPage() {
       {/* Success state */}
       {submitted ? (
         <div className="space-y-5">
-          <div className="rounded-lg border border-senate-gold/40 bg-senate-gold/10 px-5 py-5 space-y-2">
-            <p className="text-sm font-semibold text-senate-navy font-sans">
+          <div className="rounded-lg border border-pcso-gold/40 bg-pcso-gold/10 px-5 py-5 space-y-2">
+            <p className="text-sm font-semibold text-pcso-navy font-sans">
               Check your email
             </p>
             <p className="text-sm text-slate-600 font-sans">
               If an account exists for{" "}
-              <span className="font-medium text-senate-navy">
+              <span className="font-medium text-pcso-navy">
                 {getValues("email")}
               </span>
               , we&rsquo;ve sent a password reset link. Check your inbox and
@@ -154,7 +154,7 @@ export default function ForgotPasswordPage() {
           <Link
             href="/login"
             className="block w-full text-center rounded-lg border border-slate-200 bg-white
-                       px-4 py-2.5 text-sm font-semibold text-senate-navy shadow-sm
+                       px-4 py-2.5 text-sm font-semibold text-pcso-navy shadow-sm
                        hover:bg-slate-50 transition-colors font-sans"
           >
             Return to sign in
@@ -192,9 +192,9 @@ export default function ForgotPasswordPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-lg bg-senate-navy px-4 py-2.5 text-sm font-semibold
-                       text-white shadow-sm hover:bg-senate-navy-light focus:outline-none
-                       focus:ring-2 focus:ring-senate-navy focus:ring-offset-2
+            className="w-full rounded-lg bg-pcso-navy px-4 py-2.5 text-sm font-semibold
+                       text-white shadow-sm hover:bg-pcso-navy-light focus:outline-none
+                       focus:ring-2 focus:ring-pcso-navy focus:ring-offset-2
                        disabled:opacity-60 disabled:cursor-not-allowed transition-colors font-sans"
           >
             {isSubmitting ? "Sending…" : "Send reset link"}

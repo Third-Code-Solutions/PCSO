@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * TrackingClient — interactive portion of the SALN Compliance Tracking dashboard.
@@ -16,8 +16,8 @@
  * data fetching occurs here.
  */
 
-import { useState, useTransition } from 'react';
-import { toast } from 'sonner';
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   Users,
   CheckCircle2,
@@ -29,9 +29,9 @@ import {
   Download,
   AlertTriangle,
   Building2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -39,9 +39,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import type { ComplianceRow } from '@/app/(dashboard)/saln/queries';
+} from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import type { ComplianceRow } from "@/app/(dashboard)/saln/queries";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,8 +65,14 @@ interface TrackingClientProps {
   daysLeft: number;
   deadlineDateLabel: string;
   nonFilers: ComplianceRow[];
-  onSendReminders: (employeeIds: string[]) => Promise<{ sent: number; failed: number }>;
-  onExportCsv: () => Promise<{ content: string; filename: string; mimeType: string }>;
+  onSendReminders: (
+    employeeIds: string[],
+  ) => Promise<{ sent: number; failed: number }>;
+  onExportCsv: () => Promise<{
+    content: string;
+    filename: string;
+    mimeType: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,16 +108,20 @@ function KpiCard({
 function OfficeBarRow({ stat }: { stat: OfficeStats }) {
   const pct = stat.fillRate;
   const barColor =
-    pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-senate-gold' : 'bg-red-400';
+    pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-pcso-gold" : "bg-red-400";
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-sm">
-        <span className="truncate font-medium text-foreground max-w-[200px]" title={stat.officeName}>
+        <span
+          className="truncate font-medium text-foreground max-w-[200px]"
+          title={stat.officeName}
+        >
           {stat.officeName}
         </span>
         <span className="ml-4 shrink-0 text-xs text-muted-foreground">
-          {stat.filed}/{stat.total} — <span className="font-semibold">{pct}%</span>
+          {stat.filed}/{stat.total} —{" "}
+          <span className="font-semibold">{pct}%</span>
         </span>
       </div>
       <div
@@ -145,23 +155,25 @@ function DeadlineBanner({
   const isWarning = !isPast && daysLeft <= 30 && daysLeft > 7;
 
   const bannerClass = isPast
-    ? 'border-red-300 bg-red-50 text-red-800'
+    ? "border-red-300 bg-red-50 text-red-800"
     : isUrgent
-      ? 'border-orange-300 bg-orange-50 text-orange-800'
+      ? "border-orange-300 bg-orange-50 text-orange-800"
       : isWarning
-        ? 'border-senate-gold/40 bg-senate-cream text-senate-navy'
-        : 'border-green-200 bg-green-50 text-green-800';
+        ? "border-pcso-gold/40 bg-pcso-cream text-pcso-navy"
+        : "border-green-200 bg-green-50 text-green-800";
 
   const IconComponent = isPast || isUrgent ? AlertTriangle : CalendarClock;
 
   const countdownText = isPast
-    ? `Deadline passed ${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} ago`
+    ? `Deadline passed ${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? "s" : ""} ago`
     : daysLeft === 0
-      ? 'Deadline is TODAY'
-      : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining`;
+      ? "Deadline is TODAY"
+      : `${daysLeft} day${daysLeft !== 1 ? "s" : ""} remaining`;
 
   return (
-    <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${bannerClass}`}>
+    <div
+      className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${bannerClass}`}
+    >
       <IconComponent className="h-5 w-5 shrink-0" aria-hidden />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold">
@@ -172,7 +184,13 @@ function DeadlineBanner({
         </p>
       </div>
       <span className="shrink-0 rounded-full border border-current px-3 py-0.5 text-xs font-bold tracking-wide">
-        {isPast ? 'PAST DUE' : isUrgent ? 'URGENT' : isWarning ? 'SOON' : 'ON TRACK'}
+        {isPast
+          ? "PAST DUE"
+          : isUrgent
+            ? "URGENT"
+            : isWarning
+              ? "SOON"
+              : "ON TRACK"}
       </span>
     </div>
   );
@@ -197,17 +215,17 @@ export function TrackingClient({
   onExportCsv,
 }: TrackingClientProps) {
   const [isPending, startTransition] = useTransition();
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
 
   // Filter non-filer table
   const filteredNonFilers = nonFilers.filter((row) => {
-    if (search === '') return true;
+    if (search === "") return true;
     const q = search.toLowerCase();
     return (
       row.employeeName.toLowerCase().includes(q) ||
       row.employeeNo.toLowerCase().includes(q) ||
-      (row.officeName ?? '').toLowerCase().includes(q) ||
+      (row.officeName ?? "").toLowerCase().includes(q) ||
       row.positionTitle.toLowerCase().includes(q)
     );
   });
@@ -222,12 +240,14 @@ export function TrackingClient({
           toast.success(`Reminder sent to ${employeeName}`);
         } else {
           toast.error(`Failed to send reminder to ${employeeName}`, {
-            description: 'Check that the employee has an email address on file.',
+            description:
+              "Check that the employee has an email address on file.",
           });
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to send reminder.';
-        toast.error('Send failed', { description: message });
+        const message =
+          err instanceof Error ? err.message : "Failed to send reminder.";
+        toast.error("Send failed", { description: message });
       } finally {
         setSendingId(null);
       }
@@ -246,8 +266,9 @@ export function TrackingClient({
               : undefined,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to send reminders.';
-        toast.error('Bulk send failed', { description: message });
+        const message =
+          err instanceof Error ? err.message : "Failed to send reminders.";
+        toast.error("Bulk send failed", { description: message });
       }
     });
   }
@@ -259,17 +280,17 @@ export function TrackingClient({
         const result = await onExportCsv();
         const blob = new Blob([result.content], { type: result.mimeType });
         const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
+        const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = result.filename;
         anchor.click();
         URL.revokeObjectURL(url);
-        toast.success('Export downloaded', {
+        toast.success("Export downloaded", {
           description: `${result.filename} saved to your downloads folder.`,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Export failed.';
-        toast.error('Export failed', { description: message });
+        const message = err instanceof Error ? err.message : "Export failed.";
+        toast.error("Export failed", { description: message });
       }
     });
   }
@@ -277,7 +298,11 @@ export function TrackingClient({
   return (
     <div className="space-y-6">
       {/* Deadline countdown banner */}
-      <DeadlineBanner daysLeft={daysLeft} deadlineDateLabel={deadlineDateLabel} year={year} />
+      <DeadlineBanner
+        daysLeft={daysLeft}
+        deadlineDateLabel={deadlineDateLabel}
+        year={year}
+      />
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -287,7 +312,7 @@ export function TrackingClient({
           icon={Users}
           colorClass="bg-card"
           borderClass="border-border"
-          textClass="text-senate-navy"
+          textClass="text-pcso-navy"
         />
         <KpiCard
           label="Filed"
@@ -317,8 +342,8 @@ export function TrackingClient({
           label="Compliance %"
           value={`${complianceRate}%`}
           icon={Percent}
-          colorClass="bg-senate-navy"
-          borderClass="border-senate-navy"
+          colorClass="bg-pcso-navy"
+          borderClass="border-pcso-navy"
           textClass="text-white"
         />
       </div>
@@ -329,7 +354,9 @@ export function TrackingClient({
           <span className="text-sm font-semibold text-foreground">
             Overall Compliance Rate — CY {year}
           </span>
-          <span className="text-sm font-bold text-senate-navy">{complianceRate}%</span>
+          <span className="text-sm font-bold text-pcso-navy">
+            {complianceRate}%
+          </span>
         </div>
         <div
           className="h-3 overflow-hidden rounded-full bg-muted"
@@ -342,16 +369,17 @@ export function TrackingClient({
           <div
             className={`h-full rounded-full transition-all ${
               complianceRate >= 80
-                ? 'bg-green-500'
+                ? "bg-green-500"
                 : complianceRate >= 50
-                  ? 'bg-senate-gold'
-                  : 'bg-red-400'
+                  ? "bg-pcso-gold"
+                  : "bg-red-400"
             }`}
             style={{ width: `${complianceRate}%` }}
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          {totalFiled + totalFiledLate} of {totalEmployees} employees have filed (including {totalFiledLate} late).
+          {totalFiled + totalFiledLate} of {totalEmployees} employees have filed
+          (including {totalFiledLate} late).
         </p>
       </div>
 
@@ -360,8 +388,11 @@ export function TrackingClient({
         <section aria-labelledby="office-heading">
           <div className="rounded-lg border border-border bg-card p-4 space-y-4">
             <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-senate-navy" aria-hidden />
-              <h2 id="office-heading" className="text-sm font-semibold text-foreground">
+              <Building2 className="h-4 w-4 text-pcso-navy" aria-hidden />
+              <h2
+                id="office-heading"
+                className="text-sm font-semibold text-foreground"
+              >
                 Filing Rate by Office
               </h2>
             </div>
@@ -380,11 +411,15 @@ export function TrackingClient({
           {/* Table header */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div>
-              <h2 id="nonfiler-heading" className="text-sm font-semibold text-foreground">
+              <h2
+                id="nonfiler-heading"
+                className="text-sm font-semibold text-foreground"
+              >
                 Non-Filers
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {totalNotFiled} employee{totalNotFiled !== 1 ? 's' : ''} have not filed for CY {year}.
+                {totalNotFiled} employee{totalNotFiled !== 1 ? "s" : ""} have
+                not filed for CY {year}.
               </p>
             </div>
 
@@ -442,20 +477,24 @@ export function TrackingClient({
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
                       {totalNotFiled === 0
-                        ? 'All employees have filed their SALN.'
-                        : 'No results match your search.'}
+                        ? "All employees have filed their SALN."
+                        : "No results match your search."}
                     </TableCell>
                   </TableRow>
                 )}
                 {filteredNonFilers.map((row) => (
                   <TableRow key={row.employeeId}>
-                    <TableCell className="font-mono text-sm">{row.employeeNo}</TableCell>
-                    <TableCell className="font-medium">{row.employeeName}</TableCell>
+                    <TableCell className="font-mono text-sm">
+                      {row.employeeNo}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {row.employeeName}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.positionTitle}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {row.officeName ?? '—'}
+                      {row.officeName ?? "—"}
                     </TableCell>
                     <TableCell>
                       <Badge variant="destructive" className="gap-1 text-xs">
@@ -468,15 +507,17 @@ export function TrackingClient({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-xs text-senate-navy hover:bg-senate-navy/10"
+                        className="h-7 px-2 text-xs text-pcso-navy hover:bg-pcso-navy/10"
                         disabled={isPending && sendingId === row.employeeId}
-                        onClick={() => handleSendSingle(row.employeeId, row.employeeName)}
+                        onClick={() =>
+                          handleSendSingle(row.employeeId, row.employeeName)
+                        }
                         aria-label={`Send reminder to ${row.employeeName}`}
                       >
                         <Mail className="mr-1 h-3 w-3" aria-hidden />
                         {isPending && sendingId === row.employeeId
-                          ? 'Sending...'
-                          : 'Send Reminder'}
+                          ? "Sending..."
+                          : "Send Reminder"}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -488,7 +529,7 @@ export function TrackingClient({
           {filteredNonFilers.length > 0 && (
             <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
               Showing {filteredNonFilers.length} of {totalNotFiled} non-filer
-              {totalNotFiled !== 1 ? 's' : ''}.
+              {totalNotFiled !== 1 ? "s" : ""}.
             </p>
           )}
         </div>

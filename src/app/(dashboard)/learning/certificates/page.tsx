@@ -127,7 +127,7 @@ export default async function CertificatesListPage() {
                           href={r.pdfUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-senate-navy hover:underline"
+                          className="text-pcso-navy hover:underline"
                         >
                           Download PDF
                         </a>
@@ -138,7 +138,7 @@ export default async function CertificatesListPage() {
                       )}
                       <a
                         href={`/verify/${r.qrTokenJwt}`}
-                        className="text-senate-navy hover:underline"
+                        className="text-pcso-navy hover:underline"
                       >
                         Verify QR
                       </a>

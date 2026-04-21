@@ -1,8 +1,8 @@
-import * as React from 'react';
-import Link from 'next/link';
-import { Palmtree, Clock, ClipboardCheck, CheckCircle2 } from 'lucide-react';
-import { KpiCard } from '@/components/dashboard/kpi-card';
-import type { PersonalKpis } from '@/app/(dashboard)/dashboard/queries';
+import * as React from "react";
+import Link from "next/link";
+import { Palmtree, Clock, ClipboardCheck, CheckCircle2 } from "lucide-react";
+import { KpiCard } from "@/components/dashboard/kpi-card";
+import type { PersonalKpis } from "@/app/(dashboard)/dashboard/queries";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ interface PersonalKpiGridProps {
  */
 export function PersonalKpiGrid({ data }: PersonalKpiGridProps) {
   const cutoffLabel =
-    data.payrollCutoffDays === 0 ? 'Today' : `${data.payrollCutoffDays}d`;
+    data.payrollCutoffDays === 0 ? "Today" : `${data.payrollCutoffDays}d`;
 
   return (
     <section aria-label="Your key indicators">
@@ -51,11 +51,11 @@ export function PersonalKpiGrid({ data }: PersonalKpiGridProps) {
             trend={
               data.pendingLeaveApplications > 0
                 ? {
-                    direction: 'up',
-                    label: 'Waiting on reviewer',
+                    direction: "up",
+                    label: "Waiting on reviewer",
                     upIsPositive: false,
                   }
-                : { direction: 'neutral', label: 'Nothing pending' }
+                : { direction: "neutral", label: "Nothing pending" }
             }
           />
         </Link>
@@ -82,9 +82,9 @@ export function PersonalKpiGrid({ data }: PersonalKpiGridProps) {
           <KpiCard
             title="Next Payslip"
             value={cutoffLabel}
-            detail={data.nextPeriodName ?? 'Days until next cutoff'}
+            detail={data.nextPeriodName ?? "Days until next cutoff"}
             icon={Clock}
-            iconColorClass="bg-senate-navy/10 text-senate-navy"
+            iconColorClass="bg-pcso-navy/10 text-pcso-navy"
           />
         </Link>
       </div>

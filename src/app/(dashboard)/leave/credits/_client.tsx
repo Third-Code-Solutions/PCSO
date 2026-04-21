@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * _client.tsx — client-interactive controls for /leave/credits
@@ -9,12 +9,10 @@
  *  - PrintLeaveCard:   button that downloads the CSC Form 6 (CSV)
  */
 
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback } from 'react';
-import {
-  LeaveCardDownloader,
-} from '@/components/leave/leave-card-downloader';
-import type { LeaveCardProps } from '@/components/leave/leave-card';
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback } from "react";
+import { LeaveCardDownloader } from "@/components/leave/leave-card-downloader";
+import type { LeaveCardProps } from "@/components/leave/leave-card";
 
 // ---------------------------------------------------------------------------
 // YearSelector
@@ -47,9 +45,9 @@ export function YearSelector({
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const params = new URLSearchParams(searchParams.toString());
-      params.set('year', e.target.value);
-      if (employeeId) params.set('employeeId', employeeId);
-      else params.delete('employeeId');
+      params.set("year", e.target.value);
+      if (employeeId) params.set("employeeId", employeeId);
+      else params.delete("employeeId");
       router.push(`?${params.toString()}`);
     },
     [router, searchParams, employeeId],
@@ -67,7 +65,7 @@ export function YearSelector({
         id="year-selector"
         value={selectedYear}
         onChange={handleChange}
-        className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-senate-gold"
+        className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-pcso-gold"
         aria-label="Select year"
       >
         {years.map((y) => (
@@ -107,8 +105,8 @@ export function EmployeePicker({
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const params = new URLSearchParams(searchParams.toString());
-      params.set('employeeId', e.target.value);
-      params.set('year', String(selectedYear));
+      params.set("employeeId", e.target.value);
+      params.set("year", String(selectedYear));
       router.push(`?${params.toString()}`);
     },
     [router, searchParams, selectedYear],
@@ -126,7 +124,7 @@ export function EmployeePicker({
         id="employee-picker"
         value={selectedEmployeeId}
         onChange={handleChange}
-        className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-senate-gold"
+        className="h-9 min-w-56 rounded-md border border-input bg-background px-3 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-pcso-gold"
         aria-label="Select employee"
       >
         {employees.map((emp) => (

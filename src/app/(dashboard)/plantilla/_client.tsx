@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * Client-side wrapper for the Plantilla list table.
@@ -14,15 +14,15 @@
  * label stay accurate across pages.
  */
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { toast } from 'sonner';
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import {
   flexRender,
   getCoreRowModel,
   useReactTable,
-} from '@tanstack/react-table';
-import { Search, X } from 'lucide-react';
+} from "@tanstack/react-table";
+import { Search, X } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -30,16 +30,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,12 +49,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { buildPlantillaColumns } from '@/components/plantilla/plantilla-columns';
-import { AssignEmployeeDialog } from '@/components/plantilla/assign-employee-dialog';
-import { useDebounce } from '@/hooks/use-debounce';
-import { unassignEmployee } from './actions';
-import type { PlantillaPositionRow, OfficeRow, EmployeeSelectorRow } from './queries';
+} from "@/components/ui/alert-dialog";
+import { buildPlantillaColumns } from "@/components/plantilla/plantilla-columns";
+import { AssignEmployeeDialog } from "@/components/plantilla/assign-employee-dialog";
+import { useDebounce } from "@/hooks/use-debounce";
+import { unassignEmployee } from "./actions";
+import type {
+  PlantillaPositionRow,
+  OfficeRow,
+  EmployeeSelectorRow,
+} from "./queries";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,12 +102,14 @@ export function PlantillaTableClient({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
-  const [assignTarget, setAssignTarget] = useState<PlantillaPositionRow | null>(null);
+  const [assignTarget, setAssignTarget] = useState<PlantillaPositionRow | null>(
+    null,
+  );
   const [unassignTarget, setUnassignTarget] =
     useState<PlantillaPositionRow | null>(null);
 
   // Controlled search input (debounced).
-  const [searchValue, setSearchValue] = useState(currentFilters.search ?? '');
+  const [searchValue, setSearchValue] = useState(currentFilters.search ?? "");
   const debouncedSearch = useDebounce(searchValue, 350);
 
   const setParam = (key: string, value: string | null): URLSearchParams => {
@@ -121,17 +127,17 @@ export function PlantillaTableClient({
 
   // Sync debounced search to URL.
   useEffect(() => {
-    const current = searchParams.get('search') ?? '';
+    const current = searchParams.get("search") ?? "";
     if (debouncedSearch === current) return;
-    const params = setParam('search', debouncedSearch.trim() || null);
-    params.set('page', '1');
+    const params = setParam("search", debouncedSearch.trim() || null);
+    params.set("page", "1");
     pushParams(params);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch]);
 
   // Keep local in sync with URL (e.g. after Clear).
   useEffect(() => {
-    setSearchValue(searchParams.get('search') ?? '');
+    setSearchValue(searchParams.get("search") ?? "");
   }, [searchParams]);
 
   const commitUnassign = () => {
@@ -144,7 +150,8 @@ export function PlantillaTableClient({
         toast.success(`Position ${target.itemNo} marked as vacant.`);
         router.refresh();
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to unassign employee.';
+        const message =
+          err instanceof Error ? err.message : "Failed to unassign employee.";
         toast.error(message);
       }
     });
@@ -170,26 +177,26 @@ export function PlantillaTableClient({
   });
 
   const handleFilterChange = (key: string, value: string | undefined) => {
-    const params = setParam(key, value && value !== 'all' ? value : null);
-    params.set('page', '1');
+    const params = setParam(key, value && value !== "all" ? value : null);
+    params.set("page", "1");
     pushParams(params);
   };
 
   const navigateToPage = (nextPage: number) => {
-    const params = setParam('page', String(nextPage));
+    const params = setParam("page", String(nextPage));
     pushParams(params);
   };
 
   const onPerPageChange = (raw: string) => {
     const next = Number(raw);
     if (!Number.isFinite(next)) return;
-    const params = setParam('perPage', String(next));
-    params.set('page', '1');
+    const params = setParam("perPage", String(next));
+    params.set("page", "1");
     pushParams(params);
   };
 
   const clearFilters = () => {
-    setSearchValue('');
+    setSearchValue("");
     startTransition(() => {
       router.push(pathname);
     });
@@ -199,7 +206,7 @@ export function PlantillaTableClient({
     Boolean(currentFilters.search) ||
     Boolean(currentFilters.officeId) ||
     Boolean(currentFilters.salaryGrade) ||
-    currentFilters.status !== 'all';
+    currentFilters.status !== "all";
 
   const totalPages = Math.max(Math.ceil(total / perPage), 1);
   const showingFrom = total === 0 ? 0 : (page - 1) * perPage + 1;
@@ -212,7 +219,7 @@ export function PlantillaTableClient({
       {/* Summary stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Total Positions', value: total },
+          { label: "Total Positions", value: total },
           { label: `Filled (page ${page})`, value: filledOnPage },
           { label: `Vacant (page ${page})`, value: vacantOnPage },
         ].map(({ label, value }) => (
@@ -242,8 +249,8 @@ export function PlantillaTableClient({
         </div>
 
         <Select
-          value={currentFilters.officeId ?? 'all'}
-          onValueChange={(v) => handleFilterChange('officeId', v)}
+          value={currentFilters.officeId ?? "all"}
+          onValueChange={(v) => handleFilterChange("officeId", v)}
         >
           <SelectTrigger className="w-52" aria-label="Filter by office">
             <SelectValue placeholder="All Offices" />
@@ -259,8 +266,12 @@ export function PlantillaTableClient({
         </Select>
 
         <Select
-          value={currentFilters.salaryGrade ? String(currentFilters.salaryGrade) : 'all'}
-          onValueChange={(v) => handleFilterChange('salaryGrade', v)}
+          value={
+            currentFilters.salaryGrade
+              ? String(currentFilters.salaryGrade)
+              : "all"
+          }
+          onValueChange={(v) => handleFilterChange("salaryGrade", v)}
         >
           <SelectTrigger className="w-40" aria-label="Filter by salary grade">
             <SelectValue placeholder="All Grades" />
@@ -277,7 +288,7 @@ export function PlantillaTableClient({
 
         <Select
           value={currentFilters.status}
-          onValueChange={(v) => handleFilterChange('status', v)}
+          onValueChange={(v) => handleFilterChange("status", v)}
         >
           <SelectTrigger className="w-36" aria-label="Filter by status">
             <SelectValue placeholder="All Status" />
@@ -290,7 +301,12 @@ export function PlantillaTableClient({
         </Select>
 
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="gap-1"
+          >
             <X className="h-3.5 w-3.5" />
             Clear
           </Button>
@@ -302,15 +318,18 @@ export function PlantillaTableClient({
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id} className="bg-senate-navy/5">
+              <TableRow key={hg.id} className="bg-pcso-navy/5">
                 {hg.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    className="font-semibold text-senate-navy"
+                    className="font-semibold text-pcso-navy"
                   >
                     {header.isPlaceholder
                       ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </TableHead>
                 ))}
               </TableRow>
@@ -335,13 +354,13 @@ export function PlantillaTableClient({
               </TableRow>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className="hover:bg-senate-cream/40"
-                >
+                <TableRow key={row.id} className="hover:bg-pcso-cream/40">
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -356,13 +375,16 @@ export function PlantillaTableClient({
         <div className="flex items-center gap-3">
           <span>
             {total === 0
-              ? 'No records'
+              ? "No records"
               : `Showing ${showingFrom.toLocaleString()}–${showingTo.toLocaleString()} of ${total.toLocaleString()}`}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xs">Rows per page</span>
             <Select value={String(perPage)} onValueChange={onPerPageChange}>
-              <SelectTrigger className="h-8 w-[76px]" aria-label="Rows per page">
+              <SelectTrigger
+                className="h-8 w-[76px]"
+                aria-label="Rows per page"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -436,8 +458,8 @@ export function PlantillaTableClient({
             <AlertDialogTitle>Mark position as vacant?</AlertDialogTitle>
             <AlertDialogDescription>
               {unassignTarget
-                ? `Item ${unassignTarget.itemNo} — ${unassignTarget.positionTitle} — will be unassigned from ${unassignTarget.employeeName ?? 'its current incumbent'}.`
-                : ''}
+                ? `Item ${unassignTarget.itemNo} — ${unassignTarget.positionTitle} — will be unassigned from ${unassignTarget.employeeName ?? "its current incumbent"}.`
+                : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

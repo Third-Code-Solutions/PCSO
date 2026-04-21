@@ -5,10 +5,10 @@
  * server actions — no client-component/server-action prop boundary issues.
  */
 
-import * as React from 'react';
-import { cn } from '@/lib/utils/cn';
-import { Badge } from '@/components/ui/badge';
-import type { StepIncrementRow } from '@/app/(dashboard)/performance/queries';
+import * as React from "react";
+import { cn } from "@/lib/utils/cn";
+import { Badge } from "@/components/ui/badge";
+import type { StepIncrementRow } from "@/app/(dashboard)/performance/queries";
 
 interface StepIncrementTableProps {
   increments: StepIncrementRow[];
@@ -19,26 +19,29 @@ interface StepIncrementTableProps {
   cancelAction?: (formData: FormData) => Promise<void>;
 }
 
-const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'info' | 'muted' | 'destructive'> = {
-  pending: 'warning',
-  approved: 'info',
-  implemented: 'success',
-  cancelled: 'muted',
+const STATUS_VARIANT: Record<
+  string,
+  "success" | "warning" | "info" | "muted" | "destructive"
+> = {
+  pending: "warning",
+  approved: "info",
+  implemented: "success",
+  cancelled: "muted",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: 'Pending',
-  approved: 'Approved',
-  implemented: 'Implemented',
-  cancelled: 'Cancelled',
+  pending: "Pending",
+  approved: "Approved",
+  implemented: "Implemented",
+  cancelled: "Cancelled",
 };
 
 function formatDate(dateStr: string): string {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 
@@ -86,11 +89,18 @@ export function StepIncrementTable({
         </thead>
         <tbody className="divide-y">
           {increments.map((inc) => (
-            <tr key={inc.id} className="group hover:bg-muted/20 transition-colors">
+            <tr
+              key={inc.id}
+              className="group hover:bg-muted/20 transition-colors"
+            >
               {showEmployee && (
                 <td className="px-4 py-3">
-                  <div className="font-medium text-foreground">{inc.employeeName}</div>
-                  <div className="text-xs text-muted-foreground">{inc.employeeNo}</div>
+                  <div className="font-medium text-foreground">
+                    {inc.employeeName}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {inc.employeeNo}
+                  </div>
                 </td>
               )}
               <td className="px-4 py-3">
@@ -98,7 +108,7 @@ export function StepIncrementTable({
                   Step {inc.fromStep}
                 </span>
                 <span className="mx-1.5 text-muted-foreground">→</span>
-                <span className="font-tabular-nums font-medium text-senate-navy">
+                <span className="font-tabular-nums font-medium text-pcso-navy">
                   Step {inc.toStep}
                 </span>
               </td>
@@ -106,9 +116,7 @@ export function StepIncrementTable({
                 {formatDate(inc.effectivityDate)}
               </td>
               <td className="px-4 py-3">
-                <Badge
-                  variant={STATUS_VARIANT[inc.status] ?? 'muted'}
-                >
+                <Badge variant={STATUS_VARIANT[inc.status] ?? "muted"}>
                   {STATUS_LABEL[inc.status] ?? inc.status}
                 </Badge>
               </td>
@@ -127,25 +135,42 @@ export function StepIncrementTable({
               {(approveAction ?? implementAction ?? cancelAction) && (
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    {inc.status === 'pending' && approveAction && (
+                    {inc.status === "pending" && approveAction && (
                       <form action={approveAction}>
-                        <input type="hidden" name="stepIncrementId" value={inc.id} />
+                        <input
+                          type="hidden"
+                          name="stepIncrementId"
+                          value={inc.id}
+                        />
                         <SubmitButton label="Approve" variant="primary" />
                       </form>
                     )}
-                    {inc.status === 'approved' && implementAction && (
+                    {inc.status === "approved" && implementAction && (
                       <form action={implementAction}>
-                        <input type="hidden" name="stepIncrementId" value={inc.id} />
+                        <input
+                          type="hidden"
+                          name="stepIncrementId"
+                          value={inc.id}
+                        />
                         <SubmitButton label="Implement" variant="primary" />
                       </form>
                     )}
-                    {['pending', 'approved'].includes(inc.status) && cancelAction && (
-                      <form action={cancelAction}>
-                        <input type="hidden" name="stepIncrementId" value={inc.id} />
-                        <input type="hidden" name="reason" value="Cancelled by HR" />
-                        <SubmitButton label="Cancel" variant="danger" />
-                      </form>
-                    )}
+                    {["pending", "approved"].includes(inc.status) &&
+                      cancelAction && (
+                        <form action={cancelAction}>
+                          <input
+                            type="hidden"
+                            name="stepIncrementId"
+                            value={inc.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="reason"
+                            value="Cancelled by HR"
+                          />
+                          <SubmitButton label="Cancel" variant="danger" />
+                        </form>
+                      )}
                   </div>
                 </td>
               )}
@@ -161,7 +186,7 @@ export function StepIncrementTable({
 
 interface SubmitButtonProps {
   label: string;
-  variant: 'primary' | 'danger';
+  variant: "primary" | "danger";
 }
 
 function SubmitButton({ label, variant }: SubmitButtonProps) {
@@ -169,10 +194,10 @@ function SubmitButton({ label, variant }: SubmitButtonProps) {
     <button
       type="submit"
       className={cn(
-        'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-        variant === 'primary'
-          ? 'bg-senate-navy text-senate-cream hover:bg-senate-navy-light'
-          : 'text-red-700 hover:bg-red-50',
+        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+        variant === "primary"
+          ? "bg-pcso-navy text-pcso-cream hover:bg-pcso-navy-light"
+          : "text-red-700 hover:bg-red-50",
       )}
     >
       {label}

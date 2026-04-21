@@ -14,12 +14,12 @@
  * 5. Deduction denominator = 480 minutes (8-hour workday).
  */
 
-import type { CscRulesConfig } from './types';
+import type { CscRulesConfig } from "./types";
 
 /**
  * Default CSC rules with zero grace period.
  * Agencies may configure grace periods if their own guidelines allow it,
- * but the standard Senate policy mirrors the strict CSC default.
+ * but the standard PCSO policy mirrors the strict CSC default.
  */
 export const DEFAULT_CSC_RULES: Readonly<CscRulesConfig> = {
   workdayMinutes: 480,
@@ -45,7 +45,7 @@ export const MONTHLY_TARDINESS_ALERT_COUNT = 5;
 export const ANNUAL_TARDINESS_EQUIVALENT_ABSENCE = 10;
 
 /**
- * Maximum pre-approved OT hours per day allowed under Senate policy.
+ * Maximum pre-approved OT hours per day allowed under PCSO policy.
  * Requests exceeding this require additional authorization.
  */
 export const MAX_OT_HOURS_PER_DAY = 4;
@@ -55,8 +55,11 @@ export const MAX_OT_HOURS_PER_DAY = 4;
  * Ensures it cannot exceed a reasonable cap (e.g. no agency may self-grant
  * a 60-minute grace period without CSC approval).
  */
-export function effectiveGracePeriod(config: Partial<CscRulesConfig> = {}): number {
+export function effectiveGracePeriod(
+  config: Partial<CscRulesConfig> = {},
+): number {
   const MAX_GRACE_PERIOD = 15;
-  const grace = config.gracePeriodMinutes ?? DEFAULT_CSC_RULES.gracePeriodMinutes;
+  const grace =
+    config.gracePeriodMinutes ?? DEFAULT_CSC_RULES.gracePeriodMinutes;
   return Math.min(grace, MAX_GRACE_PERIOD);
 }

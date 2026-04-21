@@ -1,38 +1,43 @@
-import { notFound } from 'next/navigation';
-import { requirePermission } from '@/lib/auth/guards';
-import { db } from '@/lib/db';
-import { employees, gsisRegistrations, gsisLoans, payrollRecords } from '@/lib/db/schema';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { notFound } from "next/navigation";
+import { requirePermission } from "@/lib/auth/guards";
+import { db } from "@/lib/db";
+import {
+  employees,
+  gsisRegistrations,
+  gsisLoans,
+  payrollRecords,
+} from "@/lib/db/schema";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import {
   evaluateRetirementEligibility,
   type EmployeeRetirementInput,
-} from '@/lib/utils/remittances/retirement-eligibility';
-import { GsisRegistrationForm } from '@/components/employees/gsis-registration-form';
-import type { GsisRegistration, GsisLoan } from '@/lib/db/schema/gsis';
+} from "@/lib/utils/remittances/retirement-eligibility";
+import { GsisRegistrationForm } from "@/components/employees/gsis-registration-form";
+import type { GsisRegistration, GsisLoan } from "@/lib/db/schema/gsis";
 
 export const metadata = {
-  title: 'GSIS Details',
+  title: "GSIS Details",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMoney(value: string | number | null | undefined): string {
-  if (value == null) return '—';
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (!Number.isFinite(num)) return '—';
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
+  if (value == null) return "—";
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (!Number.isFinite(num)) return "—";
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
     minimumFractionDigits: 2,
   }).format(num);
 }
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) return '—';
-  return new Date(value).toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 }
 
@@ -79,20 +84,26 @@ function RegistrationSection({
     <SectionCard title="GSIS Membership">
       {registration ? (
         <dl className="divide-y divide-zinc-50">
-          <InfoRow label="GSIS No." value={<span className="font-mono">{registration.gsisNo}</span>} />
+          <InfoRow
+            label="GSIS No."
+            value={<span className="font-mono">{registration.gsisNo}</span>}
+          />
           <InfoRow label="Status" value={registration.status} />
           <InfoRow
             label="Govt. Service Start"
             value={formatDate(registration.governmentServiceStartDate)}
           />
-          <InfoRow label="Registered Date" value={formatDate(registration.registeredDate)} />
+          <InfoRow
+            label="Registered Date"
+            value={formatDate(registration.registeredDate)}
+          />
           <InfoRow
             label="Compulsory Member"
-            value={registration.isCompulsory ? 'Yes' : 'No'}
+            value={registration.isCompulsory ? "Yes" : "No"}
           />
           <InfoRow
             label="Enrolled in RF"
-            value={registration.enrolledInRetirementFund ? 'Yes' : 'No'}
+            value={registration.enrolledInRetirementFund ? "Yes" : "No"}
           />
           {registration.notes && (
             <InfoRow label="Notes" value={registration.notes} />
@@ -114,13 +125,13 @@ function RegistrationSection({
 
 function LoansSection({ loans }: { loans: GsisLoan[] }) {
   const LOAN_TYPE_LABELS: Record<string, string> = {
-    policy_loan: 'Policy Loan',
-    emergency_loan: 'Emergency Loan',
-    consolidated_loan: 'Consolidated Loan',
-    housing_loan: 'Housing Loan',
-    educational_loan: 'Educational Loan',
-    calamity_loan: 'Calamity Loan',
-    restructured_loan: 'Restructured Loan',
+    policy_loan: "Policy Loan",
+    emergency_loan: "Emergency Loan",
+    consolidated_loan: "Consolidated Loan",
+    housing_loan: "Housing Loan",
+    educational_loan: "Educational Loan",
+    calamity_loan: "Calamity Loan",
+    restructured_loan: "Restructured Loan",
   };
 
   return (
@@ -166,11 +177,11 @@ function LoansSection({ loans }: { loans: GsisLoan[] }) {
                     <span
                       className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                         loan.isActive
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-zinc-100 text-zinc-500'
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-zinc-100 text-zinc-500"
                       }`}
                     >
-                      {loan.isActive ? 'Active' : 'Closed'}
+                      {loan.isActive ? "Active" : "Closed"}
                     </span>
                   </td>
                 </tr>
@@ -220,9 +231,9 @@ function ContributionsSection({
               {contributions.map((c) => (
                 <tr key={c.id}>
                   <td className="py-2 pr-4 font-mono text-xs text-zinc-500">
-                    {new Date(c.createdAt).toLocaleDateString('en-PH', {
-                      year: 'numeric',
-                      month: 'short',
+                    {new Date(c.createdAt).toLocaleDateString("en-PH", {
+                      year: "numeric",
+                      month: "short",
                     })}
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums">
@@ -263,16 +274,17 @@ function RetirementSection({
     return (
       <SectionCard title="Retirement Eligibility">
         <p className="text-sm text-zinc-400">
-          Register this employee in GSIS to enable retirement eligibility tracking.
+          Register this employee in GSIS to enable retirement eligibility
+          tracking.
         </p>
       </SectionCard>
     );
   }
 
   const input: EmployeeRetirementInput = {
-    employeeId: '',
-    employeeNo: '',
-    name: '',
+    employeeId: "",
+    employeeNo: "",
+    name: "",
     birthDate: employee.birthDate,
     governmentServiceStartDate: registration.governmentServiceStartDate,
     currentMonthlySalary: 13000 + (employee.salaryGrade - 1) * 2500,
@@ -281,15 +293,15 @@ function RetirementSection({
   const result = evaluateRetirementEligibility(input);
 
   const ELIGIBILITY_LABELS = {
-    not_eligible: 'Not Yet Eligible',
-    optional: 'Optional Retirement Eligible',
-    compulsory: 'Compulsory Retirement (Age 65)',
+    not_eligible: "Not Yet Eligible",
+    optional: "Optional Retirement Eligible",
+    compulsory: "Compulsory Retirement (Age 65)",
   };
 
   const ELIGIBILITY_COLORS = {
-    not_eligible: 'bg-zinc-100 text-zinc-600',
-    optional: 'bg-blue-50 text-blue-700',
-    compulsory: 'bg-red-50 text-red-700',
+    not_eligible: "bg-zinc-100 text-zinc-600",
+    optional: "bg-blue-50 text-blue-700",
+    compulsory: "bg-red-50 text-red-700",
   };
 
   return (
@@ -304,25 +316,29 @@ function RetirementSection({
 
       <dl className="divide-y divide-zinc-50">
         <InfoRow label="Age" value={`${result.ageYears} years old`} />
-        <InfoRow label="Years of Service" value={`${result.yearsOfService} years`} />
+        <InfoRow
+          label="Years of Service"
+          value={`${result.yearsOfService} years`}
+        />
         <InfoRow
           label="Meets Age Req. (≥60)"
-          value={result.meetsOptionalAge ? 'Yes' : 'No'}
+          value={result.meetsOptionalAge ? "Yes" : "No"}
         />
         <InfoRow
           label="Meets Service Req. (≥15yr)"
-          value={result.meetsMinService ? 'Yes' : 'No'}
+          value={result.meetsMinService ? "Yes" : "No"}
         />
         {result.nextMilestone && (
           <InfoRow
             label="Next Milestone"
             value={
               <span className="text-amber-700">
-                {result.nextMilestone.description} —{' '}
+                {result.nextMilestone.description} —{" "}
                 {result.nextMilestone.yearsRemaining > 0
                   ? `${result.nextMilestone.yearsRemaining}yr `
-                  : ''}
-                {result.nextMilestone.monthsRemaining}mo remaining (est. {result.nextMilestone.estimatedYear})
+                  : ""}
+                {result.nextMilestone.monthsRemaining}mo remaining (est.{" "}
+                {result.nextMilestone.estimatedYear})
               </span>
             }
           />
@@ -331,7 +347,7 @@ function RetirementSection({
           <InfoRow
             label="Est. Monthly Pension"
             value={
-              <span className="font-semibold text-senate-navy">
+              <span className="font-semibold text-pcso-navy">
                 {formatMoney(result.estimatedMonthlyPension)}
               </span>
             }
@@ -352,8 +368,9 @@ function RetirementSection({
       </dl>
 
       <p className="mt-4 text-xs text-zinc-400">
-        Pension estimate uses current salary as proxy for BMP. Actual computation uses
-        average of last 3 years&#39; highest monthly salary per RA 8291.
+        Pension estimate uses current salary as proxy for BMP. Actual
+        computation uses average of last 3 years&#39; highest monthly salary per
+        RA 8291.
       </p>
     </SectionCard>
   );
@@ -366,7 +383,7 @@ interface Props {
 }
 
 export default async function EmployeeGsisPage({ params }: Props) {
-  await requirePermission('employees', 'view');
+  await requirePermission("employees", "view");
 
   const [employee] = await db
     .select()
@@ -390,7 +407,9 @@ export default async function EmployeeGsisPage({ params }: Props) {
   const loans = await db
     .select()
     .from(gsisLoans)
-    .where(and(eq(gsisLoans.employeeId, params.id), isNull(gsisLoans.deletedAt)))
+    .where(
+      and(eq(gsisLoans.employeeId, params.id), isNull(gsisLoans.deletedAt)),
+    )
     .orderBy(desc(gsisLoans.createdAt));
 
   const contributions = await db
@@ -408,7 +427,9 @@ export default async function EmployeeGsisPage({ params }: Props) {
     .orderBy(desc(payrollRecords.createdAt))
     .limit(24);
 
-  const mi = employee.middleName ? ` ${employee.middleName.charAt(0).toUpperCase()}.` : '';
+  const mi = employee.middleName
+    ? ` ${employee.middleName.charAt(0).toUpperCase()}.`
+    : "";
   const fullName = `${employee.lastName}, ${employee.firstName}${mi}`;
 
   return (
@@ -418,7 +439,7 @@ export default async function EmployeeGsisPage({ params }: Props) {
         <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
           Employee &mdash; GSIS Details
         </p>
-        <h1 className="mt-1 text-2xl font-bold text-senate-navy">{fullName}</h1>
+        <h1 className="mt-1 text-2xl font-bold text-pcso-navy">{fullName}</h1>
         <p className="mt-0.5 text-sm text-zinc-500">
           {employee.positionTitle} &middot; Employee No. {employee.employeeNo}
         </p>
@@ -435,7 +456,10 @@ export default async function EmployeeGsisPage({ params }: Props) {
         </div>
         <div className="space-y-6">
           <RetirementSection
-            employee={{ birthDate: employee.birthDate, salaryGrade: employee.salaryGrade }}
+            employee={{
+              birthDate: employee.birthDate,
+              salaryGrade: employee.salaryGrade,
+            }}
             registration={registration ?? null}
           />
           <ContributionsSection contributions={contributions} />

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { LogOut, Settings, User, ChevronDown } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import * as React from "react";
+import { LogOut, Settings, User, ChevronDown } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +10,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 
 interface UserMenuProps {
   /** User display name */
@@ -26,10 +26,10 @@ interface UserMenuProps {
 
 function getInitials(name: string): string {
   return name
-    .split(' ')
-    .map((part) => part[0] ?? '')
+    .split(" ")
+    .map((part) => part[0] ?? "")
     .slice(0, 2)
-    .join('')
+    .join("")
     .toUpperCase();
 }
 
@@ -44,7 +44,7 @@ export function UserMenu({ name, email, avatarUrl, onSignOut }: UserMenuProps) {
         >
           <Avatar className="h-8 w-8">
             {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
-            <AvatarFallback className="bg-senate-navy text-white text-xs font-semibold">
+            <AvatarFallback className="bg-pcso-navy text-white text-xs font-semibold">
               {getInitials(name)}
             </AvatarFallback>
           </Avatar>

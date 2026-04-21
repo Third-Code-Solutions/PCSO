@@ -1,21 +1,21 @@
-'use client';
+"use client";
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { Pencil, Loader2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Pencil, Loader2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { updateOwnContactInfo } from './actions';
-import type { UpdateOwnContactInfoInput } from './actions';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { updateOwnContactInfo } from "./actions";
+import type { UpdateOwnContactInfoInput } from "./actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ function Field({
   value,
   onChange,
   placeholder,
-  type = 'text',
+  type = "text",
 }: {
   id: string;
   label: string;
@@ -79,15 +79,15 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState<UpdateOwnContactInfoInput>({
-    phone: initial.phone ?? '',
-    addressStreet: initial.addressStreet ?? '',
-    addressBarangay: initial.addressBarangay ?? '',
-    addressCity: initial.addressCity ?? '',
-    addressProvince: initial.addressProvince ?? '',
-    addressZipCode: initial.addressZipCode ?? '',
-    emergencyContactName: initial.emergencyContactName ?? '',
-    emergencyContactRelationship: initial.emergencyContactRelationship ?? '',
-    emergencyContactPhone: initial.emergencyContactPhone ?? '',
+    phone: initial.phone ?? "",
+    addressStreet: initial.addressStreet ?? "",
+    addressBarangay: initial.addressBarangay ?? "",
+    addressCity: initial.addressCity ?? "",
+    addressProvince: initial.addressProvince ?? "",
+    addressZipCode: initial.addressZipCode ?? "",
+    emergencyContactName: initial.emergencyContactName ?? "",
+    emergencyContactRelationship: initial.emergencyContactRelationship ?? "",
+    emergencyContactPhone: initial.emergencyContactPhone ?? "",
   });
 
   const set = (field: keyof UpdateOwnContactInfoInput) => (value: string) => {
@@ -97,15 +97,15 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
   const handleOpen = () => {
     // Reset form to current saved values each time the dialog opens.
     setForm({
-      phone: initial.phone ?? '',
-      addressStreet: initial.addressStreet ?? '',
-      addressBarangay: initial.addressBarangay ?? '',
-      addressCity: initial.addressCity ?? '',
-      addressProvince: initial.addressProvince ?? '',
-      addressZipCode: initial.addressZipCode ?? '',
-      emergencyContactName: initial.emergencyContactName ?? '',
-      emergencyContactRelationship: initial.emergencyContactRelationship ?? '',
-      emergencyContactPhone: initial.emergencyContactPhone ?? '',
+      phone: initial.phone ?? "",
+      addressStreet: initial.addressStreet ?? "",
+      addressBarangay: initial.addressBarangay ?? "",
+      addressCity: initial.addressCity ?? "",
+      addressProvince: initial.addressProvince ?? "",
+      addressZipCode: initial.addressZipCode ?? "",
+      emergencyContactName: initial.emergencyContactName ?? "",
+      emergencyContactRelationship: initial.emergencyContactRelationship ?? "",
+      emergencyContactPhone: initial.emergencyContactPhone ?? "",
     });
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -120,21 +120,24 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
       try {
         const result = await updateOwnContactInfo(form);
         if (result.success) {
-          setSuccessMsg('Contact information updated.');
-          toast.success('Contact information saved');
+          setSuccessMsg("Contact information updated.");
+          toast.success("Contact information saved");
           // Refresh server data so the parent page reflects new values.
           router.refresh();
           setTimeout(() => setOpen(false), 600);
         } else {
-          const msg = result.error ?? 'An unexpected error occurred. Please try again.';
+          const msg =
+            result.error ?? "An unexpected error occurred. Please try again.";
           setErrorMsg(msg);
-          toast.error('Failed to save contact info', { description: msg });
+          toast.error("Failed to save contact info", { description: msg });
         }
       } catch (err) {
         const msg =
-          err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.';
+          err instanceof Error
+            ? err.message
+            : "An unexpected error occurred. Please try again.";
         setErrorMsg(msg);
-        toast.error('Failed to save contact info', { description: msg });
+        toast.error("Failed to save contact info", { description: msg });
       }
     });
   };
@@ -156,7 +159,7 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-serif text-senate-navy">
+            <DialogTitle className="font-serif text-pcso-navy">
               Edit Contact & Address
             </DialogTitle>
           </DialogHeader>
@@ -164,15 +167,15 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
           <div className="space-y-5 py-1">
             {/* Contact */}
             <section>
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-senate-navy">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-pcso-navy">
                 Contact
               </h3>
               <div className="space-y-3">
                 <Field
                   id="phone"
                   label="Mobile Phone"
-                  value={form.phone ?? ''}
-                  onChange={set('phone')}
+                  value={form.phone ?? ""}
+                  onChange={set("phone")}
                   placeholder="+639XXXXXXXXX or 09XXXXXXXXX"
                   type="tel"
                 />
@@ -181,42 +184,42 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
 
             {/* Current Address */}
             <section>
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-senate-navy">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-pcso-navy">
                 Current Address
               </h3>
               <div className="space-y-3">
                 <Field
                   id="addressStreet"
                   label="Street / Building"
-                  value={form.addressStreet ?? ''}
-                  onChange={set('addressStreet')}
+                  value={form.addressStreet ?? ""}
+                  onChange={set("addressStreet")}
                   placeholder="House No., Street Name"
                 />
                 <Field
                   id="addressBarangay"
                   label="Barangay"
-                  value={form.addressBarangay ?? ''}
-                  onChange={set('addressBarangay')}
+                  value={form.addressBarangay ?? ""}
+                  onChange={set("addressBarangay")}
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <Field
                     id="addressCity"
                     label="City / Municipality"
-                    value={form.addressCity ?? ''}
-                    onChange={set('addressCity')}
+                    value={form.addressCity ?? ""}
+                    onChange={set("addressCity")}
                   />
                   <Field
                     id="addressProvince"
                     label="Province"
-                    value={form.addressProvince ?? ''}
-                    onChange={set('addressProvince')}
+                    value={form.addressProvince ?? ""}
+                    onChange={set("addressProvince")}
                   />
                 </div>
                 <Field
                   id="addressZipCode"
                   label="ZIP Code"
-                  value={form.addressZipCode ?? ''}
-                  onChange={set('addressZipCode')}
+                  value={form.addressZipCode ?? ""}
+                  onChange={set("addressZipCode")}
                   placeholder="e.g. 1000"
                 />
               </div>
@@ -224,28 +227,28 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
 
             {/* Emergency Contact */}
             <section>
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-senate-navy">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-pcso-navy">
                 Emergency Contact
               </h3>
               <div className="space-y-3">
                 <Field
                   id="emergencyContactName"
                   label="Full Name"
-                  value={form.emergencyContactName ?? ''}
-                  onChange={set('emergencyContactName')}
+                  value={form.emergencyContactName ?? ""}
+                  onChange={set("emergencyContactName")}
                 />
                 <Field
                   id="emergencyContactRelationship"
                   label="Relationship"
-                  value={form.emergencyContactRelationship ?? ''}
-                  onChange={set('emergencyContactRelationship')}
+                  value={form.emergencyContactRelationship ?? ""}
+                  onChange={set("emergencyContactRelationship")}
                   placeholder="e.g. Spouse, Parent, Sibling"
                 />
                 <Field
                   id="emergencyContactPhone"
                   label="Phone Number"
-                  value={form.emergencyContactPhone ?? ''}
-                  onChange={set('emergencyContactPhone')}
+                  value={form.emergencyContactPhone ?? ""}
+                  onChange={set("emergencyContactPhone")}
                   placeholder="+639XXXXXXXXX or 09XXXXXXXXX"
                   type="tel"
                 />
@@ -286,7 +289,7 @@ export function EditContactDialog({ initial }: EditContactDialogProps) {
               type="button"
               onClick={handleSubmit}
               disabled={isPending}
-              className="bg-senate-navy text-white hover:bg-senate-navy-light"
+              className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
             >
               {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save Changes
@@ -325,10 +328,10 @@ export function CopyButton({ value, label }: CopyButtonProps) {
       type="button"
       onClick={handleCopy}
       aria-label={`Copy ${label}`}
-      title={copied ? 'Copied!' : `Copy ${label}`}
-      className="ml-1.5 inline-flex items-center rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-senate-gold"
+      title={copied ? "Copied!" : `Copy ${label}`}
+      className="ml-1.5 inline-flex items-center rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pcso-gold"
     >
-      {copied ? 'Copied' : 'Copy'}
+      {copied ? "Copied" : "Copy"}
     </button>
   );
 }

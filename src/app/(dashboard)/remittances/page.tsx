@@ -35,7 +35,7 @@ const AGENCY_META: Record<
 > = {
   gsis: {
     label: "GSIS",
-    color: "bg-navy-50 border-senate-navy",
+    color: "bg-navy-50 border-pcso-navy",
     href: "/remittances/gsis",
     deadline: "10th of following month",
   },
@@ -87,7 +87,7 @@ function AgencyCard({ summary }: { summary: AgencySummary }) {
         </span>
       </div>
 
-      <p className="mb-1 text-2xl font-bold text-senate-navy">
+      <p className="mb-1 text-2xl font-bold text-pcso-navy">
         {fmt(summary.dueThisMonth)}
       </p>
       <p className="mb-4 text-xs text-gray-400">Total due this month</p>
@@ -123,7 +123,7 @@ function DeadlineCalendar() {
   const month = now.getMonth() + 1;
 
   const deadlines = [
-    { agency: "GSIS", day: 10, color: "bg-senate-navy text-white" },
+    { agency: "GSIS", day: 10, color: "bg-pcso-navy text-white" },
     { agency: "BIR 1601-C", day: 10, color: "bg-red-600 text-white" },
     { agency: "Pag-IBIG", day: 15, color: "bg-blue-600 text-white" },
     { agency: "PhilHealth", day: 15, color: "bg-green-600 text-white" },
@@ -131,7 +131,7 @@ function DeadlineCalendar() {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <h3 className="mb-4 text-sm font-semibold text-senate-navy">
+      <h3 className="mb-4 text-sm font-semibold text-pcso-navy">
         Statutory Deadlines —{" "}
         {new Date(year, month, 1).toLocaleDateString("en-PH", {
           month: "long",
@@ -180,7 +180,7 @@ function RecentBatchesTable({ batches }: { batches: RecentBatchRow[] }) {
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-senate-navy text-white">
+          <thead className="bg-pcso-navy text-white">
             <tr>
               {[
                 "Agency",
@@ -208,7 +208,7 @@ function RecentBatchesTable({ batches }: { batches: RecentBatchRow[] }) {
                   className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
                 >
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-navy-50 px-2 py-0.5 text-xs font-semibold uppercase text-senate-navy">
+                    <span className="rounded-full bg-navy-50 px-2 py-0.5 text-xs font-semibold uppercase text-pcso-navy">
                       {agMeta?.label ?? b.agency}
                     </span>
                   </td>
@@ -283,7 +283,7 @@ export default async function RemittanceDashboardPage() {
 
         <div className="lg:col-span-2">
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold text-senate-navy">
+            <h3 className="mb-4 text-sm font-semibold text-pcso-navy">
               Quick Actions
             </h3>
             <div className="grid grid-cols-2 gap-3">
@@ -322,9 +322,9 @@ export default async function RemittanceDashboardPage() {
                 <Link
                   key={item.label}
                   href={item.href}
-                  className="group rounded-lg border border-gray-100 p-4 transition hover:border-senate-gold hover:shadow-sm"
+                  className="group rounded-lg border border-gray-100 p-4 transition hover:border-pcso-gold hover:shadow-sm"
                 >
-                  <p className="text-sm font-semibold text-senate-navy group-hover:text-senate-gold">
+                  <p className="text-sm font-semibold text-pcso-navy group-hover:text-pcso-gold">
                     {item.label}
                   </p>
                   <p className="mt-0.5 text-xs text-gray-400">{item.desc}</p>

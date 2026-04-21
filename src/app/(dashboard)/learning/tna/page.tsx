@@ -78,7 +78,7 @@ export default async function TnaListPage({ searchParams }: PageProps) {
           href="/learning/tna"
           className={`rounded-full border px-3 py-1 text-xs transition-colors ${
             !officeId
-              ? "border-senate-navy bg-senate-navy text-senate-cream"
+              ? "border-pcso-navy bg-pcso-navy text-pcso-cream"
               : "border-border hover:bg-muted/40"
           }`}
         >
@@ -90,7 +90,7 @@ export default async function TnaListPage({ searchParams }: PageProps) {
             href={`/learning/tna?officeId=${o.id}`}
             className={`rounded-full border px-3 py-1 text-xs transition-colors ${
               officeId === o.id
-                ? "border-senate-navy bg-senate-navy text-senate-cream"
+                ? "border-pcso-navy bg-pcso-navy text-pcso-cream"
                 : "border-border hover:bg-muted/40"
             }`}
           >
@@ -144,7 +144,7 @@ export default async function TnaListPage({ searchParams }: PageProps) {
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/learning/tna/${r.employeeId}`}
-                      className="text-xs font-medium text-senate-navy hover:underline"
+                      className="text-xs font-medium text-pcso-navy hover:underline"
                     >
                       View gaps →
                     </Link>

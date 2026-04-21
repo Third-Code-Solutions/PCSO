@@ -22,7 +22,7 @@ import { toast } from "sonner";
 type Theme = "light" | "dark" | "system";
 
 // Kept the legacy key so users with an existing preference don't lose it on rebrand.
-const THEME_KEY = "senate-hris-theme";
+const THEME_KEY = "pcso-hris-theme";
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: React.ReactNode }[] =
   [

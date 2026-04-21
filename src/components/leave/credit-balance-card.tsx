@@ -3,9 +3,9 @@
  * Used on /leave/credits and as a live preview inside the apply form.
  */
 
-'use client';
+"use client";
 
-import { cn } from '@/lib/utils/cn';
+import { cn } from "@/lib/utils/cn";
 
 interface CreditBalanceCardProps {
   vlBalance: number;
@@ -37,8 +37,10 @@ function BalanceBar({
   pendingColorClass,
 }: BalanceBarProps) {
   const remaining = Math.max(0, balance - pending);
-  const percentFilled = earned > 0 ? Math.min(100, (balance / earned) * 100) : 0;
-  const percentPending = earned > 0 ? Math.min(100, (pending / earned) * 100) : 0;
+  const percentFilled =
+    earned > 0 ? Math.min(100, (balance / earned) * 100) : 0;
+  const percentPending =
+    earned > 0 ? Math.min(100, (pending / earned) * 100) : 0;
 
   return (
     <div className="space-y-1.5">
@@ -59,7 +61,10 @@ function BalanceBar({
       <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
         {/* Filled portion */}
         <div
-          className={cn('absolute inset-y-0 left-0 rounded-full transition-all', colorClass)}
+          className={cn(
+            "absolute inset-y-0 left-0 rounded-full transition-all",
+            colorClass,
+          )}
           style={{ width: `${percentFilled}%` }}
           role="presentation"
         />
@@ -67,7 +72,7 @@ function BalanceBar({
         {percentPending > 0 && (
           <div
             className={cn(
-              'absolute inset-y-0 rounded-full transition-all',
+              "absolute inset-y-0 rounded-full transition-all",
               pendingColorClass,
             )}
             style={{
@@ -99,21 +104,23 @@ export function CreditBalanceCard({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl border bg-card p-5 shadow-sm transition-opacity',
-        isLoading && 'opacity-60 pointer-events-none',
+        "relative overflow-hidden rounded-xl border bg-card p-5 shadow-sm transition-opacity",
+        isLoading && "opacity-60 pointer-events-none",
         className,
       )}
     >
       {/* Gold accent stripe */}
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-senate-gold to-senate-gold-light rounded-t-xl" />
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-pcso-gold to-pcso-gold-light rounded-t-xl" />
 
       <div className="mb-4 flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Leave Credit Balance</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            Leave Credit Balance
+          </h3>
           <p className="text-xs text-muted-foreground">As of {year}</p>
         </div>
         {isLoading && (
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-senate-navy border-t-transparent" />
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-pcso-navy border-t-transparent" />
         )}
       </div>
 
@@ -123,7 +130,7 @@ export function CreditBalanceCard({
           balance={vlBalance}
           earned={15} // Full year earned max
           pending={pendingVlDeduction}
-          colorClass="bg-senate-navy"
+          colorClass="bg-pcso-navy"
           pendingColorClass="bg-amber-400/70"
         />
         <BalanceBar
@@ -141,7 +148,7 @@ export function CreditBalanceCard({
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-center">
             <p className="text-xs text-muted-foreground">VL Balance</p>
-            <p className="mt-0.5 text-lg font-bold tabular-nums text-senate-navy">
+            <p className="mt-0.5 text-lg font-bold tabular-nums text-pcso-navy">
               {Math.max(0, vlBalance - pendingVlDeduction).toFixed(3)}
             </p>
           </div>

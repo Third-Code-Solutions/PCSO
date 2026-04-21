@@ -223,7 +223,7 @@ export default async function LearningDashboardPage() {
             <Button
               size="sm"
               asChild
-              className="bg-senate-navy hover:bg-senate-navy-light text-senate-cream"
+              className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream"
             >
               <Link href="/learning/schedule/new">
                 <PlusIcon className="mr-1.5 h-4 w-4" />
@@ -268,7 +268,7 @@ export default async function LearningDashboardPage() {
           />
           <Link
             href="/learning/mandatory"
-            className="mt-2 inline-block text-xs font-medium text-senate-navy hover:underline"
+            className="mt-2 inline-block text-xs font-medium text-pcso-navy hover:underline"
           >
             View mandatory programs →
           </Link>
@@ -279,7 +279,7 @@ export default async function LearningDashboardPage() {
             <h2 className="text-sm font-semibold">Upcoming approved runs</h2>
             <Link
               href="/learning/schedule?status=approved"
-              className="text-xs font-medium text-senate-navy hover:underline"
+              className="text-xs font-medium text-pcso-navy hover:underline"
             >
               See all
             </Link>
@@ -298,7 +298,7 @@ export default async function LearningDashboardPage() {
                   <div className="min-w-0">
                     <Link
                       href={`/learning/schedule/${r.id}`}
-                      className="truncate font-medium hover:text-senate-navy"
+                      className="truncate font-medium hover:text-pcso-navy"
                     >
                       {r.programTitle}
                     </Link>
@@ -334,11 +334,11 @@ export default async function LearningDashboardPage() {
             <Link
               key={m.href}
               href={m.href}
-              className="group rounded-xl border bg-card p-4 shadow-sm transition-all hover:border-senate-navy hover:shadow-md"
+              className="group rounded-xl border bg-card p-4 shadow-sm transition-all hover:border-pcso-navy hover:shadow-md"
             >
               <div className="mb-2 flex items-center gap-2">
-                <m.icon className="h-4 w-4 text-senate-navy" />
-                <span className="text-sm font-medium group-hover:text-senate-navy">
+                <m.icon className="h-4 w-4 text-pcso-navy" />
+                <span className="text-sm font-medium group-hover:text-pcso-navy">
                   {m.label}
                 </span>
               </div>
@@ -372,7 +372,7 @@ function KpiTile({
   return (
     <Link
       href={href}
-      className={`rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-senate-navy ${
+      className={`rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-pcso-navy ${
         tone === "warn" ? "border-amber-200/70 bg-amber-50/40" : ""
       }`}
     >

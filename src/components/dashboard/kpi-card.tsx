@@ -1,6 +1,6 @@
-import * as React from 'react';
-import { type LucideIcon } from 'lucide-react';
-import { cn } from '@/lib/utils/cn';
+import * as React from "react";
+import { type LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 interface KpiCardProps {
   title: string;
@@ -10,7 +10,7 @@ interface KpiCardProps {
   icon: LucideIcon;
   /** Optional trend indicator: positive = good (green), negative = warning (amber/red) */
   trend?: {
-    direction: 'up' | 'down' | 'neutral';
+    direction: "up" | "down" | "neutral";
     label: string;
     /** Whether "up" is good (default true). Set to false for "pending leaves up = bad". */
     upIsPositive?: boolean;
@@ -26,25 +26,25 @@ export function KpiCard({
   detail,
   icon: Icon,
   trend,
-  iconColorClass = 'bg-senate-navy/10 text-senate-navy',
+  iconColorClass = "bg-pcso-navy/10 text-pcso-navy",
   className,
 }: KpiCardProps) {
   const trendColor = trend
-    ? trend.direction === 'neutral'
-      ? 'text-muted-foreground'
-      : trend.direction === 'up'
+    ? trend.direction === "neutral"
+      ? "text-muted-foreground"
+      : trend.direction === "up"
         ? (trend.upIsPositive ?? true)
-          ? 'text-emerald-600'
-          : 'text-amber-600'
+          ? "text-emerald-600"
+          : "text-amber-600"
         : (trend.upIsPositive ?? true)
-          ? 'text-amber-600'
-          : 'text-emerald-600'
+          ? "text-amber-600"
+          : "text-emerald-600"
     : undefined;
 
   return (
     <article
       className={cn(
-        'rounded-lg border border-border bg-card p-5 shadow-sm flex flex-col gap-3',
+        "rounded-lg border border-border bg-card p-5 shadow-sm flex flex-col gap-3",
         className,
       )}
     >
@@ -53,7 +53,7 @@ export function KpiCard({
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
         <div
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-lg',
+            "flex h-9 w-9 items-center justify-center rounded-lg",
             iconColorClass,
           )}
           aria-hidden
@@ -65,7 +65,7 @@ export function KpiCard({
       {/* Value */}
       <div>
         <p className="text-3xl font-bold tracking-tight text-foreground">
-          {typeof value === 'number' ? value.toLocaleString('en-PH') : value}
+          {typeof value === "number" ? value.toLocaleString("en-PH") : value}
         </p>
         {detail && (
           <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
@@ -74,9 +74,7 @@ export function KpiCard({
 
       {/* Trend */}
       {trend && (
-        <p className={cn('text-xs font-medium', trendColor)}>
-          {trend.label}
-        </p>
+        <p className={cn("text-xs font-medium", trendColor)}>{trend.label}</p>
       )}
     </article>
   );

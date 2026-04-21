@@ -1,4 +1,4 @@
-'use server';
+"use server";
 
 /**
  * Biometric CSV import action.
@@ -8,18 +8,18 @@
  * not) is audit-logged with the imported / skipped / invalid counts.
  */
 
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
-import { employees, attendanceLogs } from '@/lib/db/schema';
-import { inArray, sql } from 'drizzle-orm';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { employees, attendanceLogs } from "@/lib/db/schema";
+import { inArray, sql } from "drizzle-orm";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
 import {
   BiometricImportSchema,
   BiometricRowSchema,
-} from '@/lib/validations/attendance';
-import { computeDailyAttendance } from '@/lib/utils/attendance/compute';
-import { DEFAULT_SENATE_SCHEDULE } from '@/lib/constants/work-schedule';
+} from "@/lib/validations/attendance";
+import { computeDailyAttendance } from "@/lib/utils/attendance/compute";
+import { DEFAULT_AGENCY_SCHEDULE } from "@/lib/constants/work-schedule";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +33,12 @@ export interface ImportPreview {
   totalRows: number;
   validRows: number;
   invalidRows: number;
-  sample: Array<{ employeeId: string; date: string; timeIn: string | null; timeOut: string | null }>;
+  sample: Array<{
+    employeeId: string;
+    date: string;
+    timeIn: string | null;
+    timeOut: string | null;
+  }>;
   errors: ImportRowError[];
 }
 
@@ -71,7 +76,7 @@ const MAX_ROWS = 20_000;
  */
 function splitLine(line: string): string[] {
   const out: string[] = [];
-  let cur = '';
+  let cur = "";
   let inQuote = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
@@ -82,9 +87,9 @@ function splitLine(line: string): string[] {
       } else {
         inQuote = !inQuote;
       }
-    } else if (ch === ',' && !inQuote) {
+    } else if (ch === "," && !inQuote) {
       out.push(cur);
-      cur = '';
+      cur = "";
     } else {
       cur += ch;
     }
@@ -97,7 +102,7 @@ function parseCsv(
   csvText: string,
   config: CsvConfig,
 ): { rows: ParsedRow[]; errors: ImportRowError[] } {
-  const lines = csvText.replace(/\r\n/g, '\n').trim().split('\n');
+  const lines = csvText.replace(/\r\n/g, "\n").trim().split("\n");
   if (lines.length < 2) return { rows: [], errors: [] };
 
   const headerLine = lines[0];
@@ -127,8 +132,8 @@ function parseCsv(
     if (!line?.trim()) continue;
     const cells = splitLine(line);
     rows.push({
-      employeeId: cells[empCol] ?? '',
-      date: cells[dateCol] ?? '',
+      employeeId: cells[empCol] ?? "",
+      date: cells[dateCol] ?? "",
       timeIn: inCol >= 0 && cells[inCol] ? (cells[inCol] ?? null) : null,
       timeOut: outCol >= 0 && cells[outCol] ? (cells[outCol] ?? null) : null,
     });
@@ -153,7 +158,9 @@ function validateRows(rows: ParsedRow[]): {
       const issue = parsed.error.issues[0];
       errors.push({
         row: i + 2,
-        message: issue ? `${issue.path.join('.')}: ${issue.message}` : 'Invalid row',
+        message: issue
+          ? `${issue.path.join(".")}: ${issue.message}`
+          : "Invalid row",
       });
     }
   }
@@ -168,7 +175,9 @@ function validateRows(rows: ParsedRow[]): {
 async function resolveEmployeeIds(
   rows: ParsedRow[],
 ): Promise<{ resolved: ParsedRow[]; errors: ImportRowError[] }> {
-  const ids = Array.from(new Set(rows.map((r) => r.employeeId).filter(Boolean)));
+  const ids = Array.from(
+    new Set(rows.map((r) => r.employeeId).filter(Boolean)),
+  );
   if (ids.length === 0) return { resolved: [], errors: [] };
 
   const byId = await db
@@ -192,7 +201,10 @@ async function resolveEmployeeIds(
     if (!row) continue;
     const uuid = map.get(row.employeeId);
     if (!uuid) {
-      errors.push({ row: i + 2, message: `Unknown employee: "${row.employeeId}"` });
+      errors.push({
+        row: i + 2,
+        message: `Unknown employee: "${row.employeeId}"`,
+      });
       continue;
     }
     resolved.push({ ...row, employeeId: uuid });
@@ -207,26 +219,29 @@ export async function importBiometric(
   csvText: string,
   options: { dryRun?: boolean } = {},
 ): Promise<ImportPreview | ImportResult> {
-  const user = await requirePermission('attendance', 'create');
+  const user = await requirePermission("attendance", "create");
 
   // Accept partial configuration (client does not pre-parse rows — server does)
   const parsed = BiometricImportSchema.partial({ rows: true }).parse(input);
 
   const config: CsvConfig = {
-    employeeIdColumn: parsed.employeeIdColumn ?? 'employee_id',
-    dateColumn: parsed.dateColumn ?? 'date',
-    timeInColumn: parsed.timeInColumn ?? 'time_in',
-    timeOutColumn: parsed.timeOutColumn ?? 'time_out',
+    employeeIdColumn: parsed.employeeIdColumn ?? "employee_id",
+    dateColumn: parsed.dateColumn ?? "date",
+    timeInColumn: parsed.timeInColumn ?? "time_in",
+    timeOutColumn: parsed.timeOutColumn ?? "time_out",
   };
 
   const { rows: rawRows, errors: parseErrors } = parseCsv(csvText, config);
 
   if (rawRows.length > MAX_ROWS) {
-    throw new Error(`CSV exceeds ${MAX_ROWS.toLocaleString()} rows. Split into smaller files.`);
+    throw new Error(
+      `CSV exceeds ${MAX_ROWS.toLocaleString()} rows. Split into smaller files.`,
+    );
   }
 
   const { valid, errors: validationErrors } = validateRows(rawRows);
-  const { resolved, errors: resolutionErrors } = await resolveEmployeeIds(valid);
+  const { resolved, errors: resolutionErrors } =
+    await resolveEmployeeIds(valid);
 
   const preflightErrors: ImportRowError[] = [
     ...parseErrors,
@@ -259,8 +274,8 @@ export async function importBiometric(
         date: row.date,
         timeIn: row.timeIn,
         timeOut: row.timeOut,
-        schedule: DEFAULT_SENATE_SCHEDULE,
-        dayType: 'ordinary',
+        schedule: DEFAULT_AGENCY_SCHEDULE,
+        dayType: "ordinary",
         approvedOvertimeMinutes: 0,
       });
       return {
@@ -268,7 +283,7 @@ export async function importBiometric(
         logDate: row.date,
         timeIn: row.timeIn,
         timeOut: row.timeOut,
-        source: 'biometric' as const,
+        source: "biometric" as const,
         isLate: computed.lateMinutes > 0,
         lateMinutes: computed.lateMinutes,
         undertimeMinutes: computed.undertimeMinutes,
@@ -285,13 +300,13 @@ export async function importBiometric(
           .onConflictDoUpdate({
             target: [attendanceLogs.employeeId, attendanceLogs.logDate],
             set: {
-              timeIn: sqlExcluded('time_in'),
-              timeOut: sqlExcluded('time_out'),
-              source: sqlExcluded('source'),
-              isLate: sqlExcluded('is_late'),
-              lateMinutes: sqlExcluded('late_minutes'),
-              undertimeMinutes: sqlExcluded('undertime_minutes'),
-              overtimeMinutes: sqlExcluded('overtime_minutes'),
+              timeIn: sqlExcluded("time_in"),
+              timeOut: sqlExcluded("time_out"),
+              source: sqlExcluded("source"),
+              isLate: sqlExcluded("is_late"),
+              lateMinutes: sqlExcluded("late_minutes"),
+              undertimeMinutes: sqlExcluded("undertime_minutes"),
+              overtimeMinutes: sqlExcluded("overtime_minutes"),
               updatedAt: new Date(),
             },
           });
@@ -299,7 +314,7 @@ export async function importBiometric(
       imported += chunk.length;
     } catch (err: unknown) {
       skipped += chunk.length;
-      const msg = err instanceof Error ? err.message : 'Chunk commit failed';
+      const msg = err instanceof Error ? err.message : "Chunk commit failed";
       writeErrors.push({
         row: offset + 2,
         message: `Chunk ${Math.floor(offset / CHUNK_SIZE) + 1}: ${msg}`,
@@ -309,8 +324,8 @@ export async function importBiometric(
 
   await auditLog({
     userId: user.id,
-    action: 'biometric_import',
-    table: 'attendance_logs',
+    action: "biometric_import",
+    table: "attendance_logs",
     newValues: {
       imported,
       skipped,
@@ -319,8 +334,8 @@ export async function importBiometric(
     },
   });
 
-  revalidatePath('/attendance/admin');
-  revalidatePath('/attendance/timesheets');
+  revalidatePath("/attendance/admin");
+  revalidatePath("/attendance/timesheets");
 
   return {
     dryRun: false,

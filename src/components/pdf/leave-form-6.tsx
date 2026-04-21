@@ -61,9 +61,9 @@ export interface LeaveForm6Props {
 // Styles
 // ---------------------------------------------------------------------------
 
-// PCSO brand hex. Constants kept legacy-named (SENATE_*) so callers aren't disturbed.
-const SENATE_NAVY = "#1B4F9E";
-const SENATE_GOLD = "#FFCB05";
+// PCSO brand hex colors
+const PCSO_NAVY = "#1B4F9E";
+const PCSO_GOLD = "#FFCB05";
 const LIGHT_GRAY = "#f5f5f5";
 const BORDER_COLOR = "#d1d5db";
 
@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 11,
     fontFamily: "Helvetica-Bold",
-    color: SENATE_NAVY,
+    color: PCSO_NAVY,
     marginBottom: 2,
   },
   headerSubtitle: {
@@ -98,12 +98,12 @@ const styles = StyleSheet.create({
   },
   formNumber: {
     fontSize: 7,
-    color: SENATE_GOLD,
+    color: PCSO_GOLD,
     marginBottom: 1,
   },
   divider: {
     borderBottomWidth: 1.5,
-    borderBottomColor: SENATE_GOLD,
+    borderBottomColor: PCSO_GOLD,
     marginVertical: 6,
   },
   thinDivider: {
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
   },
   // Sections
   sectionHeader: {
-    backgroundColor: SENATE_NAVY,
+    backgroundColor: PCSO_NAVY,
     color: "#FAF4E6",
     fontFamily: "Helvetica-Bold",
     fontSize: 7.5,
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   checkboxChecked: {
     width: 6,
     height: 6,
-    backgroundColor: SENATE_NAVY,
+    backgroundColor: PCSO_NAVY,
   },
   checkboxLabel: {
     fontSize: 7.5,

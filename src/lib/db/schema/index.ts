@@ -49,3 +49,27 @@ export * from "./org-profile";
 
 // Notifications (user_id is uuid only — no FK constraint at schema level)
 export * from "./notifications";
+
+// File Maintenance extensions (depends on _shared only)
+export * from "./fm-extensions";
+
+// Serial number sequences (no FK dependencies)
+export * from "./serial-sequences";
+
+// Recruitment module (depends on employees, offices, fm-extensions)
+export * from "./recruitment";
+
+// Learning & Development module (depends on employees, offices, fm-extensions)
+export * from "./learning";
+
+// Employee Welfare & Benefits module (depends on employees, offices)
+export * from "./welfare";
+
+// Document Requests (depends on employees)
+export * from "./document-requests";
+
+// Announcements (depends on employees)
+export * from "./announcements";
+
+// Portal Requests (depends on employees, offices, attendance.workSchedules)
+export * from "./portal-requests";

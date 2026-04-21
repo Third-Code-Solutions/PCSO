@@ -8,31 +8,31 @@
  * The underlying card is `LeaveApprovalCard` (shared) for visual consistency.
  */
 
-'use client';
+"use client";
 
-import { useState, useTransition, useMemo } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { LeaveApprovalCard } from '@/components/leave/leave-approval-card';
-import { LEAVE_TYPES } from '@/lib/constants/leave-types';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
-import { cn } from '@/lib/utils/cn';
+import { useState, useTransition, useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { LeaveApprovalCard } from "@/components/leave/leave-approval-card";
+import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
+import { cn } from "@/lib/utils/cn";
 import {
   CheckIcon,
   CalendarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   WalletIcon,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import type { PendingApprovalRow } from '@/app/(dashboard)/leave/queries';
+} from "lucide-react";
+import { toast } from "sonner";
+import type { PendingApprovalRow } from "@/app/(dashboard)/leave/queries";
 import {
   approveLeave,
   disapproveLeave,
   batchApproveLeaves,
-} from '@/app/(dashboard)/leave/actions';
+} from "@/app/(dashboard)/leave/actions";
 
 interface LeaveApprovalsClientProps {
   rows: PendingApprovalRow[];
@@ -88,7 +88,7 @@ export function LeaveApprovalsClient({
   function runBatchApprove(): void {
     const ids = [...selected];
     if (ids.length === 0) {
-      toast.info('Select at least one application.');
+      toast.info("Select at least one application.");
       return;
     }
 
@@ -98,15 +98,18 @@ export function LeaveApprovalsClient({
         const parts: string[] = [];
         if (result.processed > 0) parts.push(`${result.processed} approved`);
         if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
-        if (result.errors.length > 0) parts.push(`${result.errors.length} failed`);
-        const msg = parts.join(' • ');
         if (result.errors.length > 0)
-          toast.warning(msg || 'Batch completed with errors.');
-        else toast.success(msg || 'Batch approved.');
+          parts.push(`${result.errors.length} failed`);
+        const msg = parts.join(" • ");
+        if (result.errors.length > 0)
+          toast.warning(msg || "Batch completed with errors.");
+        else toast.success(msg || "Batch approved.");
         setSelected(new Set());
         router.refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Batch approval failed.');
+        toast.error(
+          err instanceof Error ? err.message : "Batch approval failed.",
+        );
       }
     });
   }
@@ -120,8 +123,8 @@ export function LeaveApprovalsClient({
       {/* Batch action bar + select-all row */}
       <div
         className={cn(
-          'sticky top-16 z-10 flex flex-wrap items-center justify-between gap-3',
-          'rounded-xl border bg-card/95 p-3 shadow-sm backdrop-blur',
+          "sticky top-16 z-10 flex flex-wrap items-center justify-between gap-3",
+          "rounded-xl border bg-card/95 p-3 shadow-sm backdrop-blur",
         )}
       >
         <label className="flex items-center gap-2 text-sm font-medium">
@@ -150,8 +153,8 @@ export function LeaveApprovalsClient({
           >
             <CheckIcon className="mr-1.5 h-4 w-4" />
             {isBatchPending
-              ? 'Approving…'
-              : `Batch Approve${selected.size > 0 ? ` (${selected.size})` : ''}`}
+              ? "Approving…"
+              : `Batch Approve${selected.size > 0 ? ` (${selected.size})` : ""}`}
           </Button>
         </div>
       </div>
@@ -227,21 +230,20 @@ function ApprovalRow({
   onDisapprove,
 }: ApprovalRowProps) {
   const leaveType = LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode];
-  const isAccrued =
-    app.leaveTypeCode === 'VL' || app.leaveTypeCode === 'SL';
+  const isAccrued = app.leaveTypeCode === "VL" || app.leaveTypeCode === "SL";
 
   return (
     <div
       className={cn(
-        'relative rounded-xl ring-1 ring-transparent transition',
-        selected && 'ring-senate-navy/40 shadow-md',
+        "relative rounded-xl ring-1 ring-transparent transition",
+        selected && "ring-pcso-navy/40 shadow-md",
       )}
     >
       {/* Checkbox overlay */}
       <label
         className={cn(
-          'absolute left-3 top-3 z-10 flex h-6 w-6 cursor-pointer items-center',
-          'justify-center rounded-md border bg-background/95 shadow-sm',
+          "absolute left-3 top-3 z-10 flex h-6 w-6 cursor-pointer items-center",
+          "justify-center rounded-md border bg-background/95 shadow-sm",
         )}
       >
         <input
@@ -257,7 +259,9 @@ function ApprovalRow({
       {isAccrued && app.currentBalance !== null && (
         <div className="flex items-center gap-2 rounded-t-xl border border-b-0 bg-muted/40 px-5 py-1.5 pl-12 text-xs">
           <WalletIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Current {app.leaveTypeCode} balance:</span>
+          <span className="text-muted-foreground">
+            Current {app.leaveTypeCode} balance:
+          </span>
           <span className="font-mono font-medium tabular-nums">
             {app.currentBalance.toFixed(3)}
           </span>
@@ -265,7 +269,7 @@ function ApprovalRow({
           {app.balanceAfterDeduction !== null && (
             <Badge variant="muted" className="ml-auto text-xs">
               <CalendarIcon className="mr-1 h-3 w-3" />
-              {app.workingDays} day{app.workingDays === 1 ? '' : 's'} requested
+              {app.workingDays} day{app.workingDays === 1 ? "" : "s"} requested
             </Badge>
           )}
         </div>

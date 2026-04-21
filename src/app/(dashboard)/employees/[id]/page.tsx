@@ -1,31 +1,35 @@
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import { ChevronLeft, Pencil } from 'lucide-react';
-import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AvatarUploader } from '@/components/employees/avatar-uploader';
-import { TwoOhOneViewer } from '@/components/employees/201-viewer';
-import { ArchiveEmployeeButton } from '@/components/employees/archive-employee-button';
-import { getEmployeeById } from '../queries';
-import { APPOINTMENT_TYPE_LABELS } from '@/lib/constants/appointment-types';
-import { requireAuth } from '@/lib/auth/guards';
-import { hasPermission } from '@/lib/auth/permissions';
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ChevronLeft, Pencil } from "lucide-react";
+import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AvatarUploader } from "@/components/employees/avatar-uploader";
+import { TwoOhOneViewer } from "@/components/employees/201-viewer";
+import { ArchiveEmployeeButton } from "@/components/employees/archive-employee-button";
+import { getEmployeeById } from "../queries";
+import { APPOINTMENT_TYPE_LABELS } from "@/lib/constants/appointment-types";
+import { requireAuth } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const employee = await getEmployeeById(id);
-  if (!employee) return { title: 'Employee Not Found' };
+  if (!employee) return { title: "Employee Not Found" };
   return {
     title: `${employee.firstName} ${employee.lastName} — Profile`,
   };
 }
 
 function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—';
+  if (!dateStr) return "—";
   try {
-    return format(new Date(dateStr), 'MMMM d, yyyy');
+    return format(new Date(dateStr), "MMMM d, yyyy");
   } catch {
     return dateStr;
   }
@@ -35,26 +39,26 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="grid grid-cols-3 gap-2 py-2 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="col-span-2 font-medium">{value ?? '—'}</span>
+      <span className="col-span-2 font-medium">{value ?? "—"}</span>
     </div>
   );
 }
 
 function getStatusVariant(
   status: string,
-): 'success' | 'warning' | 'destructive' | 'muted' {
+): "success" | "warning" | "destructive" | "muted" {
   switch (status) {
-    case 'active':
-      return 'success';
-    case 'on_leave':
-    case 'suspended':
-      return 'warning';
-    case 'resigned':
-    case 'terminated':
-    case 'deceased':
-      return 'destructive';
+    case "active":
+      return "success";
+    case "on_leave":
+    case "suspended":
+      return "warning";
+    case "resigned":
+    case "terminated":
+    case "deceased":
+      return "destructive";
     default:
-      return 'muted';
+      return "muted";
   }
 }
 
@@ -64,24 +68,31 @@ interface PageProps {
 
 export default async function EmployeeProfilePage({ params }: PageProps) {
   const { id } = await params;
-  const [user, employee] = await Promise.all([requireAuth(), getEmployeeById(id)]);
+  const [user, employee] = await Promise.all([
+    requireAuth(),
+    getEmployeeById(id),
+  ]);
 
   if (!employee) notFound();
 
-  const canEdit = hasPermission(user.role, 'employees', 'edit');
-  const canArchive = hasPermission(user.role, 'employees', 'delete');
+  const canEdit = hasPermission(user.role, "employees", "edit");
+  const canArchive = hasPermission(user.role, "employees", "delete");
 
   const fullName = [employee.firstName, employee.middleName, employee.lastName]
     .filter(Boolean)
-    .join(' ');
-  const displayName = employee.suffix ? `${fullName}, ${employee.suffix}` : fullName;
+    .join(" ");
+  const displayName = employee.suffix
+    ? `${fullName}, ${employee.suffix}`
+    : fullName;
 
   const appointmentLabel =
     APPOINTMENT_TYPE_LABELS[
       employee.appointmentType as keyof typeof APPOINTMENT_TYPE_LABELS
     ] ?? employee.appointmentType;
 
-  const statusLabel = employee.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  const statusLabel = employee.status
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -89,7 +100,7 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
       <nav aria-label="Breadcrumb">
         <Link
           href="/employees"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-senate-navy"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-pcso-navy"
         >
           <ChevronLeft className="h-4 w-4" />
           Back to Employees
@@ -98,7 +109,7 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
 
       {/* Profile header card */}
       <div className="rounded-xl border bg-card shadow-sm">
-        <div className="h-28 rounded-t-xl bg-gradient-to-r from-senate-navy to-senate-navy-light" />
+        <div className="h-28 rounded-t-xl bg-gradient-to-r from-pcso-navy to-pcso-navy-light" />
         <div className="flex flex-col gap-4 px-6 pb-6 sm:flex-row sm:items-end">
           {/* Avatar */}
           <div className="-mt-12">
@@ -112,14 +123,20 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
           {/* Name + meta */}
           <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between pb-0.5">
             <div>
-              <h1 className="font-serif text-2xl font-bold text-senate-navy">
+              <h1 className="font-serif text-2xl font-bold text-pcso-navy">
                 {displayName}
               </h1>
-              <p className="text-sm text-muted-foreground">{employee.positionTitle}</p>
-              <p className="text-xs text-muted-foreground">{employee.officeName ?? ''}</p>
+              <p className="text-sm text-muted-foreground">
+                {employee.positionTitle}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {employee.officeName ?? ""}
+              </p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={getStatusVariant(employee.status)}>{statusLabel}</Badge>
+              <Badge variant={getStatusVariant(employee.status)}>
+                {statusLabel}
+              </Badge>
               <span className="font-mono text-xs text-muted-foreground">
                 {employee.employeeNo}
               </span>
@@ -135,7 +152,7 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
                 <ArchiveEmployeeButton
                   employeeId={employee.id}
                   employeeName={displayName}
-                  isAlreadyArchived={employee.status === 'resigned'}
+                  isAlreadyArchived={employee.status === "resigned"}
                 />
               )}
             </div>
@@ -145,34 +162,34 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
 
       {/* Tabs */}
       <Tabs defaultValue="profile">
-        <TabsList className="bg-senate-navy/5">
+        <TabsList className="bg-pcso-navy/5">
           <TabsTrigger
             value="profile"
-            className="data-[state=active]:bg-senate-navy data-[state=active]:text-white"
+            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
           >
             Profile
           </TabsTrigger>
           <TabsTrigger
             value="employment"
-            className="data-[state=active]:bg-senate-navy data-[state=active]:text-white"
+            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
           >
             Employment History
           </TabsTrigger>
           <TabsTrigger
             value="leave"
-            className="data-[state=active]:bg-senate-navy data-[state=active]:text-white"
+            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
           >
             Leave Credits
           </TabsTrigger>
           <TabsTrigger
             value="payroll"
-            className="data-[state=active]:bg-senate-navy data-[state=active]:text-white"
+            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
           >
             Payroll History
           </TabsTrigger>
           <TabsTrigger
             value="documents"
-            className="data-[state=active]:bg-senate-navy data-[state=active]:text-white"
+            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
           >
             Documents
           </TabsTrigger>
@@ -183,18 +200,25 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Personal info */}
             <section className="rounded-lg border bg-card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-senate-navy">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-pcso-navy">
                 Personal Information
               </h2>
               <div className="divide-y divide-border">
-                <InfoRow label="Date of Birth" value={formatDate(employee.birthDate)} />
+                <InfoRow
+                  label="Date of Birth"
+                  value={formatDate(employee.birthDate)}
+                />
                 <InfoRow
                   label="Gender"
-                  value={employee.gender.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  value={employee.gender
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
                 />
                 <InfoRow
                   label="Civil Status"
-                  value={employee.civilStatus.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  value={employee.civilStatus
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
                 />
                 <InfoRow label="Nationality" value={employee.nationality} />
                 <InfoRow label="Religion" value={employee.religion} />
@@ -206,7 +230,7 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
 
             {/* Employment info */}
             <section className="rounded-lg border bg-card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-senate-navy">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-pcso-navy">
                 Employment Details
               </h2>
               <div className="divide-y divide-border">
@@ -216,14 +240,20 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
                   value={`SG-${employee.salaryGrade} / Step ${employee.step}`}
                 />
                 <InfoRow label="Office" value={employee.officeName} />
-                <InfoRow label="Date Hired" value={formatDate(employee.dateHired)} />
-                <InfoRow label="Date Regularized" value={formatDate(employee.dateRegularized)} />
+                <InfoRow
+                  label="Date Hired"
+                  value={formatDate(employee.dateHired)}
+                />
+                <InfoRow
+                  label="Date Regularized"
+                  value={formatDate(employee.dateRegularized)}
+                />
               </div>
             </section>
 
             {/* Government IDs */}
             <section className="rounded-lg border bg-card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-senate-navy">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-pcso-navy">
                 Government IDs
               </h2>
               <div className="divide-y divide-border">
@@ -236,7 +266,7 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
 
             {/* Address & emergency */}
             <section className="rounded-lg border bg-card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-senate-navy">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-pcso-navy">
                 Address & Emergency Contact
               </h2>
               <div className="divide-y divide-border">
@@ -251,15 +281,21 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
                       employee.addressZipCode,
                     ]
                       .filter(Boolean)
-                      .join(', ') || null
+                      .join(", ") || null
                   }
                 />
-                <InfoRow label="Emergency Contact" value={employee.emergencyContactName} />
+                <InfoRow
+                  label="Emergency Contact"
+                  value={employee.emergencyContactName}
+                />
                 <InfoRow
                   label="Relationship"
                   value={employee.emergencyContactRelationship}
                 />
-                <InfoRow label="Emergency Phone" value={employee.emergencyContactPhone} />
+                <InfoRow
+                  label="Emergency Phone"
+                  value={employee.emergencyContactPhone}
+                />
               </div>
             </section>
           </div>
@@ -268,14 +304,18 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
         {/* Employment history tab — placeholder for Phase 06+ */}
         <TabsContent value="employment">
           <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
-            <p className="text-sm">Employment history tracking is coming in a future phase.</p>
+            <p className="text-sm">
+              Employment history tracking is coming in a future phase.
+            </p>
           </div>
         </TabsContent>
 
         {/* Leave credits tab — placeholder for Phase 07 */}
         <TabsContent value="leave">
           <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
-            <p className="text-sm">Leave credits will be available after the Leave module is set up.</p>
+            <p className="text-sm">
+              Leave credits will be available after the Leave module is set up.
+            </p>
           </div>
         </TabsContent>
 
@@ -283,10 +323,13 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
         <TabsContent value="payroll">
           <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
             <p className="text-sm">
-              View this employee&apos;s payslips in the{' '}
-              <Link href="/payroll" className="text-senate-navy underline hover:text-senate-gold">
+              View this employee&apos;s payslips in the{" "}
+              <Link
+                href="/payroll"
+                className="text-pcso-navy underline hover:text-pcso-gold"
+              >
                 Payroll
-              </Link>{' '}
+              </Link>{" "}
               module.
             </p>
           </div>
@@ -296,9 +339,13 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
         <TabsContent value="documents">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-senate-navy">201 File Documents</h2>
+              <h2 className="text-sm font-semibold text-pcso-navy">
+                201 File Documents
+              </h2>
               <Button asChild size="sm" variant="outline">
-                <Link href={`/employees/${employee.id}/edit#documents`}>Manage Documents</Link>
+                <Link href={`/employees/${employee.id}/edit#documents`}>
+                  Manage Documents
+                </Link>
               </Button>
             </div>
             {/* Documents are loaded separately; this is the viewer shell */}

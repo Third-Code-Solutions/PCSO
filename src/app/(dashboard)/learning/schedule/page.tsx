@@ -114,7 +114,7 @@ export default async function ScheduleListPage({ searchParams }: PageProps) {
             <Button
               size="sm"
               asChild
-              className="bg-senate-navy hover:bg-senate-navy-light text-senate-cream"
+              className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream"
             >
               <Link href="/learning/schedule/new">
                 <PlusIcon className="mr-1.5 h-4 w-4" />
@@ -136,7 +136,7 @@ export default async function ScheduleListPage({ searchParams }: PageProps) {
             }
             className={`rounded-full border px-3 py-1 text-xs capitalize transition-colors ${
               status === s
-                ? "border-senate-navy bg-senate-navy text-senate-cream"
+                ? "border-pcso-navy bg-pcso-navy text-pcso-cream"
                 : "border-border hover:bg-muted/40"
             }`}
           >
@@ -183,7 +183,7 @@ export default async function ScheduleListPage({ searchParams }: PageProps) {
                   <td className="px-4 py-3 font-mono text-xs">
                     <Link
                       href={`/learning/schedule/${r.id}`}
-                      className="text-senate-navy hover:underline"
+                      className="text-pcso-navy hover:underline"
                     >
                       {r.runNumber}
                     </Link>

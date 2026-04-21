@@ -7,29 +7,29 @@
  *   - Paginated list of all step_increment records, filterable by status
  */
 
-import Link from 'next/link';
-import { requirePermission } from '@/lib/auth/guards';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Badge } from '@/components/ui/badge';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import Link from "next/link";
+import { requirePermission } from "@/lib/auth/guards";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Badge } from "@/components/ui/badge";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 import {
   getEligibleEmployeesForStepIncrement,
   getStepIncrementsPaginated,
-} from '../queries';
-import { ChevronRightIcon, TrendingUpIcon } from 'lucide-react';
-import type { Metadata } from 'next';
-import { EligibleBulkTable } from './_client';
-import { hasPermission } from '@/lib/auth/permissions';
+} from "../queries";
+import { ChevronRightIcon, TrendingUpIcon } from "lucide-react";
+import type { Metadata } from "next";
+import { EligibleBulkTable } from "./_client";
+import { hasPermission } from "@/lib/auth/permissions";
 
 export const metadata: Metadata = {
-  title: 'Step Increments',
+  title: "Step Increments",
 };
 
-const STATUS_BADGE: Record<string, 'info' | 'warning' | 'success' | 'muted'> = {
-  pending: 'warning',
-  approved: 'info',
-  implemented: 'success',
-  cancelled: 'muted',
+const STATUS_BADGE: Record<string, "info" | "warning" | "success" | "muted"> = {
+  pending: "warning",
+  approved: "info",
+  implemented: "success",
+  cancelled: "muted",
 };
 
 const PAGE_SIZE = 25;
@@ -39,11 +39,11 @@ interface Props {
 }
 
 export default async function StepIncrementsPage({ searchParams }: Props) {
-  const user = await requirePermission('performance', 'view');
+  const user = await requirePermission("performance", "view");
   const { page: pageRaw, status: statusRaw } = await searchParams;
   const page = Math.max(1, Number(pageRaw ?? 1) || 1);
-  const statusFilter = statusRaw && statusRaw !== 'all' ? statusRaw : undefined;
-  const canProcess = hasPermission(user.role, 'performance', 'edit');
+  const statusFilter = statusRaw && statusRaw !== "all" ? statusRaw : undefined;
+  const canProcess = hasPermission(user.role, "performance", "edit");
 
   const [eligible, { rows: existing, total }] = await Promise.all([
     getEligibleEmployeesForStepIncrement(),
@@ -51,42 +51,64 @@ export default async function StepIncrementsPage({ searchParams }: Props) {
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pendingCount = existing.filter((i) => i.status === 'pending').length;
-  const implementedCount = existing.filter((i) => i.status === 'implemented').length;
+  const pendingCount = existing.filter((i) => i.status === "pending").length;
+  const implementedCount = existing.filter(
+    (i) => i.status === "implemented",
+  ).length;
 
-  const statusFilters = ['all', 'pending', 'approved', 'implemented', 'cancelled'];
+  const statusFilters = [
+    "all",
+    "pending",
+    "approved",
+    "implemented",
+    "cancelled",
+  ];
 
-  function buildHref(params: Record<string, string | number | undefined>): string {
+  function buildHref(
+    params: Record<string, string | number | undefined>,
+  ): string {
     const sp = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== 'all') sp.set(k, String(v));
+      if (v !== undefined && v !== "" && v !== "all") sp.set(k, String(v));
     });
     const qs = sp.toString();
-    return qs ? `/performance/step-increments?${qs}` : '/performance/step-increments';
+    return qs
+      ? `/performance/step-increments?${qs}`
+      : "/performance/step-increments";
   }
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-      <RealtimeBoundary tables={['performance_ratings', 'step_increments']} />
+      <RealtimeBoundary tables={["performance_ratings", "step_increments"]} />
       <PageHeader
         title="Step Increment Tracker"
         description="Employees eligible for salary step increment based on CSC performance ratings."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Performance', href: '/performance' },
-          { label: 'Step Increments' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Performance", href: "/performance" },
+          { label: "Step Increments" },
         ]}
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
-          { label: 'Eligible Now', value: eligible.length, color: 'text-emerald-600' },
-          { label: 'Total (paged)', value: total, color: 'text-foreground' },
-          { label: 'Pending', value: pendingCount, color: 'text-amber-600' },
-          { label: 'Implemented', value: implementedCount, color: 'text-senate-navy' },
+          {
+            label: "Eligible Now",
+            value: eligible.length,
+            color: "text-emerald-600",
+          },
+          { label: "Total (paged)", value: total, color: "text-foreground" },
+          { label: "Pending", value: pendingCount, color: "text-amber-600" },
+          {
+            label: "Implemented",
+            value: implementedCount,
+            color: "text-pcso-navy",
+          },
         ].map(({ label, value, color }) => (
           <div key={label} className="rounded-xl border bg-card p-3 shadow-sm">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{label}</p>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+              {label}
+            </p>
             <p className={`text-2xl font-bold ${color}`}>{value}</p>
           </div>
         ))}
@@ -104,21 +126,23 @@ export default async function StepIncrementsPage({ searchParams }: Props) {
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Step Increment Records</h2>
+          <h2 className="text-sm font-semibold text-foreground">
+            Step Increment Records
+          </h2>
           <div className="flex gap-1 text-xs">
             {statusFilters.map((f) => {
-              const active = (statusFilter ?? 'all') === f;
+              const active = (statusFilter ?? "all") === f;
               return (
                 <Link
                   key={f}
                   href={buildHref({ status: f })}
                   className={`rounded-full border px-3 py-1 transition-colors ${
                     active
-                      ? 'border-senate-navy bg-senate-navy text-senate-cream'
-                      : 'border-border text-muted-foreground hover:bg-muted/40'
+                      ? "border-pcso-navy bg-pcso-navy text-pcso-cream"
+                      : "border-border text-muted-foreground hover:bg-muted/40"
                   }`}
                 >
-                  {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+                  {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
                 </Link>
               );
             })}
@@ -134,46 +158,61 @@ export default async function StepIncrementsPage({ searchParams }: Props) {
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/40">
                 <tr>
-                  {['Employee', 'Step Change', 'Effectivity', 'Status', ''].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                    >
-                      {h}
-                    </th>
-                  ))}
+                  {["Employee", "Step Change", "Effectivity", "Status", ""].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                      >
+                        {h}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {existing.map((inc) => (
-                  <tr key={inc.id} className="hover:bg-muted/20 transition-colors">
+                  <tr
+                    key={inc.id}
+                    className="hover:bg-muted/20 transition-colors"
+                  >
                     <td className="px-4 py-3">
-                      <div className="font-medium text-foreground">{inc.employeeName}</div>
-                      <div className="text-xs text-muted-foreground">{inc.employeeNo}</div>
+                      <div className="font-medium text-foreground">
+                        {inc.employeeName}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {inc.employeeNo}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-tabular-nums">Step {inc.fromStep}</span>
+                      <span className="font-tabular-nums">
+                        Step {inc.fromStep}
+                      </span>
                       <span className="mx-1.5 text-muted-foreground">→</span>
-                      <span className="font-tabular-nums font-semibold text-senate-navy">
+                      <span className="font-tabular-nums font-semibold text-pcso-navy">
                         Step {inc.toStep}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">
-                      {new Date(inc.effectivityDate).toLocaleDateString('en-PH', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
+                      {new Date(inc.effectivityDate).toLocaleDateString(
+                        "en-PH",
+                        {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        },
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={STATUS_BADGE[inc.status] ?? 'muted'}>
-                        {inc.status.charAt(0).toUpperCase() + inc.status.slice(1)}
+                      <Badge variant={STATUS_BADGE[inc.status] ?? "muted"}>
+                        {inc.status.charAt(0).toUpperCase() +
+                          inc.status.slice(1)}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/performance/step-increments/${inc.employeeId}`}
-                        className="inline-flex items-center gap-1 text-xs text-senate-navy hover:underline"
+                        className="inline-flex items-center gap-1 text-xs text-pcso-navy hover:underline"
                       >
                         View <ChevronRightIcon className="h-3 w-3" />
                       </Link>
@@ -188,7 +227,8 @@ export default async function StepIncrementsPage({ searchParams }: Props) {
         {totalPages > 1 && (
           <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              Page {page} of {totalPages} · {total} record{total !== 1 ? 's' : ''}
+              Page {page} of {totalPages} · {total} record
+              {total !== 1 ? "s" : ""}
             </span>
             <div className="flex gap-2">
               {page > 1 && (

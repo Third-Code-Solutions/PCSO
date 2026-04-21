@@ -274,7 +274,7 @@ export default async function RunDetailPage({ params }: PageProps) {
                               href={p.certificatePdfUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-[11px] text-senate-navy hover:underline"
+                              className="text-[11px] text-pcso-navy hover:underline"
                             >
                               Download PDF
                             </a>

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * Leave Applications browser — client components
@@ -13,43 +13,39 @@
  *  - AllApplicationsTable : full filterable history + CSV export
  */
 
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   useTransition,
   useState,
   useCallback,
   useEffect,
   useMemo,
-} from 'react';
-import Link from 'next/link';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils/cn';
-import { LEAVE_TYPES } from '@/lib/constants/leave-types';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
-import { toast } from 'sonner';
+} from "react";
+import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
+import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
+import { toast } from "sonner";
 import {
   CheckIcon,
   XIcon,
   DownloadIcon,
   FilterIcon,
   SearchIcon,
-} from 'lucide-react';
-import {
-  cancelLeaveApplication,
-  bulkApprove,
-  exportCsv,
-} from './actions';
+} from "lucide-react";
+import { cancelLeaveApplication, bulkApprove, exportCsv } from "./actions";
 import type {
   LeaveApplicationRow,
   LeaveApplicationRowEnriched,
-} from '@/app/(dashboard)/leave/queries';
+} from "@/app/(dashboard)/leave/queries";
 
 // ---------------------------------------------------------------------------
 // Types shared with the page
 // ---------------------------------------------------------------------------
 
-export type TabKey = 'mine' | 'pending' | 'all';
+export type TabKey = "mine" | "pending" | "all";
 
 export interface AllFilters {
   status?: string;
@@ -65,13 +61,13 @@ export interface AllFilters {
 
 const STATUS_VARIANT: Record<
   string,
-  'success' | 'destructive' | 'warning' | 'muted' | 'info'
+  "success" | "destructive" | "warning" | "muted" | "info"
 > = {
-  approved: 'success',
-  disapproved: 'destructive',
-  cancelled: 'muted',
-  pending: 'warning',
-  recalled: 'muted',
+  approved: "success",
+  disapproved: "destructive",
+  cancelled: "muted",
+  pending: "warning",
+  recalled: "muted",
 };
 
 const LEAVE_TYPE_OPTIONS = (Object.keys(LEAVE_TYPES) as LeaveTypeCode[]).map(
@@ -82,14 +78,14 @@ const LEAVE_TYPE_OPTIONS = (Object.keys(LEAVE_TYPES) as LeaveTypeCode[]).map(
 );
 
 function statusLabel(status: string): string {
-  return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+  return new Date(iso).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
 }
 
@@ -105,16 +101,16 @@ function buildUrl(
   overrides: Record<string, string | number | undefined> = {},
 ): string {
   const usp = new URLSearchParams();
-  usp.set('tab', tab);
-  if (filters.status) usp.set('status', filters.status);
-  if (filters.leaveType) usp.set('leaveType', filters.leaveType);
-  if (filters.dateFrom) usp.set('dateFrom', filters.dateFrom);
-  if (filters.dateTo) usp.set('dateTo', filters.dateTo);
-  if (filters.q) usp.set('q', filters.q);
-  if (pageSize !== 50) usp.set('pageSize', String(pageSize));
+  usp.set("tab", tab);
+  if (filters.status) usp.set("status", filters.status);
+  if (filters.leaveType) usp.set("leaveType", filters.leaveType);
+  if (filters.dateFrom) usp.set("dateFrom", filters.dateFrom);
+  if (filters.dateTo) usp.set("dateTo", filters.dateTo);
+  if (filters.q) usp.set("q", filters.q);
+  if (pageSize !== 50) usp.set("pageSize", String(pageSize));
 
   for (const [k, v] of Object.entries(overrides)) {
-    if (v === undefined || v === null || v === '') {
+    if (v === undefined || v === null || v === "") {
       usp.delete(k);
     } else {
       usp.set(k, String(v));
@@ -144,10 +140,10 @@ function applyClientFilters<T extends LeaveApplicationRowEnriched>(
       const hay = [
         r.employeeFullName,
         r.employeeNo,
-        r.reason ?? '',
+        r.reason ?? "",
         r.leaveTypeName,
       ]
-        .join(' ')
+        .join(" ")
         .toLowerCase();
       if (!hay.includes(needle)) return false;
     }
@@ -165,20 +161,24 @@ interface TabSwitcherProps {
   showAll: boolean;
 }
 
-export function TabSwitcher({ activeTab, showPending, showAll }: TabSwitcherProps) {
+export function TabSwitcher({
+  activeTab,
+  showPending,
+  showAll,
+}: TabSwitcherProps) {
   const router = useRouter();
   const pathname = usePathname();
 
   function navigate(tab: TabKey) {
     const params = new URLSearchParams();
-    params.set('tab', tab);
+    params.set("tab", tab);
     router.push(`${pathname}?${params.toString()}`);
   }
 
   const tabs: { key: TabKey; label: string; show: boolean }[] = [
-    { key: 'mine', label: 'My Applications', show: true },
-    { key: 'pending', label: 'Pending Approval', show: showPending },
-    { key: 'all', label: 'All', show: showAll },
+    { key: "mine", label: "My Applications", show: true },
+    { key: "pending", label: "Pending Approval", show: showPending },
+    { key: "all", label: "All", show: showAll },
   ];
 
   return (
@@ -194,12 +194,12 @@ export function TabSwitcher({ activeTab, showPending, showAll }: TabSwitcherProp
             type="button"
             onClick={() => navigate(t.key)}
             className={cn(
-              'rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
+              "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
               activeTab === t.key
-                ? 'bg-white text-senate-navy shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
+                ? "bg-white text-pcso-navy shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
             )}
-            aria-current={activeTab === t.key ? 'page' : undefined}
+            aria-current={activeTab === t.key ? "page" : undefined}
           >
             {t.label}
           </button>
@@ -220,12 +220,12 @@ interface FilterToolbarProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'All statuses' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'disapproved', label: 'Disapproved' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'recalled', label: 'Recalled' },
+  { value: "", label: "All statuses" },
+  { value: "pending", label: "Pending" },
+  { value: "approved", label: "Approved" },
+  { value: "disapproved", label: "Disapproved" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "recalled", label: "Recalled" },
 ];
 
 export function FilterToolbar({
@@ -237,20 +237,25 @@ export function FilterToolbar({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [local, setLocal] = useState<AllFilters>(filters);
-  const [announce, setAnnounce] = useState<string>('');
+  const [announce, setAnnounce] = useState<string>("");
 
   // Keep local state in sync when a navigation changes the URL.
   useEffect(() => {
     setLocal(filters);
-  }, [filters.status, filters.leaveType, filters.dateFrom, filters.dateTo, filters.q]);
+  }, [
+    filters.status,
+    filters.leaveType,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.q,
+  ]);
 
   const push = useCallback(
     (next: AllFilters, nextPageSize: number = pageSize) => {
       startTransition(() => {
-        router.push(
-          buildUrl(activeTab, next, nextPageSize, { page: 1 }),
-          { scroll: false },
-        );
+        router.push(buildUrl(activeTab, next, nextPageSize, { page: 1 }), {
+          scroll: false,
+        });
       });
     },
     [activeTab, pageSize, router],
@@ -265,8 +270,8 @@ export function FilterToolbar({
       ).length;
       setAnnounce(
         activeFilterCount === 0
-          ? 'Filters cleared.'
-          : `Applied ${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}.`,
+          ? "Filters cleared."
+          : `Applied ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"}.`,
       );
     },
     [local, push],
@@ -276,11 +281,12 @@ export function FilterToolbar({
     const cleared: AllFilters = {};
     setLocal(cleared);
     push(cleared);
-    setAnnounce('Filters cleared.');
+    setAnnounce("Filters cleared.");
   }, [push]);
 
   const activeCount = useMemo(
-    () => Object.values(filters).filter((v) => v && String(v).length > 0).length,
+    () =>
+      Object.values(filters).filter((v) => v && String(v).length > 0).length,
     [filters],
   );
 
@@ -296,17 +302,20 @@ export function FilterToolbar({
       </span>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="filter-status" className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <label
+          htmlFor="filter-status"
+          className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           Status
         </label>
         <select
           id="filter-status"
-          value={local.status ?? ''}
+          value={local.status ?? ""}
           onChange={(e) =>
             setLocal((p) => ({ ...p, status: e.target.value || undefined }))
           }
-          disabled={activeTab === 'pending'}
-          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold disabled:opacity-60"
+          disabled={activeTab === "pending"}
+          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold disabled:opacity-60"
         >
           {STATUS_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
@@ -317,16 +326,19 @@ export function FilterToolbar({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="filter-leave-type" className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <label
+          htmlFor="filter-leave-type"
+          className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           Leave Type
         </label>
         <select
           id="filter-leave-type"
-          value={local.leaveType ?? ''}
+          value={local.leaveType ?? ""}
           onChange={(e) =>
             setLocal((p) => ({ ...p, leaveType: e.target.value || undefined }))
           }
-          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
         >
           <option value="">All types</option>
           {LEAVE_TYPE_OPTIONS.map((o) => (
@@ -338,37 +350,46 @@ export function FilterToolbar({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="filter-date-from" className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <label
+          htmlFor="filter-date-from"
+          className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           From
         </label>
         <input
           id="filter-date-from"
           type="date"
-          value={local.dateFrom ?? ''}
+          value={local.dateFrom ?? ""}
           onChange={(e) =>
             setLocal((p) => ({ ...p, dateFrom: e.target.value || undefined }))
           }
-          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
         />
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="filter-date-to" className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <label
+          htmlFor="filter-date-to"
+          className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           To
         </label>
         <input
           id="filter-date-to"
           type="date"
-          value={local.dateTo ?? ''}
+          value={local.dateTo ?? ""}
           onChange={(e) =>
             setLocal((p) => ({ ...p, dateTo: e.target.value || undefined }))
           }
-          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
         />
       </div>
 
       <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
-        <label htmlFor="filter-q" className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <label
+          htmlFor="filter-q"
+          className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           Search
         </label>
         <div className="relative">
@@ -377,24 +398,27 @@ export function FilterToolbar({
             id="filter-q"
             type="search"
             placeholder="Name, employee no., reason"
-            value={local.q ?? ''}
+            value={local.q ?? ""}
             onChange={(e) =>
               setLocal((p) => ({ ...p, q: e.target.value || undefined }))
             }
-            className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+            className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
           />
         </div>
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="filter-page-size" className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <label
+          htmlFor="filter-page-size"
+          className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           Rows
         </label>
         <select
           id="filter-page-size"
           value={pageSize}
           onChange={(e) => push(local, Number.parseInt(e.target.value, 10))}
-          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-senate-gold"
+          className="h-8 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-pcso-gold"
         >
           {pageSizes.map((n) => (
             <option key={n} value={n}>
@@ -464,17 +488,27 @@ export function Pagination({
       aria-label="Pagination"
       className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-4 py-2.5"
     >
-      <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+      <span
+        className="text-xs text-muted-foreground tabular-nums"
+        aria-live="polite"
+      >
         {total === 0
-          ? 'No applications.'
+          ? "No applications."
           : `Showing ${firstRow}–${lastRow} of ${total}`}
       </span>
 
       {totalPages > 1 && (
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={page <= 1} asChild={page > 1}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            asChild={page > 1}
+          >
             {page > 1 ? (
-              <Link href={buildUrl(activeTab, filters, pageSize, { page: prev })}>
+              <Link
+                href={buildUrl(activeTab, filters, pageSize, { page: prev })}
+              >
                 Prev
               </Link>
             ) : (
@@ -491,7 +525,9 @@ export function Pagination({
             asChild={page < totalPages}
           >
             {page < totalPages ? (
-              <Link href={buildUrl(activeTab, filters, pageSize, { page: next })}>
+              <Link
+                href={buildUrl(activeTab, filters, pageSize, { page: next })}
+              >
                 Next
               </Link>
             ) : (
@@ -541,7 +577,7 @@ function TableShell({
   headers,
   children,
   empty,
-  emptyMessage = 'No applications match these filters.',
+  emptyMessage = "No applications match these filters.",
 }: {
   headers: string[];
   children: React.ReactNode;
@@ -551,7 +587,9 @@ function TableShell({
   if (empty) {
     return (
       <div className="flex h-56 flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/10">
-        <p className="text-sm font-medium text-muted-foreground">{emptyMessage}</p>
+        <p className="text-sm font-medium text-muted-foreground">
+          {emptyMessage}
+        </p>
       </div>
     );
   }
@@ -585,7 +623,9 @@ interface MyApplicationsTableProps {
   applications: LeaveApplicationRow[];
 }
 
-export function MyApplicationsTable({ applications }: MyApplicationsTableProps) {
+export function MyApplicationsTable({
+  applications,
+}: MyApplicationsTableProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -595,10 +635,10 @@ export function MyApplicationsTable({ applications }: MyApplicationsTableProps) 
     startTransition(async () => {
       try {
         await cancelLeaveApplication({ leaveApplicationId: id });
-        toast.success('Leave application cancelled.');
+        toast.success("Leave application cancelled.");
         router.refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to cancel.');
+        toast.error(err instanceof Error ? err.message : "Failed to cancel.");
       } finally {
         setCancellingId(null);
       }
@@ -606,14 +646,14 @@ export function MyApplicationsTable({ applications }: MyApplicationsTableProps) 
   }
 
   const headers = [
-    'Leave Type',
-    'Date From',
-    'Date To',
-    'Days',
-    'Reason',
-    'Status',
-    'Filed On',
-    '',
+    "Leave Type",
+    "Date From",
+    "Date To",
+    "Days",
+    "Reason",
+    "Status",
+    "Filed On",
+    "",
   ];
 
   return (
@@ -626,13 +666,14 @@ export function MyApplicationsTable({ applications }: MyApplicationsTableProps) 
         <tr
           key={app.id}
           className={cn(
-            'group hover:bg-muted/20 transition-colors',
-            cancellingId === app.id && 'opacity-50 pointer-events-none',
+            "group hover:bg-muted/20 transition-colors",
+            cancellingId === app.id && "opacity-50 pointer-events-none",
           )}
         >
           <td className="px-4 py-3">
             <span className="font-medium">
-              {LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode]?.name ?? app.leaveTypeName}
+              {LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode]?.name ??
+                app.leaveTypeName}
             </span>
           </td>
           <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
@@ -641,14 +682,19 @@ export function MyApplicationsTable({ applications }: MyApplicationsTableProps) 
           <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
             {fmtDate(app.endDate)}
           </td>
-          <td className="px-4 py-3 text-center tabular-nums">{app.workingDays}</td>
+          <td className="px-4 py-3 text-center tabular-nums">
+            {app.workingDays}
+          </td>
           <td className="px-4 py-3 max-w-[180px]">
             <span className="line-clamp-2 text-xs text-muted-foreground">
-              {app.reason ?? '—'}
+              {app.reason ?? "—"}
             </span>
           </td>
           <td className="px-4 py-3">
-            <Badge variant={STATUS_VARIANT[app.status] ?? 'muted'} className="capitalize">
+            <Badge
+              variant={STATUS_VARIANT[app.status] ?? "muted"}
+              className="capitalize"
+            >
               {statusLabel(app.status)}
             </Badge>
           </td>
@@ -656,7 +702,7 @@ export function MyApplicationsTable({ applications }: MyApplicationsTableProps) 
             {fmtDate(app.createdAt)}
           </td>
           <td className="px-4 py-3">
-            {['pending', 'approved'].includes(app.status) && (
+            {["pending", "approved"].includes(app.status) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -712,7 +758,9 @@ export function PendingApprovalTable({
 
   function toggleAll() {
     setSelected((prev) =>
-      prev.size === filtered.length ? new Set() : new Set(filtered.map((a) => a.id)),
+      prev.size === filtered.length
+        ? new Set()
+        : new Set(filtered.map((a) => a.id)),
     );
   }
 
@@ -720,33 +768,37 @@ export function PendingApprovalTable({
     if (selected.size === 0) return;
     startTransition(async () => {
       try {
-        const result = await bulkApprove({ leaveApplicationIds: [...selected] });
+        const result = await bulkApprove({
+          leaveApplicationIds: [...selected],
+        });
         const escalated = result.escalated ?? 0;
         toast.success(
-          `Approved ${result.approved} application${result.approved !== 1 ? 's' : ''}.${
-            escalated > 0 ? ` ${escalated} escalated to HR.` : ''
-          }${result.skipped > 0 ? ` ${result.skipped} skipped.` : ''}${
-            result.errors.length > 0 ? ` ${result.errors.length} failed.` : ''
+          `Approved ${result.approved} application${result.approved !== 1 ? "s" : ""}.${
+            escalated > 0 ? ` ${escalated} escalated to HR.` : ""
+          }${result.skipped > 0 ? ` ${result.skipped} skipped.` : ""}${
+            result.errors.length > 0 ? ` ${result.errors.length} failed.` : ""
           }`,
         );
         setSelected(new Set());
         router.refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Bulk approve failed.');
+        toast.error(
+          err instanceof Error ? err.message : "Bulk approve failed.",
+        );
       }
     });
   }
 
   const headers = [
-    '',
-    'Applicant',
-    'Leave Type',
-    'Date From',
-    'Date To',
-    'Days',
-    'Reason',
-    'Filed On',
-    'Actions',
+    "",
+    "Applicant",
+    "Leave Type",
+    "Date From",
+    "Date To",
+    "Days",
+    "Reason",
+    "Filed On",
+    "Actions",
   ];
 
   if (filtered.length === 0) {
@@ -755,8 +807,8 @@ export function PendingApprovalTable({
         <CheckIcon className="h-10 w-10 text-muted-foreground/40" />
         <p className="text-sm font-medium text-muted-foreground">
           {applications.length === 0
-            ? 'No pending applications. All caught up.'
-            : 'No applications match these filters.'}
+            ? "No pending applications. All caught up."
+            : "No applications match these filters."}
         </p>
       </div>
     );
@@ -765,8 +817,8 @@ export function PendingApprovalTable({
   return (
     <div className="space-y-3">
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-senate-gold/30 bg-senate-cream/50 px-4 py-2.5">
-          <span className="text-sm font-medium text-senate-navy">
+        <div className="flex items-center gap-3 rounded-lg border border-pcso-gold/30 bg-pcso-cream/50 px-4 py-2.5">
+          <span className="text-sm font-medium text-pcso-navy">
             {selected.size} selected
           </span>
           <Button
@@ -798,7 +850,9 @@ export function PendingApprovalTable({
                 <input
                   type="checkbox"
                   className="rounded border-muted-foreground/30"
-                  checked={selected.size === filtered.length && filtered.length > 0}
+                  checked={
+                    selected.size === filtered.length && filtered.length > 0
+                  }
                   onChange={toggleAll}
                   aria-label="Select all on this page"
                 />
@@ -818,8 +872,8 @@ export function PendingApprovalTable({
               <tr
                 key={app.id}
                 className={cn(
-                  'group hover:bg-muted/20 transition-colors',
-                  selected.has(app.id) && 'bg-senate-cream/30',
+                  "group hover:bg-muted/20 transition-colors",
+                  selected.has(app.id) && "bg-pcso-cream/30",
                 )}
               >
                 <td className="px-4 py-3">
@@ -834,11 +888,14 @@ export function PendingApprovalTable({
                 <td className="px-4 py-3">
                   <div className="font-medium">{app.employeeFullName}</div>
                   {app.employeeNo && (
-                    <div className="text-xs text-muted-foreground">{app.employeeNo}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {app.employeeNo}
+                    </div>
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  {LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode]?.name ?? app.leaveTypeName}
+                  {LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode]?.name ??
+                    app.leaveTypeName}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                   {fmtDate(app.startDate)}
@@ -846,10 +903,12 @@ export function PendingApprovalTable({
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                   {fmtDate(app.endDate)}
                 </td>
-                <td className="px-4 py-3 text-center tabular-nums">{app.workingDays}</td>
+                <td className="px-4 py-3 text-center tabular-nums">
+                  {app.workingDays}
+                </td>
                 <td className="px-4 py-3 max-w-[160px]">
                   <span className="line-clamp-2 text-xs text-muted-foreground">
-                    {app.reason ?? '—'}
+                    {app.reason ?? "—"}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
@@ -884,16 +943,16 @@ function SingleApproveDisapprove({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [showRemarks, setShowRemarks] = useState(false);
-  const [remarks, setRemarks] = useState('');
+  const [remarks, setRemarks] = useState("");
 
   function handleApprove() {
     startTransition(async () => {
       try {
         await onApprove(app.id);
-        toast.success('Application approved.');
+        toast.success("Application approved.");
         router.refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to approve.');
+        toast.error(err instanceof Error ? err.message : "Failed to approve.");
       }
     });
   }
@@ -904,25 +963,32 @@ function SingleApproveDisapprove({
       return;
     }
     if (!remarks.trim() || remarks.trim().length < 5) {
-      toast.error('Provide a reason (min 5 characters).');
+      toast.error("Provide a reason (min 5 characters).");
       return;
     }
     startTransition(async () => {
       try {
         await onDisapprove(app.id, remarks.trim());
-        toast.success('Application disapproved.');
+        toast.success("Application disapproved.");
         router.refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to disapprove.');
+        toast.error(
+          err instanceof Error ? err.message : "Failed to disapprove.",
+        );
       }
     });
   }
 
   return (
-    <div className={cn('flex flex-col gap-1', isPending && 'opacity-50 pointer-events-none')}>
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        isPending && "opacity-50 pointer-events-none",
+      )}
+    >
       {showRemarks && (
         <textarea
-          className="w-36 resize-none rounded-md border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-senate-navy"
+          className="w-36 resize-none rounded-md border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-pcso-navy"
           rows={2}
           placeholder="Reason..."
           value={remarks}
@@ -939,7 +1005,7 @@ function SingleApproveDisapprove({
           disabled={isPending}
         >
           <XIcon className="mr-1 h-3 w-3" />
-          {showRemarks ? 'Confirm' : 'Disapprove'}
+          {showRemarks ? "Confirm" : "Disapprove"}
         </Button>
         <Button
           size="sm"
@@ -984,34 +1050,34 @@ export function AllApplicationsTable({
           dateTo: filters.dateTo,
         });
         if (!csv) {
-          toast.info('No data to export.');
+          toast.info("No data to export.");
           return;
         }
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
         a.download = `leave-applications-${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        toast.success('CSV exported.');
+        toast.success("CSV exported.");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Export failed.');
+        toast.error(err instanceof Error ? err.message : "Export failed.");
       }
     });
   }, [filters.status, filters.dateFrom, filters.dateTo]);
 
   const headers = [
-    'Applicant',
-    'Leave Type',
-    'Date From',
-    'Date To',
-    'Days',
-    'Reason',
-    'Status',
-    'Approver',
-    'Approved At',
-    'Filed On',
+    "Applicant",
+    "Leave Type",
+    "Date From",
+    "Date To",
+    "Days",
+    "Reason",
+    "Status",
+    "Approver",
+    "Approved At",
+    "Filed On",
   ];
 
   return (
@@ -1019,10 +1085,11 @@ export function AllApplicationsTable({
       {/* Export toolbar */}
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs text-muted-foreground" aria-live="polite">
-          {filtered.length} record{filtered.length !== 1 ? 's' : ''} on this page
+          {filtered.length} record{filtered.length !== 1 ? "s" : ""} on this
+          page
           {applications.length !== filtered.length
             ? ` (filtered from ${applications.length})`
-            : ''}
+            : ""}
         </span>
         <Button
           variant="outline"
@@ -1038,15 +1105,21 @@ export function AllApplicationsTable({
 
       <TableShell headers={headers} empty={filtered.length === 0}>
         {filtered.map((app) => (
-          <tr key={app.id} className="group hover:bg-muted/20 transition-colors">
+          <tr
+            key={app.id}
+            className="group hover:bg-muted/20 transition-colors"
+          >
             <td className="px-4 py-3">
               <div className="font-medium text-sm">{app.employeeFullName}</div>
               {app.employeeNo && (
-                <div className="text-xs text-muted-foreground">{app.employeeNo}</div>
+                <div className="text-xs text-muted-foreground">
+                  {app.employeeNo}
+                </div>
               )}
             </td>
             <td className="px-4 py-3 text-sm">
-              {LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode]?.name ?? app.leaveTypeName}
+              {LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode]?.name ??
+                app.leaveTypeName}
             </td>
             <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-sm">
               {fmtDate(app.startDate)}
@@ -1054,25 +1127,27 @@ export function AllApplicationsTable({
             <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-sm">
               {fmtDate(app.endDate)}
             </td>
-            <td className="px-4 py-3 text-center tabular-nums text-sm">{app.workingDays}</td>
+            <td className="px-4 py-3 text-center tabular-nums text-sm">
+              {app.workingDays}
+            </td>
             <td className="px-4 py-3 max-w-[160px]">
               <span className="line-clamp-2 text-xs text-muted-foreground">
-                {app.reason ?? '—'}
+                {app.reason ?? "—"}
               </span>
             </td>
             <td className="px-4 py-3">
               <Badge
-                variant={STATUS_VARIANT[app.status] ?? 'muted'}
+                variant={STATUS_VARIANT[app.status] ?? "muted"}
                 className="capitalize text-xs"
               >
                 {statusLabel(app.status)}
               </Badge>
             </td>
             <td className="px-4 py-3 text-xs text-muted-foreground">
-              {app.approverName ?? '—'}
+              {app.approverName ?? "—"}
             </td>
             <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-              {app.approvedAt ? fmtDate(app.approvedAt) : '—'}
+              {app.approvedAt ? fmtDate(app.approvedAt) : "—"}
             </td>
             <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
               {fmtDate(app.createdAt)}

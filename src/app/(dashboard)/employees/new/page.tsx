@@ -17,7 +17,7 @@ export default async function NewEmployeePage() {
       <nav aria-label="Breadcrumb">
         <Link
           href="/employees"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-senate-navy"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-pcso-navy"
         >
           <ChevronLeft className="h-4 w-4" />
           Back to Employees
@@ -26,7 +26,7 @@ export default async function NewEmployeePage() {
 
       {/* Page header */}
       <header>
-        <h1 className="font-serif text-2xl font-bold text-senate-navy">
+        <h1 className="font-serif text-2xl font-bold text-pcso-navy">
           Add New Employee
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">

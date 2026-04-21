@@ -535,8 +535,8 @@ export async function exportBir1604CAlphalist(batchId: string) {
   }));
 
   const meta: BirAlphalistMeta = {
-    agencyName: SENATE_NAME,
-    employerTin: SENATE_TIN,
+    agencyName: AGENCY_NAME,
+    employerTin: AGENCY_TIN,
     year,
     batchNo: batch.referenceNo ?? batch.id,
   };
@@ -630,8 +630,11 @@ export async function getBir1601CBatches(params: {
     .offset(offset);
 }
 
-export const SENATE_EMPLOYER = {
-  name: SENATE_NAME,
-  tin: SENATE_TIN,
-  address: SENATE_ADDRESS,
+export const PCSO_EMPLOYER = {
+  name: AGENCY_NAME,
+  tin: AGENCY_TIN,
+  address: AGENCY_ADDRESS,
 } as const;
+
+/** @deprecated Prefer PCSO_EMPLOYER. Kept for backward compatibility. */
+export const SENATE_EMPLOYER = PCSO_EMPLOYER;

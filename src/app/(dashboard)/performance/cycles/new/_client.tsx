@@ -1,29 +1,32 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { createPerformancePeriod } from '../../actions';
+} from "@/components/ui/select";
+import { createPerformancePeriod } from "../../actions";
 
 interface Props {
   defaultYear: number;
-  defaultSemester: '1' | '2';
+  defaultSemester: "1" | "2";
 }
 
 /**
  * Returns sensible default date-from / date-to for a semester in ISO format.
  */
-function defaultWindow(year: number, semester: '1' | '2'): { from: string; to: string } {
-  if (semester === '1') {
+function defaultWindow(
+  year: number,
+  semester: "1" | "2",
+): { from: string; to: string } {
+  if (semester === "1") {
     return { from: `${year}-01-01`, to: `${year}-06-30` };
   }
   return { from: `${year}-07-01`, to: `${year}-12-31` };
@@ -32,14 +35,14 @@ function defaultWindow(year: number, semester: '1' | '2'): { from: string; to: s
 export function NewCycleForm({ defaultYear, defaultSemester }: Props) {
   const router = useRouter();
   const [year, setYear] = React.useState<string>(String(defaultYear));
-  const [semester, setSemester] = React.useState<'1' | '2'>(defaultSemester);
+  const [semester, setSemester] = React.useState<"1" | "2">(defaultSemester);
   const initialWindow = defaultWindow(defaultYear, defaultSemester);
   const [dateFrom, setDateFrom] = React.useState(initialWindow.from);
   const [dateTo, setDateTo] = React.useState(initialWindow.to);
   const [error, setError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
-  function handleSemesterChange(value: '1' | '2'): void {
+  function handleSemesterChange(value: "1" | "2"): void {
     setSemester(value);
     const win = defaultWindow(Number(year || defaultYear), value);
     setDateFrom(win.from);
@@ -56,7 +59,9 @@ export function NewCycleForm({ defaultYear, defaultSemester }: Props) {
     }
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+  async function handleSubmit(
+    e: React.FormEvent<HTMLFormElement>,
+  ): Promise<void> {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
@@ -70,7 +75,7 @@ export function NewCycleForm({ defaultYear, defaultSemester }: Props) {
       router.push(`/performance/cycles/${periodId}`);
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create cycle.');
+      setError(err instanceof Error ? err.message : "Failed to create cycle.");
       setSubmitting(false);
     }
   }
@@ -92,7 +97,10 @@ export function NewCycleForm({ defaultYear, defaultSemester }: Props) {
         </div>
         <div>
           <Label htmlFor="semester">Semester</Label>
-          <Select value={semester} onValueChange={(v) => handleSemesterChange(v as '1' | '2')}>
+          <Select
+            value={semester}
+            onValueChange={(v) => handleSemesterChange(v as "1" | "2")}
+          >
             <SelectTrigger id="semester">
               <SelectValue />
             </SelectTrigger>
@@ -137,9 +145,9 @@ export function NewCycleForm({ defaultYear, defaultSemester }: Props) {
         <Button
           type="submit"
           disabled={submitting}
-          className="bg-senate-navy hover:bg-senate-navy-light text-senate-cream"
+          className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream"
         >
-          {submitting ? 'Creating…' : 'Create Cycle'}
+          {submitting ? "Creating…" : "Create Cycle"}
         </Button>
         <Button
           type="button"

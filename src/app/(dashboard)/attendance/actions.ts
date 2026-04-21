@@ -1,4 +1,4 @@
-'use server';
+"use server";
 
 /**
  * Attendance — shared server actions.
@@ -16,21 +16,21 @@
  *  - Every mutation: Zod-validate → mutate in tx → audit log → revalidatePath.
  */
 
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
-import { attendanceLogs } from '@/lib/db/schema';
-import { eq, and, gte, lte } from 'drizzle-orm';
-import { z } from 'zod';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { attendanceLogs } from "@/lib/db/schema";
+import { eq, and, gte, lte } from "drizzle-orm";
+import { z } from "zod";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
 import {
   ClockInSchema,
   ClockOutSchema,
   ManualEntrySchema,
-} from '@/lib/validations/attendance';
-import { computeDailyAttendance } from '@/lib/utils/attendance/compute';
-import { DEFAULT_SENATE_SCHEDULE } from '@/lib/constants/work-schedule';
-import type { AttendanceLog, DayType } from '@/lib/utils/attendance/types';
+} from "@/lib/validations/attendance";
+import { computeDailyAttendance } from "@/lib/utils/attendance/compute";
+import { DEFAULT_AGENCY_SCHEDULE } from "@/lib/constants/work-schedule";
+import type { AttendanceLog, DayType } from "@/lib/utils/attendance/types";
 
 // ---------------------------------------------------------------------------
 // Internal helper: build an AttendanceLog for the compute engine
@@ -41,22 +41,22 @@ function buildComputeInput(
   timeIn: string | null,
   timeOut: string | null,
   approvedOvertimeMinutes: number,
-  dayType: DayType = 'ordinary',
+  dayType: DayType = "ordinary",
 ): AttendanceLog {
   return {
     date,
     timeIn,
     timeOut,
-    schedule: DEFAULT_SENATE_SCHEDULE,
+    schedule: DEFAULT_AGENCY_SCHEDULE,
     dayType,
     approvedOvertimeMinutes,
   };
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
+  if (!err || typeof err !== "object") return false;
   const code = (err as { code?: string }).code;
-  return code === '23505';
+  return code === "23505";
 }
 
 // ---------------------------------------------------------------------------
@@ -67,21 +67,27 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
   const parsed = ClockInSchema.parse(input);
 
   // Require at minimum the employee_self_service permission to create their own record
-  const user = await requirePermission('attendance', 'create');
+  const user = await requirePermission("attendance", "create");
 
   const effectiveEmployeeId = user.employeeId;
   if (!effectiveEmployeeId) {
-    throw new Error('Your account is not linked to an employee record.');
+    throw new Error("Your account is not linked to an employee record.");
   }
   if (parsed.employeeId !== effectiveEmployeeId) {
-    throw new Error('Forbidden: cannot clock in on behalf of another employee');
+    throw new Error("Forbidden: cannot clock in on behalf of another employee");
   }
 
   const computed = computeDailyAttendance(
     buildComputeInput(parsed.date, parsed.timeIn, null, 0),
   );
 
-  let row: { id: string; employeeId: string; logDate: string; timeIn: string | null; source: string };
+  let row: {
+    id: string;
+    employeeId: string;
+    logDate: string;
+    timeIn: string | null;
+    source: string;
+  };
   try {
     row = await db.transaction(async (tx) => {
       // Atomic "has-open-log-today" guard. The unique index is the ultimate
@@ -101,8 +107,8 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
       if (existing) {
         throw new Error(
           existing.timeIn
-            ? 'You have already clocked in for today.'
-            : 'An attendance record for today already exists.',
+            ? "You have already clocked in for today."
+            : "An attendance record for today already exists.",
         );
       }
 
@@ -113,7 +119,7 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
           logDate: parsed.date,
           timeIn: parsed.timeIn,
           timeOut: null,
-          source: 'web',
+          source: "web",
           isLate: computed.lateMinutes > 0,
           lateMinutes: computed.lateMinutes,
           undertimeMinutes: computed.undertimeMinutes,
@@ -122,22 +128,22 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
         })
         .returning();
 
-      if (!inserted) throw new Error('Clock-in failed: no row returned');
+      if (!inserted) throw new Error("Clock-in failed: no row returned");
       return inserted;
     });
   } catch (err: unknown) {
     // Race against the unique index — another concurrent request won the
     // insert. Surface a friendly message instead of the raw pg error.
     if (isUniqueViolation(err)) {
-      throw new Error('You have already clocked in for today.');
+      throw new Error("You have already clocked in for today.");
     }
     throw err;
   }
 
   await auditLog({
     userId: user.id,
-    action: 'clock_in',
-    table: 'attendance_logs',
+    action: "clock_in",
+    table: "attendance_logs",
     recordId: row.id,
     newValues: {
       employeeId: row.employeeId,
@@ -147,8 +153,8 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
     },
   });
 
-  revalidatePath('/attendance');
-  revalidatePath('/attendance/clock');
+  revalidatePath("/attendance");
+  revalidatePath("/attendance/clock");
   return { id: row.id };
 }
 
@@ -158,11 +164,11 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
 
 export async function clockOut(input: unknown): Promise<void> {
   const parsed = ClockOutSchema.parse(input);
-  const user = await requirePermission('attendance', 'create');
+  const user = await requirePermission("attendance", "create");
 
   const effectiveEmployeeId = user.employeeId;
   if (!effectiveEmployeeId) {
-    throw new Error('Your account is not linked to an employee record.');
+    throw new Error("Your account is not linked to an employee record.");
   }
 
   const { existing, updated } = await db.transaction(async (tx) => {
@@ -178,10 +184,10 @@ export async function clockOut(input: unknown): Promise<void> {
       .limit(1);
 
     if (!current) {
-      throw new Error('Attendance log not found or does not belong to you.');
+      throw new Error("Attendance log not found or does not belong to you.");
     }
     if (current.timeOut) {
-      throw new Error('You have already clocked out for today.');
+      throw new Error("You have already clocked out for today.");
     }
 
     const computed = computeDailyAttendance(
@@ -190,7 +196,7 @@ export async function clockOut(input: unknown): Promise<void> {
         current.timeIn,
         parsed.timeOut,
         current.overtimeMinutes,
-        'ordinary',
+        "ordinary",
       ),
     );
 
@@ -203,7 +209,10 @@ export async function clockOut(input: unknown): Promise<void> {
         isLate: computed.lateMinutes > 0,
         lateMinutes: computed.lateMinutes,
         undertimeMinutes: computed.undertimeMinutes,
-        overtimeMinutes: Math.max(computed.overtimeMinutes, current.overtimeMinutes),
+        overtimeMinutes: Math.max(
+          computed.overtimeMinutes,
+          current.overtimeMinutes,
+        ),
         remarks: parsed.notes ?? current.remarks,
         updatedAt: new Date(),
       })
@@ -217,7 +226,7 @@ export async function clockOut(input: unknown): Promise<void> {
 
     if (!next) {
       throw new Error(
-        'This record was updated by another session. Please refresh and try again.',
+        "This record was updated by another session. Please refresh and try again.",
       );
     }
 
@@ -226,8 +235,8 @@ export async function clockOut(input: unknown): Promise<void> {
 
   await auditLog({
     userId: user.id,
-    action: 'clock_out',
-    table: 'attendance_logs',
+    action: "clock_out",
+    table: "attendance_logs",
     recordId: updated.id,
     oldValues: { timeOut: existing.timeOut },
     newValues: {
@@ -237,8 +246,8 @@ export async function clockOut(input: unknown): Promise<void> {
     },
   });
 
-  revalidatePath('/attendance');
-  revalidatePath('/attendance/clock');
+  revalidatePath("/attendance");
+  revalidatePath("/attendance/clock");
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +256,7 @@ export async function clockOut(input: unknown): Promise<void> {
 
 export async function manualEntry(input: unknown): Promise<{ id: string }> {
   const parsed = ManualEntrySchema.parse(input);
-  const user = await requirePermission('attendance', 'edit');
+  const user = await requirePermission("attendance", "edit");
 
   const computed = computeDailyAttendance(
     buildComputeInput(
@@ -277,7 +286,7 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
       logDate: parsed.date,
       timeIn: parsed.timeIn,
       timeOut: parsed.timeOut,
-      source: 'manual' as const,
+      source: "manual" as const,
       isLate: computed.lateMinutes > 0,
       lateMinutes: computed.lateMinutes,
       undertimeMinutes: computed.undertimeMinutes,
@@ -304,14 +313,14 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
       })
       .returning();
 
-    if (!upserted) throw new Error('Manual entry failed: no row returned');
+    if (!upserted) throw new Error("Manual entry failed: no row returned");
     return { row: upserted, oldRow: prev ?? null };
   });
 
   await auditLog({
     userId: user.id,
-    action: 'manual_entry',
-    table: 'attendance_logs',
+    action: "manual_entry",
+    table: "attendance_logs",
     recordId: row.id,
     oldValues: oldRow
       ? {
@@ -332,7 +341,7 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
     },
   });
 
-  revalidatePath('/attendance/admin');
+  revalidatePath("/attendance/admin");
   return { id: row.id };
 }
 
@@ -357,7 +366,7 @@ const AdminInlineEditSchema = z.object({
 
 export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
   const parsed = AdminInlineEditSchema.parse(input);
-  const user = await requirePermission('attendance', 'edit');
+  const user = await requirePermission("attendance", "edit");
 
   const { updated, previous } = await db.transaction(async (tx) => {
     const [current] = await tx
@@ -366,11 +375,11 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
       .where(eq(attendanceLogs.id, parsed.attendanceLogId))
       .limit(1);
 
-    if (!current) throw new Error('Attendance log not found.');
+    if (!current) throw new Error("Attendance log not found.");
 
     const expected = new Date(parsed.expectedUpdatedAt);
     if (Number.isNaN(expected.getTime())) {
-      throw new Error('Invalid optimistic-lock version.');
+      throw new Error("Invalid optimistic-lock version.");
     }
 
     const computed = computeDailyAttendance(
@@ -379,7 +388,7 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
         parsed.timeIn,
         parsed.timeOut,
         current.overtimeMinutes,
-        'ordinary',
+        "ordinary",
       ),
     );
 
@@ -393,7 +402,7 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
         undertimeMinutes: computed.undertimeMinutes,
         overtimeMinutes: computed.overtimeMinutes,
         remarks: parsed.remarks ?? current.remarks,
-        source: 'manual',
+        source: "manual",
         updatedAt: new Date(),
       })
       .where(
@@ -406,7 +415,7 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
 
     if (!next) {
       throw new Error(
-        'This record was just changed by someone else. Refresh and try again.',
+        "This record was just changed by someone else. Refresh and try again.",
       );
     }
 
@@ -416,7 +425,7 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
     // re-submits its old version.
     if (current.updatedAt.getTime() !== expected.getTime()) {
       throw new Error(
-        'Stale version in UI. Please refresh and re-enter the correction.',
+        "Stale version in UI. Please refresh and re-enter the correction.",
       );
     }
 
@@ -425,8 +434,8 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
 
   await auditLog({
     userId: user.id,
-    action: 'admin_inline_edit',
-    table: 'attendance_logs',
+    action: "admin_inline_edit",
+    table: "attendance_logs",
     recordId: updated.id,
     oldValues: {
       timeIn: previous.timeIn,
@@ -445,7 +454,7 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
     },
   });
 
-  revalidatePath('/attendance/admin');
+  revalidatePath("/attendance/admin");
   return { id: updated.id };
 }
 
@@ -459,12 +468,14 @@ const LockPeriodSchema = z.object({
   reason: z.string().min(5).max(500),
 });
 
-export async function lockAttendancePeriod(input: unknown): Promise<{ affected: number }> {
+export async function lockAttendancePeriod(
+  input: unknown,
+): Promise<{ affected: number }> {
   const parsed = LockPeriodSchema.parse(input);
-  const user = await requirePermission('attendance', 'approve');
+  const user = await requirePermission("attendance", "approve");
 
   if (parsed.periodEnd < parsed.periodStart) {
-    throw new Error('Period end must be on or after period start.');
+    throw new Error("Period end must be on or after period start.");
   }
 
   const affected = await db.transaction(async (tx) => {
@@ -482,8 +493,8 @@ export async function lockAttendancePeriod(input: unknown): Promise<{ affected: 
 
   await auditLog({
     userId: user.id,
-    action: 'lock_attendance_period',
-    table: 'attendance_logs',
+    action: "lock_attendance_period",
+    table: "attendance_logs",
     newValues: {
       periodStart: parsed.periodStart,
       periodEnd: parsed.periodEnd,
@@ -492,7 +503,7 @@ export async function lockAttendancePeriod(input: unknown): Promise<{ affected: 
     },
   });
 
-  revalidatePath('/attendance/admin');
+  revalidatePath("/attendance/admin");
   return { affected };
 }
 

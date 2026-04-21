@@ -1,21 +1,30 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { updateHoliday } from '../../actions';
-import { HOLIDAY_TYPE_VALUES, HolidayTypeLabels } from '@/lib/validations/holidays';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import { updateHoliday } from "../../actions";
+import {
+  HOLIDAY_TYPE_VALUES,
+  HolidayTypeLabels,
+} from "@/lib/validations/holidays";
 
 interface EditHolidayFormProps {
   initial: {
     id: string;
     name: string;
     holidayDate: string;
-    type: typeof HOLIDAY_TYPE_VALUES[number];
+    type: (typeof HOLIDAY_TYPE_VALUES)[number];
     proclamationRef: string | null;
     remarks: string | null;
   };
@@ -27,8 +36,10 @@ export function EditHolidayForm({ initial }: EditHolidayFormProps) {
   const [name, setName] = React.useState(initial.name);
   const [holidayDate, setHolidayDate] = React.useState(initial.holidayDate);
   const [type, setType] = React.useState(initial.type);
-  const [proclamationRef, setProclamationRef] = React.useState(initial.proclamationRef ?? '');
-  const [remarks, setRemarks] = React.useState(initial.remarks ?? '');
+  const [proclamationRef, setProclamationRef] = React.useState(
+    initial.proclamationRef ?? "",
+  );
+  const [remarks, setRemarks] = React.useState(initial.remarks ?? "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,12 +53,13 @@ export function EditHolidayForm({ initial }: EditHolidayFormProps) {
         proclamationRef: proclamationRef.trim() || null,
         remarks: remarks.trim() || null,
       });
-      toast.success('Holiday updated');
+      toast.success("Holiday updated");
       const year = holidayDate.slice(0, 4);
       router.push(`/admin/holidays?year=${year}`);
     } catch (err) {
-      toast.error('Error', {
-        description: err instanceof Error ? err.message : 'Failed to update holiday.',
+      toast.error("Error", {
+        description:
+          err instanceof Error ? err.message : "Failed to update holiday.",
       });
     } finally {
       setPending(false);
@@ -81,7 +93,9 @@ export function EditHolidayForm({ initial }: EditHolidayFormProps) {
         <Label htmlFor="type">Type</Label>
         <Select
           value={type}
-          onValueChange={(v) => setType(v as typeof HOLIDAY_TYPE_VALUES[number])}
+          onValueChange={(v) =>
+            setType(v as (typeof HOLIDAY_TYPE_VALUES)[number])
+          }
         >
           <SelectTrigger id="type">
             <SelectValue />
@@ -97,7 +111,9 @@ export function EditHolidayForm({ initial }: EditHolidayFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="proclamationRef">Proclamation Reference (optional)</Label>
+        <Label htmlFor="proclamationRef">
+          Proclamation Reference (optional)
+        </Label>
         <Input
           id="proclamationRef"
           value={proclamationRef}
@@ -120,11 +136,15 @@ export function EditHolidayForm({ initial }: EditHolidayFormProps) {
         <Button
           type="submit"
           disabled={pending}
-          className="bg-senate-navy text-white hover:bg-senate-navy-light"
+          className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
         >
-          {pending ? 'Saving…' : 'Save changes'}
+          {pending ? "Saving…" : "Save changes"}
         </Button>
-        <Button type="button" variant="outline" onClick={() => router.push('/admin/holidays')}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => router.push("/admin/holidays")}
+        >
           Cancel
         </Button>
       </div>

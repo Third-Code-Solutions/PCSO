@@ -1,13 +1,17 @@
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import { ChevronLeft } from 'lucide-react';
-import { EmployeeForm } from '@/components/employees/employee-form';
-import { getEmployeeForEdit, getOfficesForSelect } from '../../queries';
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
+import { EmployeeForm } from "@/components/employees/employee-form";
+import { getEmployeeForEdit, getOfficesForSelect } from "../../queries";
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const employee = await getEmployeeForEdit(id);
-  if (!employee) return { title: 'Employee Not Found' };
+  if (!employee) return { title: "Employee Not Found" };
   return {
     title: `Edit — ${employee.firstName} ${employee.lastName}`,
   };
@@ -41,8 +45,8 @@ export default async function EditEmployeePage({ params }: PageProps) {
     nationality: employee.nationality,
     religion: employee.religion ?? undefined,
     bloodType: employee.bloodType ?? undefined,
-    email: employee.email ?? '',
-    phone: employee.phone ?? '',
+    email: employee.email ?? "",
+    phone: employee.phone ?? "",
     // Map DB address columns back to form's currentAddress fields
     currentAddressStreet: employee.addressStreet ?? undefined,
     currentAddressBarangay: employee.addressBarangay ?? undefined,
@@ -50,31 +54,35 @@ export default async function EditEmployeePage({ params }: PageProps) {
     currentAddressProvince: employee.addressProvince ?? undefined,
     currentAddressZip: employee.addressZipCode ?? undefined,
     emergencyContactName: employee.emergencyContactName ?? undefined,
-    emergencyContactRelation: employee.emergencyContactRelationship ?? undefined,
-    emergencyContactPhone: employee.emergencyContactPhone ?? '',
+    emergencyContactRelation:
+      employee.emergencyContactRelationship ?? undefined,
+    emergencyContactPhone: employee.emergencyContactPhone ?? "",
     appointmentType: employee.appointmentType,
     positionTitle: employee.positionTitle,
     salaryGrade: employee.salaryGrade,
     step: employee.step,
-    officeId: employee.officeId ?? '',
+    officeId: employee.officeId ?? "",
     dateHired: employee.dateHired,
     dateRegularized: employee.dateRegularized ?? undefined,
     status: employee.status,
-    tin: employee.tin ?? '',
-    gsisNo: employee.gsisNo ?? '',
-    philhealthNo: employee.philhealthNo ?? '',
-    pagibigNo: employee.pagibigNo ?? '',
+    tin: employee.tin ?? "",
+    gsisNo: employee.gsisNo ?? "",
+    philhealthNo: employee.philhealthNo ?? "",
+    pagibigNo: employee.pagibigNo ?? "",
   };
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="flex gap-2 text-sm text-muted-foreground">
-        <Link href="/employees" className="hover:text-senate-navy">
+      <nav
+        aria-label="Breadcrumb"
+        className="flex gap-2 text-sm text-muted-foreground"
+      >
+        <Link href="/employees" className="hover:text-pcso-navy">
           Employees
         </Link>
         <span>/</span>
-        <Link href={`/employees/${id}`} className="hover:text-senate-navy">
+        <Link href={`/employees/${id}`} className="hover:text-pcso-navy">
           {employee.firstName} {employee.lastName}
         </Link>
         <span>/</span>
@@ -85,7 +93,7 @@ export default async function EditEmployeePage({ params }: PageProps) {
       <div>
         <Link
           href={`/employees/${id}`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-senate-navy"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-pcso-navy"
         >
           <ChevronLeft className="h-4 w-4" />
           Back to Profile
@@ -93,7 +101,7 @@ export default async function EditEmployeePage({ params }: PageProps) {
       </div>
 
       <header>
-        <h1 className="font-serif text-2xl font-bold text-senate-navy">
+        <h1 className="font-serif text-2xl font-bold text-pcso-navy">
           Edit Employee — {employee.firstName} {employee.lastName}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -101,7 +109,11 @@ export default async function EditEmployeePage({ params }: PageProps) {
         </p>
       </header>
 
-      <EmployeeForm mode="edit" defaultValues={defaultValues} offices={offices} />
+      <EmployeeForm
+        mode="edit"
+        defaultValues={defaultValues}
+        offices={offices}
+      />
     </div>
   );
 }

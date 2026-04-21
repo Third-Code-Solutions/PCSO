@@ -3,17 +3,17 @@
  * Server-rendered form; submits via server action.
  */
 
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { PageHeader } from '@/components/layouts/page-header';
-import { generatePhilHealthBatch } from '../actions';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { PageHeader } from "@/components/layouts/page-header";
+import { generatePhilHealthBatch } from "../actions";
 
 export default function PhilHealthNewPage() {
   const router = useRouter();
-  const [periodId, setPeriodId] = React.useState('');
-  const [remarks, setRemarks] = React.useState('');
+  const [periodId, setPeriodId] = React.useState("");
+  const [remarks, setRemarks] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -22,7 +22,7 @@ export default function PhilHealthNewPage() {
     setError(null);
 
     if (!periodId.trim()) {
-      setError('Payroll period ID is required.');
+      setError("Payroll period ID is required.");
       return;
     }
 
@@ -33,12 +33,14 @@ export default function PhilHealthNewPage() {
         remarks: remarks.trim() || undefined,
       });
       if (!batch) {
-        setError('Batch generation returned no data.');
+        setError("Batch generation returned no data.");
         return;
       }
       router.push(`/remittances/philhealth/${batch.id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to generate batch.');
+      setError(
+        err instanceof Error ? err.message : "Failed to generate batch.",
+      );
     } finally {
       setLoading(false);
     }
@@ -54,9 +56,10 @@ export default function PhilHealthNewPage() {
 
       {/* Info */}
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-        <strong>Requirements:</strong> The selected payroll period must be in{' '}
-        <strong>Approved</strong> or <strong>Paid</strong> status. Each employee must have a
-        PhilHealth Identification Number (PIN) encoded in their profile.
+        <strong>Requirements:</strong> The selected payroll period must be in{" "}
+        <strong>Approved</strong> or <strong>Paid</strong> status. Each employee
+        must have a PhilHealth Identification Number (PIN) encoded in their
+        profile.
       </div>
 
       <div className="mx-auto max-w-xl rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -74,11 +77,12 @@ export default function PhilHealthNewPage() {
               value={periodId}
               onChange={(e) => setPeriodId(e.target.value)}
               placeholder="UUID of the approved payroll period"
-              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 font-mono text-sm focus:border-senate-navy focus:outline-none focus:ring-1 focus:ring-senate-navy"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 font-mono text-sm focus:border-pcso-navy focus:outline-none focus:ring-1 focus:ring-pcso-navy"
               required
             />
             <p className="mt-1 text-xs text-gray-400">
-              Find the period ID on the Payroll Periods page or from the URL of the period detail.
+              Find the period ID on the Payroll Periods page or from the URL of
+              the period detail.
             </p>
           </div>
 
@@ -96,7 +100,7 @@ export default function PhilHealthNewPage() {
               rows={2}
               maxLength={500}
               placeholder="e.g. January 2025 — 1st half remittance"
-              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-senate-navy focus:outline-none focus:ring-1 focus:ring-senate-navy"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pcso-navy focus:outline-none focus:ring-1 focus:ring-pcso-navy"
             />
           </div>
 
@@ -110,9 +114,9 @@ export default function PhilHealthNewPage() {
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 rounded-lg bg-senate-navy py-2 text-sm font-semibold text-white transition hover:bg-senate-navy-light disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-lg bg-pcso-navy py-2 text-sm font-semibold text-white transition hover:bg-pcso-navy-light disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? 'Generating…' : 'Generate Batch'}
+              {loading ? "Generating…" : "Generate Batch"}
             </button>
             <a
               href="/remittances/philhealth"

@@ -96,7 +96,7 @@ export default function BirPage() {
               </span>
             </div>
 
-            <p className="mb-1 text-base font-bold text-senate-navy">
+            <p className="mb-1 text-base font-bold text-pcso-navy">
               {form.title}
             </p>
             <p className="mb-3 text-xs text-gray-400">{form.subtitle}</p>
@@ -115,7 +115,7 @@ export default function BirPage() {
 
       {/* Quick reference */}
       <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-sm font-semibold text-senate-navy">
+        <h3 className="mb-4 text-sm font-semibold text-pcso-navy">
           BIR TRAIN Law Tax Rates (Compensation) — 2023 onwards
         </h3>
         <div className="overflow-x-auto">

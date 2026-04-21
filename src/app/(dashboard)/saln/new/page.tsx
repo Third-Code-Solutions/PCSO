@@ -15,22 +15,22 @@
  *    against a concurrent submit returns a friendly error rather than crashing.
  */
 
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { AlertTriangle, Pencil } from 'lucide-react';
-import { requirePermission } from '@/lib/auth/guards';
-import { createServerClient } from '@/lib/supabase/server';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { SalnForm } from '@/components/saln/saln-form';
-import { fileSaln } from '@/app/(dashboard)/saln/actions';
-import { currentCoverageYear } from '@/lib/utils/saln/deadline';
-import type { EmployeeInfo } from '@/components/saln/saln-form';
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { AlertTriangle, Pencil } from "lucide-react";
+import { requirePermission } from "@/lib/auth/guards";
+import { createServerClient } from "@/lib/supabase/server";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { SalnForm } from "@/components/saln/saln-form";
+import { fileSaln } from "@/app/(dashboard)/saln/actions";
+import { currentCoverageYear } from "@/lib/utils/saln/deadline";
+import type { EmployeeInfo } from "@/components/saln/saln-form";
 import type {
   FilingType,
   FileSalnInput,
   SalnStatus,
-} from '@/lib/validations/saln';
+} from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Page
@@ -49,17 +49,17 @@ interface ExistingSubmission {
 }
 
 const VALID_FILING_TYPES: ReadonlyArray<FilingType> = [
-  'annual',
-  'initial',
-  'upon_assumption',
-  'upon_separation',
+  "annual",
+  "initial",
+  "upon_assumption",
+  "upon_separation",
 ];
 
 const FILING_TYPE_LABELS: Record<FilingType, string> = {
-  annual: 'Annual',
-  initial: 'Initial',
-  upon_assumption: 'Upon Assumption of Office',
-  upon_separation: 'Upon Separation from Service',
+  annual: "Annual",
+  initial: "Initial",
+  upon_assumption: "Upon Assumption of Office",
+  upon_separation: "Upon Separation from Service",
 };
 
 /**
@@ -74,35 +74,37 @@ async function findExistingSubmission(
   filingType: FilingType,
 ): Promise<ExistingSubmission | null> {
   const { data, error } = await supabase
-    .from('saln_submissions')
-    .select('id, status')
-    .eq('employee_id', employeeId)
-    .eq('year', year)
-    .eq('filing_type', filingType)
+    .from("saln_submissions")
+    .select("id, status")
+    .eq("employee_id", employeeId)
+    .eq("year", year)
+    .eq("filing_type", filingType)
     .maybeSingle();
 
   if (error || !data) return null;
 
   return {
     id: String(data.id),
-    status: (data.status as SalnStatus) ?? 'draft',
+    status: (data.status as SalnStatus) ?? "draft",
   };
 }
 
 export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
-  const user = await requirePermission('saln', 'create');
+  const user = await requirePermission("saln", "create");
 
   if (!user.employeeId) {
-    redirect('/dashboard');
+    redirect("/dashboard");
   }
 
   const resolvedParams = await searchParams;
 
   // Resolve filing type from query param; default to annual
-  const rawType = resolvedParams.type ?? 'annual';
-  const filingType: FilingType = VALID_FILING_TYPES.includes(rawType as FilingType)
+  const rawType = resolvedParams.type ?? "annual";
+  const filingType: FilingType = VALID_FILING_TYPES.includes(
+    rawType as FilingType,
+  )
     ? (rawType as FilingType)
-    : 'annual';
+    : "annual";
 
   // Coverage year — query param or computed default
   const coverageYear = resolvedParams.year
@@ -112,7 +114,7 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
   // Load employee info
   const supabase = await createServerClient();
   const { data: emp, error } = await supabase
-    .from('employees')
+    .from("employees")
     .select(
       `
       id,
@@ -126,27 +128,27 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
       offices (name)
     `,
     )
-    .eq('id', user.employeeId)
+    .eq("id", user.employeeId)
     .single();
 
   if (error || !emp) {
-    redirect('/saln');
+    redirect("/saln");
   }
 
   const officeRaw = emp.offices;
-  const office = (Array.isArray(officeRaw) ? officeRaw[0] : officeRaw) as
-    | Record<string, unknown>
-    | null;
+  const office = (
+    Array.isArray(officeRaw) ? officeRaw[0] : officeRaw
+  ) as Record<string, unknown> | null;
   const fullName = [emp.first_name, emp.middle_name, emp.last_name]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 
   const employee: EmployeeInfo = {
     id: emp.id,
     employeeNo: emp.employee_no,
     fullName,
     positionTitle: emp.position_title,
-    officeName: office ? String(office['name'] ?? '') : null,
+    officeName: office ? String(office["name"] ?? "") : null,
     email: emp.email ?? null,
     dateHired: emp.date_hired,
   };
@@ -166,9 +168,9 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
           title="File New SALN"
           description={`Statement of Assets, Liabilities, and Net Worth — ${coverageYear}`}
           breadcrumbs={[
-            { label: 'Dashboard', href: '/dashboard' },
-            { label: 'My SALN', href: '/saln' },
-            { label: 'File New SALN' },
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "My SALN", href: "/saln" },
+            { label: "File New SALN" },
           ]}
         />
 
@@ -184,19 +186,26 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
                   You already have a SALN on file for this coverage year
                 </h2>
                 <p className="mt-1 text-sm text-amber-800">
-                  Only one {FILING_TYPE_LABELS[filingType]} SALN per coverage year is allowed.
-                  Your current submission has status{' '}
-                  <span className="font-semibold">{existing.status.replace(/_/g, ' ')}</span>.
-                  {existing.status === 'draft'
-                    ? ' You can continue editing the existing draft.'
-                    : existing.status === 'deficient'
-                      ? ' Please open it to review HR remarks and re-submit.'
-                      : ' If corrections are required, contact the compliance office.'}
+                  Only one {FILING_TYPE_LABELS[filingType]} SALN per coverage
+                  year is allowed. Your current submission has status{" "}
+                  <span className="font-semibold">
+                    {existing.status.replace(/_/g, " ")}
+                  </span>
+                  .
+                  {existing.status === "draft"
+                    ? " You can continue editing the existing draft."
+                    : existing.status === "deficient"
+                      ? " Please open it to review HR remarks and re-submit."
+                      : " If corrections are required, contact the compliance office."}
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button asChild size="sm" className="bg-senate-navy text-white hover:bg-senate-navy-light">
+                <Button
+                  asChild
+                  size="sm"
+                  className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
+                >
                   <Link href={`/saln/${existing.id}`}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
                     Open existing submission
@@ -219,18 +228,21 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
         title="File New SALN"
         description={`Statement of Assets, Liabilities, and Net Worth — ${coverageYear}`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'My SALN', href: '/saln' },
-          { label: 'File New SALN' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "My SALN", href: "/saln" },
+          { label: "File New SALN" },
         ]}
       />
 
-      <div className="mb-6 rounded-md border border-senate-gold/40 bg-senate-cream p-4">
-        <p className="text-sm font-medium text-senate-navy">Important Notice — RA 6713</p>
+      <div className="mb-6 rounded-md border border-pcso-gold/40 bg-pcso-cream p-4">
+        <p className="text-sm font-medium text-pcso-navy">
+          Important Notice — RA 6713
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          All statements in this SALN must be true and accurate. Falsification is a ground for
-          disciplinary action and criminal prosecution under Section 11 of Republic Act No. 6713.
-          All information is encrypted and access-controlled.
+          All statements in this SALN must be true and accurate. Falsification
+          is a ground for disciplinary action and criminal prosecution under
+          Section 11 of Republic Act No. 6713. All information is encrypted and
+          access-controlled.
         </p>
       </div>
 
@@ -239,7 +251,7 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
         year={coverageYear}
         filingType={filingType}
         onSaveDraft={async (data: FileSalnInput) => {
-          'use server';
+          "use server";
           try {
             return await fileSaln({ ...data, submit: false });
           } catch (err) {
@@ -247,7 +259,7 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
           }
         }}
         onSubmit={async (data: FileSalnInput) => {
-          'use server';
+          "use server";
           try {
             return await fileSaln({ ...data, submit: true });
           } catch (err) {
@@ -266,10 +278,10 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
 // ---------------------------------------------------------------------------
 
 function rewriteDuplicateError(err: unknown): Error {
-  const message = err instanceof Error ? err.message : 'Failed to file SALN.';
+  const message = err instanceof Error ? err.message : "Failed to file SALN.";
   if (/23505|duplicate key|already exists/i.test(message)) {
     return new Error(
-      'A SALN for this coverage year and filing type already exists. Return to My SALN to edit it.',
+      "A SALN for this coverage year and filing type already exists. Return to My SALN to edit it.",
     );
   }
   return err instanceof Error ? err : new Error(message);

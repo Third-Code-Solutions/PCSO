@@ -5,26 +5,26 @@
  * Fields: nature, creditor, outstanding balance.
  */
 
-'use client';
+"use client";
 
-import { useFieldArray, useFormContext } from 'react-hook-form';
-import { PlusIcon, TrashIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import type { FileSalnInput } from '@/lib/validations/saln';
+import { useFieldArray, useFormContext } from "react-hook-form";
+import { PlusIcon, TrashIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { FileSalnInput } from "@/lib/validations/saln";
 
 const LIABILITY_TYPES = [
-  'Housing Loan',
-  'Car Loan',
-  'Personal Loan',
-  'Business Loan',
-  'GSIS Loan',
-  'Pag-IBIG Loan',
-  'SSS Loan',
-  'Credit Card',
-  'Mortgage',
-  'Other',
+  "Housing Loan",
+  "Car Loan",
+  "Personal Loan",
+  "Business Loan",
+  "GSIS Loan",
+  "Pag-IBIG Loan",
+  "SSS Loan",
+  "Credit Card",
+  "Mortgage",
+  "Other",
 ];
 
 export function SalnFormLiabilities() {
@@ -36,14 +36,14 @@ export function SalnFormLiabilities() {
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'liabilities',
+    name: "liabilities",
   });
 
   function addItem() {
     append({
-      nature: '',
-      creditor: '',
-      outstandingBalance: '0.00',
+      nature: "",
+      creditor: "",
+      outstandingBalance: "0.00",
     });
   }
 
@@ -55,7 +55,7 @@ export function SalnFormLiabilities() {
         <div>
           <h3
             id="liabilities-heading"
-            className="text-base font-semibold text-senate-navy"
+            className="text-base font-semibold text-pcso-navy"
           >
             D. Liabilities
           </h3>
@@ -77,7 +77,9 @@ export function SalnFormLiabilities() {
 
       <div className="space-y-4">
         {fields.map((field, index) => {
-          const itemErrors = Array.isArray(fieldErrors) ? fieldErrors[index] : undefined;
+          const itemErrors = Array.isArray(fieldErrors)
+            ? fieldErrors[index]
+            : undefined;
 
           return (
             <div
@@ -120,7 +122,7 @@ export function SalnFormLiabilities() {
                   </datalist>
                   {itemErrors?.nature && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.nature.message ?? '')}
+                      {String(itemErrors.nature.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -138,7 +140,7 @@ export function SalnFormLiabilities() {
                   />
                   {itemErrors?.creditor && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.creditor.message ?? '')}
+                      {String(itemErrors.creditor.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -156,7 +158,7 @@ export function SalnFormLiabilities() {
                   />
                   {itemErrors?.outstandingBalance && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.outstandingBalance.message ?? '')}
+                      {String(itemErrors.outstandingBalance.message ?? "")}
                     </p>
                   )}
                 </div>

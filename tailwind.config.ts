@@ -22,16 +22,6 @@ const config: Config = {
           "red-light": "#E6394E",
           cream: "#FFF8E7",
         },
-        // Legacy `senate.*` keys remain as aliases pointing at the PCSO palette.
-        // All existing className references keep compiling and render PCSO colors.
-        // New code should prefer `pcso.*` tokens.
-        senate: {
-          navy: "#1B4F9E",
-          "navy-light": "#2B6BC8",
-          gold: "#FFCB05",
-          "gold-light": "#FFE066",
-          cream: "#FFF8E7",
-        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * LeaveCardDownloader — client-only CSV download button.
@@ -8,18 +8,20 @@
  * has known incompatibilities with React 19 in this app.
  */
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition } from "react";
 import {
   generateLeaveCardCSV,
   leaveCardFilename,
   type LeaveCardProps,
-} from '@/components/leave/leave-card';
+} from "@/components/leave/leave-card";
 
 interface LeaveCardDownloaderProps {
   leaveCardProps: LeaveCardProps;
 }
 
-export function LeaveCardDownloader({ leaveCardProps }: LeaveCardDownloaderProps) {
+export function LeaveCardDownloader({
+  leaveCardProps,
+}: LeaveCardDownloaderProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -28,9 +30,9 @@ export function LeaveCardDownloader({ leaveCardProps }: LeaveCardDownloaderProps
     startTransition(() => {
       try {
         const csv = generateLeaveCardCSV(leaveCardProps);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
+        const link = document.createElement("a");
         link.href = url;
         link.download = leaveCardFilename(leaveCardProps);
         document.body.appendChild(link);
@@ -40,7 +42,8 @@ export function LeaveCardDownloader({ leaveCardProps }: LeaveCardDownloaderProps
         // on some older Safari builds.
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to generate CSV.';
+        const message =
+          err instanceof Error ? err.message : "Failed to generate CSV.";
         setError(message);
       }
     });
@@ -65,13 +68,13 @@ export function LeaveCardDownloader({ leaveCardProps }: LeaveCardDownloaderProps
       onClick={handleClick}
       disabled={isPending}
       aria-busy={isPending}
-      className="inline-flex h-9 items-center gap-2 rounded-md border border-senate-navy bg-senate-navy px-4 text-sm font-semibold text-senate-cream shadow-sm transition-colors hover:bg-senate-navy-light disabled:opacity-60"
+      className="inline-flex h-9 items-center gap-2 rounded-md border border-pcso-navy bg-pcso-navy px-4 text-sm font-semibold text-pcso-cream shadow-sm transition-colors hover:bg-pcso-navy-light disabled:opacity-60"
     >
       {isPending ? (
         <>
           <span
             aria-hidden
-            className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-senate-cream border-t-transparent"
+            className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-pcso-cream border-t-transparent"
           />
           Building CSV…
         </>

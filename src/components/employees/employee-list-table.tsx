@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useMemo, useState, useTransition } from 'react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useMemo, useState, useTransition } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
   useReactTable,
-} from '@tanstack/react-table';
-import { toast } from 'sonner';
+} from "@tanstack/react-table";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -15,15 +15,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,10 +33,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { buildEmployeeColumns } from './employee-table-columns';
-import { deactivateEmployee, bulkDeactivate } from '@/app/(dashboard)/employees/actions';
-import type { EmployeeListResult } from '@/app/(dashboard)/employees/queries';
+} from "@/components/ui/alert-dialog";
+import { buildEmployeeColumns } from "./employee-table-columns";
+import {
+  deactivateEmployee,
+  bulkDeactivate,
+} from "@/app/(dashboard)/employees/actions";
+import type { EmployeeListResult } from "@/app/(dashboard)/employees/queries";
 
 interface EmployeeListTableProps {
   initialData: EmployeeListResult;
@@ -56,7 +59,10 @@ export function EmployeeListTable({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
-  const [confirmOne, setConfirmOne] = useState<{ id: string; name: string } | null>(null);
+  const [confirmOne, setConfirmOne] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
 
   const handleDeactivate = (id: string, name: string) => {
@@ -72,19 +78,25 @@ export function EmployeeListTable({
         await deactivateEmployee(id);
         toast.success(`${name} has been archived.`);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to archive employee.');
+        toast.error(
+          err instanceof Error ? err.message : "Failed to archive employee.",
+        );
       }
     });
   };
 
   const handleBulkDeactivate = () => {
-    const selectedIds = Object.keys(rowSelection).filter((k) => rowSelection[k]);
+    const selectedIds = Object.keys(rowSelection).filter(
+      (k) => rowSelection[k],
+    );
     if (selectedIds.length === 0) return;
     setConfirmBulk(true);
   };
 
   const commitBulkDeactivate = () => {
-    const selectedIds = Object.keys(rowSelection).filter((k) => rowSelection[k]);
+    const selectedIds = Object.keys(rowSelection).filter(
+      (k) => rowSelection[k],
+    );
     setConfirmBulk(false);
     if (selectedIds.length === 0) return;
     startTransition(async () => {
@@ -93,7 +105,9 @@ export function EmployeeListTable({
         toast.success(`${deactivated} employee(s) archived.`);
         setRowSelection({});
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Bulk archive failed.');
+        toast.error(
+          err instanceof Error ? err.message : "Bulk archive failed.",
+        );
       }
     });
   };
@@ -122,7 +136,7 @@ export function EmployeeListTable({
   };
 
   const navigateToPage = (page: number) => {
-    const params = setParam('page', String(page));
+    const params = setParam("page", String(page));
     startTransition(() => {
       router.push(`${pathname}?${params.toString()}`);
     });
@@ -131,8 +145,8 @@ export function EmployeeListTable({
   const onPerPageChange = (raw: string) => {
     const next = Number(raw);
     if (!Number.isFinite(next)) return;
-    const params = setParam('perPage', String(next));
-    params.set('page', '1');
+    const params = setParam("perPage", String(next));
+    params.set("page", "1");
     startTransition(() => {
       router.push(`${pathname}?${params.toString()}`);
     });
@@ -140,15 +154,16 @@ export function EmployeeListTable({
 
   const selectedCount = Object.values(rowSelection).filter(Boolean).length;
   const totalPages = Math.max(initialData.totalPages, 1);
-  const showingFrom = initialData.total === 0 ? 0 : (currentPage - 1) * perPage + 1;
+  const showingFrom =
+    initialData.total === 0 ? 0 : (currentPage - 1) * perPage + 1;
   const showingTo = Math.min(currentPage * perPage, initialData.total);
 
   return (
     <div className="space-y-4">
       {/* Bulk action bar */}
       {selectedCount > 0 && (
-        <div className="flex items-center gap-3 rounded-md bg-senate-navy/5 px-4 py-2">
-          <span className="text-sm font-medium text-senate-navy">
+        <div className="flex items-center gap-3 rounded-md bg-pcso-navy/5 px-4 py-2">
+          <span className="text-sm font-medium text-pcso-navy">
             {selectedCount} selected
           </span>
           <Button
@@ -159,11 +174,7 @@ export function EmployeeListTable({
           >
             Archive Selected
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setRowSelection({})}
-          >
+          <Button size="sm" variant="ghost" onClick={() => setRowSelection({})}>
             Clear
           </Button>
         </div>
@@ -174,15 +185,18 @@ export function EmployeeListTable({
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id} className="bg-senate-navy/5">
+              <TableRow key={hg.id} className="bg-pcso-navy/5">
                 {hg.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    className="font-semibold text-senate-navy"
+                    className="font-semibold text-pcso-navy"
                   >
                     {header.isPlaceholder
                       ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </TableHead>
                 ))}
               </TableRow>
@@ -209,12 +223,15 @@ export function EmployeeListTable({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  data-state={row.getIsSelected() ? 'selected' : undefined}
-                  className="hover:bg-senate-cream/40 data-[state=selected]:bg-senate-gold/10"
+                  data-state={row.getIsSelected() ? "selected" : undefined}
+                  className="hover:bg-pcso-cream/40 data-[state=selected]:bg-pcso-gold/10"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -229,13 +246,16 @@ export function EmployeeListTable({
         <div className="flex items-center gap-3">
           <span>
             {initialData.total === 0
-              ? 'No records'
+              ? "No records"
               : `Showing ${showingFrom.toLocaleString()}–${showingTo.toLocaleString()} of ${initialData.total.toLocaleString()}`}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xs">Rows per page</span>
             <Select value={String(perPage)} onValueChange={onPerPageChange}>
-              <SelectTrigger className="h-8 w-[76px]" aria-label="Rows per page">
+              <SelectTrigger
+                className="h-8 w-[76px]"
+                aria-label="Rows per page"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -300,7 +320,7 @@ export function EmployeeListTable({
             <AlertDialogDescription>
               {confirmOne
                 ? `${confirmOne.name}'s record will be marked as resigned and hidden from active lists. The action is reversible by an administrator.`
-                : ''}
+                : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -319,10 +339,12 @@ export function EmployeeListTable({
       <AlertDialog open={confirmBulk} onOpenChange={setConfirmBulk}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Archive {selectedCount} employees?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Archive {selectedCount} employees?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Selected records will be marked as resigned and hidden from active lists.
-              This action is reversible.
+              Selected records will be marked as resigned and hidden from active
+              lists. This action is reversible.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

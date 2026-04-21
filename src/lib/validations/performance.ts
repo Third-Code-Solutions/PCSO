@@ -244,5 +244,94 @@ export const CancelStepIncrementSchema = z.object({
 export const InitializePerformanceRatingSchema = z.object({
   employeeId: z.string().uuid("Invalid employee ID."),
   periodId: z.string().uuid("Invalid period ID."),
-  ratingType: z.enum(["ipcrf", "opcrf"]),
+  ratingType: z.enum(["ipcrf", "opcrf", "dpcr", "bpcr"]),
+});
+
+// ─── DPCR/BPCR schemas (PMM-003/004) ─────────────────────────────────────────
+
+/**
+ * DPCR (Division Performance Commitment Review) — division-level performance ratings
+ * BPCR (Branch Performance Commitment Review) — branch-level (NCL, STBR, Visayas, Mindanao)
+ * Uses same structure as OPCRF but with distinct ratingType
+ */
+export const SaveDpcrSchema = z.object({
+  performanceRatingId: z.string().uuid("Invalid rating ID."),
+  divisionId: z.string().uuid("Invalid division ID."),
+  kras: z
+    .array(KraRatingSchema)
+    .min(1, "At least one KRA is required.")
+    .max(MAX_KRAS_PER_IPCRF)
+    .refine(
+      (kras) => {
+        const total = kras.reduce((sum, k) => sum + k.weight, 0);
+        return Math.round(total) === TOTAL_KRA_WEIGHT;
+      },
+      { message: "KRA weights must sum to exactly 100%." },
+    ),
+  remarks: z.string().max(2000).optional(),
+});
+
+export const SaveBpcrSchema = z.object({
+  performanceRatingId: z.string().uuid("Invalid rating ID."),
+  branchId: z.string().uuid("Invalid branch ID."),
+  kras: z
+    .array(KraRatingSchema)
+    .min(1, "At least one KRA is required.")
+    .max(MAX_KRAS_PER_IPCRF)
+    .refine(
+      (kras) => {
+        const total = kras.reduce((sum, k) => sum + k.weight, 0);
+        return Math.round(total) === TOTAL_KRA_WEIGHT;
+      },
+      { message: "KRA weights must sum to exactly 100%." },
+    ),
+  remarks: z.string().max(2000).optional(),
+});
+
+// ─── Document Upload schema (PMM-005) ────────────────────────────────────────
+
+export const UploadPerformanceDocumentSchema = z.object({
+  performanceRatingId: z.string().uuid("Invalid rating ID."),
+  /** Supabase Storage URL after file upload completes */
+  documentUrl: z.string().url("Invalid document URL.").max(500),
+  /** Original filename for audit trail */
+  originalFilename: z.string().min(1).max(200),
+});
+
+// ─── Forced Ranking Validation (PMM-006) ─────────────────────────────────────
+
+/**
+ * Input for forced ranking validation check.
+ * Checks Outstanding ≤ 10% and Very Satisfactory ≤ 25% of rated population.
+ */
+export const ForcedRankingCheckSchema = z.object({
+  /** Office/department/unit ID to scope the validation */
+  officeId: z.string().uuid("Invalid office ID."),
+  periodId: z.string().uuid("Invalid period ID."),
+  /** Array of employee IDs with their proposed adjectival ratings */
+  ratings: z.array(
+    z.object({
+      employeeId: z.string().uuid(),
+      adjectivalRating: AdjectivalRatingSchema,
+    }),
+  ),
+});
+
+// ─── PBB Qualification (PMM-007) ─────────────────────────────────────────────
+
+/**
+ * Generate PBB-qualified employee list with 4-gate validation.
+ * Gates: (1) Rating >= Satisfactory, (2) No pending admin case,
+ * (3) No AWOL, (4) SALN filed
+ */
+export const GeneratePbbListSchema = z.object({
+  periodId: z.string().uuid("Invalid period ID."),
+  /** Optional: filter by office/department */
+  officeId: z.string().uuid().optional(),
+  /** Check admin case gate */
+  checkAdminCase: z.boolean().default(true),
+  /** Check AWOL gate */
+  checkAwol: z.boolean().default(true),
+  /** Check SALN gate */
+  checkSaln: z.boolean().default(true),
 });

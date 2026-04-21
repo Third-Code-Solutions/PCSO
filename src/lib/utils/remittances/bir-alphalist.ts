@@ -16,15 +16,15 @@
  * Output format: CSV (UTF-8, CRLF) compatible with eBIRForms alphalist import.
  */
 
-import { roundHalfEven } from '@/lib/utils/payroll/rounding';
+import { roundHalfEven } from "@/lib/utils/payroll/rounding";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Employment status codes per BIR RR 11-2013 */
 export type BirEmploymentStatus =
-  | 'MWE'    // Minimum Wage Earner
-  | 'P'      // Purely Compensation
-  | 'G';     // Government Employee
+  | "MWE" // Minimum Wage Earner
+  | "P" // Purely Compensation
+  | "G"; // Government Employee
 
 export interface BirAlphalistRow {
   /** Employee TIN (format: NNN-NNN-NNN-NNNNN or NNN-NNN-NNN) */
@@ -53,7 +53,7 @@ export interface BirAlphalistRow {
   taxDue: string;
   /** Tax withheld by previous employer (if any) */
   taxWithheldPreviousEmployer: string;
-  /** Tax withheld by current employer (Senate) */
+  /** Tax withheld by current employer (PCSO) */
   taxWithheldCurrentEmployer: string;
   /** Total tax withheld = previous + current */
   totalTaxWithheld: string;
@@ -66,7 +66,7 @@ export interface BirAlphalistRow {
 
 export interface BirAlphalistMeta {
   agencyName: string;
-  /** BIR-registered TIN of the employer (Senate) */
+  /** BIR-registered TIN of the employer (PCSO) */
   employerTin: string;
   /** Calendar year covered */
   year: string;
@@ -76,7 +76,7 @@ export interface BirAlphalistMeta {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMoney(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
+  const num = typeof value === "string" ? parseFloat(value) : value;
   if (!Number.isFinite(num)) {
     throw new RangeError(`formatMoney: cannot format "${value}"`);
   }
@@ -84,7 +84,7 @@ function formatMoney(value: string | number): string {
 }
 
 function csvEscape(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
@@ -106,7 +106,9 @@ export function buildBirAlphalistCsv(
 
   // Info header (eBIRForms ignores # lines)
   lines.push(`# BIR Form 1604-C Alphalist`);
-  lines.push(`# Employer: ${csvEscape(meta.agencyName)} TIN: ${csvEscape(meta.employerTin)}`);
+  lines.push(
+    `# Employer: ${csvEscape(meta.agencyName)} TIN: ${csvEscape(meta.employerTin)}`,
+  );
   lines.push(`# Year: ${csvEscape(meta.year)}`);
   lines.push(`# Batch: ${csvEscape(meta.batchNo)}`);
   lines.push(`# Generated: ${new Date().toISOString()}`);
@@ -114,23 +116,23 @@ export function buildBirAlphalistCsv(
   // BIR column headers
   lines.push(
     [
-      'TIN',
-      'LAST NAME',
-      'FIRST NAME',
-      'MIDDLE NAME',
-      'DATE OF BIRTH',
-      'STATUS',
-      'GROSS COMPENSATION',
-      'NON-TAXABLE COMPENSATION',
-      'TAXABLE COMPENSATION',
-      'TAX DUE',
-      'TAX WITHHELD (PREV EMPLOYER)',
-      'TAX WITHHELD (CURR EMPLOYER)',
-      'TOTAL TAX WITHHELD',
-      'OVER/UNDER REMITTANCE',
+      "TIN",
+      "LAST NAME",
+      "FIRST NAME",
+      "MIDDLE NAME",
+      "DATE OF BIRTH",
+      "STATUS",
+      "GROSS COMPENSATION",
+      "NON-TAXABLE COMPENSATION",
+      "TAXABLE COMPENSATION",
+      "TAX DUE",
+      "TAX WITHHELD (PREV EMPLOYER)",
+      "TAX WITHHELD (CURR EMPLOYER)",
+      "TOTAL TAX WITHHELD",
+      "OVER/UNDER REMITTANCE",
     ]
       .map(csvEscape)
-      .join(','),
+      .join(","),
   );
 
   for (const row of rows) {
@@ -139,8 +141,8 @@ export function buildBirAlphalistCsv(
         csvEscape(row.tin),
         csvEscape(row.lastName.toUpperCase()),
         csvEscape(row.firstName.toUpperCase()),
-        csvEscape((row.middleName ?? '').toUpperCase()),
-        csvEscape(row.birthDate ?? ''),
+        csvEscape((row.middleName ?? "").toUpperCase()),
+        csvEscape(row.birthDate ?? ""),
         csvEscape(row.employmentStatus),
         formatMoney(row.grossCompensation),
         formatMoney(row.nonTaxableCompensation),
@@ -150,11 +152,11 @@ export function buildBirAlphalistCsv(
         formatMoney(row.taxWithheldCurrentEmployer),
         formatMoney(row.totalTaxWithheld),
         formatMoney(row.overUnderRemittance),
-      ].join(','),
+      ].join(","),
     );
   }
 
-  return lines.join('\r\n');
+  return lines.join("\r\n");
 }
 
 /**
@@ -166,12 +168,12 @@ export function generateBirAlphalistExport(
 ): { data: Uint8Array; mimeType: string; filename: string } {
   const csv = buildBirAlphalistCsv(rows, meta);
   const encoder = new TextEncoder();
-  const safeYear = meta.year.replace(/[^0-9]/g, '');
-  const safeBatch = meta.batchNo.replace(/[^a-zA-Z0-9-_]/g, '_');
+  const safeYear = meta.year.replace(/[^0-9]/g, "");
+  const safeBatch = meta.batchNo.replace(/[^a-zA-Z0-9-_]/g, "_");
 
   return {
     data: encoder.encode(csv),
-    mimeType: 'text/csv; charset=UTF-8',
+    mimeType: "text/csv; charset=UTF-8",
     filename: `BIR_1604C_Alphalist_${safeYear}_${safeBatch}.csv`,
   };
 }
@@ -189,7 +191,7 @@ export function computeOverUnderRemittance(
   const withheld = parseFloat(totalTaxWithheld);
   const due = parseFloat(taxDue);
   if (!Number.isFinite(withheld) || !Number.isFinite(due)) {
-    return '0.00';
+    return "0.00";
   }
   return roundHalfEven(withheld - due, 2).toFixed(2);
 }

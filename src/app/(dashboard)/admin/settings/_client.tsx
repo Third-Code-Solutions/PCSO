@@ -216,7 +216,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
         <Button
           type="submit"
           disabled={pending}
-          className="bg-senate-navy text-white hover:bg-senate-navy-light"
+          className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
         >
           {pending ? "Saving…" : "Save settings"}
         </Button>

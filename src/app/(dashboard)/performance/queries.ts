@@ -1241,3 +1241,280 @@ export async function getRatingTrend(): Promise<CycleTrendRow[]> {
     }))
     .sort((a, b) => a.periodLabel.localeCompare(b.periodLabel));
 }
+
+// ─── DPCR (Division Performance Commitment Review) ────────────────────────────
+
+export interface DpcrRow {
+  id: string;
+  divisionId: string | null;
+  divisionName: string | null;
+  periodId: string;
+  periodLabel: string;
+  numericalRating: string;
+  adjectivalRating: AdjectivalRating;
+  status: string;
+  scannedDocUrl: string | null;
+  createdAt: string;
+}
+
+export async function getDpcrRatings(periodId?: string): Promise<DpcrRow[]> {
+  const supabase = await createServerClient();
+
+  let query = supabase
+    .from("performance_ratings")
+    .select(
+      `
+      id,
+      employee_id,
+      period_id,
+      rating_type,
+      numerical_rating,
+      adjectival_rating,
+      status,
+      scanned_doc_url,
+      created_at,
+      performance_periods ( year, semester ),
+      employees ( office_id, offices ( name ) )
+    `,
+    )
+    .eq("rating_type", "dpcr")
+    .order("created_at", { ascending: false });
+
+  if (periodId) {
+    query = query.eq("period_id", periodId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw new Error(`Failed to fetch DPCR ratings: ${error.message}`);
+
+  return (data ?? []).map((row) => {
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+    } | null;
+    const emp = row.employees as {
+      office_id?: string;
+      offices?: { name?: string } | null;
+    } | null;
+    const periodLabel = period
+      ? makePeriodLabel(Number(period.year), String(period.semester))
+      : "Unknown";
+
+    return {
+      id: String(row.id ?? ""),
+      divisionId: emp?.office_id ?? null,
+      divisionName: emp?.offices?.name ?? null,
+      periodId: String(row.period_id ?? ""),
+      periodLabel,
+      numericalRating: String(row.numerical_rating ?? "0"),
+      adjectivalRating: String(
+        row.adjectival_rating ?? "satisfactory",
+      ) as AdjectivalRating,
+      status: String(row.status ?? "draft"),
+      scannedDocUrl:
+        typeof row.scanned_doc_url === "string" ? row.scanned_doc_url : null,
+      createdAt: String(row.created_at ?? ""),
+    };
+  });
+}
+
+// ─── BPCR (Branch Performance Commitment Review) ──────────────────────────────
+
+export interface BpcrRow {
+  id: string;
+  branchId: string | null;
+  branchName: string | null;
+  periodId: string;
+  periodLabel: string;
+  numericalRating: string;
+  adjectivalRating: AdjectivalRating;
+  status: string;
+  scannedDocUrl: string | null;
+  createdAt: string;
+}
+
+export async function getBpcrRatings(periodId?: string): Promise<BpcrRow[]> {
+  const supabase = await createServerClient();
+
+  let query = supabase
+    .from("performance_ratings")
+    .select(
+      `
+      id,
+      employee_id,
+      period_id,
+      rating_type,
+      numerical_rating,
+      adjectival_rating,
+      status,
+      scanned_doc_url,
+      created_at,
+      performance_periods ( year, semester ),
+      employees ( office_id, offices ( name ) )
+    `,
+    )
+    .eq("rating_type", "bpcr")
+    .order("created_at", { ascending: false });
+
+  if (periodId) {
+    query = query.eq("period_id", periodId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw new Error(`Failed to fetch BPCR ratings: ${error.message}`);
+
+  return (data ?? []).map((row) => {
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+    } | null;
+    const emp = row.employees as {
+      office_id?: string;
+      offices?: { name?: string } | null;
+    } | null;
+    const periodLabel = period
+      ? makePeriodLabel(Number(period.year), String(period.semester))
+      : "Unknown";
+
+    return {
+      id: String(row.id ?? ""),
+      branchId: emp?.office_id ?? null,
+      branchName: emp?.offices?.name ?? null,
+      periodId: String(row.period_id ?? ""),
+      periodLabel,
+      numericalRating: String(row.numerical_rating ?? "0"),
+      adjectivalRating: String(
+        row.adjectival_rating ?? "satisfactory",
+      ) as AdjectivalRating,
+      status: String(row.status ?? "draft"),
+      scannedDocUrl:
+        typeof row.scanned_doc_url === "string" ? row.scanned_doc_url : null,
+      createdAt: String(row.created_at ?? ""),
+    };
+  });
+}
+
+// ─── PBB Qualification List ───────────────────────────────────────────────────
+
+import type {
+  PbbQualificationResult,
+  PbbQualificationGates,
+} from "@/lib/utils/performance/pbb-qualification";
+
+export interface PbbListResult {
+  qualified: PbbQualificationResult[];
+  disqualified: PbbQualificationResult[];
+  summary: {
+    total: number;
+    qualifiedCount: number;
+    disqualifiedCount: number;
+    gate1Failures: number;
+    gate2Failures: number;
+    gate3Failures: number;
+    gate4Failures: number;
+  };
+}
+
+export async function getPbbQualificationList(): Promise<PbbListResult> {
+  const supabase = await createServerClient();
+
+  // Fetch all approved IPCRF ratings for the current/most recent cycle
+  const { data: ratingsData, error: ratingsError } = await supabase
+    .from("performance_ratings")
+    .select(
+      `
+      employee_id,
+      numerical_rating,
+      employees ( first_name, last_name )
+    `,
+    )
+    .eq("rating_type", "ipcrf")
+    .eq("status", "approved");
+
+  if (ratingsError)
+    throw new Error(
+      `Failed to fetch IPCRF ratings for PBB: ${ratingsError.message}`,
+    );
+
+  // For each employee, check 4 gates
+  // Note: Gate 2 (admin_cases), Gate 3 (attendance_records AWOL), Gate 4 (saln_submissions)
+  // are TODO placeholders here — these tables may not exist yet in the schema.
+  // We'll return mock gates for now.
+  const results: PbbQualificationResult[] = [];
+
+  for (const r of ratingsData ?? []) {
+    const empId = String(r.employee_id);
+    const emp = r.employees as {
+      first_name?: string;
+      last_name?: string;
+    } | null;
+    const empName = `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim();
+    const ipcrfRating = parseFloat(String(r.numerical_rating ?? "0"));
+
+    // TODO: Replace these with actual queries to admin_cases, attendance_records, saln_submissions
+    const hasPendingAdminCase = false; // Placeholder
+    const hadAwol = false; // Placeholder
+    const salnFiled = true; // Placeholder
+
+    const gates: PbbQualificationGates = {
+      gate1_rating: ipcrfRating >= 2.5,
+      gate2_noAdminCase: !hasPendingAdminCase,
+      gate3_noAwol: !hadAwol,
+      gate4_salnFiled: salnFiled,
+    };
+
+    const qualified = Object.values(gates).every((g) => g === true);
+
+    const failedGates: string[] = [];
+    if (!gates.gate1_rating)
+      failedGates.push(
+        `Rating below Satisfactory (${ipcrfRating.toFixed(3)} < 2.500)`,
+      );
+    if (!gates.gate2_noAdminCase)
+      failedGates.push("Pending administrative case");
+    if (!gates.gate3_noAwol) failedGates.push("AWOL in rating period");
+    if (!gates.gate4_salnFiled) failedGates.push("SALN not filed");
+
+    results.push({
+      employeeId: empId,
+      employeeName: empName,
+      qualified,
+      gates,
+      disqualificationReason:
+        failedGates.length > 0 ? failedGates.join("; ") : null,
+      ipcrfRating,
+    });
+  }
+
+  const qualified = results.filter((r) => r.qualified);
+  const disqualified = results.filter((r) => !r.qualified);
+
+  const gate1Failures = disqualified.filter(
+    (r) => !r.gates.gate1_rating,
+  ).length;
+  const gate2Failures = disqualified.filter(
+    (r) => !r.gates.gate2_noAdminCase,
+  ).length;
+  const gate3Failures = disqualified.filter(
+    (r) => !r.gates.gate3_noAwol,
+  ).length;
+  const gate4Failures = disqualified.filter(
+    (r) => !r.gates.gate4_salnFiled,
+  ).length;
+
+  return {
+    qualified,
+    disqualified,
+    summary: {
+      total: results.length,
+      qualifiedCount: qualified.length,
+      disqualifiedCount: disqualified.length,
+      gate1Failures,
+      gate2Failures,
+      gate3Failures,
+      gate4Failures,
+    },
+  };
+}

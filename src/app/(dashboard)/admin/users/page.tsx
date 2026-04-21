@@ -1,16 +1,16 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
-import { UserPlus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layouts/page-header';
-import type { UserRow } from '@/components/admin/users-table';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { requirePermission } from '@/lib/auth/guards';
-import { getUsersPage, getOfficeOptions } from './queries';
-import { UsersFilterBar, UsersPagination, UsersTableShell } from './_client';
+import type { Metadata } from "next";
+import Link from "next/link";
+import { UserPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layouts/page-header";
+import type { UserRow } from "@/components/admin/users-table";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requirePermission } from "@/lib/auth/guards";
+import { getUsersPage, getOfficeOptions } from "./queries";
+import { UsersFilterBar, UsersPagination, UsersTableShell } from "./_client";
 
 export const metadata: Metadata = {
-  title: 'User Management — Admin',
+  title: "User Management — Admin",
 };
 
 interface PageProps {
@@ -23,24 +23,24 @@ function flatten(v: string | string[] | undefined): string | undefined {
 }
 
 export default async function AdminUsersPage({ searchParams }: PageProps) {
-  await requirePermission('admin', 'view');
+  await requirePermission("admin", "view");
 
   const raw = await searchParams;
   const flat = (k: string) => flatten(raw[k]);
 
-  const statusRaw = flat('status');
-  const status: '' | 'active' | 'inactive' =
-    statusRaw === 'active' || statusRaw === 'inactive' ? statusRaw : '';
-  const pageSizeRaw = flat('pageSize');
+  const statusRaw = flat("status");
+  const status: "" | "active" | "inactive" =
+    statusRaw === "active" || statusRaw === "inactive" ? statusRaw : "";
+  const pageSizeRaw = flat("pageSize");
   const pageSize = pageSizeRaw ? parseInt(pageSizeRaw, 10) : 50;
-  const pageRaw = flat('page');
+  const pageRaw = flat("page");
   const page = pageRaw ? parseInt(pageRaw, 10) : 1;
 
   const queryParams = {
-    search: flat('search'),
-    role: flat('role'),
+    search: flat("search"),
+    role: flat("role"),
     status,
-    officeId: flat('officeId'),
+    officeId: flat("officeId"),
     page,
     pageSize,
   };
@@ -65,17 +65,17 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     <div className="space-y-6 p-6">
       <PageHeader
         title="User Management"
-        description={`${result.total.toLocaleString()} system account${result.total !== 1 ? 's' : ''} — ${result.activeCount.toLocaleString()} active, ${result.inactiveCount.toLocaleString()} inactive.`}
+        description={`${result.total.toLocaleString()} system account${result.total !== 1 ? "s" : ""} — ${result.activeCount.toLocaleString()} active, ${result.inactiveCount.toLocaleString()} inactive.`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin', href: '/admin' },
-          { label: 'Users' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Admin", href: "/admin" },
+          { label: "Users" },
         ]}
         actions={
           <Button
             asChild
             size="sm"
-            className="gap-2 bg-senate-navy text-white hover:bg-senate-navy-light"
+            className="gap-2 bg-pcso-navy text-white hover:bg-pcso-navy-light"
           >
             <Link href="/admin/users/new">
               <UserPlus className="h-4 w-4" />
@@ -113,7 +113,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
       />
 
       {/* Realtime: re-renders the page when system_users or audit_logs change */}
-      <RealtimeBoundary tables={['system_users', 'audit_logs']} />
+      <RealtimeBoundary tables={["system_users", "audit_logs"]} />
     </div>
   );
 }

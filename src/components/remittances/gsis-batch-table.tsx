@@ -1,25 +1,28 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { formatDistanceToNow } from 'date-fns';
-import type { GsisRemittanceBatch, GsisBatchStatus } from '@/lib/db/schema/gsis';
+import Link from "next/link";
+import { formatDistanceToNow } from "date-fns";
+import type {
+  GsisRemittanceBatch,
+  GsisBatchStatus,
+} from "@/lib/db/schema/gsis";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<GsisBatchStatus, string> = {
-  draft:      'bg-zinc-100 text-zinc-600',
-  generated:  'bg-blue-50 text-blue-700 border border-blue-200',
-  submitted:  'bg-amber-50 text-amber-700 border border-amber-200',
-  accepted:   'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  rejected:   'bg-red-50 text-red-700 border border-red-200',
+  draft: "bg-zinc-100 text-zinc-600",
+  generated: "bg-blue-50 text-blue-700 border border-blue-200",
+  submitted: "bg-amber-50 text-amber-700 border border-amber-200",
+  accepted: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  rejected: "bg-red-50 text-red-700 border border-red-200",
 };
 
 const STATUS_LABELS: Record<GsisBatchStatus, string> = {
-  draft:     'Draft',
-  generated: 'Generated',
-  submitted: 'Submitted',
-  accepted:  'Accepted',
-  rejected:  'Rejected',
+  draft: "Draft",
+  generated: "Generated",
+  submitted: "Submitted",
+  accepted: "Accepted",
+  rejected: "Rejected",
 };
 
 function StatusBadge({ status }: { status: GsisBatchStatus }) {
@@ -35,12 +38,12 @@ function StatusBadge({ status }: { status: GsisBatchStatus }) {
 // ─── Money formatter ──────────────────────────────────────────────────────────
 
 function formatMoney(value: string | null | undefined): string {
-  if (value == null) return '—';
+  if (value == null) return "—";
   const num = parseFloat(value);
-  if (!Number.isFinite(num)) return '—';
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
+  if (!Number.isFinite(num)) return "—";
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
     minimumFractionDigits: 2,
   }).format(num);
 }
@@ -55,7 +58,9 @@ export function GsisBatchTable({ batches }: GsisBatchTableProps) {
   if (batches.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-zinc-200 bg-white px-6 py-14 text-center">
-        <p className="text-sm font-medium text-zinc-500">No GSIS remittance batches found.</p>
+        <p className="text-sm font-medium text-zinc-500">
+          No GSIS remittance batches found.
+        </p>
         <p className="mt-1 text-xs text-zinc-400">
           Generate a batch by selecting an approved payroll period.
         </p>
@@ -104,15 +109,17 @@ export function GsisBatchTable({ batches }: GsisBatchTableProps) {
                 {formatMoney(batch.totalRemittance)}
               </td>
               <td className="px-4 py-3 font-mono text-xs text-zinc-500">
-                {batch.portalReferenceNo ?? '—'}
+                {batch.portalReferenceNo ?? "—"}
               </td>
               <td className="px-4 py-3 text-xs text-zinc-400">
-                {formatDistanceToNow(new Date(batch.createdAt), { addSuffix: true })}
+                {formatDistanceToNow(new Date(batch.createdAt), {
+                  addSuffix: true,
+                })}
               </td>
               <td className="px-4 py-3 text-right">
                 <Link
                   href={`/remittances/gsis/${batch.id}`}
-                  className="rounded px-2 py-1 text-xs font-medium text-senate-navy opacity-0 ring-1 ring-senate-navy/20 transition hover:bg-senate-navy/5 group-hover:opacity-100"
+                  className="rounded px-2 py-1 text-xs font-medium text-pcso-navy opacity-0 ring-1 ring-pcso-navy/20 transition hover:bg-pcso-navy/5 group-hover:opacity-100"
                 >
                   View
                 </Link>

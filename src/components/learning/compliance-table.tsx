@@ -97,7 +97,7 @@ export function ComplianceTable({ rows }: Props) {
                 <td className="px-4 py-3 text-right">
                   <Link
                     href={`/learning/mandatory?programId=${r.programId}`}
-                    className="text-xs font-medium text-senate-navy hover:underline"
+                    className="text-xs font-medium text-pcso-navy hover:underline"
                   >
                     View list
                   </Link>

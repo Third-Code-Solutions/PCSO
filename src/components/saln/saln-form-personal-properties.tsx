@@ -5,14 +5,14 @@
  * Fields: description, year acquired, acquisition cost, current fair market value.
  */
 
-'use client';
+"use client";
 
-import { useFieldArray, useFormContext } from 'react-hook-form';
-import { PlusIcon, TrashIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import type { FileSalnInput } from '@/lib/validations/saln';
+import { useFieldArray, useFormContext } from "react-hook-form";
+import { PlusIcon, TrashIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { FileSalnInput } from "@/lib/validations/saln";
 
 const currentYear = new Date().getFullYear();
 
@@ -25,15 +25,15 @@ export function SalnFormPersonalProperties() {
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'personalProperties',
+    name: "personalProperties",
   });
 
   function addItem() {
     append({
-      description: '',
+      description: "",
       yearAcquired: currentYear,
-      cost: '0.00',
-      currentFairMarketValue: '0.00',
+      cost: "0.00",
+      currentFairMarketValue: "0.00",
     });
   }
 
@@ -45,7 +45,7 @@ export function SalnFormPersonalProperties() {
         <div>
           <h3
             id="personal-props-heading"
-            className="text-base font-semibold text-senate-navy"
+            className="text-base font-semibold text-pcso-navy"
           >
             B. Personal Properties
           </h3>
@@ -61,13 +61,16 @@ export function SalnFormPersonalProperties() {
 
       {fields.length === 0 && (
         <p className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-          No personal properties declared. Click &ldquo;Add Property&rdquo; to add one.
+          No personal properties declared. Click &ldquo;Add Property&rdquo; to
+          add one.
         </p>
       )}
 
       <div className="space-y-4">
         {fields.map((field, index) => {
-          const itemErrors = Array.isArray(fieldErrors) ? fieldErrors[index] : undefined;
+          const itemErrors = Array.isArray(fieldErrors)
+            ? fieldErrors[index]
+            : undefined;
 
           return (
             <div
@@ -104,7 +107,7 @@ export function SalnFormPersonalProperties() {
                   />
                   {itemErrors?.description && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.description.message ?? '')}
+                      {String(itemErrors.description.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -126,7 +129,7 @@ export function SalnFormPersonalProperties() {
                   />
                   {itemErrors?.yearAcquired && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.yearAcquired.message ?? '')}
+                      {String(itemErrors.yearAcquired.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -144,25 +147,29 @@ export function SalnFormPersonalProperties() {
                   />
                   {itemErrors?.cost && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.cost.message ?? '')}
+                      {String(itemErrors.cost.message ?? "")}
                     </p>
                   )}
                 </div>
 
                 {/* Current Fair Market Value */}
                 <div>
-                  <Label htmlFor={`personalProperties.${index}.currentFairMarketValue`}>
+                  <Label
+                    htmlFor={`personalProperties.${index}.currentFairMarketValue`}
+                  >
                     Current Fair Market Value (PHP)
                   </Label>
                   <Input
                     id={`personalProperties.${index}.currentFairMarketValue`}
-                    {...register(`personalProperties.${index}.currentFairMarketValue`)}
+                    {...register(
+                      `personalProperties.${index}.currentFairMarketValue`,
+                    )}
                     placeholder="0.00"
                     aria-invalid={!!itemErrors?.currentFairMarketValue}
                   />
                   {itemErrors?.currentFairMarketValue && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.currentFairMarketValue.message ?? '')}
+                      {String(itemErrors.currentFairMarketValue.message ?? "")}
                     </p>
                   )}
                 </div>

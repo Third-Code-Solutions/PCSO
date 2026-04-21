@@ -126,7 +126,7 @@ export default function NewUserPage() {
           <Button
             type="submit"
             disabled={pending}
-            className="bg-senate-navy text-white hover:bg-senate-navy-light"
+            className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
           >
             {pending ? "Sending invite…" : "Send invite"}
           </Button>

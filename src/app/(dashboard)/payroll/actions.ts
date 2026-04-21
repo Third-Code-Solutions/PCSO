@@ -1,33 +1,42 @@
-'use server';
+"use server";
 
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
 import {
   payrollPeriods,
   payrollRecords,
   payrollAdjustments,
   employees,
-} from '@/lib/db/schema';
-import { eq, and, isNull, inArray } from 'drizzle-orm';
+} from "@/lib/db/schema";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import {
   CreatePeriodSchema,
   OverrideRecordSchema,
   EmailPayslipsSchema,
   ExportRegisterSchema,
-} from '@/lib/validations/payroll';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
-import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
-import { lockKey } from '@/lib/concurrency';
+} from "@/lib/validations/payroll";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
+import { withTx, withRetry, type Tx } from "@/lib/db/transaction";
+import { lockKey } from "@/lib/concurrency";
 import type {
   PayrollInput,
   PayrollResult,
   EmployeePayrollInput,
   AttendanceInput,
   AppointmentType,
-} from '@/lib/utils/payroll/types';
-import { computeFullPayroll } from '@/lib/utils/payroll';
-import { roundMoney, parseMoney } from '@/lib/utils/payroll/rounding';
+} from "@/lib/utils/payroll/types";
+import { computeFullPayroll } from "@/lib/utils/payroll";
+import { roundMoney, parseMoney } from "@/lib/utils/payroll/rounding";
+import {
+  computeRATA,
+  computeMidYearBonus,
+  computeYearEndBonus,
+  computeCashGift,
+  computeSalaryDifferential,
+  computeDeMinimis,
+  compute13thMonth,
+} from "@/lib/utils/payroll/bonuses";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,7 +51,7 @@ const PAYROLL_RECORD_INSERT_CHUNK = 200;
 
 export async function createPeriod(input: unknown) {
   const parsed = CreatePeriodSchema.parse(input);
-  const user = await requirePermission('payroll', 'create');
+  const user = await requirePermission("payroll", "create");
 
   const period = await withTx(async (tx) => {
     const [inserted] = await tx
@@ -53,11 +62,13 @@ export async function createPeriod(input: unknown) {
         periodEnd: parsed.periodEnd,
         payDate: parsed.payDate,
         scope: parsed.scope,
+        customTitle: parsed.customTitle ?? null,
+        skipMandatoryDeductions: parsed.skipMandatoryDeductions ?? false,
         notes: parsed.notes,
-        status: 'draft',
+        status: "draft",
       })
       .returning();
-    if (!inserted) throw new Error('Failed to create payroll period.');
+    if (!inserted) throw new Error("Failed to create payroll period.");
     return inserted;
   });
 
@@ -65,13 +76,13 @@ export async function createPeriod(input: unknown) {
   // the primary write. Errors surface to console/Sentry only.
   void auditLog({
     userId: user.id,
-    action: 'create',
-    table: 'payroll_periods',
+    action: "create",
+    table: "payroll_periods",
     recordId: period.id,
     newValues: period,
   });
 
-  revalidatePath('/payroll');
+  revalidatePath("/payroll");
   return period;
 }
 
@@ -84,7 +95,7 @@ export async function createPeriod(input: unknown) {
  * simultaneously produce exactly one audit event.
  */
 export async function lockPeriod(periodId: string) {
-  const user = await requirePermission('payroll', 'edit');
+  const user = await requirePermission("payroll", "edit");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -93,22 +104,27 @@ export async function lockPeriod(periodId: string) {
       const [period] = await tx
         .select()
         .from(payrollPeriods)
-        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .where(
+          and(
+            eq(payrollPeriods.id, periodId),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
         .limit(1);
 
-      if (!period) throw new Error('Payroll period not found');
+      if (!period) throw new Error("Payroll period not found");
 
       // Idempotent: already locked or beyond — no-op.
-      if (period.status !== 'draft') {
+      if (period.status !== "draft") {
         return { period, changed: false };
       }
 
       const [updated] = await tx
         .update(payrollPeriods)
-        .set({ status: 'processing', updatedAt: new Date() })
+        .set({ status: "processing", updatedAt: new Date() })
         .where(eq(payrollPeriods.id, periodId))
         .returning();
-      if (!updated) throw new Error('Failed to lock payroll period.');
+      if (!updated) throw new Error("Failed to lock payroll period.");
 
       return { period: updated, changed: true };
     }),
@@ -117,15 +133,15 @@ export async function lockPeriod(periodId: string) {
   if (result.changed) {
     void auditLog({
       userId: user.id,
-      action: 'edit',
-      table: 'payroll_periods',
+      action: "edit",
+      table: "payroll_periods",
       recordId: periodId,
-      oldValues: { status: 'draft' },
-      newValues: { status: 'processing' },
+      oldValues: { status: "draft" },
+      newValues: { status: "processing" },
     });
   }
 
-  revalidatePath('/payroll');
+  revalidatePath("/payroll");
   revalidatePath(`/payroll/${periodId}`);
   return result.period;
 }
@@ -145,7 +161,7 @@ export async function lockPeriod(periodId: string) {
  *      1000+ employee scopes.
  */
 export async function processPayroll(periodId: string) {
-  const user = await requirePermission('payroll', 'process');
+  const user = await requirePermission("payroll", "process");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -154,27 +170,57 @@ export async function processPayroll(periodId: string) {
       const [period] = await tx
         .select()
         .from(payrollPeriods)
-        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .where(
+          and(
+            eq(payrollPeriods.id, periodId),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
         .limit(1);
 
-      if (!period) throw new Error('Payroll period not found');
-      if (period.status !== 'processing') {
+      if (!period) throw new Error("Payroll period not found");
+      if (period.status !== "processing") {
         throw new Error(
           `Period must be in "processing" status to run computation. Current: ${period.status}`,
         );
       }
 
-      const eligibleTypes: AppointmentType[] =
-        period.scope === 'jo_cos'
-          ? ['job_order', 'contract_of_service']
-          : ['permanent', 'temporary', 'coterminous', 'casual'];
+      // Determine eligible employee types based on payroll scope
+      let eligibleTypes: AppointmentType[] = [];
+
+      switch (period.scope) {
+        case "jo_cos":
+          eligibleTypes = ["job_order", "contract_of_service"];
+          break;
+        case "regular":
+        case "rata":
+        case "benefits_bonuses":
+        case "salary_differential":
+        case "special":
+        case "magna_carta":
+          eligibleTypes = ["permanent", "temporary", "coterminous", "casual"];
+          break;
+        case "cash_advance":
+          // Cash advance can apply to any active employee with loans
+          eligibleTypes = [
+            "permanent",
+            "temporary",
+            "coterminous",
+            "casual",
+            "job_order",
+            "contract_of_service",
+          ];
+          break;
+        default:
+          throw new Error(`Unsupported payroll scope: ${period.scope}`);
+      }
 
       const eligibleEmployees = await tx
         .select()
         .from(employees)
         .where(
           and(
-            eq(employees.status, 'active'),
+            eq(employees.status, "active"),
             isNull(employees.deletedAt),
             inArray(employees.appointmentType, eligibleTypes),
           ),
@@ -182,14 +228,17 @@ export async function processPayroll(periodId: string) {
 
       const periodStartDate = new Date(period.periodStart);
       const periodEndDate = new Date(period.periodEnd);
-      const periodType = 'semi-monthly' as const;
+      const periodType = "semi-monthly" as const;
 
       // Delete existing draft records for re-processing (inside the tx so a
       // failure leaves the previous snapshot untouched).
       await tx
         .delete(payrollRecords)
         .where(
-          and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'draft')),
+          and(
+            eq(payrollRecords.periodId, periodId),
+            eq(payrollRecords.status, "draft"),
+          ),
         );
 
       // Build all rows in memory first, then chunk-insert.
@@ -217,7 +266,11 @@ export async function processPayroll(periodId: string) {
 
         const payrollInput: PayrollInput = {
           employee: employeeInput,
-          period: { type: periodType, start: periodStartDate, end: periodEndDate },
+          period: {
+            type: periodType,
+            start: periodStartDate,
+            end: periodEndDate,
+          },
           attendance: attendanceInput,
         };
 
@@ -226,11 +279,228 @@ export async function processPayroll(periodId: string) {
         let exceptionNotes: string | undefined;
 
         try {
-          computed = computeFullPayroll(payrollInput);
+          // Compute based on payroll scope
+          switch (period.scope) {
+            case "regular":
+            case "jo_cos":
+              // Standard payroll computation
+              computed = computeFullPayroll(payrollInput);
+              break;
+
+            case "rata": {
+              // RATA payroll: regular computation + RATA earnings
+              computed = computeFullPayroll(payrollInput);
+              // Assume employee has RATA amount in a field (to be added to schema later)
+              // For now, use a placeholder - this would come from employee.rataAmount
+              const rataAmount = 0; // TODO: Add employee.rataAmount field
+              const rataResult = computeRATA(rataAmount, periodType);
+              const rataStr = roundMoney(rataResult.totalRATA);
+              computed.earnings.rata = rataStr;
+              computed.earnings.otherEarnings = roundMoney(
+                parseMoney(computed.earnings.otherEarnings) +
+                  rataResult.totalRATA,
+              );
+              computed.earnings.grossPay = roundMoney(
+                parseMoney(computed.earnings.grossPay) + rataResult.totalRATA,
+              );
+              // Taxable RATA portion is added to taxable income
+              if (rataResult.taxableRATA > 0) {
+                // This affects withholding tax - would need to recompute tax
+                // For now, this is a simplified implementation
+              }
+              computed.netPay = roundMoney(
+                parseMoney(computed.earnings.grossPay) -
+                  parseMoney(computed.deductions.totalDeductions),
+              );
+              break;
+            }
+
+            case "benefits_bonuses": {
+              // Benefits & Bonuses: Mid-Year, Year-End, Cash Gift, PBB
+              // This is a specialized payroll run for bonuses only
+              const monthlySalary = emp.monthlySalary
+                ? Number(emp.monthlySalary)
+                : 0;
+              const appointmentType = emp.appointmentType as AppointmentType;
+
+              const midYearBonus = computeMidYearBonus(
+                monthlySalary,
+                appointmentType,
+              );
+              const yearEndBonus = computeYearEndBonus(
+                monthlySalary,
+                appointmentType,
+              );
+              const cashGift = computeCashGift(appointmentType);
+              // PBB would come from performance module - placeholder for now
+              const pbbAmount = 0;
+
+              const totalBonuses =
+                midYearBonus + yearEndBonus + cashGift + pbbAmount;
+              // Apply de minimis ceiling (PHP 90,000/year tax-exempt)
+              // For simplicity, assume this is the only bonus payment this year
+              const deMinimis = computeDeMinimis(totalBonuses);
+
+              computed = {
+                earnings: {
+                  authorizedSalary: roundMoney(monthlySalary),
+                  basicPay: "0.00",
+                  rata: "0.00",
+                  longevityPay: "0.00",
+                  overtimePay: "0.00",
+                  pera: "0.00",
+                  otherEarnings: roundMoney(totalBonuses),
+                  grossPay: roundMoney(totalBonuses),
+                },
+                deductions: {
+                  gsis: {
+                    personal: "0.00",
+                    employer: "0.00",
+                    lifeInsurance: "0.00",
+                  },
+                  philHealth: { personal: "0.00", employer: "0.00" },
+                  pagIBIG: { personal: "0.00", employer: "0.00" },
+                  withholdingTax: roundMoney(deMinimis.taxable * 0.15), // Simplified 15% rate
+                  lateDeduction: "0.00",
+                  undertimeDeduction: "0.00",
+                  absenceDeduction: "0.00",
+                  otherDeductions: "0.00",
+                  totalDeductions: roundMoney(deMinimis.taxable * 0.15),
+                },
+                netPay: roundMoney(totalBonuses - deMinimis.taxable * 0.15),
+              };
+              break;
+            }
+
+            case "salary_differential": {
+              // Salary Differential: retroactive pay adjustment
+              // This requires additional data: old rate, new rate, number of months
+              // For now, use placeholders - these would come from a separate differential table
+              const oldRate = emp.monthlySalary ? Number(emp.monthlySalary) : 0;
+              const newRate = oldRate; // TODO: Get from differential request
+              const months = 1; // TODO: Get from differential request
+              const differential = computeSalaryDifferential(
+                oldRate,
+                newRate,
+                months,
+              );
+
+              computed = {
+                earnings: {
+                  authorizedSalary: roundMoney(newRate),
+                  basicPay: "0.00",
+                  rata: "0.00",
+                  longevityPay: "0.00",
+                  overtimePay: "0.00",
+                  pera: "0.00",
+                  otherEarnings: roundMoney(differential),
+                  grossPay: roundMoney(differential),
+                },
+                deductions: {
+                  gsis: {
+                    personal: "0.00",
+                    employer: "0.00",
+                    lifeInsurance: "0.00",
+                  },
+                  philHealth: { personal: "0.00", employer: "0.00" },
+                  pagIBIG: { personal: "0.00", employer: "0.00" },
+                  withholdingTax: roundMoney(differential * 0.15), // Simplified withholding
+                  lateDeduction: "0.00",
+                  undertimeDeduction: "0.00",
+                  absenceDeduction: "0.00",
+                  otherDeductions: "0.00",
+                  totalDeductions: roundMoney(differential * 0.15),
+                },
+                netPay: roundMoney(differential - differential * 0.15),
+              };
+              break;
+            }
+
+            case "cash_advance": {
+              // Cash Advance: only loan deductions, no earnings
+              // This would link to loan ledger for deduction schedule
+              // For now, simplified: zero earnings, only loan deductions
+              computed = {
+                earnings: {
+                  authorizedSalary: "0.00",
+                  basicPay: "0.00",
+                  rata: "0.00",
+                  longevityPay: "0.00",
+                  overtimePay: "0.00",
+                  pera: "0.00",
+                  otherEarnings: "0.00",
+                  grossPay: "0.00",
+                },
+                deductions: {
+                  gsis: {
+                    personal: "0.00",
+                    employer: "0.00",
+                    lifeInsurance: "0.00",
+                  },
+                  philHealth: { personal: "0.00", employer: "0.00" },
+                  pagIBIG: { personal: "0.00", employer: "0.00" },
+                  withholdingTax: "0.00",
+                  lateDeduction: "0.00",
+                  undertimeDeduction: "0.00",
+                  absenceDeduction: "0.00",
+                  otherDeductions: "0.00", // TODO: Get from loan_ledger
+                  totalDeductions: "0.00",
+                },
+                netPay: "0.00", // Cash advance nets to zero
+              };
+              break;
+            }
+
+            case "special": {
+              // Special payroll: regular computation but optionally skip mandatory deductions
+              computed = computeFullPayroll(payrollInput);
+              if (period.skipMandatoryDeductions) {
+                // Zero out mandatory deductions
+                computed.deductions.gsis = {
+                  personal: "0.00",
+                  employer: "0.00",
+                  lifeInsurance: "0.00",
+                };
+                computed.deductions.philHealth = {
+                  personal: "0.00",
+                  employer: "0.00",
+                };
+                computed.deductions.pagIBIG = {
+                  personal: "0.00",
+                  employer: "0.00",
+                };
+                computed.deductions.withholdingTax = "0.00";
+                // Recalculate total deductions and net pay
+                const totalDed =
+                  parseMoney(computed.deductions.lateDeduction) +
+                  parseMoney(computed.deductions.undertimeDeduction) +
+                  parseMoney(computed.deductions.absenceDeduction) +
+                  parseMoney(computed.deductions.otherDeductions);
+                computed.deductions.totalDeductions = roundMoney(totalDed);
+                computed.netPay = roundMoney(
+                  parseMoney(computed.earnings.grossPay) - totalDed,
+                );
+              }
+              break;
+            }
+
+            case "magna_carta": {
+              // Magna Carta Benefits: RA 9710 (Women), RA 7277 (PWD)
+              // This requires gender and PWD status from employee profile
+              // For now, use regular computation with placeholder benefits
+              computed = computeFullPayroll(payrollInput);
+              // TODO: Add Magna Carta specific benefits based on employee gender/PWD status
+              // Additional benefits would be added to otherEarnings
+              break;
+            }
+
+            default:
+              throw new Error(`Unsupported payroll scope: ${period.scope}`);
+          }
         } catch (err) {
           hasException = true;
           exceptionNotes =
-            err instanceof Error ? err.message : 'Unknown computation error';
+            err instanceof Error ? err.message : "Unknown computation error";
           computed = buildZeroResult(payrollInput);
         }
 
@@ -238,13 +508,13 @@ export async function processPayroll(periodId: string) {
         if (netPayNum < 0) {
           hasException = true;
           exceptionNotes =
-            (exceptionNotes ? exceptionNotes + '; ' : '') + 'Negative net pay';
+            (exceptionNotes ? exceptionNotes + "; " : "") + "Negative net pay";
         }
 
         rowsToInsert.push({
           periodId,
           employeeId: emp.id,
-          status: 'draft',
+          status: "draft",
           salaryGrade: emp.salaryGrade,
           step: emp.step,
           positionTitle: emp.positionTitle,
@@ -252,7 +522,7 @@ export async function processPayroll(periodId: string) {
           lateMinutes: 0,
           undertimeMinutes: 0,
           absenceDays: 0,
-          approvedOvertimeHours: '0',
+          approvedOvertimeHours: "0",
 
           authorizedSalary: computed.earnings.authorizedSalary,
           basicPay: computed.earnings.basicPay,
@@ -318,8 +588,8 @@ export async function processPayroll(periodId: string) {
 
   void auditLog({
     userId: user.id,
-    action: 'process',
-    table: 'payroll_periods',
+    action: "process",
+    table: "payroll_periods",
     recordId: periodId,
     newValues: {
       employeeCount: result.employeeCount,
@@ -328,7 +598,7 @@ export async function processPayroll(periodId: string) {
     },
   });
 
-  revalidatePath('/payroll');
+  revalidatePath("/payroll");
   revalidatePath(`/payroll/${periodId}`);
   revalidatePath(`/payroll/${periodId}/process`);
 
@@ -352,7 +622,7 @@ async function chunkInsertPayrollRecords(
 // ─── Approve Payroll ──────────────────────────────────────────────────────────
 
 export async function approvePayroll(periodId: string) {
-  const user = await requirePermission('payroll', 'approve');
+  const user = await requirePermission("payroll", "approve");
 
   const updated = await withRetry(() =>
     withTx(async (tx) => {
@@ -361,15 +631,20 @@ export async function approvePayroll(periodId: string) {
       const [period] = await tx
         .select()
         .from(payrollPeriods)
-        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .where(
+          and(
+            eq(payrollPeriods.id, periodId),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
         .limit(1);
 
-      if (!period) throw new Error('Payroll period not found');
-      if (period.status === 'approved' || period.status === 'paid') {
+      if (!period) throw new Error("Payroll period not found");
+      if (period.status === "approved" || period.status === "paid") {
         // Idempotent: already approved or beyond.
         return { period, changed: false };
       }
-      if (period.status !== 'processing') {
+      if (period.status !== "processing") {
         throw new Error(
           `Period must be in "processing" status to approve. Current: ${period.status}`,
         );
@@ -380,18 +655,18 @@ export async function approvePayroll(periodId: string) {
       // Approve all draft + override records in a single update
       await tx
         .update(payrollRecords)
-        .set({ status: 'approved', updatedAt: new Date() })
+        .set({ status: "approved", updatedAt: new Date() })
         .where(
           and(
             eq(payrollRecords.periodId, periodId),
-            inArray(payrollRecords.status, ['draft', 'override']),
+            inArray(payrollRecords.status, ["draft", "override"]),
           ),
         );
 
       const [periodRow] = await tx
         .update(payrollPeriods)
         .set({
-          status: 'approved',
+          status: "approved",
           approvedAt: now,
           approvedBy: user.id,
           updatedAt: new Date(),
@@ -399,7 +674,7 @@ export async function approvePayroll(periodId: string) {
         .where(eq(payrollPeriods.id, periodId))
         .returning();
 
-      if (!periodRow) throw new Error('Failed to approve payroll period.');
+      if (!periodRow) throw new Error("Failed to approve payroll period.");
       return { period: periodRow, changed: true };
     }),
   );
@@ -407,15 +682,15 @@ export async function approvePayroll(periodId: string) {
   if (updated.changed) {
     void auditLog({
       userId: user.id,
-      action: 'approve',
-      table: 'payroll_periods',
+      action: "approve",
+      table: "payroll_periods",
       recordId: periodId,
-      oldValues: { status: 'processing' },
-      newValues: { status: 'approved' },
+      oldValues: { status: "processing" },
+      newValues: { status: "approved" },
     });
   }
 
-  revalidatePath('/payroll');
+  revalidatePath("/payroll");
   revalidatePath(`/payroll/${periodId}`);
   return updated.period;
 }
@@ -423,7 +698,7 @@ export async function approvePayroll(periodId: string) {
 // ─── Release Payroll (mark as paid) ──────────────────────────────────────────
 
 export async function releasePayroll(periodId: string) {
-  const user = await requirePermission('payroll', 'approve');
+  const user = await requirePermission("payroll", "approve");
 
   const updated = await withRetry(() =>
     withTx(async (tx) => {
@@ -432,14 +707,19 @@ export async function releasePayroll(periodId: string) {
       const [period] = await tx
         .select()
         .from(payrollPeriods)
-        .where(and(eq(payrollPeriods.id, periodId), isNull(payrollPeriods.deletedAt)))
+        .where(
+          and(
+            eq(payrollPeriods.id, periodId),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
         .limit(1);
 
-      if (!period) throw new Error('Payroll period not found');
-      if (period.status === 'paid') {
+      if (!period) throw new Error("Payroll period not found");
+      if (period.status === "paid") {
         return { period, changed: false };
       }
-      if (period.status !== 'approved') {
+      if (period.status !== "approved") {
         throw new Error(
           `Period must be in "approved" status to release. Current: ${period.status}`,
         );
@@ -449,15 +729,18 @@ export async function releasePayroll(periodId: string) {
 
       await tx
         .update(payrollRecords)
-        .set({ status: 'paid', updatedAt: new Date() })
+        .set({ status: "paid", updatedAt: new Date() })
         .where(
-          and(eq(payrollRecords.periodId, periodId), eq(payrollRecords.status, 'approved')),
+          and(
+            eq(payrollRecords.periodId, periodId),
+            eq(payrollRecords.status, "approved"),
+          ),
         );
 
       const [periodRow] = await tx
         .update(payrollPeriods)
         .set({
-          status: 'paid',
+          status: "paid",
           releasedAt: now,
           releasedBy: user.id,
           updatedAt: new Date(),
@@ -465,7 +748,7 @@ export async function releasePayroll(periodId: string) {
         .where(eq(payrollPeriods.id, periodId))
         .returning();
 
-      if (!periodRow) throw new Error('Failed to release payroll period.');
+      if (!periodRow) throw new Error("Failed to release payroll period.");
       return { period: periodRow, changed: true };
     }),
   );
@@ -473,15 +756,15 @@ export async function releasePayroll(periodId: string) {
   if (updated.changed) {
     void auditLog({
       userId: user.id,
-      action: 'edit',
-      table: 'payroll_periods',
+      action: "edit",
+      table: "payroll_periods",
       recordId: periodId,
-      oldValues: { status: 'approved' },
-      newValues: { status: 'paid' },
+      oldValues: { status: "approved" },
+      newValues: { status: "paid" },
     });
   }
 
-  revalidatePath('/payroll');
+  revalidatePath("/payroll");
   revalidatePath(`/payroll/${periodId}`);
   return updated.period;
 }
@@ -490,7 +773,7 @@ export async function releasePayroll(periodId: string) {
 
 export async function overrideRecord(input: unknown) {
   const parsed = OverrideRecordSchema.parse(input);
-  const user = await requirePermission('payroll', 'edit');
+  const user = await requirePermission("payroll", "edit");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -504,15 +787,17 @@ export async function overrideRecord(input: unknown) {
         .where(eq(payrollRecords.id, parsed.recordId))
         .limit(1);
 
-      if (!record) throw new Error('Payroll record not found');
-      if (record.status === 'paid') {
+      if (!record) throw new Error("Payroll record not found");
+      if (record.status === "paid") {
         throw new Error(
-          'Cannot override a paid payroll record. Append an adjustment instead.',
+          "Cannot override a paid payroll record. Append an adjustment instead.",
         );
       }
 
       const originalValue =
-        (record as unknown as Record<string, string | null>)[parsed.fieldName] ?? null;
+        (record as unknown as Record<string, string | null>)[
+          parsed.fieldName
+        ] ?? null;
 
       const [adjustment] = await tx
         .insert(payrollAdjustments)
@@ -530,13 +815,13 @@ export async function overrideRecord(input: unknown) {
         })
         .returning();
 
-      if (!adjustment) throw new Error('Failed to record adjustment.');
+      if (!adjustment) throw new Error("Failed to record adjustment.");
 
       await tx
         .update(payrollRecords)
         .set({
           [parsed.fieldName]: parsed.adjustedValue,
-          status: 'override',
+          status: "override",
           updatedAt: new Date(),
         })
         .where(eq(payrollRecords.id, parsed.recordId));
@@ -547,8 +832,8 @@ export async function overrideRecord(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'edit',
-    table: 'payroll_records',
+    action: "edit",
+    table: "payroll_records",
     recordId: parsed.recordId,
     oldValues: { [parsed.fieldName]: result.originalValue },
     newValues: {
@@ -565,7 +850,7 @@ export async function overrideRecord(input: unknown) {
 // ─── Generate Payslip ─────────────────────────────────────────────────────────
 
 export async function generatePayslip(recordId: string) {
-  const user = await requirePermission('payroll', 'export');
+  const user = await requirePermission("payroll", "export");
 
   const result = await withTx(async (tx) => {
     const [record] = await tx
@@ -574,7 +859,7 @@ export async function generatePayslip(recordId: string) {
       .where(eq(payrollRecords.id, recordId))
       .limit(1);
 
-    if (!record) throw new Error('Payroll record not found');
+    if (!record) throw new Error("Payroll record not found");
 
     const now = new Date().toISOString();
     await tx
@@ -587,8 +872,8 @@ export async function generatePayslip(recordId: string) {
 
   void auditLog({
     userId: user.id,
-    action: 'export',
-    table: 'payroll_records',
+    action: "export",
+    table: "payroll_records",
     recordId,
     newValues: { payslipGeneratedAt: result.generatedAt },
   });
@@ -601,7 +886,7 @@ export async function generatePayslip(recordId: string) {
 
 export async function emailPayslips(input: unknown) {
   const parsed = EmailPayslipsSchema.parse(input);
-  const user = await requirePermission('payroll', 'export');
+  const user = await requirePermission("payroll", "export");
 
   const result = await withTx(async (tx) => {
     const [period] = await tx
@@ -610,9 +895,11 @@ export async function emailPayslips(input: unknown) {
       .where(eq(payrollPeriods.id, parsed.periodId))
       .limit(1);
 
-    if (!period) throw new Error('Payroll period not found');
-    if (period.status !== 'approved' && period.status !== 'paid') {
-      throw new Error('Payslips can only be emailed for approved or paid periods.');
+    if (!period) throw new Error("Payroll period not found");
+    if (period.status !== "approved" && period.status !== "paid") {
+      throw new Error(
+        "Payslips can only be emailed for approved or paid periods.",
+      );
     }
 
     const now = new Date().toISOString();
@@ -626,8 +913,8 @@ export async function emailPayslips(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'export',
-    table: 'payroll_periods',
+    action: "export",
+    table: "payroll_periods",
     recordId: parsed.periodId,
     newValues: { payslipsEmailedAt: result.emailedAt },
   });
@@ -640,7 +927,7 @@ export async function emailPayslips(input: unknown) {
 
 export async function exportRegister(input: unknown) {
   const parsed = ExportRegisterSchema.parse(input);
-  const user = await requirePermission('payroll', 'export');
+  const user = await requirePermission("payroll", "export");
 
   const [period] = await db
     .select()
@@ -648,17 +935,17 @@ export async function exportRegister(input: unknown) {
     .where(eq(payrollPeriods.id, parsed.periodId))
     .limit(1);
 
-  if (!period) throw new Error('Payroll period not found');
+  if (!period) throw new Error("Payroll period not found");
 
   // Audit the export as a read-side event so COA can trace who pulled the
   // register. Fire-and-forget so we don't block the response on the audit
   // insert.
   void auditLog({
     userId: user.id,
-    action: 'export',
-    table: 'payroll_periods',
+    action: "export",
+    table: "payroll_periods",
     recordId: parsed.periodId,
-    newValues: { format: parsed.format, target: 'register' },
+    newValues: { format: parsed.format, target: "register" },
   });
 
   return {
@@ -678,7 +965,7 @@ function computeYearsInService(dateHired: string): number {
 }
 
 function buildZeroResult(input: PayrollInput): PayrollResult {
-  const zero = '0.00';
+  const zero = "0.00";
   return {
     input,
     earnings: {

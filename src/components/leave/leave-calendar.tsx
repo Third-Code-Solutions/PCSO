@@ -5,9 +5,9 @@
  * Highlights weekends and Philippine holidays.
  */
 
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo } from "react";
 import {
   format,
   startOfMonth,
@@ -19,35 +19,35 @@ import {
   isSameMonth,
   isSameDay,
   isWeekend,
-} from 'date-fns';
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { LEAVE_TYPES } from '@/lib/constants/leave-types';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
-import { cn } from '@/lib/utils/cn';
-import type { CalendarLeaveEntry } from '@/app/(dashboard)/leave/queries';
+} from "date-fns";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
+import { cn } from "@/lib/utils/cn";
+import type { CalendarLeaveEntry } from "@/app/(dashboard)/leave/queries";
 
 // ---------------------------------------------------------------------------
 // Color mapping per leave type
 // ---------------------------------------------------------------------------
 
 const LEAVE_TYPE_COLORS: Record<string, string> = {
-  VL: 'bg-senate-navy text-white',
-  SL: 'bg-emerald-700 text-white',
-  ML: 'bg-pink-600 text-white',
-  PL: 'bg-sky-600 text-white',
-  SPL: 'bg-violet-600 text-white',
-  FL: 'bg-amber-600 text-white',
-  SOLO: 'bg-orange-600 text-white',
-  SLW: 'bg-rose-600 text-white',
-  REHAB: 'bg-teal-600 text-white',
-  STUDY: 'bg-indigo-600 text-white',
-  TERMINAL: 'bg-gray-600 text-white',
+  VL: "bg-pcso-navy text-white",
+  SL: "bg-emerald-700 text-white",
+  ML: "bg-pink-600 text-white",
+  PL: "bg-sky-600 text-white",
+  SPL: "bg-violet-600 text-white",
+  FL: "bg-amber-600 text-white",
+  SOLO: "bg-orange-600 text-white",
+  SLW: "bg-rose-600 text-white",
+  REHAB: "bg-teal-600 text-white",
+  STUDY: "bg-indigo-600 text-white",
+  TERMINAL: "bg-gray-600 text-white",
 };
 
 function getLeaveColor(code: LeaveTypeCode): string {
-  return LEAVE_TYPE_COLORS[code] ?? 'bg-gray-400 text-white';
+  return LEAVE_TYPE_COLORS[code] ?? "bg-gray-400 text-white";
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ export function LeaveCalendar({
       const end = new Date(entry.endDate);
       const span = eachDayOfInterval({ start, end });
       for (const day of span) {
-        const key = format(day, 'yyyy-MM-dd');
+        const key = format(day, "yyyy-MM-dd");
         const existing = map.get(key) ?? [];
         existing.push(entry);
         map.set(key, existing);
@@ -114,16 +114,16 @@ export function LeaveCalendar({
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
       {/* Calendar Header */}
-      <div className="flex items-center justify-between border-b bg-senate-navy px-5 py-4">
-        <h2 className="text-base font-semibold text-senate-cream">
-          {format(currentMonth, 'MMMM yyyy')}
+      <div className="flex items-center justify-between border-b bg-pcso-navy px-5 py-4">
+        <h2 className="text-base font-semibold text-pcso-cream">
+          {format(currentMonth, "MMMM yyyy")}
         </h2>
         {!hideControls && (
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
-              className="text-senate-cream hover:bg-senate-navy-light h-8 w-8 p-0"
+              className="text-pcso-cream hover:bg-pcso-navy-light h-8 w-8 p-0"
               onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
               aria-label="Previous month"
             >
@@ -132,7 +132,7 @@ export function LeaveCalendar({
             <Button
               variant="ghost"
               size="sm"
-              className="text-senate-cream hover:bg-senate-navy-light h-8 w-8 p-0"
+              className="text-pcso-cream hover:bg-pcso-navy-light h-8 w-8 p-0"
               onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
               aria-label="Next month"
             >
@@ -144,7 +144,7 @@ export function LeaveCalendar({
 
       {/* Day-of-week headers */}
       <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
           <div key={d} className="py-2">
             {d}
           </div>
@@ -155,12 +155,15 @@ export function LeaveCalendar({
       <div className="grid grid-cols-7">
         {/* Leading empty cells */}
         {Array.from({ length: startPadding }).map((_, i) => (
-          <div key={`pad-${i}`} className="min-h-[90px] border-b border-r bg-muted/10" />
+          <div
+            key={`pad-${i}`}
+            className="min-h-[90px] border-b border-r bg-muted/10"
+          />
         ))}
 
         {/* Day cells */}
         {days.map((day) => {
-          const dateKey = format(day, 'yyyy-MM-dd');
+          const dateKey = format(day, "yyyy-MM-dd");
           const dayEntries = leavesByDate.get(dateKey) ?? [];
           const holidayName = holidaysByDate.get(dateKey);
           const isToday = isSameDay(day, today);
@@ -171,26 +174,26 @@ export function LeaveCalendar({
             <div
               key={dateKey}
               className={cn(
-                'min-h-[90px] border-b border-r p-1.5',
-                'transition-colors',
-                !isCurrentMonth && 'bg-muted/20 opacity-50',
-                isWeekendDay && 'bg-muted/10',
-                isToday && 'ring-2 ring-inset ring-senate-gold',
+                "min-h-[90px] border-b border-r p-1.5",
+                "transition-colors",
+                !isCurrentMonth && "bg-muted/20 opacity-50",
+                isWeekendDay && "bg-muted/10",
+                isToday && "ring-2 ring-inset ring-pcso-gold",
               )}
             >
               {/* Date number */}
               <div className="mb-1 flex items-center justify-between">
                 <span
                   className={cn(
-                    'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium',
+                    "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
                     isToday
-                      ? 'bg-senate-navy text-white'
+                      ? "bg-pcso-navy text-white"
                       : isWeekendDay
-                        ? 'text-muted-foreground'
-                        : 'text-foreground',
+                        ? "text-muted-foreground"
+                        : "text-foreground",
                   )}
                 >
-                  {format(day, 'd')}
+                  {format(day, "d")}
                 </span>
               </div>
 
@@ -207,12 +210,12 @@ export function LeaveCalendar({
                   <div
                     key={`${entry.employeeId}-${idx}`}
                     className={cn(
-                      'truncate rounded px-1 py-0.5 text-[10px] font-medium leading-snug',
+                      "truncate rounded px-1 py-0.5 text-[10px] font-medium leading-snug",
                       getLeaveColor(entry.leaveTypeCode),
                     )}
                     title={`${entry.fullName} — ${LEAVE_TYPES[entry.leaveTypeCode]?.label ?? entry.leaveTypeCode}`}
                   >
-                    {entry.fullName.split(',')[0]}
+                    {entry.fullName.split(",")[0]}
                   </div>
                 ))}
                 {dayEntries.length > 3 && (
@@ -231,7 +234,10 @@ export function LeaveCalendar({
         {Object.entries(LEAVE_TYPES).map(([code, def]) => (
           <div key={code} className="flex items-center gap-1">
             <span
-              className={cn('h-3 w-3 rounded-sm', getLeaveColor(code as LeaveTypeCode))}
+              className={cn(
+                "h-3 w-3 rounded-sm",
+                getLeaveColor(code as LeaveTypeCode),
+              )}
             />
             <span className="text-xs text-muted-foreground">{def.code}</span>
           </div>

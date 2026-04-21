@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import * as React from "react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -10,14 +10,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface RateField {
   label: string;
   key: string;
-  format?: 'percent' | 'money';
+  format?: "percent" | "money";
 }
 
 export interface RateHistoryEntry {
@@ -36,16 +36,16 @@ interface RateHistoryCardProps {
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
-function formatValue(value: string, format: RateField['format']): string {
-  if (!value) return '—';
+function formatValue(value: string, format: RateField["format"]): string {
+  if (!value) return "—";
   const num = parseFloat(value);
   if (isNaN(num)) return value;
 
-  if (format === 'percent') {
+  if (format === "percent") {
     return `${(num * 100).toFixed(2)}%`;
   }
-  if (format === 'money') {
-    return `₱${num.toLocaleString('en-PH', {
+  if (format === "money") {
+    return `₱${num.toLocaleString("en-PH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
@@ -71,7 +71,9 @@ export function RateHistoryCard({
           )}
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">No rate history found.</p>
+          <p className="text-sm text-muted-foreground">
+            No rate history found.
+          </p>
         </CardContent>
       </Card>
     );
@@ -103,18 +105,20 @@ export function RateHistoryCard({
               {history.map((entry) => (
                 <TableRow
                   key={entry.id}
-                  className={entry.isCurrent ? 'bg-senate-cream/40' : undefined}
+                  className={entry.isCurrent ? "bg-pcso-cream/40" : undefined}
                 >
                   <TableCell className="font-medium">
-                    {new Date(entry.effectiveDate + 'T00:00:00').toLocaleDateString('en-PH', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
+                    {new Date(
+                      entry.effectiveDate + "T00:00:00",
+                    ).toLocaleDateString("en-PH", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
                     })}
                   </TableCell>
                   <TableCell>
                     {entry.isCurrent ? (
-                      <Badge className="bg-senate-gold text-senate-navy text-xs hover:bg-senate-gold">
+                      <Badge className="bg-pcso-gold text-pcso-navy text-xs hover:bg-pcso-gold">
                         Current
                       </Badge>
                     ) : (
@@ -124,8 +128,11 @@ export function RateHistoryCard({
                     )}
                   </TableCell>
                   {fields.map((f) => (
-                    <TableCell key={f.key} className="text-right font-mono text-sm">
-                      {formatValue(entry.values[f.key] ?? '', f.format)}
+                    <TableCell
+                      key={f.key}
+                      className="text-right font-mono text-sm"
+                    >
+                      {formatValue(entry.values[f.key] ?? "", f.format)}
                     </TableCell>
                   ))}
                 </TableRow>

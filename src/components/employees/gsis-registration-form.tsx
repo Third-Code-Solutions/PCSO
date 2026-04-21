@@ -1,13 +1,19 @@
-'use client';
+"use client";
 
-import { useTransition } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { toast } from 'sonner';
-import { GsisRegistrationSchema, type GsisRegistrationInput } from '@/lib/validations/gsis';
-import { createGsisRegistration, updateGsisRegistration } from '@/app/(dashboard)/remittances/gsis/actions';
-import { Button } from '@/components/ui/button';
-import type { GsisRegistration } from '@/lib/db/schema/gsis';
+import { useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import {
+  GsisRegistrationSchema,
+  type GsisRegistrationInput,
+} from "@/lib/validations/gsis";
+import {
+  createGsisRegistration,
+  updateGsisRegistration,
+} from "@/app/(dashboard)/remittances/gsis/actions";
+import { Button } from "@/components/ui/button";
+import type { GsisRegistration } from "@/lib/db/schema/gsis";
 
 // ─── Field components ─────────────────────────────────────────────────────────
 
@@ -23,7 +29,11 @@ function Field({ label, error, children, required }: FieldProps) {
     <div className="space-y-1">
       <label className="block text-sm font-medium text-zinc-700">
         {label}
-        {required && <span className="ml-0.5 text-red-500" aria-hidden>*</span>}
+        {required && (
+          <span className="ml-0.5 text-red-500" aria-hidden>
+            *
+          </span>
+        )}
       </label>
       {children}
       {error && <p className="text-xs text-red-600">{error}</p>}
@@ -32,9 +42,9 @@ function Field({ label, error, children, required }: FieldProps) {
 }
 
 const inputClass =
-  'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 ' +
-  'placeholder:text-zinc-400 focus:border-senate-navy focus:outline-none focus:ring-2 ' +
-  'focus:ring-senate-navy/20 disabled:cursor-not-allowed disabled:bg-zinc-50';
+  "w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 " +
+  "placeholder:text-zinc-400 focus:border-pcso-navy focus:outline-none focus:ring-2 " +
+  "focus:ring-pcso-navy/20 disabled:cursor-not-allowed disabled:bg-zinc-50";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -61,13 +71,13 @@ export function GsisRegistrationForm({
     resolver: zodResolver(GsisRegistrationSchema),
     defaultValues: {
       employeeId,
-      gsisNo: existing?.gsisNo ?? '',
-      status: existing?.status ?? 'pending',
-      registeredDate: existing?.registeredDate ?? '',
-      governmentServiceStartDate: existing?.governmentServiceStartDate ?? '',
+      gsisNo: existing?.gsisNo ?? "",
+      status: existing?.status ?? "pending",
+      registeredDate: existing?.registeredDate ?? "",
+      governmentServiceStartDate: existing?.governmentServiceStartDate ?? "",
       isCompulsory: existing?.isCompulsory ?? true,
       enrolledInRetirementFund: existing?.enrolledInRetirementFund ?? false,
-      notes: existing?.notes ?? '',
+      notes: existing?.notes ?? "",
     },
   });
 
@@ -76,14 +86,15 @@ export function GsisRegistrationForm({
       try {
         if (isEdit && existing) {
           await updateGsisRegistration({ ...data, id: existing.id });
-          toast.success('GSIS registration updated.');
+          toast.success("GSIS registration updated.");
         } else {
           await createGsisRegistration(data);
-          toast.success('GSIS registration created.');
+          toast.success("GSIS registration created.");
         }
         onSuccess?.();
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'An error occurred.';
+        const message =
+          err instanceof Error ? err.message : "An error occurred.";
         toast.error(message);
       }
     });
@@ -92,12 +103,12 @@ export function GsisRegistrationForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {/* Hidden employee ID */}
-      <input type="hidden" {...register('employeeId')} />
+      <input type="hidden" {...register("employeeId")} />
 
       {/* GSIS Number */}
       <Field label="GSIS Number" error={errors.gsisNo?.message} required>
         <input
-          {...register('gsisNo')}
+          {...register("gsisNo")}
           type="text"
           className={inputClass}
           placeholder="11-digit GSIS membership number"
@@ -107,7 +118,7 @@ export function GsisRegistrationForm({
 
       {/* Status */}
       <Field label="Membership Status" error={errors.status?.message} required>
-        <select {...register('status')} className={inputClass}>
+        <select {...register("status")} className={inputClass}>
           <option value="pending">Pending</option>
           <option value="registered">Registered</option>
           <option value="inactive">Inactive</option>
@@ -121,16 +132,19 @@ export function GsisRegistrationForm({
         required
       >
         <input
-          {...register('governmentServiceStartDate')}
+          {...register("governmentServiceStartDate")}
           type="date"
           className={inputClass}
         />
       </Field>
 
       {/* Registered Date */}
-      <Field label="GSIS Registration Date" error={errors.registeredDate?.message}>
+      <Field
+        label="GSIS Registration Date"
+        error={errors.registeredDate?.message}
+      >
         <input
-          {...register('registeredDate')}
+          {...register("registeredDate")}
           type="date"
           className={inputClass}
         />
@@ -147,9 +161,9 @@ export function GsisRegistrationForm({
 
         <label className="flex items-start gap-3">
           <input
-            {...register('isCompulsory')}
+            {...register("isCompulsory")}
             type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-senate-navy focus:ring-senate-navy/20"
+            className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-pcso-navy focus:ring-pcso-navy/20"
           />
           <span className="text-sm text-zinc-700">
             Compulsory member
@@ -161,9 +175,9 @@ export function GsisRegistrationForm({
 
         <label className="flex items-start gap-3">
           <input
-            {...register('enrolledInRetirementFund')}
+            {...register("enrolledInRetirementFund")}
             type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-senate-navy focus:ring-senate-navy/20"
+            className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-pcso-navy focus:ring-pcso-navy/20"
           />
           <span className="text-sm text-zinc-700">
             Enrolled in GSIS Retirement Fund
@@ -177,7 +191,7 @@ export function GsisRegistrationForm({
       {/* Notes */}
       <Field label="Notes" error={errors.notes?.message}>
         <textarea
-          {...register('notes')}
+          {...register("notes")}
           rows={3}
           className={inputClass}
           placeholder="Optional remarks..."
@@ -187,7 +201,7 @@ export function GsisRegistrationForm({
       {/* Submit */}
       <div className="flex items-center justify-end gap-3 pt-2">
         <Button type="submit" disabled={isPending}>
-          {isPending ? 'Saving…' : isEdit ? 'Save Changes' : 'Register'}
+          {isPending ? "Saving…" : isEdit ? "Save Changes" : "Register"}
         </Button>
       </div>
     </form>

@@ -1,11 +1,11 @@
-import type { Metadata } from 'next';
-import { requirePermission } from '@/lib/auth/guards';
-import { db } from '@/lib/db';
-import { birTaxTables } from '@/lib/db/schema';
-import { desc } from 'drizzle-orm';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import type { Metadata } from "next";
+import { requirePermission } from "@/lib/auth/guards";
+import { db } from "@/lib/db";
+import { birTaxTables } from "@/lib/db/schema";
+import { desc } from "drizzle-orm";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -13,10 +13,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { BirTaxTableForm } from './form';
+} from "@/components/ui/table";
+import { BirTaxTableForm } from "./form";
 
-export const metadata: Metadata = { title: 'BIR Tax Tables — Admin' };
+export const metadata: Metadata = { title: "BIR Tax Tables — Admin" };
 
 interface BirGroup {
   effectiveDate: string;
@@ -35,7 +35,11 @@ async function getBirHistory(): Promise<BirGroup[]> {
   const rows = await db
     .select()
     .from(birTaxTables)
-    .orderBy(desc(birTaxTables.effectiveDate), birTaxTables.periodType, birTaxTables.bracketFrom);
+    .orderBy(
+      desc(birTaxTables.effectiveDate),
+      birTaxTables.periodType,
+      birTaxTables.bracketFrom,
+    );
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -52,7 +56,10 @@ async function getBirHistory(): Promise<BirGroup[]> {
         isCurrent: false,
         brackets: [],
       });
-      if (row.effectiveDate <= today && !currentDatePerType.has(row.periodType)) {
+      if (
+        row.effectiveDate <= today &&
+        !currentDatePerType.has(row.periodType)
+      ) {
         currentDatePerType.set(row.periodType, row.effectiveDate);
       }
     }
@@ -81,7 +88,7 @@ function formatMoney(val: string): string {
   const num = parseFloat(val);
   return isNaN(num)
     ? val
-    : `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    : `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatPercent(val: string): string {
@@ -90,7 +97,7 @@ function formatPercent(val: string): string {
 }
 
 export default async function BirRatePage() {
-  await requirePermission('admin', 'view');
+  await requirePermission("admin", "view");
   const history = await getBirHistory();
 
   return (
@@ -99,10 +106,10 @@ export default async function BirRatePage() {
         title="BIR TRAIN Tax Tables"
         description="Bureau of Internal Revenue withholding tax brackets under the Tax Reform for Acceleration and Inclusion (TRAIN) Law. Each update inserts a new effective-date set."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin', href: '/admin' },
-          { label: 'Rates', href: '/admin/rates' },
-          { label: 'BIR' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Admin", href: "/admin" },
+          { label: "Rates", href: "/admin/rates" },
+          { label: "BIR" },
         ]}
       />
 
@@ -116,16 +123,21 @@ export default async function BirRatePage() {
             <Card key={`${group.effectiveDate}::${group.periodType}`}>
               <CardHeader className="flex flex-row items-center gap-3 pb-2">
                 <CardTitle className="text-sm font-semibold">
-                  Effective{' '}
-                  {new Date(group.effectiveDate + 'T00:00:00').toLocaleDateString('en-PH', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}{' '}
-                  — {group.periodType === 'semi_monthly' ? 'Semi-Monthly' : 'Monthly'}
+                  Effective{" "}
+                  {new Date(
+                    group.effectiveDate + "T00:00:00",
+                  ).toLocaleDateString("en-PH", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}{" "}
+                  —{" "}
+                  {group.periodType === "semi_monthly"
+                    ? "Semi-Monthly"
+                    : "Monthly"}
                 </CardTitle>
                 {group.isCurrent && (
-                  <Badge className="bg-senate-gold text-senate-navy text-xs hover:bg-senate-gold">
+                  <Badge className="bg-pcso-gold text-pcso-navy text-xs hover:bg-pcso-gold">
                     Current
                   </Badge>
                 )}
@@ -143,12 +155,18 @@ export default async function BirRatePage() {
                   <TableBody>
                     {group.brackets.map((b) => (
                       <TableRow key={b.id}>
-                        <TableCell className="font-mono text-sm">{formatMoney(b.bracketFrom)}</TableCell>
                         <TableCell className="font-mono text-sm">
-                          {b.bracketTo ? formatMoney(b.bracketTo) : 'No limit'}
+                          {formatMoney(b.bracketFrom)}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatMoney(b.baseTax)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatPercent(b.excessRate)}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {b.bracketTo ? formatMoney(b.bracketTo) : "No limit"}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {formatMoney(b.baseTax)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {formatPercent(b.excessRate)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

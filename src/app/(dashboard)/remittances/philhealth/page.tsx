@@ -39,7 +39,7 @@ export default async function PhilHealthPage() {
         actions={
           <Link
             href="/remittances/philhealth/new"
-            className="rounded-lg bg-senate-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-senate-navy-light"
+            className="rounded-lg bg-pcso-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-pcso-navy-light"
           >
             Generate New Batch
           </Link>
@@ -63,7 +63,7 @@ export default async function PhilHealthPage() {
           </p>
           <Link
             href="/remittances/philhealth/new"
-            className="mt-4 inline-block rounded-lg bg-senate-navy px-4 py-2 text-sm font-semibold text-white"
+            className="mt-4 inline-block rounded-lg bg-pcso-navy px-4 py-2 text-sm font-semibold text-white"
           >
             Generate First Batch
           </Link>
@@ -72,7 +72,7 @@ export default async function PhilHealthPage() {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-senate-navy text-white">
+              <thead className="bg-pcso-navy text-white">
                 <tr>
                   {[
                     "Period",
@@ -138,7 +138,7 @@ export default async function PhilHealthPage() {
                     <td className="px-4 py-3">
                       <Link
                         href={`/remittances/philhealth/${b.id}`}
-                        className="text-xs font-semibold text-senate-navy hover:underline"
+                        className="text-xs font-semibold text-pcso-navy hover:underline"
                       >
                         View
                       </Link>

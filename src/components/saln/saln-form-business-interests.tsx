@@ -6,14 +6,14 @@
  * Fields: entity name, business address, nature, date acquired.
  */
 
-'use client';
+"use client";
 
-import { useFieldArray, useFormContext } from 'react-hook-form';
-import { PlusIcon, TrashIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import type { FileSalnInput } from '@/lib/validations/saln';
+import { useFieldArray, useFormContext } from "react-hook-form";
+import { PlusIcon, TrashIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { FileSalnInput } from "@/lib/validations/saln";
 
 export function SalnFormBusinessInterests() {
   const {
@@ -24,15 +24,15 @@ export function SalnFormBusinessInterests() {
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'businessInterests',
+    name: "businessInterests",
   });
 
   function addItem() {
     append({
-      entityName: '',
-      businessAddress: '',
-      nature: '',
-      dateAcquired: '',
+      entityName: "",
+      businessAddress: "",
+      nature: "",
+      dateAcquired: "",
     });
   }
 
@@ -44,7 +44,7 @@ export function SalnFormBusinessInterests() {
         <div>
           <h3
             id="business-interests-heading"
-            className="text-base font-semibold text-senate-navy"
+            className="text-base font-semibold text-pcso-navy"
           >
             E. Business Interests and Financial Connections
           </h3>
@@ -67,7 +67,9 @@ export function SalnFormBusinessInterests() {
 
       <div className="space-y-4">
         {fields.map((field, index) => {
-          const itemErrors = Array.isArray(fieldErrors) ? fieldErrors[index] : undefined;
+          const itemErrors = Array.isArray(fieldErrors)
+            ? fieldErrors[index]
+            : undefined;
 
           return (
             <div
@@ -104,7 +106,7 @@ export function SalnFormBusinessInterests() {
                   />
                   {itemErrors?.entityName && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.entityName.message ?? '')}
+                      {String(itemErrors.entityName.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -122,7 +124,7 @@ export function SalnFormBusinessInterests() {
                   />
                   {itemErrors?.nature && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.nature.message ?? '')}
+                      {String(itemErrors.nature.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -140,7 +142,7 @@ export function SalnFormBusinessInterests() {
                   />
                   {itemErrors?.businessAddress && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.businessAddress.message ?? '')}
+                      {String(itemErrors.businessAddress.message ?? "")}
                     </p>
                   )}
                 </div>
@@ -158,7 +160,7 @@ export function SalnFormBusinessInterests() {
                   />
                   {itemErrors?.dateAcquired && (
                     <p className="mt-1 text-xs text-destructive">
-                      {String(itemErrors.dateAcquired.message ?? '')}
+                      {String(itemErrors.dateAcquired.message ?? "")}
                     </p>
                   )}
                 </div>

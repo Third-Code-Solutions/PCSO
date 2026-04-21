@@ -65,7 +65,7 @@ export function CostBreakdownCard({
         ))}
         <div className="flex items-baseline justify-between pt-2">
           <dt className="text-sm font-semibold">Total budget</dt>
-          <dd className="text-xl font-bold tabular-nums text-senate-navy">
+          <dd className="text-xl font-bold tabular-nums text-pcso-navy">
             {php(total)}
           </dd>
         </div>

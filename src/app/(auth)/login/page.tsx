@@ -58,7 +58,7 @@ function Input({
       disabled={disabled}
       className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm
                  text-slate-900 placeholder:text-slate-400 shadow-sm
-                 focus:outline-none focus:ring-2 focus:ring-senate-navy focus:border-transparent
+                 focus:outline-none focus:ring-2 focus:ring-pcso-navy focus:border-transparent
                  disabled:opacity-60 disabled:cursor-not-allowed transition"
       {...rest}
     />
@@ -81,9 +81,9 @@ function SubmitButton({
     <button
       type="submit"
       disabled={loading}
-      className="w-full rounded-lg bg-senate-navy px-4 py-2.5 text-sm font-semibold text-white
-                 shadow-sm hover:bg-senate-navy-light focus:outline-none focus:ring-2
-                 focus:ring-senate-navy focus:ring-offset-2 disabled:opacity-60
+      className="w-full rounded-lg bg-pcso-navy px-4 py-2.5 text-sm font-semibold text-white
+                 shadow-sm hover:bg-pcso-navy-light focus:outline-none focus:ring-2
+                 focus:ring-pcso-navy focus:ring-offset-2 disabled:opacity-60
                  disabled:cursor-not-allowed transition-colors font-sans"
     >
       {loading ? (
@@ -191,8 +191,8 @@ function LoginPageInner() {
     <div className="space-y-8">
       {/* Heading */}
       <div>
-        <div className="w-8 h-0.5 bg-senate-gold mb-4" />
-        <h2 className="font-serif text-2xl font-semibold text-senate-navy leading-snug">
+        <div className="w-8 h-0.5 bg-pcso-gold mb-4" />
+        <h2 className="font-serif text-2xl font-semibold text-pcso-navy leading-snug">
           Welcome back
         </h2>
         <p className="mt-1.5 text-sm text-slate-500 font-sans">
@@ -220,7 +220,7 @@ function LoginPageInner() {
           }}
           className={`flex-1 rounded-md py-1.5 text-sm font-medium font-sans transition-colors ${
             mode === "password"
-              ? "bg-senate-navy text-white shadow-sm"
+              ? "bg-pcso-navy text-white shadow-sm"
               : "text-slate-500 hover:text-slate-700"
           }`}
         >
@@ -234,7 +234,7 @@ function LoginPageInner() {
           }}
           className={`flex-1 rounded-md py-1.5 text-sm font-medium font-sans transition-colors ${
             mode === "magic"
-              ? "bg-senate-navy text-white shadow-sm"
+              ? "bg-pcso-navy text-white shadow-sm"
               : "text-slate-500 hover:text-slate-700"
           }`}
         >
@@ -277,7 +277,7 @@ function LoginPageInner() {
               <Label htmlFor="pw-password">Password</Label>
               <Link
                 href="/forgot-password"
-                className="text-xs text-senate-navy hover:text-senate-gold transition-colors font-sans"
+                className="text-xs text-pcso-navy hover:text-pcso-gold transition-colors font-sans"
               >
                 Forgot password?
               </Link>
@@ -327,8 +327,8 @@ function LoginPageInner() {
 
       {/* Magic link success state */}
       {mode === "magic" && magicLinkSent && (
-        <div className="rounded-lg border border-senate-gold/40 bg-senate-gold/10 px-5 py-4 text-center space-y-2">
-          <p className="text-sm font-semibold text-senate-navy font-sans">
+        <div className="rounded-lg border border-pcso-gold/40 bg-pcso-gold/10 px-5 py-4 text-center space-y-2">
+          <p className="text-sm font-semibold text-pcso-navy font-sans">
             Check your inbox
           </p>
           <p className="text-sm text-slate-600 font-sans">
@@ -338,7 +338,7 @@ function LoginPageInner() {
           <button
             type="button"
             onClick={() => setMagicLinkSent(false)}
-            className="text-xs text-senate-navy underline hover:no-underline font-sans mt-1"
+            className="text-xs text-pcso-navy underline hover:no-underline font-sans mt-1"
           >
             Use a different email
           </button>

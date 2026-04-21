@@ -3,30 +3,30 @@
  * Shows all monthly withholding tax batches and allows generation of new ones.
  */
 
-'use client';
+"use client";
 
-import * as React from 'react';
-import { PageHeader } from '@/components/layouts/page-header';
+import * as React from "react";
+import { PageHeader } from "@/components/layouts/page-header";
 import {
   getBir1601CBatches,
   generateBir1601CBatch,
   markBir1601CFiled,
-} from '../actions';
+} from "../actions";
 
 type Batch = Awaited<ReturnType<typeof getBir1601CBatches>>[number];
 
 function fmt(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (!Number.isFinite(num)) return '₱0.00';
-  return `₱${num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (!Number.isFinite(num)) return "₱0.00";
+  return `₱${num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-600',
-  generated: 'bg-blue-100 text-blue-700',
-  submitted: 'bg-green-100 text-green-700',
-  acknowledged: 'bg-emerald-100 text-emerald-700',
-  failed: 'bg-red-100 text-red-700',
+  draft: "bg-gray-100 text-gray-600",
+  generated: "bg-blue-100 text-blue-700",
+  submitted: "bg-green-100 text-green-700",
+  acknowledged: "bg-emerald-100 text-emerald-700",
+  failed: "bg-red-100 text-red-700",
 };
 
 export default function Bir1601CPage() {
@@ -34,17 +34,17 @@ export default function Bir1601CPage() {
   const [loadingBatches, setLoadingBatches] = React.useState(true);
 
   // Generate form state
-  const [yearMonth, setYearMonth] = React.useState('');
-  const [remarks, setRemarks] = React.useState('');
+  const [yearMonth, setYearMonth] = React.useState("");
+  const [remarks, setRemarks] = React.useState("");
   const [generating, setGenerating] = React.useState(false);
   const [generateError, setGenerateError] = React.useState<string | null>(null);
 
   // Mark filed state
   const [filedBatch, setFiledBatch] = React.useState<Batch | null>(null);
-  const [referenceNo, setReferenceNo] = React.useState('');
-  const [filedDate, setFiledDate] = React.useState('');
-  const [taxDue, setTaxDue] = React.useState('');
-  const [taxPaid, setTaxPaid] = React.useState('');
+  const [referenceNo, setReferenceNo] = React.useState("");
+  const [filedDate, setFiledDate] = React.useState("");
+  const [taxDue, setTaxDue] = React.useState("");
+  const [taxPaid, setTaxPaid] = React.useState("");
   const [filingLoading, setFilingLoading] = React.useState(false);
   const [filingError, setFilingError] = React.useState<string | null>(null);
 
@@ -59,12 +59,17 @@ export default function Bir1601CPage() {
     setGenerateError(null);
     setGenerating(true);
     try {
-      const batch = await generateBir1601CBatch({ yearMonth, remarks: remarks || undefined });
+      const batch = await generateBir1601CBatch({
+        yearMonth,
+        remarks: remarks || undefined,
+      });
       setBatches((prev) => [batch, ...prev]);
-      setYearMonth('');
-      setRemarks('');
+      setYearMonth("");
+      setRemarks("");
     } catch (err: unknown) {
-      setGenerateError(err instanceof Error ? err.message : 'Failed to generate batch.');
+      setGenerateError(
+        err instanceof Error ? err.message : "Failed to generate batch.",
+      );
     } finally {
       setGenerating(false);
     }
@@ -85,12 +90,16 @@ export default function Bir1601CPage() {
       });
       setBatches((prev) =>
         prev.map((b): typeof b =>
-          b.id === filedBatch.id ? { ...b, status: 'submitted' as const, referenceNo } : b,
+          b.id === filedBatch.id
+            ? { ...b, status: "submitted" as const, referenceNo }
+            : b,
         ),
       );
       setFiledBatch(null);
     } catch (err: unknown) {
-      setFilingError(err instanceof Error ? err.message : 'Failed to mark as filed.');
+      setFilingError(
+        err instanceof Error ? err.message : "Failed to mark as filed.",
+      );
     } finally {
       setFilingLoading(false);
     }
@@ -105,17 +114,21 @@ export default function Bir1601CPage() {
       />
 
       <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        <strong>Deadline:</strong> Filed on or before the 10th day of the month following the
-        taxable month. Late filing subjects the taxpayer to surcharge, interest, and compromise
-        penalty under Sections 248–250, NIRC.
+        <strong>Deadline:</strong> Filed on or before the 10th day of the month
+        following the taxable month. Late filing subjects the taxpayer to
+        surcharge, interest, and compromise penalty under Sections 248–250,
+        NIRC.
       </div>
 
       {/* Generate form */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h3 className="mb-4 text-sm font-semibold text-senate-navy">
+        <h3 className="mb-4 text-sm font-semibold text-pcso-navy">
           Generate New 1601-C Batch
         </h3>
-        <form onSubmit={handleGenerate} className="flex flex-wrap items-end gap-4">
+        <form
+          onSubmit={handleGenerate}
+          className="flex flex-wrap items-end gap-4"
+        >
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500">
               Month (YYYY-MM)
@@ -124,7 +137,7 @@ export default function Bir1601CPage() {
               type="month"
               value={yearMonth}
               onChange={(e) => setYearMonth(e.target.value)}
-              className="mt-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-senate-navy focus:outline-none"
+              className="mt-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pcso-navy focus:outline-none"
               required
             />
           </div>
@@ -137,15 +150,15 @@ export default function Bir1601CPage() {
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               maxLength={200}
-              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-senate-navy focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pcso-navy focus:outline-none"
             />
           </div>
           <button
             type="submit"
             disabled={generating}
-            className="rounded-lg bg-senate-navy px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="rounded-lg bg-pcso-navy px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {generating ? 'Generating…' : 'Generate'}
+            {generating ? "Generating…" : "Generate"}
           </button>
         </form>
         {generateError && (
@@ -164,56 +177,67 @@ export default function Bir1601CPage() {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-senate-navy text-white">
+              <thead className="bg-pcso-navy text-white">
                 <tr>
-                  {['Period', 'Status', 'Employees', 'Total Tax Withheld', 'Reference No.', 'Created', ''].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider"
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    "Period",
+                    "Status",
+                    "Employees",
+                    "Total Tax Withheld",
+                    "Reference No.",
+                    "Created",
+                    "",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {batches.map((b, idx) => (
-                  <tr key={b.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <tr
+                    key={b.id}
+                    className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                  >
                     <td className="px-4 py-3 text-xs font-semibold text-gray-700">
                       {b.periodStart.substring(0, 7)}
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[b.status] ?? 'bg-gray-100 text-gray-500'}`}
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[b.status] ?? "bg-gray-100 text-gray-500"}`}
                       >
                         {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 tabular-nums">{b.employeeCount}</td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {b.employeeCount}
+                    </td>
                     <td className="px-4 py-3 tabular-nums font-semibold text-gray-900">
                       {fmt(b.totalAmount)}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">
-                      {b.referenceNo ?? '—'}
+                      {b.referenceNo ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400">
-                      {b.createdAt.toLocaleDateString('en-PH', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
+                      {b.createdAt.toLocaleDateString("en-PH", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
                       })}
                     </td>
                     <td className="px-4 py-3">
-                      {b.status === 'generated' && (
+                      {b.status === "generated" && (
                         <button
                           onClick={() => {
                             setFiledBatch(b);
                             setTaxDue(b.totalAmount);
                             setTaxPaid(b.totalAmount);
                           }}
-                          className="text-xs font-semibold text-senate-navy hover:underline"
+                          className="text-xs font-semibold text-pcso-navy hover:underline"
                         >
                           Mark Filed
                         </button>
@@ -231,7 +255,7 @@ export default function Bir1601CPage() {
       {filedBatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="mb-4 text-base font-semibold text-senate-navy">
+            <h3 className="mb-4 text-base font-semibold text-pcso-navy">
               Mark 1601-C as Filed — {filedBatch.periodStart.substring(0, 7)}
             </h3>
             <form onSubmit={handleMarkFiled} className="space-y-4">
@@ -243,7 +267,7 @@ export default function Bir1601CPage() {
                   type="text"
                   value={referenceNo}
                   onChange={(e) => setReferenceNo(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-senate-navy focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pcso-navy focus:outline-none"
                   required
                 />
               </div>
@@ -256,7 +280,7 @@ export default function Bir1601CPage() {
                     type="text"
                     value={taxDue}
                     onChange={(e) => setTaxDue(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-senate-navy focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-pcso-navy focus:outline-none"
                     required
                   />
                 </div>
@@ -268,7 +292,7 @@ export default function Bir1601CPage() {
                     type="text"
                     value={taxPaid}
                     onChange={(e) => setTaxPaid(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-senate-navy focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-pcso-navy focus:outline-none"
                     required
                   />
                 </div>
@@ -281,18 +305,20 @@ export default function Bir1601CPage() {
                   type="date"
                   value={filedDate}
                   onChange={(e) => setFiledDate(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-senate-navy focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-pcso-navy focus:outline-none"
                   required
                 />
               </div>
-              {filingError && <p className="text-sm text-red-600">{filingError}</p>}
+              {filingError && (
+                <p className="text-sm text-red-600">{filingError}</p>
+              )}
               <div className="flex gap-3">
                 <button
                   type="submit"
                   disabled={filingLoading}
-                  className="flex-1 rounded-lg bg-senate-navy py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="flex-1 rounded-lg bg-pcso-navy py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  {filingLoading ? 'Saving…' : 'Confirm Filing'}
+                  {filingLoading ? "Saving…" : "Confirm Filing"}
                 </button>
                 <button
                   type="button"

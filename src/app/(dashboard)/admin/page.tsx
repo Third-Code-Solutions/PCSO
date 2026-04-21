@@ -172,15 +172,15 @@ export default async function AdminHomePage() {
             className="group relative flex flex-col gap-3 rounded-lg border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
           >
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-md bg-senate-navy/10">
-                <Icon className="h-5 w-5 text-senate-navy" />
+              <span className="flex h-10 w-10 items-center justify-center rounded-md bg-pcso-navy/10">
+                <Icon className="h-5 w-5 text-pcso-navy" />
               </span>
               <div className="flex-1">
-                <h2 className="font-semibold text-foreground group-hover:text-senate-navy transition-colors">
+                <h2 className="font-semibold text-foreground group-hover:text-pcso-navy transition-colors">
                   {title}
                 </h2>
                 {stat && (
-                  <p className="text-xs font-medium text-senate-navy/70">
+                  <p className="text-xs font-medium text-pcso-navy/70">
                     {stat}
                   </p>
                 )}
@@ -200,7 +200,7 @@ export default async function AdminHomePage() {
           <h2 className="font-semibold">Recent Activity</h2>
           <Link
             href="/admin/audit-logs"
-            className="text-xs font-medium text-senate-navy hover:underline"
+            className="text-xs font-medium text-pcso-navy hover:underline"
           >
             View full log
           </Link>

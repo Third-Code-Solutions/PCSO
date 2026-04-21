@@ -5,13 +5,19 @@
  * Uses the same computation logic as the server action to keep UI and DB in sync.
  */
 
-'use client';
+"use client";
 
-import { useFormContext, useWatch } from 'react-hook-form';
-import { useMemo } from 'react';
-import { computeNetWorth, formatPeso } from '@/lib/utils/saln/net-worth';
-import type { FileSalnInput, RealAsset, PersonalProperty, Investment, Liability } from '@/lib/validations/saln';
-import { cn } from '@/lib/utils/cn';
+import { useFormContext, useWatch } from "react-hook-form";
+import { useMemo } from "react";
+import { computeNetWorth, formatPeso } from "@/lib/utils/saln/net-worth";
+import type {
+  FileSalnInput,
+  RealAsset,
+  PersonalProperty,
+  Investment,
+  Liability,
+} from "@/lib/validations/saln";
+import { cn } from "@/lib/utils/cn";
 
 interface NetWorthSummaryProps {
   className?: string;
@@ -20,10 +26,11 @@ interface NetWorthSummaryProps {
 export function NetWorthSummary({ className }: NetWorthSummaryProps) {
   const { control } = useFormContext<FileSalnInput>();
 
-  const realAssets = useWatch({ control, name: 'realAssets' }) ?? [];
-  const personalProperties = useWatch({ control, name: 'personalProperties' }) ?? [];
-  const investments = useWatch({ control, name: 'investments' }) ?? [];
-  const liabilities = useWatch({ control, name: 'liabilities' }) ?? [];
+  const realAssets = useWatch({ control, name: "realAssets" }) ?? [];
+  const personalProperties =
+    useWatch({ control, name: "personalProperties" }) ?? [];
+  const investments = useWatch({ control, name: "investments" }) ?? [];
+  const liabilities = useWatch({ control, name: "liabilities" }) ?? [];
 
   const summary = useMemo(() => {
     try {
@@ -35,12 +42,12 @@ export function NetWorthSummary({ className }: NetWorthSummaryProps) {
       );
     } catch {
       return {
-        totalRealAssets: '0.00',
-        totalPersonalProperties: '0.00',
-        totalInvestments: '0.00',
-        totalAssets: '0.00',
-        totalLiabilities: '0.00',
-        netWorth: '0.00',
+        totalRealAssets: "0.00",
+        totalPersonalProperties: "0.00",
+        totalInvestments: "0.00",
+        totalAssets: "0.00",
+        totalLiabilities: "0.00",
+        netWorth: "0.00",
       };
     }
   }, [realAssets, personalProperties, investments, liabilities]);
@@ -52,11 +59,11 @@ export function NetWorthSummary({ className }: NetWorthSummaryProps) {
     <aside
       aria-label="Net Worth Summary"
       className={cn(
-        'rounded-lg border border-senate-gold/40 bg-senate-cream p-5',
+        "rounded-lg border border-pcso-gold/40 bg-pcso-cream p-5",
         className,
       )}
     >
-      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-senate-navy">
+      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-pcso-navy">
         Net Worth Summary
       </h3>
 
@@ -83,10 +90,10 @@ export function NetWorthSummary({ className }: NetWorthSummaryProps) {
       </div>
 
       {/* Total Assets */}
-      <div className="my-3 border-t border-senate-gold/30 pt-3">
+      <div className="my-3 border-t border-pcso-gold/30 pt-3">
         <div className="flex justify-between text-sm font-semibold">
           <span className="text-foreground">Total Assets</span>
-          <span className="font-mono text-senate-navy">
+          <span className="font-mono text-pcso-navy">
             {formatPeso(summary.totalAssets)}
           </span>
         </div>
@@ -101,21 +108,19 @@ export function NetWorthSummary({ className }: NetWorthSummaryProps) {
       </div>
 
       {/* Net Worth */}
-      <div className="mt-3 rounded-md bg-senate-navy px-4 py-3">
+      <div className="mt-3 rounded-md bg-pcso-navy px-4 py-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-white">Net Worth</span>
           <span
             className={cn(
-              'font-mono text-base font-bold',
-              isNegative ? 'text-red-300' : 'text-senate-gold',
+              "font-mono text-base font-bold",
+              isNegative ? "text-red-300" : "text-pcso-gold",
             )}
           >
             {formatPeso(summary.netWorth)}
           </span>
         </div>
-        <p className="mt-1 text-xs text-white/50">
-          Assets minus Liabilities
-        </p>
+        <p className="mt-1 text-xs text-white/50">Assets minus Liabilities</p>
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">

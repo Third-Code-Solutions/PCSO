@@ -6,15 +6,27 @@
  * Access is restricted to super_admin only.
  */
 
-'use client';
+"use client";
 
-import { useState, useTransition } from 'react';
-import { toast } from 'sonner';
-import { CheckCircleIcon, XCircleIcon, ClockIcon, MailIcon, DownloadIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+import {
+  CheckCircleIcon,
+  XCircleIcon,
+  ClockIcon,
+  MailIcon,
+  DownloadIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -22,20 +34,22 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import type { ComplianceRow } from '@/app/(dashboard)/saln/queries';
-import type { SalnStatus } from '@/lib/validations/saln';
+} from "@/components/ui/table";
+import type { ComplianceRow } from "@/app/(dashboard)/saln/queries";
+import type { SalnStatus } from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type FilterStatus = 'all' | 'filed' | 'not_filed' | 'late';
+type FilterStatus = "all" | "filed" | "not_filed" | "late";
 
 interface ComplianceDashboardProps {
   rows: ComplianceRow[];
   year: number;
-  onSendReminders: (employeeIds: string[]) => Promise<{ sent: number; failed: number }>;
+  onSendReminders: (
+    employeeIds: string[],
+  ) => Promise<{ sent: number; failed: number }>;
   onExport: () => Promise<void>;
 }
 
@@ -54,7 +68,10 @@ function statusBadge(row: ComplianceRow) {
   }
   if (row.isLate) {
     return (
-      <Badge variant="outline" className="gap-1 border-orange-400 text-orange-600">
+      <Badge
+        variant="outline"
+        className="gap-1 border-orange-400 text-orange-600"
+      >
         <ClockIcon className="h-3 w-3" aria-hidden />
         Filed Late
       </Badge>
@@ -69,13 +86,13 @@ function statusBadge(row: ComplianceRow) {
 }
 
 function salnStatusLabel(status: SalnStatus | null): string {
-  if (!status) return '—';
+  if (!status) return "—";
   const labels: Record<SalnStatus, string> = {
-    draft: 'Draft',
-    submitted: 'Submitted',
-    received: 'Received',
-    verified: 'Verified',
-    deficient: 'Deficient',
+    draft: "Draft",
+    submitted: "Submitted",
+    received: "Received",
+    verified: "Verified",
+    deficient: "Deficient",
   };
   return labels[status] ?? status;
 }
@@ -91,23 +108,23 @@ export function ComplianceDashboard({
   onExport,
 }: ComplianceDashboardProps) {
   const [isPending, startTransition] = useTransition();
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
-  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
+  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Apply filters
   const filtered = rows.filter((row) => {
     const matchesSearch =
-      search === '' ||
+      search === "" ||
       row.employeeName.toLowerCase().includes(search.toLowerCase()) ||
       row.employeeNo.toLowerCase().includes(search.toLowerCase()) ||
       row.positionTitle.toLowerCase().includes(search.toLowerCase());
 
     const matchesStatus =
-      filterStatus === 'all' ||
-      (filterStatus === 'filed' && row.hasFiled && !row.isLate) ||
-      (filterStatus === 'not_filed' && !row.hasFiled) ||
-      (filterStatus === 'late' && row.isLate);
+      filterStatus === "all" ||
+      (filterStatus === "filed" && row.hasFiled && !row.isLate) ||
+      (filterStatus === "not_filed" && !row.hasFiled) ||
+      (filterStatus === "late" && row.isLate);
 
     return matchesSearch && matchesStatus;
   });
@@ -142,7 +159,10 @@ export function ComplianceDashboard({
   }
 
   function handleSendReminders() {
-    const ids = selected.size > 0 ? [...selected] : rows.filter((r) => !r.hasFiled).map((r) => r.employeeId);
+    const ids =
+      selected.size > 0
+        ? [...selected]
+        : rows.filter((r) => !r.hasFiled).map((r) => r.employeeId);
 
     startTransition(async () => {
       try {
@@ -155,8 +175,9 @@ export function ComplianceDashboard({
         });
         clearSelection();
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to send reminders.';
-        toast.error('Send failed', { description: message });
+        const message =
+          err instanceof Error ? err.message : "Failed to send reminders.";
+        toast.error("Send failed", { description: message });
       }
     });
   }
@@ -165,12 +186,12 @@ export function ComplianceDashboard({
     startTransition(async () => {
       try {
         await onExport();
-        toast.success('Export complete', {
-          description: 'SALN compliance list downloaded as CSV.',
+        toast.success("Export complete", {
+          description: "SALN compliance list downloaded as CSV.",
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Export failed.';
-        toast.error('Export failed', { description: message });
+        const message = err instanceof Error ? err.message : "Export failed.";
+        toast.error("Export failed", { description: message });
       }
     });
   }
@@ -181,7 +202,9 @@ export function ComplianceDashboard({
       <div className="grid gap-4 sm:grid-cols-4">
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">Total Employees</p>
-          <p className="mt-1 text-2xl font-bold text-senate-navy">{rows.length}</p>
+          <p className="mt-1 text-2xl font-bold text-pcso-navy">
+            {rows.length}
+          </p>
         </div>
         <div className="rounded-lg border border-green-200 bg-green-50 p-4">
           <p className="text-xs text-green-700">Filed On Time</p>
@@ -193,7 +216,9 @@ export function ComplianceDashboard({
         </div>
         <div className="rounded-lg border border-red-200 bg-red-50 p-4">
           <p className="text-xs text-red-700">Not Filed</p>
-          <p className="mt-1 text-2xl font-bold text-red-800">{totalNotFiled}</p>
+          <p className="mt-1 text-2xl font-bold text-red-800">
+            {totalNotFiled}
+          </p>
         </div>
       </div>
 
@@ -203,7 +228,9 @@ export function ComplianceDashboard({
           <span className="font-medium text-foreground">
             Compliance Rate — {year}
           </span>
-          <span className="font-semibold text-senate-navy">{complianceRate}%</span>
+          <span className="font-semibold text-pcso-navy">
+            {complianceRate}%
+          </span>
         </div>
         <div
           className="h-2.5 overflow-hidden rounded-full bg-muted"
@@ -214,7 +241,7 @@ export function ComplianceDashboard({
           aria-label={`${complianceRate}% compliance rate`}
         >
           <div
-            className="h-full rounded-full bg-senate-navy transition-all"
+            className="h-full rounded-full bg-pcso-navy transition-all"
             style={{ width: `${complianceRate}%` }}
           />
         </div>
@@ -272,7 +299,7 @@ export function ComplianceDashboard({
             <MailIcon className="mr-1.5 h-4 w-4" aria-hidden />
             {selected.size > 0
               ? `Send Reminders (${selected.size})`
-              : 'Remind All Non-Filers'}
+              : "Remind All Non-Filers"}
           </Button>
 
           <Button
@@ -311,7 +338,10 @@ export function ComplianceDashboard({
           <TableBody>
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={9}
+                  className="py-8 text-center text-muted-foreground"
+                >
                   No records found.
                 </TableCell>
               </TableRow>
@@ -319,7 +349,9 @@ export function ComplianceDashboard({
             {filtered.map((row) => (
               <TableRow
                 key={row.employeeId}
-                className={selected.has(row.employeeId) ? 'bg-muted/40' : undefined}
+                className={
+                  selected.has(row.employeeId) ? "bg-muted/40" : undefined
+                }
               >
                 <TableCell>
                   <input
@@ -331,26 +363,30 @@ export function ComplianceDashboard({
                     disabled={row.hasFiled}
                   />
                 </TableCell>
-                <TableCell className="font-mono text-sm">{row.employeeNo}</TableCell>
-                <TableCell className="font-medium">{row.employeeName}</TableCell>
+                <TableCell className="font-mono text-sm">
+                  {row.employeeNo}
+                </TableCell>
+                <TableCell className="font-medium">
+                  {row.employeeName}
+                </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {row.positionTitle}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {row.officeName ?? '—'}
+                  {row.officeName ?? "—"}
                 </TableCell>
                 <TableCell>{statusBadge(row)}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {salnStatusLabel(row.status)}
                 </TableCell>
                 <TableCell className="font-mono text-sm text-muted-foreground">
-                  {row.dateFiled ?? '—'}
+                  {row.dateFiled ?? "—"}
                 </TableCell>
                 <TableCell>
                   {row.submissionId && (
                     <a
                       href={`/saln/${row.submissionId}`}
-                      className="text-xs text-senate-navy underline hover:no-underline"
+                      className="text-xs text-pcso-navy underline hover:no-underline"
                     >
                       View
                     </a>

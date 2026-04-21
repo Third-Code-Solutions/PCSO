@@ -68,7 +68,7 @@ export default async function CatalogListPage() {
             <Button
               size="sm"
               asChild
-              className="bg-senate-navy hover:bg-senate-navy-light text-senate-cream"
+              className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream"
             >
               <Link href="/learning/catalog/new">
                 <PlusIcon className="mr-1.5 h-4 w-4" />

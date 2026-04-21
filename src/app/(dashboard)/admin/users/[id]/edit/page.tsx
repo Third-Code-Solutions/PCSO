@@ -1,24 +1,30 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { updateUser } from '../../actions';
-import { SYSTEM_ROLE_VALUES } from '@/lib/validations/admin';
-import { createBrowserClient } from '@/lib/supabase/client';
+import * as React from "react";
+import { useRouter, useParams } from "next/navigation";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import { updateUser } from "../../actions";
+import { SYSTEM_ROLE_VALUES } from "@/lib/validations/admin";
+import { createBrowserClient } from "@/lib/supabase/client";
 
-const ROLE_LABELS: Record<typeof SYSTEM_ROLE_VALUES[number], string> = {
-  super_admin: 'Super Admin',
-  hr_admin: 'HR Admin',
-  payroll_admin: 'Payroll Admin',
-  leave_approver: 'Leave Approver',
-  viewer: 'Viewer',
-  employee_self_service: 'Employee (Self-Service)',
+const ROLE_LABELS: Record<(typeof SYSTEM_ROLE_VALUES)[number], string> = {
+  super_admin: "Super Admin",
+  hr_admin: "HR Admin",
+  payroll_admin: "Payroll Admin",
+  leave_approver: "Leave Approver",
+  viewer: "Viewer",
+  employee_self_service: "Employee (Self-Service)",
 };
 
 export default function EditUserPage() {
@@ -26,8 +32,10 @@ export default function EditUserPage() {
   const { id } = useParams<{ id: string }>();
   const [pending, setPending] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
-  const [role, setRole] = React.useState<typeof SYSTEM_ROLE_VALUES[number]>('employee_self_service');
-  const [officeId, setOfficeId] = React.useState('');
+  const [role, setRole] = React.useState<(typeof SYSTEM_ROLE_VALUES)[number]>(
+    "employee_self_service",
+  );
+  const [officeId, setOfficeId] = React.useState("");
 
   // Load current user values so the form is pre-populated.
   React.useEffect(() => {
@@ -35,17 +43,20 @@ export default function EditUserPage() {
     void (async () => {
       try {
         const { data, error } = await supabase
-          .from('system_users')
-          .select('role, office_id')
-          .eq('id', id)
+          .from("system_users")
+          .select("role, office_id")
+          .eq("id", id)
           .single();
 
         if (error || !data) {
-          toast.error('Could not load user details.');
+          toast.error("Could not load user details.");
           return;
         }
-        setRole((data.role as typeof SYSTEM_ROLE_VALUES[number]) ?? 'employee_self_service');
-        setOfficeId((data.office_id as string | null) ?? '');
+        setRole(
+          (data.role as (typeof SYSTEM_ROLE_VALUES)[number]) ??
+            "employee_self_service",
+        );
+        setOfficeId((data.office_id as string | null) ?? "");
       } finally {
         setLoading(false);
       }
@@ -60,13 +71,14 @@ export default function EditUserPage() {
       await updateUser({
         id,
         role,
-        officeId: officeId.trim() !== '' ? officeId.trim() : null,
+        officeId: officeId.trim() !== "" ? officeId.trim() : null,
       });
-      toast.success('User updated successfully');
+      toast.success("User updated successfully");
       router.push(`/admin/users/${id}`);
     } catch (err) {
-      toast.error('Error', {
-        description: err instanceof Error ? err.message : 'Failed to update user.',
+      toast.error("Error", {
+        description:
+          err instanceof Error ? err.message : "Failed to update user.",
       });
     } finally {
       setPending(false);
@@ -87,10 +99,10 @@ export default function EditUserPage() {
         title="Edit User"
         description="Update role and office scope assignment."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin', href: '/admin' },
-          { label: 'Users', href: '/admin/users' },
-          { label: 'Edit' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Admin", href: "/admin" },
+          { label: "Users", href: "/admin/users" },
+          { label: "Edit" },
         ]}
       />
 
@@ -99,7 +111,9 @@ export default function EditUserPage() {
           <Label htmlFor="role">Role</Label>
           <Select
             value={role}
-            onValueChange={(v) => setRole(v as typeof SYSTEM_ROLE_VALUES[number])}
+            onValueChange={(v) =>
+              setRole(v as (typeof SYSTEM_ROLE_VALUES)[number])
+            }
             name="role"
           >
             <SelectTrigger id="role">
@@ -133,9 +147,9 @@ export default function EditUserPage() {
           <Button
             type="submit"
             disabled={pending}
-            className="bg-senate-navy text-white hover:bg-senate-navy-light"
+            className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
           >
-            {pending ? 'Saving…' : 'Save changes'}
+            {pending ? "Saving…" : "Save changes"}
           </Button>
           <Button
             type="button"

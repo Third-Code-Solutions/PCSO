@@ -1,4 +1,4 @@
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Loading placeholder for the plantilla list. Mirrors the column shape of
@@ -24,12 +24,19 @@ export function PlantillaListSkeleton({ rows = 10 }: { rows?: number }) {
 
       {/* Table */}
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
-        <div className="grid grid-cols-8 gap-3 bg-senate-navy/5 px-4 py-3 text-xs font-semibold">
-          {['Item No.', 'Position', 'SG', 'Salary', 'Office', 'Incumbent', 'Status', ''].map(
-            (label, idx) => (
-              <span key={idx}>{label}</span>
-            ),
-          )}
+        <div className="grid grid-cols-8 gap-3 bg-pcso-navy/5 px-4 py-3 text-xs font-semibold">
+          {[
+            "Item No.",
+            "Position",
+            "SG",
+            "Salary",
+            "Office",
+            "Incumbent",
+            "Status",
+            "",
+          ].map((label, idx) => (
+            <span key={idx}>{label}</span>
+          ))}
         </div>
         {Array.from({ length: rows }).map((_, i) => (
           <div

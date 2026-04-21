@@ -4,18 +4,22 @@
  * Updates the adjectival label in real time as the user types, using CSC bands.
  */
 
-'use client';
+"use client";
 
-import * as React from 'react';
-import { cn } from '@/lib/utils/cn';
-import { ratingToAdjectival } from '@/lib/utils/performance/rating';
-import { RATING_BANDS, MIN_RATING, MAX_RATING } from '@/lib/constants/performance';
-import type { AdjectivalRating } from '@/lib/constants/performance';
+import * as React from "react";
+import { cn } from "@/lib/utils/cn";
+import { ratingToAdjectival } from "@/lib/utils/performance/rating";
+import {
+  RATING_BANDS,
+  MIN_RATING,
+  MAX_RATING,
+} from "@/lib/constants/performance";
+import type { AdjectivalRating } from "@/lib/constants/performance";
 
 interface RatingInputProps {
   id?: string;
-  value: number | '';
-  onChange: (value: number | '') => void;
+  value: number | "";
+  onChange: (value: number | "") => void;
   disabled?: boolean;
   className?: string;
   label?: string;
@@ -23,11 +27,11 @@ interface RatingInputProps {
 }
 
 const ADJECTIVAL_COLOR: Record<AdjectivalRating, string> = {
-  outstanding: 'text-emerald-700 bg-emerald-50',
-  very_satisfactory: 'text-blue-700 bg-blue-50',
-  satisfactory: 'text-amber-700 bg-amber-50',
-  unsatisfactory: 'text-orange-700 bg-orange-50',
-  poor: 'text-red-700 bg-red-50',
+  outstanding: "text-emerald-700 bg-emerald-50",
+  very_satisfactory: "text-blue-700 bg-blue-50",
+  satisfactory: "text-amber-700 bg-amber-50",
+  unsatisfactory: "text-orange-700 bg-orange-50",
+  poor: "text-red-700 bg-red-50",
 };
 
 export function RatingInput({
@@ -39,15 +43,15 @@ export function RatingInput({
   label,
   showAdjectival = true,
 }: RatingInputProps) {
-  const numerical = typeof value === 'number' ? value : null;
+  const numerical = typeof value === "number" ? value : null;
   const adjectival = numerical !== null ? ratingToAdjectival(numerical) : null;
   const isOutOfRange =
     numerical !== null && (numerical < MIN_RATING || numerical > MAX_RATING);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value;
-    if (raw === '') {
-      onChange('');
+    if (raw === "") {
+      onChange("");
       return;
     }
     const parsed = parseFloat(raw);
@@ -57,7 +61,7 @@ export function RatingInput({
   }
 
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
+    <div className={cn("flex flex-col gap-1", className)}>
       {label && (
         <label
           htmlFor={id}
@@ -74,18 +78,20 @@ export function RatingInput({
           step="0.001"
           min={MIN_RATING}
           max={MAX_RATING}
-          value={value === '' ? '' : value}
+          value={value === "" ? "" : value}
           onChange={handleChange}
           disabled={disabled}
-          aria-label={label ?? 'Rating input'}
-          aria-describedby={showAdjectival && adjectival ? `${id}-adjectival` : undefined}
+          aria-label={label ?? "Rating input"}
+          aria-describedby={
+            showAdjectival && adjectival ? `${id}-adjectival` : undefined
+          }
           className={cn(
-            'w-24 rounded-md border px-2.5 py-1.5 text-sm font-tabular-nums',
-            'focus:outline-none focus:ring-2 focus:ring-senate-navy focus:ring-offset-1',
-            'disabled:cursor-not-allowed disabled:opacity-50',
+            "w-24 rounded-md border px-2.5 py-1.5 text-sm font-tabular-nums",
+            "focus:outline-none focus:ring-2 focus:ring-pcso-navy focus:ring-offset-1",
+            "disabled:cursor-not-allowed disabled:opacity-50",
             isOutOfRange
-              ? 'border-red-300 bg-red-50 text-red-700'
-              : 'border-input bg-background text-foreground',
+              ? "border-red-300 bg-red-50 text-red-700"
+              : "border-input bg-background text-foreground",
           )}
         />
 
@@ -93,24 +99,25 @@ export function RatingInput({
           <span
             id={`${id}-adjectival`}
             className={cn(
-              'inline-flex items-center rounded px-2 py-1 text-xs font-medium transition-colors',
+              "inline-flex items-center rounded px-2 py-1 text-xs font-medium transition-colors",
               adjectival
                 ? ADJECTIVAL_COLOR[adjectival]
-                : 'text-muted-foreground bg-muted',
+                : "text-muted-foreground bg-muted",
             )}
           >
             {adjectival
               ? RATING_BANDS[adjectival].label
               : isOutOfRange
-              ? 'Out of range'
-              : 'Enter rating'}
+                ? "Out of range"
+                : "Enter rating"}
           </span>
         )}
       </div>
 
       {isOutOfRange && (
         <p className="text-xs text-red-600" role="alert">
-          Rating must be between {MIN_RATING.toFixed(3)} and {MAX_RATING.toFixed(3)}.
+          Rating must be between {MIN_RATING.toFixed(3)} and{" "}
+          {MAX_RATING.toFixed(3)}.
         </p>
       )}
     </div>

@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
-import { Trash2, Pencil } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import * as React from "react";
+import Link from "next/link";
+import { Trash2, Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -12,11 +12,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { toast } from 'sonner';
-import { deleteHoliday } from '@/app/(dashboard)/admin/holidays/actions';
-import type { HolidayType } from '@/lib/db/schema/holidays';
-import { HolidayTypeLabels } from '@/lib/validations/holidays';
+} from "@/components/ui/table";
+import { toast } from "sonner";
+import { deleteHoliday } from "@/app/(dashboard)/admin/holidays/actions";
+import type { HolidayType } from "@/lib/db/schema/holidays";
+import { HolidayTypeLabels } from "@/lib/validations/holidays";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -36,19 +36,33 @@ interface HolidayCalendarProps {
 }
 
 const TYPE_COLORS: Record<HolidayType, string> = {
-  regular: 'bg-red-100 text-red-800',
-  special_non_working: 'bg-amber-100 text-amber-800',
-  special_working: 'bg-green-100 text-green-800',
+  regular: "bg-red-100 text-red-800",
+  special_non_working: "bg-amber-100 text-amber-800",
+  special_working: "bg-green-100 text-green-800",
 };
 
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function HolidayCalendar({ holidays, year, canDelete = false }: HolidayCalendarProps) {
+export function HolidayCalendar({
+  holidays,
+  year,
+  canDelete = false,
+}: HolidayCalendarProps) {
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
 
   // Group holidays by month
@@ -67,10 +81,11 @@ export function HolidayCalendar({ holidays, year, canDelete = false }: HolidayCa
     setDeletingId(id);
     try {
       await deleteHoliday(id);
-      toast.success('Holiday deleted', { description: name });
+      toast.success("Holiday deleted", { description: name });
     } catch (err) {
-      toast.error('Error', {
-        description: err instanceof Error ? err.message : 'Failed to delete holiday.',
+      toast.error("Error", {
+        description:
+          err instanceof Error ? err.message : "Failed to delete holiday.",
       });
     } finally {
       setDeletingId(null);
@@ -80,8 +95,8 @@ export function HolidayCalendar({ holidays, year, canDelete = false }: HolidayCa
   if (holidays.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        No holidays declared for {year}.{' '}
-        <Link href="/admin/holidays/new" className="text-senate-navy underline">
+        No holidays declared for {year}.{" "}
+        <Link href="/admin/holidays/new" className="text-pcso-navy underline">
           Add the first holiday
         </Link>
         .
@@ -100,7 +115,7 @@ export function HolidayCalendar({ holidays, year, canDelete = false }: HolidayCa
           <section key={monthNum} aria-labelledby={`month-${monthNum}-heading`}>
             <h3
               id={`month-${monthNum}-heading`}
-              className="mb-2 text-sm font-semibold uppercase tracking-wide text-senate-navy"
+              className="mb-2 text-sm font-semibold uppercase tracking-wide text-pcso-navy"
             >
               {monthName}
             </h3>
@@ -112,7 +127,9 @@ export function HolidayCalendar({ holidays, year, canDelete = false }: HolidayCa
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Proclamation</TableHead>
-                    {canDelete && <TableHead className="w-20">Actions</TableHead>}
+                    {canDelete && (
+                      <TableHead className="w-20">Actions</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -122,15 +139,19 @@ export function HolidayCalendar({ holidays, year, canDelete = false }: HolidayCa
                     .map((h) => (
                       <TableRow key={h.id}>
                         <TableCell className="font-mono text-sm">
-                          {new Date(h.holidayDate + 'T00:00:00').toLocaleDateString('en-PH', {
-                            month: 'short',
-                            day: 'numeric',
+                          {new Date(
+                            h.holidayDate + "T00:00:00",
+                          ).toLocaleDateString("en-PH", {
+                            month: "short",
+                            day: "numeric",
                           })}
                         </TableCell>
                         <TableCell>
                           <div className="font-medium">{h.name}</div>
                           {h.remarks && (
-                            <div className="text-xs text-muted-foreground">{h.remarks}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {h.remarks}
+                            </div>
                           )}
                         </TableCell>
                         <TableCell>
@@ -143,13 +164,16 @@ export function HolidayCalendar({ holidays, year, canDelete = false }: HolidayCa
                           </span>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {h.proclamationRef ?? '—'}
+                          {h.proclamationRef ?? "—"}
                         </TableCell>
                         {canDelete && (
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <Button variant="ghost" size="icon" asChild>
-                                <Link href={`/admin/holidays/${h.id}/edit`} aria-label="Edit holiday">
+                                <Link
+                                  href={`/admin/holidays/${h.id}/edit`}
+                                  aria-label="Edit holiday"
+                                >
                                   <Pencil className="h-4 w-4" />
                                 </Link>
                               </Button>

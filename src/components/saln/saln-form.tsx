@@ -9,25 +9,35 @@
  * Supports both "save as draft" and "submit" workflows.
  */
 
-'use client';
+"use client";
 
-import { useTransition } from 'react';
-import { useForm, FormProvider } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { toast } from 'sonner';
-import { FileSalnSchema, type FileSalnInput, type FilingType } from '@/lib/validations/saln';
-import { SalnFormRealAssets } from '@/components/saln/saln-form-real-assets';
-import { SalnFormPersonalProperties } from '@/components/saln/saln-form-personal-properties';
-import { SalnFormInvestments } from '@/components/saln/saln-form-investments';
-import { SalnFormLiabilities } from '@/components/saln/saln-form-liabilities';
-import { SalnFormBusinessInterests } from '@/components/saln/saln-form-business-interests';
-import { SalnFormRelatives } from '@/components/saln/saln-form-relatives';
-import { NetWorthSummary } from '@/components/saln/net-worth-summary';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { AlertCircleIcon, SaveIcon, SendIcon } from 'lucide-react';
+import { useTransition } from "react";
+import { useForm, FormProvider } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import {
+  FileSalnSchema,
+  type FileSalnInput,
+  type FilingType,
+} from "@/lib/validations/saln";
+import { SalnFormRealAssets } from "@/components/saln/saln-form-real-assets";
+import { SalnFormPersonalProperties } from "@/components/saln/saln-form-personal-properties";
+import { SalnFormInvestments } from "@/components/saln/saln-form-investments";
+import { SalnFormLiabilities } from "@/components/saln/saln-form-liabilities";
+import { SalnFormBusinessInterests } from "@/components/saln/saln-form-business-interests";
+import { SalnFormRelatives } from "@/components/saln/saln-form-relatives";
+import { NetWorthSummary } from "@/components/saln/net-worth-summary";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { AlertCircleIcon, SaveIcon, SendIcon } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,10 +64,10 @@ interface SalnFormProps {
 }
 
 const FILING_TYPE_LABELS: Record<FilingType, string> = {
-  annual: 'Annual (Calendar Year)',
-  initial: 'Initial (Upon Entry to Service)',
-  upon_assumption: 'Upon Assumption of Office',
-  upon_separation: 'Upon Separation from Service',
+  annual: "Annual (Calendar Year)",
+  initial: "Initial (Upon Entry to Service)",
+  upon_assumption: "Upon Assumption of Office",
+  upon_separation: "Upon Separation from Service",
 };
 
 // ---------------------------------------------------------------------------
@@ -101,12 +111,13 @@ export function SalnForm({
     startTransition(async () => {
       try {
         const result = await onSaveDraft({ ...data, submit: false });
-        toast.success('Draft saved', {
+        toast.success("Draft saved", {
           description: `SALN draft saved. Reference ID: ${result.id.slice(0, 8)}`,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to save draft.';
-        toast.error('Save failed', { description: message });
+        const message =
+          err instanceof Error ? err.message : "Failed to save draft.";
+        toast.error("Save failed", { description: message });
       }
     });
   }
@@ -115,12 +126,13 @@ export function SalnForm({
     startTransition(async () => {
       try {
         const result = await onSubmit({ ...data, submit: true });
-        toast.success('SALN submitted', {
+        toast.success("SALN submitted", {
           description: `Your SALN for ${year} has been submitted to HR. Reference ID: ${result.id.slice(0, 8)}`,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to submit SALN.';
-        toast.error('Submission failed', { description: message });
+        const message =
+          err instanceof Error ? err.message : "Failed to submit SALN.";
+        toast.error("Submission failed", { description: message });
       }
     });
   }
@@ -141,15 +153,19 @@ export function SalnForm({
             <section aria-labelledby="personal-info-heading">
               <h3
                 id="personal-info-heading"
-                className="mb-4 text-base font-semibold text-senate-navy"
+                className="mb-4 text-base font-semibold text-pcso-navy"
               >
                 Personal Information
               </h3>
               <div className="rounded-md border border-border bg-muted/30 p-4">
                 <dl className="grid gap-3 sm:grid-cols-2">
                   <div>
-                    <dt className="text-xs text-muted-foreground">Employee No.</dt>
-                    <dd className="text-sm font-medium">{employee.employeeNo}</dd>
+                    <dt className="text-xs text-muted-foreground">
+                      Employee No.
+                    </dt>
+                    <dd className="text-sm font-medium">
+                      {employee.employeeNo}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Full Name</dt>
@@ -157,20 +173,28 @@ export function SalnForm({
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">Position</dt>
-                    <dd className="text-sm font-medium">{employee.positionTitle}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Office / Department</dt>
                     <dd className="text-sm font-medium">
-                      {employee.officeName ?? 'N/A'}
+                      {employee.positionTitle}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-muted-foreground">Coverage Year</dt>
+                    <dt className="text-xs text-muted-foreground">
+                      Office / Department
+                    </dt>
+                    <dd className="text-sm font-medium">
+                      {employee.officeName ?? "N/A"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">
+                      Coverage Year
+                    </dt>
                     <dd className="text-sm font-medium">{year}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-muted-foreground">Filing Type</dt>
+                    <dt className="text-xs text-muted-foreground">
+                      Filing Type
+                    </dt>
                     <dd className="text-sm font-medium">
                       {FILING_TYPE_LABELS[filingType]}
                     </dd>
@@ -184,9 +208,7 @@ export function SalnForm({
             {/* I. Assets */}
             <div className="space-y-8">
               <div>
-                <h2 className="text-lg font-bold text-senate-navy">
-                  I. Assets
-                </h2>
+                <h2 className="text-lg font-bold text-pcso-navy">I. Assets</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Declare all assets as of December 31, {year}.
                 </p>
@@ -204,7 +226,7 @@ export function SalnForm({
             {/* II. Liabilities */}
             <div className="space-y-4">
               <div>
-                <h2 className="text-lg font-bold text-senate-navy">
+                <h2 className="text-lg font-bold text-pcso-navy">
                   II. Liabilities
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -219,7 +241,7 @@ export function SalnForm({
             {/* III. Business Interests */}
             <div className="space-y-4">
               <div>
-                <h2 className="text-lg font-bold text-senate-navy">
+                <h2 className="text-lg font-bold text-pcso-navy">
                   III. Business Interests and Financial Connections
                 </h2>
               </div>
@@ -231,7 +253,7 @@ export function SalnForm({
             {/* IV. Relatives in Government */}
             <div className="space-y-4">
               <div>
-                <h2 className="text-lg font-bold text-senate-navy">
+                <h2 className="text-lg font-bold text-pcso-navy">
                   IV. Relatives in Government Service
                 </h2>
               </div>
@@ -273,15 +295,15 @@ export function SalnForm({
               <Button
                 type="submit"
                 disabled={isPending}
-                className="bg-senate-navy text-white hover:bg-senate-navy-light"
+                className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
               >
                 <SendIcon className="mr-2 h-4 w-4" aria-hidden />
-                {isPending ? 'Submitting...' : 'Submit SALN'}
+                {isPending ? "Submitting..." : "Submit SALN"}
               </Button>
 
               <p className="ml-auto text-xs text-muted-foreground">
-                By submitting, you certify that all information is true and correct
-                under penalty of law (RA 6713).
+                By submitting, you certify that all information is true and
+                correct under penalty of law (RA 6713).
               </p>
             </div>
           </div>

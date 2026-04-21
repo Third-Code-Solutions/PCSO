@@ -7,18 +7,18 @@
  * Access: super_admin only.
  */
 
-import { redirect } from 'next/navigation';
-import Link from 'next/link';
-import { UsersIcon } from 'lucide-react';
-import { requirePermission } from '@/lib/auth/guards';
-import { getSalnComplianceForYear } from '@/app/(dashboard)/saln/queries';
-import { sendReminders } from '@/app/(dashboard)/saln/actions';
-import { exportDocuments } from '@/app/(dashboard)/saln/admin-actions';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { ComplianceDashboard } from '@/components/saln/compliance-dashboard';
-import { currentCoverageYear } from '@/lib/utils/saln/deadline';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { UsersIcon } from "lucide-react";
+import { requirePermission } from "@/lib/auth/guards";
+import { getSalnComplianceForYear } from "@/app/(dashboard)/saln/queries";
+import { sendReminders } from "@/app/(dashboard)/saln/actions";
+import { exportDocuments } from "@/app/(dashboard)/saln/admin-actions";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { ComplianceDashboard } from "@/components/saln/compliance-dashboard";
+import { currentCoverageYear } from "@/lib/utils/saln/deadline";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 
 // ---------------------------------------------------------------------------
 // Page
@@ -28,12 +28,14 @@ interface AdminSalnPageProps {
   searchParams: Promise<{ year?: string }>;
 }
 
-export default async function AdminSalnPage({ searchParams }: AdminSalnPageProps) {
-  const user = await requirePermission('saln', 'approve');
+export default async function AdminSalnPage({
+  searchParams,
+}: AdminSalnPageProps) {
+  const user = await requirePermission("saln", "approve");
 
   // Gate to super_admin only
-  if (user.role !== 'super_admin') {
-    redirect('/dashboard');
+  if (user.role !== "super_admin") {
+    redirect("/dashboard");
   }
 
   const resolvedParams = await searchParams;
@@ -49,13 +51,13 @@ export default async function AdminSalnPage({ searchParams }: AdminSalnPageProps
 
   return (
     <div>
-      <RealtimeBoundary tables={['saln_submissions']} />
+      <RealtimeBoundary tables={["saln_submissions"]} />
       <PageHeader
         title="SALN Compliance Tracker"
         description={`Annual SALN filing status for Calendar Year ${year}`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'SALN Admin' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "SALN Admin" },
         ]}
         actions={
           <div className="flex items-center gap-2">
@@ -69,8 +71,8 @@ export default async function AdminSalnPage({ searchParams }: AdminSalnPageProps
                     href={`/saln/admin?year=${y}`}
                     className={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${
                       y === year
-                        ? 'bg-senate-navy text-white'
-                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                        ? "bg-pcso-navy text-white"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >
                     {y}
@@ -93,7 +95,7 @@ export default async function AdminSalnPage({ searchParams }: AdminSalnPageProps
         rows={rows}
         year={year}
         onSendReminders={async (employeeIds: string[]) => {
-          'use server';
+          "use server";
           const result = await sendReminders({
             year,
             employeeIds: employeeIds.length > 0 ? employeeIds : undefined,
@@ -101,10 +103,10 @@ export default async function AdminSalnPage({ searchParams }: AdminSalnPageProps
           return { sent: result.sent, failed: result.failed };
         }}
         onExport={async () => {
-          'use server';
+          "use server";
           // Export is downloaded via client-side trigger in the component.
           // Server action generates data; client initiates download.
-          await exportDocuments({ year, format: 'csv' });
+          await exportDocuments({ year, format: "csv" });
         }}
       />
     </div>

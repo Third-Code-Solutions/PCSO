@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * SubmissionsBrowser — client-side filter controls + grouped submissions table.
@@ -12,9 +12,9 @@
  *   - View link for all submissions
  */
 
-import * as React from 'react';
-import Link from 'next/link';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import * as React from "react";
+import Link from "next/link";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   FileTextIcon,
   DownloadIcon,
@@ -23,10 +23,10 @@ import {
   SearchIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -34,65 +34,67 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { formatPeso } from '@/lib/utils/saln/net-worth';
-import type { SalnSubmissionRow } from '@/app/(dashboard)/saln/queries';
-import type { SalnStatus } from '@/lib/validations/saln';
+} from "@/components/ui/table";
+import { formatPeso } from "@/lib/utils/saln/net-worth";
+import type { SalnSubmissionRow } from "@/app/(dashboard)/saln/queries";
+import type { SalnStatus } from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const ALL_STATUSES: { value: SalnStatus | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'submitted', label: 'Submitted' },
-  { value: 'received', label: 'Received' },
-  { value: 'verified', label: 'Verified' },
-  { value: 'deficient', label: 'Deficient' },
+const ALL_STATUSES: { value: SalnStatus | "all"; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "draft", label: "Draft" },
+  { value: "submitted", label: "Submitted" },
+  { value: "received", label: "Received" },
+  { value: "verified", label: "Verified" },
+  { value: "deficient", label: "Deficient" },
 ];
 
 const FILING_TYPE_LABELS: Record<string, string> = {
-  annual: 'Annual',
-  initial: 'Initial',
-  upon_assumption: 'Upon Assumption',
-  upon_separation: 'Upon Separation',
+  annual: "Annual",
+  initial: "Initial",
+  upon_assumption: "Upon Assumption",
+  upon_separation: "Upon Separation",
 };
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-type BadgeVariant = 'secondary' | 'outline' | 'destructive' | 'default';
+type BadgeVariant = "secondary" | "outline" | "destructive" | "default";
 
 function statusBadgeVariant(status: SalnStatus): BadgeVariant {
   const map: Record<SalnStatus, BadgeVariant> = {
-    draft: 'secondary',
-    submitted: 'outline',
-    received: 'outline',
-    verified: 'default',
-    deficient: 'destructive',
+    draft: "secondary",
+    submitted: "outline",
+    received: "outline",
+    verified: "default",
+    deficient: "destructive",
   };
   return map[status];
 }
 
 function statusLabel(status: SalnStatus): string {
   const map: Record<SalnStatus, string> = {
-    draft: 'Draft',
-    submitted: 'Submitted',
-    received: 'Received',
-    verified: 'Verified',
-    deficient: 'Deficient',
+    draft: "Draft",
+    submitted: "Submitted",
+    received: "Received",
+    verified: "Verified",
+    deficient: "Deficient",
   };
   return map[status];
 }
 
 function isEditable(status: SalnStatus): boolean {
-  return status === 'draft' || status === 'deficient';
+  return status === "draft" || status === "deficient";
 }
 
 /** Group an array of submissions by year, returning years in descending order. */
-function groupByYear(rows: SalnSubmissionRow[]): Map<number, SalnSubmissionRow[]> {
+function groupByYear(
+  rows: SalnSubmissionRow[],
+): Map<number, SalnSubmissionRow[]> {
   const map = new Map<number, SalnSubmissionRow[]>();
   for (const row of rows) {
     const bucket = map.get(row.year);
@@ -113,7 +115,7 @@ function groupByYear(rows: SalnSubmissionRow[]): Map<number, SalnSubmissionRow[]
 function handlePdfPrint(submissionId: string): void {
   // Open the submission detail page which renders the saln-form PDF template.
   // The ?print=1 param signals the detail page to trigger window.print().
-  window.open(`/saln/${submissionId}?print=1`, '_blank', 'noopener,noreferrer');
+  window.open(`/saln/${submissionId}?print=1`, "_blank", "noopener,noreferrer");
 }
 
 // ---------------------------------------------------------------------------
@@ -121,8 +123,8 @@ function handlePdfPrint(submissionId: string): void {
 // ---------------------------------------------------------------------------
 
 interface StatusFilterProps {
-  active: SalnStatus | 'all';
-  onChange: (value: SalnStatus | 'all') => void;
+  active: SalnStatus | "all";
+  onChange: (value: SalnStatus | "all") => void;
 }
 
 function StatusFilter({ active, onChange }: StatusFilterProps) {
@@ -138,11 +140,11 @@ function StatusFilter({ active, onChange }: StatusFilterProps) {
           type="button"
           onClick={() => onChange(value)}
           className={[
-            'rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-senate-gold',
+            "rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pcso-gold",
             active === value
-              ? 'bg-senate-navy text-white'
-              : 'bg-muted text-muted-foreground hover:bg-muted/70',
-          ].join(' ')}
+              ? "bg-pcso-navy text-white"
+              : "bg-muted text-muted-foreground hover:bg-muted/70",
+          ].join(" ")}
           aria-pressed={active === value}
         >
           {label}
@@ -173,12 +175,12 @@ function YearGroup({ year, rows, isSuperAdmin }: YearGroupProps) {
         <div className="flex items-center gap-3">
           <h2
             id={`year-${year}-heading`}
-            className="text-sm font-semibold text-senate-navy"
+            className="text-sm font-semibold text-pcso-navy"
           >
             Calendar Year {year}
           </h2>
           <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {rows.length} {rows.length === 1 ? 'filing' : 'filings'}
+            {rows.length} {rows.length === 1 ? "filing" : "filings"}
           </span>
         </div>
         {rows.length > 1 && (
@@ -193,14 +195,18 @@ function YearGroup({ year, rows, isSuperAdmin }: YearGroupProps) {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
-              {isSuperAdmin && <TableHead className="w-32">Employee No.</TableHead>}
+              {isSuperAdmin && (
+                <TableHead className="w-32">Employee No.</TableHead>
+              )}
               {isSuperAdmin && <TableHead>Employee Name</TableHead>}
               <TableHead>Filing Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Date Filed</TableHead>
               <TableHead className="text-right">Total Assets</TableHead>
               <TableHead className="text-right">Total Liabilities</TableHead>
-              <TableHead className="text-right font-semibold">Net Worth</TableHead>
+              <TableHead className="text-right font-semibold">
+                Net Worth
+              </TableHead>
               <TableHead className="w-36">
                 <span className="sr-only">Actions</span>
               </TableHead>
@@ -215,18 +221,23 @@ function YearGroup({ year, rows, isSuperAdmin }: YearGroupProps) {
                   </TableCell>
                 )}
                 {isSuperAdmin && (
-                  <TableCell className="text-sm font-medium">{s.employeeName}</TableCell>
+                  <TableCell className="text-sm font-medium">
+                    {s.employeeName}
+                  </TableCell>
                 )}
                 <TableCell className="text-sm text-muted-foreground">
                   {FILING_TYPE_LABELS[s.filingType] ?? s.filingType}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant(s.status)} className="capitalize">
+                  <Badge
+                    variant={statusBadgeVariant(s.status)}
+                    className="capitalize"
+                  >
                     {statusLabel(s.status)}
                   </Badge>
                 </TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">
-                  {s.dateFiled ?? '—'}
+                  {s.dateFiled ?? "—"}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs text-muted-foreground">
                   {formatPeso(s.totalAssets)}
@@ -242,8 +253,8 @@ function YearGroup({ year, rows, isSuperAdmin }: YearGroupProps) {
                     {/* View */}
                     <Link
                       href={`/saln/${s.id}`}
-                      className="inline-flex items-center gap-1 text-xs text-senate-navy underline hover:no-underline"
-                      aria-label={`View SALN filing for ${isSuperAdmin ? s.employeeName : 'year ' + s.year}`}
+                      className="inline-flex items-center gap-1 text-xs text-pcso-navy underline hover:no-underline"
+                      aria-label={`View SALN filing for ${isSuperAdmin ? s.employeeName : "year " + s.year}`}
                     >
                       <EyeIcon className="h-3 w-3" aria-hidden />
                       View
@@ -262,11 +273,11 @@ function YearGroup({ year, rows, isSuperAdmin }: YearGroupProps) {
                     )}
 
                     {/* PDF download — available for all non-draft submissions */}
-                    {s.status !== 'draft' && (
+                    {s.status !== "draft" && (
                       <button
                         type="button"
                         onClick={() => handlePdfPrint(s.id)}
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-senate-gold rounded"
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pcso-gold rounded"
                         aria-label={`Download PDF for SALN filing`}
                       >
                         <DownloadIcon className="h-3 w-3" aria-hidden />
@@ -291,19 +302,24 @@ function YearGroup({ year, rows, isSuperAdmin }: YearGroupProps) {
 function EmptyState({ hasFilters }: { hasFilters: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border py-16 text-center">
-      <FileTextIcon className="mb-3 h-10 w-10 text-muted-foreground/40" aria-hidden />
+      <FileTextIcon
+        className="mb-3 h-10 w-10 text-muted-foreground/40"
+        aria-hidden
+      />
       <p className="text-sm font-medium text-foreground">
-        {hasFilters ? 'No submissions match your filters' : 'No SALN submissions yet'}
+        {hasFilters
+          ? "No submissions match your filters"
+          : "No SALN submissions yet"}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
         {hasFilters
-          ? 'Try clearing your filters to see all submissions.'
-          : 'File your first SALN to comply with RA 6713.'}
+          ? "Try clearing your filters to see all submissions."
+          : "File your first SALN to comply with RA 6713."}
       </p>
       {!hasFilters && (
         <Button
           asChild
-          className="mt-4 bg-senate-navy text-white hover:bg-senate-navy-light"
+          className="mt-4 bg-pcso-navy text-white hover:bg-pcso-navy-light"
           size="sm"
         >
           <Link href="/saln/new">File Now</Link>
@@ -322,16 +338,19 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
 // via the server action in /saln/tracking; here we export only what's in view).
 // ---------------------------------------------------------------------------
 
-function exportVisibleAsCsv(rows: SalnSubmissionRow[], isSuperAdmin: boolean): void {
+function exportVisibleAsCsv(
+  rows: SalnSubmissionRow[],
+  isSuperAdmin: boolean,
+): void {
   const headers = [
-    'Year',
-    'Filing Type',
-    'Status',
-    'Date Filed',
-    'Total Assets',
-    'Total Liabilities',
-    'Net Worth',
-    ...(isSuperAdmin ? ['Employee No.', 'Employee Name'] : []),
+    "Year",
+    "Filing Type",
+    "Status",
+    "Date Filed",
+    "Total Assets",
+    "Total Liabilities",
+    "Net Worth",
+    ...(isSuperAdmin ? ["Employee No.", "Employee Name"] : []),
   ];
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const lines = rows.map((r) =>
@@ -339,19 +358,19 @@ function exportVisibleAsCsv(rows: SalnSubmissionRow[], isSuperAdmin: boolean): v
       String(r.year),
       FILING_TYPE_LABELS[r.filingType] ?? r.filingType,
       statusLabel(r.status),
-      r.dateFiled ?? '',
+      r.dateFiled ?? "",
       r.totalAssets,
       r.totalLiabilities,
       r.netWorth,
       ...(isSuperAdmin ? [r.employeeNo, r.employeeName] : []),
     ]
       .map(escape)
-      .join(','),
+      .join(","),
   );
-  const csv = [headers.join(','), ...lines].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const csv = [headers.join(","), ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = `saln-submissions-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
@@ -369,7 +388,12 @@ interface PaginationBarProps {
   onPageChange: (nextPage: number) => void;
 }
 
-function PaginationBar({ page, perPage, total, onPageChange }: PaginationBarProps) {
+function PaginationBar({
+  page,
+  perPage,
+  total,
+  onPageChange,
+}: PaginationBarProps) {
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   if (totalPages <= 1) return null;
   const from = (page - 1) * perPage + 1;
@@ -378,7 +402,7 @@ function PaginationBar({ page, perPage, total, onPageChange }: PaginationBarProp
   return (
     <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
       <p className="text-xs text-muted-foreground">
-        Showing <strong>{from}</strong>–<strong>{to}</strong> of{' '}
+        Showing <strong>{from}</strong>–<strong>{to}</strong> of{" "}
         <strong>{total}</strong> submissions
       </p>
       <div className="flex items-center gap-1">
@@ -446,21 +470,21 @@ export function SubmissionsBrowser({
     (updates: Record<string, string | undefined>, resetPage = true) => {
       const params = new URLSearchParams(searchParams.toString());
       for (const [key, value] of Object.entries(updates)) {
-        if (value === undefined || value === '' || value === 'all') {
+        if (value === undefined || value === "" || value === "all") {
           params.delete(key);
         } else {
           params.set(key, value);
         }
       }
-      if (resetPage) params.delete('page');
+      if (resetPage) params.delete("page");
       const qs = params.toString();
-      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
     },
     [router, pathname, searchParams],
   );
 
-  function handleStatusChange(value: SalnStatus | 'all') {
-    pushParams({ status: value === 'all' ? undefined : value });
+  function handleStatusChange(value: SalnStatus | "all") {
+    pushParams({ status: value === "all" ? undefined : value });
   }
 
   function handleEmployeeSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -473,7 +497,7 @@ export function SubmissionsBrowser({
   }
 
   function handleYearChange(val: string) {
-    pushParams({ year: val === 'all' ? undefined : val });
+    pushParams({ year: val === "all" ? undefined : val });
   }
 
   function handlePageChange(next: number) {
@@ -498,21 +522,24 @@ export function SubmissionsBrowser({
       {/* ── Filter bar ─────────────────────────────────────────── */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <StatusFilter
-          active={activeStatus ?? 'all'}
+          active={activeStatus ?? "all"}
           onChange={handleStatusChange}
         />
 
         {isSuperAdmin && (
           <>
             <div className="flex items-center gap-1.5">
-              <label htmlFor="year-filter" className="text-xs text-muted-foreground">
+              <label
+                htmlFor="year-filter"
+                className="text-xs text-muted-foreground"
+              >
                 Year:
               </label>
               <select
                 id="year-filter"
-                value={activeYear ? String(activeYear) : 'all'}
+                value={activeYear ? String(activeYear) : "all"}
                 onChange={(e) => handleYearChange(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-senate-gold"
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pcso-gold"
                 aria-label="Filter by coverage year"
               >
                 <option value="all">All years</option>
@@ -546,7 +573,7 @@ export function SubmissionsBrowser({
             type="button"
             variant="outline"
             size="sm"
-            className={isSuperAdmin ? '' : 'ml-auto'}
+            className={isSuperAdmin ? "" : "ml-auto"}
             onClick={() => exportVisibleAsCsv(submissions, isSuperAdmin)}
             aria-label="Export visible submissions as CSV"
           >
@@ -559,13 +586,13 @@ export function SubmissionsBrowser({
       {/* ── Results summary ────────────────────────────────────── */}
       {submissions.length > 0 && (
         <p className="mb-4 text-xs text-muted-foreground">
-          Showing <strong>{submissions.length}</strong>{' '}
-          {submissions.length === 1 ? 'submission' : 'submissions'}
-          {activeStatus ? ` with status "${activeStatus}"` : ''}
-          {activeEmployeeNo ? ` for employee "${activeEmployeeNo}"` : ''}
-          {activeYear ? ` in ${activeYear}` : ''}
-          {' '}across <strong>{grouped.size}</strong>{' '}
-          {grouped.size === 1 ? 'year' : 'years'}
+          Showing <strong>{submissions.length}</strong>{" "}
+          {submissions.length === 1 ? "submission" : "submissions"}
+          {activeStatus ? ` with status "${activeStatus}"` : ""}
+          {activeEmployeeNo ? ` for employee "${activeEmployeeNo}"` : ""}
+          {activeYear ? ` in ${activeYear}` : ""} across{" "}
+          <strong>{grouped.size}</strong>{" "}
+          {grouped.size === 1 ? "year" : "years"}
           {isSuperAdmin && total > submissions.length ? (
             <> ({total} total)</>
           ) : null}

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Re-usable primitives
@@ -7,9 +7,9 @@ import { z } from 'zod';
 /** HH:MM 24-hour time string */
 const TimeStringSchema = z
   .string()
-  .regex(/^\d{2}:\d{2}$/, 'Time must be in HH:MM format (24-hour)')
+  .regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format (24-hour)")
   .refine((t) => {
-    const [h, m] = t.split(':').map(Number);
+    const [h, m] = t.split(":").map(Number);
     return (
       h !== undefined &&
       m !== undefined &&
@@ -18,20 +18,20 @@ const TimeStringSchema = z
       m >= 0 &&
       m <= 59
     );
-  }, 'Invalid time value');
+  }, "Invalid time value");
 
 /** YYYY-MM-DD date string */
 const DateStringSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format');
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format");
 
 const DayTypeSchema = z.enum([
-  'ordinary',
-  'special_non_working',
-  'regular_holiday',
-  'rest_day',
-  'rest_day_and_special',
-  'rest_day_and_regular_holiday',
+  "ordinary",
+  "special_non_working",
+  "regular_holiday",
+  "rest_day",
+  "rest_day_and_special",
+  "rest_day_and_regular_holiday",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -81,7 +81,10 @@ export const ManualEntrySchema = z
       }
       return true;
     },
-    { message: 'Time-in and time-out cannot be the same value', path: ['timeOut'] },
+    {
+      message: "Time-in and time-out cannot be the same value",
+      path: ["timeOut"],
+    },
   );
 
 export type ManualEntryInput = z.infer<typeof ManualEntrySchema>;
@@ -93,7 +96,7 @@ export type ManualEntryInput = z.infer<typeof ManualEntrySchema>;
 export const OvertimeRequestSchema = z.object({
   employeeId: z.string().uuid(),
   date: DateStringSchema,
-  requestedMinutes: z.number().int().min(30).max(240), // max 4 hours per Senate policy
+  requestedMinutes: z.number().int().min(30).max(240), // max 4 hours per PCSO policy
   dayType: DayTypeSchema,
   justification: z.string().min(20).max(1000),
   supervisorId: z.string().uuid(),
@@ -106,7 +109,7 @@ export const OvertimeApprovalSchema = z.object({
   approvedMinutes: z.number().int().min(0).max(240),
   /** Approver comments (required on denial) */
   comments: z.string().max(500).optional(),
-  decision: z.enum(['approved', 'denied', 'partial']),
+  decision: z.enum(["approved", "denied", "partial"]),
 });
 
 export type OvertimeApprovalInput = z.infer<typeof OvertimeApprovalSchema>;
@@ -117,28 +120,28 @@ export type OvertimeApprovalInput = z.infer<typeof OvertimeApprovalSchema>;
 
 export const BiometricRowSchema = z
   .object({
-    employeeId: z.string().min(1, 'Employee ID is required'),
+    employeeId: z.string().min(1, "Employee ID is required"),
     date: DateStringSchema,
     timeIn: TimeStringSchema.nullable(),
     timeOut: TimeStringSchema.nullable(),
   })
   .refine(
     (row) => row.timeIn !== null || row.timeOut !== null,
-    'At least one of time-in or time-out must be present',
+    "At least one of time-in or time-out must be present",
   );
 
 export type BiometricRow = z.infer<typeof BiometricRowSchema>;
 
 export const BiometricImportSchema = z.object({
   /** Employee ID column header in the CSV */
-  employeeIdColumn: z.string().default('employee_id'),
+  employeeIdColumn: z.string().default("employee_id"),
   /** Date column header */
-  dateColumn: z.string().default('date'),
+  dateColumn: z.string().default("date"),
   /** Time-in column header */
-  timeInColumn: z.string().default('time_in'),
+  timeInColumn: z.string().default("time_in"),
   /** Time-out column header */
-  timeOutColumn: z.string().default('time_out'),
-  rows: z.array(BiometricRowSchema).min(1, 'CSV must contain at least one row'),
+  timeOutColumn: z.string().default("time_out"),
+  rows: z.array(BiometricRowSchema).min(1, "CSV must contain at least one row"),
 });
 
 export type BiometricImportInput = z.infer<typeof BiometricImportSchema>;
@@ -150,7 +153,7 @@ export type BiometricImportInput = z.infer<typeof BiometricImportSchema>;
 export const HolidayEntrySchema = z.object({
   date: DateStringSchema,
   name: z.string().min(2).max(200),
-  type: z.enum(['regular', 'special_non_working']),
+  type: z.enum(["regular", "special_non_working"]),
 });
 
 export type HolidayEntryInput = z.infer<typeof HolidayEntrySchema>;
@@ -173,8 +176,8 @@ export const DtrPeriodSchema = z
     endDate: DateStringSchema,
   })
   .refine((data) => data.startDate <= data.endDate, {
-    message: 'Start date must be on or before end date',
-    path: ['endDate'],
+    message: "Start date must be on or before end date",
+    path: ["endDate"],
   });
 
 export type DtrPeriodInput = z.infer<typeof DtrPeriodSchema>;

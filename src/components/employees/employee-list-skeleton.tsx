@@ -1,4 +1,4 @@
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Loading placeholder for the employee list table. Matches the column
@@ -9,12 +9,20 @@ export function EmployeeListSkeleton({ rows = 10 }: { rows?: number }) {
   return (
     <div className="space-y-4" aria-live="polite" aria-busy="true">
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
-        <div className="grid grid-cols-9 gap-3 bg-senate-navy/5 px-4 py-3 text-xs font-semibold text-senate-navy">
-          {['', 'Employee No.', 'Full Name', 'Position', 'Office', 'SG', 'Appt', 'Status', ''].map(
-            (label, idx) => (
-              <span key={idx}>{label}</span>
-            ),
-          )}
+        <div className="grid grid-cols-9 gap-3 bg-pcso-navy/5 px-4 py-3 text-xs font-semibold text-pcso-navy">
+          {[
+            "",
+            "Employee No.",
+            "Full Name",
+            "Position",
+            "Office",
+            "SG",
+            "Appt",
+            "Status",
+            "",
+          ].map((label, idx) => (
+            <span key={idx}>{label}</span>
+          ))}
         </div>
         {Array.from({ length: rows }).map((_, i) => (
           <div

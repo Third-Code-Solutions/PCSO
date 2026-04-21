@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Eye, EyeOff, Lock } from 'lucide-react';
+import * as React from "react";
+import { Eye, EyeOff, Lock } from "lucide-react";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
-import { changePassword } from './actions';
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { changePassword } from "./actions";
 
 const MIN_LENGTH = 8;
 
@@ -23,11 +23,13 @@ export function PasswordTab() {
   const [showConfirm, setShowConfirm] = React.useState(false);
 
   const [form, setForm] = React.useState({
-    newPassword: '',
-    confirmPassword: '',
+    newPassword: "",
+    confirmPassword: "",
   });
 
-  const [errors, setErrors] = React.useState<Partial<Record<keyof typeof form, string>>>({});
+  const [errors, setErrors] = React.useState<
+    Partial<Record<keyof typeof form, string>>
+  >({});
 
   function updateField(key: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -43,7 +45,7 @@ export function PasswordTab() {
       next.newPassword = `Password must be at least ${MIN_LENGTH} characters.`;
     }
     if (form.newPassword !== form.confirmPassword) {
-      next.confirmPassword = 'Passwords do not match.';
+      next.confirmPassword = "Passwords do not match.";
     }
 
     setErrors(next);
@@ -60,11 +62,12 @@ export function PasswordTab() {
           newPassword: form.newPassword,
           confirmPassword: form.confirmPassword,
         });
-        toast.success('Password updated successfully');
-        setForm({ newPassword: '', confirmPassword: '' });
+        toast.success("Password updated successfully");
+        setForm({ newPassword: "", confirmPassword: "" });
       } catch (err) {
-        toast.error('Password change failed', {
-          description: err instanceof Error ? err.message : 'Something went wrong.',
+        toast.error("Password change failed", {
+          description:
+            err instanceof Error ? err.message : "Something went wrong.",
         });
       }
     });
@@ -78,7 +81,8 @@ export function PasswordTab() {
           Change Password
         </CardTitle>
         <CardDescription>
-          Choose a strong password. It must be at least {MIN_LENGTH} characters long.
+          Choose a strong password. It must be at least {MIN_LENGTH} characters
+          long.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -89,22 +93,28 @@ export function PasswordTab() {
               <div className="relative">
                 <Input
                   id="newPassword"
-                  type={showNew ? 'text' : 'password'}
+                  type={showNew ? "text" : "password"}
                   value={form.newPassword}
-                  onChange={(e) => updateField('newPassword', e.target.value)}
+                  onChange={(e) => updateField("newPassword", e.target.value)}
                   autoComplete="new-password"
                   required
                   minLength={MIN_LENGTH}
-                  className={errors.newPassword ? 'border-destructive pr-10' : 'pr-10'}
+                  className={
+                    errors.newPassword ? "border-destructive pr-10" : "pr-10"
+                  }
                 />
                 <button
                   type="button"
                   onClick={() => setShowNew((v) => !v)}
                   tabIndex={-1}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
-                  aria-label={showNew ? 'Hide password' : 'Show password'}
+                  aria-label={showNew ? "Hide password" : "Show password"}
                 >
-                  {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showNew ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
               {errors.newPassword && (
@@ -117,34 +127,46 @@ export function PasswordTab() {
               <div className="relative">
                 <Input
                   id="confirmPassword"
-                  type={showConfirm ? 'text' : 'password'}
+                  type={showConfirm ? "text" : "password"}
                   value={form.confirmPassword}
-                  onChange={(e) => updateField('confirmPassword', e.target.value)}
+                  onChange={(e) =>
+                    updateField("confirmPassword", e.target.value)
+                  }
                   autoComplete="new-password"
                   required
-                  className={errors.confirmPassword ? 'border-destructive pr-10' : 'pr-10'}
+                  className={
+                    errors.confirmPassword
+                      ? "border-destructive pr-10"
+                      : "pr-10"
+                  }
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirm((v) => !v)}
                   tabIndex={-1}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
-                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                  aria-label={showConfirm ? "Hide password" : "Show password"}
                 >
-                  {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showConfirm ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
               {errors.confirmPassword && (
-                <p className="text-xs text-destructive">{errors.confirmPassword}</p>
+                <p className="text-xs text-destructive">
+                  {errors.confirmPassword}
+                </p>
               )}
             </div>
 
             <Button
               type="submit"
               disabled={pending}
-              className="bg-senate-navy text-white hover:bg-senate-navy-light"
+              className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
             >
-              {pending ? 'Updating…' : 'Update Password'}
+              {pending ? "Updating…" : "Update Password"}
             </Button>
           </fieldset>
         </form>

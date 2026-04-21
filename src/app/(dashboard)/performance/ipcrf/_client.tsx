@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { approveRating, disapproveRating } from '../actions';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { approveRating, disapproveRating } from "../actions";
 
 interface ApprovalButtonsProps {
   ratingId: string;
@@ -16,14 +16,14 @@ interface ApprovalButtonsProps {
  */
 export function ApprovalButtons({ ratingId, status }: ApprovalButtonsProps) {
   const router = useRouter();
-  const [busy, setBusy] = React.useState<'approve' | 'disapprove' | null>(null);
+  const [busy, setBusy] = React.useState<"approve" | "disapprove" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-  if (status !== 'submitted') {
+  if (status !== "submitted") {
     return (
       <a
         href={`/performance/ipcrf/${ratingId}`}
-        className="text-xs text-senate-navy hover:underline"
+        className="text-xs text-pcso-navy hover:underline"
       >
         View
       </a>
@@ -31,28 +31,31 @@ export function ApprovalButtons({ ratingId, status }: ApprovalButtonsProps) {
   }
 
   async function handleApprove(): Promise<void> {
-    setBusy('approve');
+    setBusy("approve");
     setError(null);
     try {
       await approveRating({ performanceRatingId: ratingId });
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Action failed');
+      setError(err instanceof Error ? err.message : "Action failed");
     } finally {
       setBusy(null);
     }
   }
 
   async function handleDisapprove(): Promise<void> {
-    const reason = window.prompt('Reason for disapproval?');
+    const reason = window.prompt("Reason for disapproval?");
     if (!reason || reason.trim().length === 0) return;
-    setBusy('disapprove');
+    setBusy("disapprove");
     setError(null);
     try {
-      await disapproveRating({ performanceRatingId: ratingId, remarks: reason.trim() });
+      await disapproveRating({
+        performanceRatingId: ratingId,
+        remarks: reason.trim(),
+      });
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Action failed');
+      setError(err instanceof Error ? err.message : "Action failed");
     } finally {
       setBusy(null);
     }
@@ -67,7 +70,7 @@ export function ApprovalButtons({ ratingId, status }: ApprovalButtonsProps) {
         onClick={handleApprove}
         disabled={busy !== null}
       >
-        {busy === 'approve' ? '…' : 'Approve'}
+        {busy === "approve" ? "…" : "Approve"}
       </Button>
       <Button
         size="sm"
@@ -76,7 +79,7 @@ export function ApprovalButtons({ ratingId, status }: ApprovalButtonsProps) {
         onClick={handleDisapprove}
         disabled={busy !== null}
       >
-        {busy === 'disapprove' ? '…' : 'Reject'}
+        {busy === "disapprove" ? "…" : "Reject"}
       </Button>
       {error && (
         <span className="ml-2 text-[10px] text-destructive" title={error}>

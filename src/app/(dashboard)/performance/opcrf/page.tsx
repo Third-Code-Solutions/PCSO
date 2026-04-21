@@ -4,30 +4,33 @@
  * Office-level performance ratings for all cycles.
  */
 
-import Link from 'next/link';
-import { requirePermission } from '@/lib/auth/guards';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Badge } from '@/components/ui/badge';
-import { RatingBadge } from '@/components/performance/rating-badge';
-import { getOpcfrRatings } from '../queries';
-import type { AdjectivalRating } from '@/lib/constants/performance';
-import { ChevronRightIcon } from 'lucide-react';
-import type { Metadata } from 'next';
+import Link from "next/link";
+import { requirePermission } from "@/lib/auth/guards";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Badge } from "@/components/ui/badge";
+import { RatingBadge } from "@/components/performance/rating-badge";
+import { getOpcfrRatings } from "../queries";
+import type { AdjectivalRating } from "@/lib/constants/performance";
+import { ChevronRightIcon } from "lucide-react";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: 'OPCRF — Office Performance',
+  title: "OPCRF — Office Performance",
 };
 
-const STATUS_BADGE: Record<string, 'info' | 'warning' | 'success' | 'muted' | 'destructive'> = {
-  draft: 'muted',
-  submitted: 'warning',
-  reviewed: 'info',
-  approved: 'success',
-  disapproved: 'destructive',
+const STATUS_BADGE: Record<
+  string,
+  "info" | "warning" | "success" | "muted" | "destructive"
+> = {
+  draft: "muted",
+  submitted: "warning",
+  reviewed: "info",
+  approved: "success",
+  disapproved: "destructive",
 };
 
 export default async function OpcfrPage() {
-  await requirePermission('performance', 'view');
+  await requirePermission("performance", "view");
 
   const ratings = await getOpcfrRatings();
 
@@ -37,9 +40,9 @@ export default async function OpcfrPage() {
         title="OPCRF"
         description="Office Performance Commitment and Review Form — office-level ratings."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Performance', href: '/performance' },
-          { label: 'OPCRF' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Performance", href: "/performance" },
+          { label: "OPCRF" },
         ]}
       />
 
@@ -52,7 +55,7 @@ export default async function OpcfrPage() {
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/40">
               <tr>
-                {['Office', 'Period', 'Rating', 'Status', ''].map((h) => (
+                {["Office", "Period", "Rating", "Status", ""].map((h) => (
                   <th
                     key={h}
                     className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -64,33 +67,40 @@ export default async function OpcfrPage() {
             </thead>
             <tbody className="divide-y">
               {ratings.map((r) => (
-                <tr key={r.id} className="group hover:bg-muted/20 transition-colors">
+                <tr
+                  key={r.id}
+                  className="group hover:bg-muted/20 transition-colors"
+                >
                   <td className="px-4 py-3">
                     <div className="font-medium text-foreground">
-                      {r.officeName ?? 'Unknown Office'}
+                      {r.officeName ?? "Unknown Office"}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.periodLabel}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {r.periodLabel}
+                  </td>
                   <td className="px-4 py-3">
-                    {r.status === 'approved' ? (
+                    {r.status === "approved" ? (
                       <RatingBadge
                         adjectival={r.adjectivalRating as AdjectivalRating}
                         numerical={parseFloat(r.numericalRating)}
                         size="sm"
                       />
                     ) : (
-                      <span className="text-xs text-muted-foreground italic">Not yet rated</span>
+                      <span className="text-xs text-muted-foreground italic">
+                        Not yet rated
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant={STATUS_BADGE[r.status] ?? 'muted'}>
+                    <Badge variant={STATUS_BADGE[r.status] ?? "muted"}>
                       {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
                     </Badge>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/performance/ipcrf/${r.id}`}
-                      className="inline-flex items-center gap-1 text-xs text-senate-navy hover:underline"
+                      className="inline-flex items-center gap-1 text-xs text-pcso-navy hover:underline"
                     >
                       View <ChevronRightIcon className="h-3 w-3" />
                     </Link>

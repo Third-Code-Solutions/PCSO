@@ -1,26 +1,16 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
-import {
-  Bell,
-  BellRing,
-  CheckCheck,
-  Inbox,
-  Trash2,
-} from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { Button } from '@/components/ui/button';
+import * as React from "react";
+import Link from "next/link";
+import { Bell, BellRing, CheckCheck, Inbox, Trash2 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,18 +21,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Skeleton } from '@/components/ui/skeleton';
+} from "@/components/ui/alert-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useNotifications,
   type NotificationRow,
-} from '@/hooks/use-notifications';
-import { cn } from '@/lib/utils/cn';
+} from "@/hooks/use-notifications";
+import { cn } from "@/lib/utils/cn";
 
 const VISIBLE_LIMIT = 20;
 const MOBILE_BREAKPOINT_PX = 640;
 
-type ConnectionStatus = 'connected' | 'polling' | 'error';
+type ConnectionStatus = "connected" | "polling" | "error";
 
 /**
  * Top-bar notification bell.
@@ -54,14 +44,8 @@ type ConnectionStatus = 'connected' | 'polling' | 'error';
  * - Connection status dot: green realtime, yellow polling fallback, red error.
  */
 export function NotificationBell() {
-  const {
-    items,
-    loading,
-    unreadCount,
-    markRead,
-    markAllRead,
-    clearAll,
-  } = useNotifications();
+  const { items, loading, unreadCount, markRead, markAllRead, clearAll } =
+    useNotifications();
 
   const [open, setOpen] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -73,10 +57,10 @@ export function NotificationBell() {
   React.useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !confirmOpen) setOpen(false);
+      if (e.key === "Escape" && !confirmOpen) setOpen(false);
     }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [open, confirmOpen]);
 
   const visibleItems = items.slice(0, VISIBLE_LIMIT);
@@ -84,7 +68,7 @@ export function NotificationBell() {
   const ariaLabel =
     unreadCount > 0
       ? `Notifications, ${unreadCount} unread`
-      : 'Notifications, 0 unread';
+      : "Notifications, 0 unread";
 
   const trigger = (
     <Button
@@ -97,17 +81,14 @@ export function NotificationBell() {
       onClick={isMobile ? () => setOpen(true) : undefined}
     >
       <BellIcon
-        className={cn(
-          'h-5 w-5',
-          unreadCount > 0 && 'text-senate-navy',
-        )}
+        className={cn("h-5 w-5", unreadCount > 0 && "text-pcso-navy")}
       />
       {unreadCount > 0 && (
         <span
           className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-sm"
           aria-hidden
         >
-          {unreadCount > 99 ? '99+' : unreadCount}
+          {unreadCount > 99 ? "99+" : unreadCount}
         </span>
       )}
       <ConnectionDot
@@ -211,7 +192,7 @@ function NotificationPanel({
         {unreadCount > 0 && (
           <button
             onClick={onMarkAllRead}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-senate-navy transition-colors hover:bg-senate-cream/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-pcso-navy transition-colors hover:bg-pcso-cream/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             type="button"
           >
             <CheckCheck className="h-3 w-3" />
@@ -297,14 +278,14 @@ function NotificationItem({
   const body = (
     <div
       className={cn(
-        'flex gap-2 px-4 py-3 transition-colors hover:bg-muted/50',
-        isUnread && 'bg-senate-cream/40',
+        "flex gap-2 px-4 py-3 transition-colors hover:bg-muted/50",
+        isUnread && "bg-pcso-cream/40",
       )}
     >
       <span
         className={cn(
-          'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-          isUnread ? 'bg-senate-gold' : 'bg-transparent',
+          "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+          isUnread ? "bg-pcso-gold" : "bg-transparent",
         )}
         aria-hidden
       />
@@ -396,24 +377,24 @@ interface ConnectionDotProps {
 
 function ConnectionDot({ status, className }: ConnectionDotProps) {
   const color =
-    status === 'connected'
-      ? 'bg-green-500'
-      : status === 'polling'
-        ? 'bg-yellow-500'
-        : 'bg-red-500';
+    status === "connected"
+      ? "bg-green-500"
+      : status === "polling"
+        ? "bg-yellow-500"
+        : "bg-red-500";
   const label =
-    status === 'connected'
-      ? 'Realtime connected'
-      : status === 'polling'
-        ? 'Polling fallback'
-        : 'Connection error';
+    status === "connected"
+      ? "Realtime connected"
+      : status === "polling"
+        ? "Polling fallback"
+        : "Connection error";
   return (
     <span
       role="status"
       aria-label={label}
       title={label}
       className={cn(
-        'h-2 w-2 rounded-full ring-2 ring-background',
+        "h-2 w-2 rounded-full ring-2 ring-background",
         color,
         className,
       )}
@@ -423,23 +404,20 @@ function ConnectionDot({ status, className }: ConnectionDotProps) {
 
 function ConnectionStatusLabel({ status }: { status: ConnectionStatus }) {
   const text =
-    status === 'connected'
-      ? 'Live'
-      : status === 'polling'
-        ? 'Polling'
-        : 'Offline';
+    status === "connected"
+      ? "Live"
+      : status === "polling"
+        ? "Polling"
+        : "Offline";
   const color =
-    status === 'connected'
-      ? 'text-green-600'
-      : status === 'polling'
-        ? 'text-yellow-600'
-        : 'text-red-600';
+    status === "connected"
+      ? "text-green-600"
+      : status === "polling"
+        ? "text-yellow-600"
+        : "text-red-600";
   return (
     <span
-      className={cn(
-        'flex items-center gap-1 text-[11px] font-medium',
-        color,
-      )}
+      className={cn("flex items-center gap-1 text-[11px] font-medium", color)}
       aria-live="polite"
     >
       <ConnectionDot status={status} />
@@ -460,8 +438,8 @@ function useIsMobile(): boolean {
     const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
     const update = () => setIsMobile(mq.matches);
     update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
   }, []);
   return isMobile;
 }
@@ -474,23 +452,23 @@ function useIsMobile(): boolean {
  *   - green → everything healthy
  */
 function useConnectionStatus(loading: boolean): ConnectionStatus {
-  const [status, setStatus] = React.useState<ConnectionStatus>('connected');
+  const [status, setStatus] = React.useState<ConnectionStatus>("connected");
 
   React.useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     let loadTimer: ReturnType<typeof setTimeout> | null = null;
 
     const compute = () => {
       if (!navigator.onLine) {
-        setStatus('error');
+        setStatus("error");
         return;
       }
-      if (document.visibilityState === 'hidden') {
-        setStatus('polling');
+      if (document.visibilityState === "hidden") {
+        setStatus("polling");
         return;
       }
-      setStatus('connected');
+      setStatus("connected");
     };
 
     compute();
@@ -498,19 +476,19 @@ function useConnectionStatus(loading: boolean): ConnectionStatus {
     // If the initial load stalls for >5s, surface a degraded state.
     if (loading) {
       loadTimer = setTimeout(() => {
-        if (navigator.onLine) setStatus('polling');
-        else setStatus('error');
+        if (navigator.onLine) setStatus("polling");
+        else setStatus("error");
       }, 5000);
     }
 
-    window.addEventListener('online', compute);
-    window.addEventListener('offline', compute);
-    document.addEventListener('visibilitychange', compute);
+    window.addEventListener("online", compute);
+    window.addEventListener("offline", compute);
+    document.addEventListener("visibilitychange", compute);
     return () => {
       if (loadTimer) clearTimeout(loadTimer);
-      window.removeEventListener('online', compute);
-      window.removeEventListener('offline', compute);
-      document.removeEventListener('visibilitychange', compute);
+      window.removeEventListener("online", compute);
+      window.removeEventListener("offline", compute);
+      document.removeEventListener("visibilitychange", compute);
     };
   }, [loading]);
 
@@ -525,6 +503,6 @@ function safeTimeAgo(iso: string): string {
   try {
     return formatDistanceToNow(new Date(iso), { addSuffix: true });
   } catch {
-    return 'just now';
+    return "just now";
   }
 }

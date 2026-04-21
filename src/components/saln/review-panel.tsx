@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * SalnReviewPanel — compliance-office review controls for a single SALN.
@@ -8,13 +8,18 @@
  * All actions flow through the server action `reviewSaln` and are audited.
  */
 
-import * as React from 'react';
-import { toast } from 'sonner';
-import { CheckCircle2, AlertTriangle, Inbox, MessageSquare } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import type { SalnStatus } from '@/lib/validations/saln';
+import * as React from "react";
+import { toast } from "sonner";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  Inbox,
+  MessageSquare,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import type { SalnStatus } from "@/lib/validations/saln";
 
 interface SalnReviewPanelProps {
   submissionId: string;
@@ -22,7 +27,7 @@ interface SalnReviewPanelProps {
   currentRemarks: string | null;
   onReview: (input: {
     id: string;
-    status: 'received' | 'verified' | 'deficient';
+    status: "received" | "verified" | "deficient";
     remarks?: string;
   }) => Promise<{ id: string }>;
 }
@@ -33,18 +38,18 @@ export function SalnReviewPanel({
   currentRemarks,
   onReview,
 }: SalnReviewPanelProps) {
-  const [remarks, setRemarks] = React.useState<string>(currentRemarks ?? '');
+  const [remarks, setRemarks] = React.useState<string>(currentRemarks ?? "");
   const [isPending, startTransition] = React.useTransition();
   const [targetStatus, setTargetStatus] = React.useState<
-    'received' | 'verified' | 'deficient' | null
+    "received" | "verified" | "deficient" | null
   >(null);
 
-  const canReview = currentStatus !== 'draft';
+  const canReview = currentStatus !== "draft";
 
-  function handleSubmit(status: 'received' | 'verified' | 'deficient') {
-    if (status === 'deficient' && remarks.trim().length === 0) {
-      toast.error('Remarks required', {
-        description: 'Please explain what makes this SALN deficient.',
+  function handleSubmit(status: "received" | "verified" | "deficient") {
+    if (status === "deficient" && remarks.trim().length === 0) {
+      toast.error("Remarks required", {
+        description: "Please explain what makes this SALN deficient.",
       });
       return;
     }
@@ -57,16 +62,16 @@ export function SalnReviewPanel({
           remarks: remarks.trim() ? remarks.trim() : undefined,
         });
         const friendly: Record<string, string> = {
-          received: 'Marked as received',
-          verified: 'Marked as verified',
-          deficient: 'Flagged as deficient',
+          received: "Marked as received",
+          verified: "Marked as verified",
+          deficient: "Flagged as deficient",
         };
-        toast.success(friendly[status] ?? 'SALN updated', {
-          description: 'The employee has been notified of the status change.',
+        toast.success(friendly[status] ?? "SALN updated", {
+          description: "The employee has been notified of the status change.",
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Review failed.';
-        toast.error('Review failed', { description: message });
+        const message = err instanceof Error ? err.message : "Review failed.";
+        toast.error("Review failed", { description: message });
       } finally {
         setTargetStatus(null);
       }
@@ -85,11 +90,14 @@ export function SalnReviewPanel({
   return (
     <section
       aria-labelledby="review-panel-heading"
-      className="rounded-md border border-senate-gold/40 bg-senate-cream p-4"
+      className="rounded-md border border-pcso-gold/40 bg-pcso-cream p-4"
     >
       <div className="mb-3 flex items-center gap-2">
-        <MessageSquare className="h-4 w-4 text-senate-navy" aria-hidden />
-        <h2 id="review-panel-heading" className="text-sm font-semibold text-senate-navy">
+        <MessageSquare className="h-4 w-4 text-pcso-navy" aria-hidden />
+        <h2
+          id="review-panel-heading"
+          className="text-sm font-semibold text-pcso-navy"
+        >
           Compliance Review
         </h2>
       </div>
@@ -117,22 +125,24 @@ export function SalnReviewPanel({
           type="button"
           size="sm"
           variant="outline"
-          disabled={isPending || currentStatus === 'received'}
-          onClick={() => handleSubmit('received')}
+          disabled={isPending || currentStatus === "received"}
+          onClick={() => handleSubmit("received")}
         >
           <Inbox className="mr-1.5 h-4 w-4" aria-hidden />
-          {isPending && targetStatus === 'received' ? 'Saving...' : 'Mark Received'}
+          {isPending && targetStatus === "received"
+            ? "Saving..."
+            : "Mark Received"}
         </Button>
 
         <Button
           type="button"
           size="sm"
-          className="bg-senate-navy text-white hover:bg-senate-navy-light"
-          disabled={isPending || currentStatus === 'verified'}
-          onClick={() => handleSubmit('verified')}
+          className="bg-pcso-navy text-white hover:bg-pcso-navy-light"
+          disabled={isPending || currentStatus === "verified"}
+          onClick={() => handleSubmit("verified")}
         >
           <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden />
-          {isPending && targetStatus === 'verified' ? 'Saving...' : 'Verify'}
+          {isPending && targetStatus === "verified" ? "Saving..." : "Verify"}
         </Button>
 
         <Button
@@ -140,10 +150,12 @@ export function SalnReviewPanel({
           size="sm"
           variant="destructive"
           disabled={isPending}
-          onClick={() => handleSubmit('deficient')}
+          onClick={() => handleSubmit("deficient")}
         >
           <AlertTriangle className="mr-1.5 h-4 w-4" aria-hidden />
-          {isPending && targetStatus === 'deficient' ? 'Saving...' : 'Flag Deficient'}
+          {isPending && targetStatus === "deficient"
+            ? "Saving..."
+            : "Flag Deficient"}
         </Button>
 
         <p className="ml-auto text-[11px] text-muted-foreground">
