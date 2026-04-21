@@ -1,9 +1,9 @@
 ---
 name: Feature Request
 about: Propose a new feature or enhancement for the Senate HRIS
-title: 'feat: '
+title: "feat: "
 labels: enhancement, needs-triage
-assignees: ''
+assignees: ""
 ---
 
 ## Feature Summary
@@ -65,6 +65,6 @@ If checked, cite the applicable law or circular:
 
 ## Phase Alignment
 
-<!-- Which Phase in Plan.md is this most relevant to? (Optional) -->
+<!-- Which Phase in CLAUDE.md (PCSO HRS PRD) is this most relevant to? (Optional, e.g. P0, P2, P5) -->
 
 Phase:

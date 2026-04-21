@@ -2,7 +2,7 @@
 
 Enterprise HR, payroll, and government-compliance platform for the Senate.
 
-**Status:** Scaffolded via parallel multi-agent implementation (Phases 1–15 of Plan.md).
+**Status:** Scaffolded via parallel multi-agent implementation (phases P0–P11 of the PCSO HRS PRD — `CLAUDE.md`).
 
 ## Tech stack
 
@@ -85,18 +85,18 @@ src/
 
 ## Scripts
 
-| Script | What it does |
-|---|---|
-| `npm run dev` | Next.js dev server |
-| `npm run build` | Production build |
-| `npm run lint` | ESLint |
-| `npm run type-check` | `tsc --noEmit` |
-| `npm run test` | Vitest unit tests |
-| `npm run test:e2e` | Playwright E2E |
+| Script                | What it does                   |
+| --------------------- | ------------------------------ |
+| `npm run dev`         | Next.js dev server             |
+| `npm run build`       | Production build               |
+| `npm run lint`        | ESLint                         |
+| `npm run type-check`  | `tsc --noEmit`                 |
+| `npm run test`        | Vitest unit tests              |
+| `npm run test:e2e`    | Playwright E2E                 |
 | `npm run db:generate` | Generate migration from schema |
-| `npm run db:migrate` | Apply migrations |
-| `npm run db:studio` | Drizzle Studio |
-| `npm run db:seed` | Seed rate tables |
+| `npm run db:migrate`  | Apply migrations               |
+| `npm run db:studio`   | Drizzle Studio                 |
+| `npm run db:seed`     | Seed rate tables               |
 
 ## License
 

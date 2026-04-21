@@ -5,15 +5,15 @@ All subagents and future contributors MUST follow these conventions to keep the 
 ## Import paths (TypeScript `@/*` → `src/*`)
 
 ```ts
-import { db } from '@/lib/db';
-import { employees, payrollRecords } from '@/lib/db/schema';
-import { createServerClient } from '@/lib/supabase/server';
-import { createBrowserClient } from '@/lib/supabase/client';
-import { hasPermission, type Role } from '@/lib/auth/permissions';
-import { EmployeeSchema } from '@/lib/validations/employees';
-import { Button } from '@/components/ui/button';
-import { DataTable } from '@/components/tables/data-table';
-import { PageHeader } from '@/components/layouts/page-header';
+import { db } from "@/lib/db";
+import { employees, payrollRecords } from "@/lib/db/schema";
+import { createServerClient } from "@/lib/supabase/server";
+import { createBrowserClient } from "@/lib/supabase/client";
+import { hasPermission, type Role } from "@/lib/auth/permissions";
+import { EmployeeSchema } from "@/lib/validations/employees";
+import { Button } from "@/components/ui/button";
+import { DataTable } from "@/components/tables/data-table";
+import { PageHeader } from "@/components/layouts/page-header";
 ```
 
 ## File naming
@@ -41,37 +41,57 @@ import { PageHeader } from '@/components/layouts/page-header';
 ```ts
 // src/lib/auth/permissions.ts — produced by auth agent
 export type Role =
-  | 'super_admin'
-  | 'hr_admin'
-  | 'payroll_admin'
-  | 'leave_approver'
-  | 'viewer'
-  | 'employee_self_service';
+  | "super_admin"
+  | "hr_admin"
+  | "payroll_admin"
+  | "leave_approver"
+  | "viewer"
+  | "employee_self_service";
 
 export type Resource =
-  | 'employees' | 'plantilla' | 'attendance' | 'leave'
-  | 'payroll' | 'remittances' | 'performance' | 'saln'
-  | 'reports' | 'admin';
+  | "employees"
+  | "plantilla"
+  | "attendance"
+  | "leave"
+  | "payroll"
+  | "remittances"
+  | "performance"
+  | "saln"
+  | "reports"
+  | "admin";
 
-export type Action = 'view' | 'create' | 'edit' | 'delete' | 'approve' | 'export' | 'process';
+export type Action =
+  | "view"
+  | "create"
+  | "edit"
+  | "delete"
+  | "approve"
+  | "export"
+  | "process";
 ```
 
 ## Server actions pattern
 
 ```ts
-'use server';
-import { z } from 'zod';
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
+"use server";
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
 
 export async function createEmployee(input: unknown) {
   const parsed = EmployeeSchema.parse(input);
-  const user = await requirePermission('employees', 'create');
+  const user = await requirePermission("employees", "create");
   const [row] = await db.insert(employees).values(parsed).returning();
-  await auditLog({ userId: user.id, action: 'create', table: 'employees', recordId: row.id, newValues: row });
-  revalidatePath('/employees');
+  await auditLog({
+    userId: user.id,
+    action: "create",
+    table: "employees",
+    recordId: row.id,
+    newValues: row,
+  });
+  revalidatePath("/employees");
   return row;
 }
 ```
@@ -96,7 +116,7 @@ export async function createEmployee(input: unknown) {
 - Never silently fail government-compliance computations. Log to Sentry.
 - Every write MUST produce an audit log entry.
 
-## Absolute rules (from Plan.md)
+## Absolute rules (from the PCSO HRS PRD — CLAUDE.md)
 
 1. NEVER `any` — use `unknown` and narrow.
 2. NEVER hard-delete — soft delete with `deletedAt`.
@@ -108,6 +128,7 @@ export async function createEmployee(input: unknown) {
 ## Subagent coordination
 
 If your module depends on types/components from another module that doesn't exist yet:
+
 - Write your code referencing the expected path per this doc.
 - Do NOT create stubs or placeholder implementations of other modules' exports.
 - If absolutely blocked, define a local `type` with `// TODO: import from '@/lib/...'` comment.

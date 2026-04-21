@@ -105,7 +105,7 @@ export type PermissionMatrix = {
 //     may only touch their own record (not arbitrary records).
 //   - Roles with no access to an action must still be listed as `[]`.
 //
-// Sources: Plan.md Phase 03 + CSC / PCSO HR rules.
+// Sources: CLAUDE.md Section 11 + CSC / PCSO HR rules.
 
 export const permissionMatrix: PermissionMatrix = {
   // ── employees ─────────────────────────────────────────────────────────────
