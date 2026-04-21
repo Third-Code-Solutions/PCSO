@@ -45,3 +45,6 @@ data/
 # Sentry
 .sentryclirc
 docs/DEV_CREDENTIALS.md
+
+# Claude Code worktrees (never track parallel-swarm working copies)
+.claude/worktrees/

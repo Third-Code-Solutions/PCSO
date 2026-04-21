@@ -22,7 +22,8 @@
     "db:apply-sql": "tsx scripts/apply-sql.ts",
     "db:bootstrap": "npm run db:migrate && npm run db:apply-sql supabase/rls-policies.sql supabase/indexes.sql supabase/triggers/sync-users.sql && npm run db:seed",
     "db:seed-demo": "tsx src/lib/db/demo-seed.ts",
-    "db:seed-auth": "tsx scripts/seed-auth-users.ts"
+    "db:seed-auth": "tsx scripts/seed-auth-users.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

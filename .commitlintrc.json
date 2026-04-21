@@ -1,5 +1,4 @@
 {
-  "extends": ["@commitlint/config-conventional"],
   "rules": {
     "type-enum": [
       2,
@@ -18,12 +17,10 @@
         "revert"
       ]
     ],
+    "type-case": [2, "always", "lower-case"],
+    "type-empty": [2, "never"],
     "scope-case": [2, "always", "lower-case"],
-    "scope-pattern": [
-      2,
-      "always",
-      "^(phase-\\d{2}|[a-z][a-z0-9-]*)$"
-    ],
+    "subject-empty": [2, "never"],
     "subject-max-length": [2, "always", 100],
     "subject-case": [0],
     "body-max-line-length": [1, "always", 200],
