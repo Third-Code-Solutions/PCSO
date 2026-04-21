@@ -7,33 +7,27 @@
  * Reference: DBM National Budget Circular 461
  */
 
-import React from 'react';
-import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-} from '@react-pdf/renderer';
+import React from "react";
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const GRAY = '#6B7280';
-const LIGHT_GRAY = '#F9FAFB';
-const BORDER = '#E5E7EB';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const GRAY = "#6B7280";
+const LIGHT_GRAY = "#F9FAFB";
+const BORDER = "#E5E7EB";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
-    backgroundColor: '#FFFFFF',
+    fontFamily: "Helvetica",
+    backgroundColor: "#FFFFFF",
     padding: 48,
     fontSize: 10,
-    color: '#111827',
+    color: "#111827",
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 24,
     borderBottomWidth: 2,
     borderBottomColor: NAVY,
@@ -42,15 +36,15 @@ const styles = StyleSheet.create({
   agency: {
     fontSize: 8,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1,
     marginBottom: 4,
   },
   title: {
     fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1.5,
     marginBottom: 2,
   },
@@ -60,7 +54,7 @@ const styles = StyleSheet.create({
   },
   noticeNo: {
     marginTop: 16,
-    textAlign: 'right',
+    textAlign: "right",
     fontSize: 9,
     color: GRAY,
   },
@@ -87,9 +81,9 @@ const styles = StyleSheet.create({
   },
   detailsTitle: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 10,
     borderBottomWidth: 1,
@@ -97,25 +91,25 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   detailRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 6,
   },
   detailLabel: {
     width: 180,
     fontSize: 9,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.3,
   },
   detailValue: {
     flex: 1,
     fontSize: 10,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111827',
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
   },
   stepDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     marginTop: 8,
     marginBottom: 8,
@@ -124,24 +118,24 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: NAVY,
     borderRadius: 4,
-    padding: '4 12',
-    alignItems: 'center',
+    padding: "4 12",
+    alignItems: "center",
   },
   stepLabel: {
     fontSize: 7,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     marginBottom: 2,
   },
   stepValue: {
     fontSize: 20,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
   },
   arrowText: {
     fontSize: 18,
     color: GOLD,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
   },
   basisBox: {
     marginTop: 8,
@@ -152,18 +146,18 @@ const styles = StyleSheet.create({
   basisTitle: {
     fontSize: 8,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     marginBottom: 4,
   },
   basisItem: {
     fontSize: 9,
-    color: '#111827',
+    color: "#111827",
     marginBottom: 2,
   },
   signatureSection: {
     marginTop: 32,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   signatureBlock: {
     width: 220,
@@ -177,12 +171,12 @@ const styles = StyleSheet.create({
   signatureLabel: {
     fontSize: 8,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   signatureName: {
     fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111827',
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
     marginBottom: 2,
   },
   signatureTitle: {
@@ -190,12 +184,12 @@ const styles = StyleSheet.create({
     color: GRAY,
   },
   footer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 24,
     left: 48,
     right: 48,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     borderTopWidth: 1,
     borderTopColor: BORDER,
     paddingTop: 6,
@@ -214,7 +208,7 @@ const styles = StyleSheet.create({
   acknowledgementTitle: {
     fontSize: 8,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     marginBottom: 8,
   },
   acknowledgementLine: {
@@ -270,24 +264,30 @@ export function StepIncrementNoticePdf({
   approvedByName,
   generatedAt,
 }: StepIncrementNoticePdfProps) {
-  const formattedEffectivity = new Date(effectivityDate).toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const formattedEffectivity = new Date(effectivityDate).toLocaleDateString(
+    "en-PH",
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    },
+  );
 
   return (
     <Document
       title={`Notice of Step Increment — ${employee.fullName}`}
-      author="Senate of the Philippines HRIS"
+      author="PCSO HRIS"
     >
       <Page size="LETTER" style={styles.page}>
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <View style={styles.header}>
-          <Text style={styles.agency}>Senate of the Philippines</Text>
+          <Text style={styles.agency}>
+            Philippine Charity Sweepstakes Office
+          </Text>
           <Text style={styles.title}>Notice of Salary Step Increment</Text>
           <Text style={styles.subtitle}>
-            Pursuant to DBM National Budget Circular 461 and CSC MC No. 6, s. 2012
+            Pursuant to DBM National Budget Circular 461 and CSC MC No. 6, s.
+            2012
           </Text>
         </View>
 
@@ -341,15 +341,16 @@ export function StepIncrementNoticePdf({
         {/* ── Body text ─────────────────────────────────────────────────── */}
         <View style={styles.body}>
           <Text style={styles.paragraph}>
-            This is to certify that {employee.fullName}, {employee.positionTitle},{' '}
-            is hereby granted a Salary Step Increment from Step {fromStep} to Step {toStep},{' '}
-            Salary Grade {employee.salaryGrade}, effective {formattedEffectivity}.
+            This is to certify that {employee.fullName},{" "}
+            {employee.positionTitle}, is hereby granted a Salary Step Increment
+            from Step {fromStep} to Step {toStep}, Salary Grade{" "}
+            {employee.salaryGrade}, effective {formattedEffectivity}.
           </Text>
 
           <Text style={styles.paragraph}>
-            The step increment is granted in accordance with CSC Memorandum Circular No. 6,{' '}
-            series of 2012, and DBM National Budget Circular 461, based on the following{' '}
-            performance rating periods:
+            The step increment is granted in accordance with CSC Memorandum
+            Circular No. 6, series of 2012, and DBM National Budget Circular
+            461, based on the following performance rating periods:
           </Text>
 
           {/* Basis periods */}
@@ -357,7 +358,8 @@ export function StepIncrementNoticePdf({
             <Text style={styles.basisTitle}>Basis Performance Ratings</Text>
             {basisPeriods.map((bp, idx) => (
               <Text key={idx} style={styles.basisItem}>
-                {idx + 1}. {bp.label} — {bp.numerical.toFixed(3)} ({bp.adjectival.replace('_', ' ').toUpperCase()})
+                {idx + 1}. {bp.label} — {bp.numerical.toFixed(3)} (
+                {bp.adjectival.replace("_", " ").toUpperCase()})
               </Text>
             ))}
           </View>
@@ -383,7 +385,9 @@ export function StepIncrementNoticePdf({
 
         {/* ── Acknowledgement ───────────────────────────────────────────── */}
         <View style={styles.acknowledgementBox}>
-          <Text style={styles.acknowledgementTitle}>Acknowledgement Receipt</Text>
+          <Text style={styles.acknowledgementTitle}>
+            Acknowledgement Receipt
+          </Text>
           <View style={styles.acknowledgementLine} />
           <Text style={styles.acknowledgementLabel}>
             Signature over Printed Name / Date Received — {employee.fullName}
@@ -393,10 +397,10 @@ export function StepIncrementNoticePdf({
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
-            Notice No. {noticeNumber} — Senate of the Philippines HRIS
+            Notice No. {noticeNumber} — PCSO HRIS
           </Text>
           <Text style={styles.footerText}>
-            Generated: {generatedAt ?? new Date().toLocaleDateString('en-PH')}
+            Generated: {generatedAt ?? new Date().toLocaleDateString("en-PH")}
           </Text>
         </View>
       </Page>

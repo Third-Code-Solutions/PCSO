@@ -2,38 +2,38 @@
  * Payroll Register PDF — full list of all employee records for a period.
  * Used by Finance for reconciliation and COA audits.
  */
-import React from 'react';
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import type { PayrollPeriod } from '@/lib/db/schema';
-import type { PayrollRecordWithEmployee } from '@/app/(dashboard)/payroll/queries';
+import React from "react";
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import type { PayrollPeriod } from "@/lib/db/schema";
+import type { PayrollRecordWithEmployee } from "@/app/(dashboard)/payroll/queries";
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const BORDER = '#E5E7EB';
-const GRAY = '#6B7280';
-const ALT = '#F9FAFB';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const BORDER = "#E5E7EB";
+const GRAY = "#6B7280";
+const ALT = "#F9FAFB";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 7.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     padding: 28,
-    color: '#111827',
+    color: "#111827",
   },
   header: {
     borderBottomWidth: 2,
     borderBottomColor: NAVY,
     paddingBottom: 8,
     marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
   },
   headerLeft: {},
   agencyName: {
     fontSize: 11,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
   },
   headerMeta: {
@@ -43,25 +43,25 @@ const styles = StyleSheet.create({
   },
   reportTitle: {
     fontSize: 10,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textAlign: 'right',
+    textAlign: "right",
   },
   // Table
   tableHeader: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
     paddingVertical: 4,
     paddingHorizontal: 4,
   },
   th: {
-    color: '#FFFFFF',
-    fontFamily: 'Helvetica-Bold',
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
     fontSize: 6.5,
     letterSpacing: 0.3,
   },
   row: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingVertical: 3,
     paddingHorizontal: 4,
     borderBottomWidth: 1,
@@ -72,59 +72,59 @@ const styles = StyleSheet.create({
   },
   td: {
     fontSize: 7,
-    color: '#374151',
+    color: "#374151",
   },
   tdMono: {
     fontSize: 7,
-    fontFamily: 'Helvetica',
-    color: '#374151',
-    textAlign: 'right',
+    fontFamily: "Helvetica",
+    color: "#374151",
+    textAlign: "right",
   },
   // Column widths
-  colName: { width: '20%' },
-  colEmpNo: { width: '8%' },
-  colPos: { width: '15%' },
-  colSG: { width: '6%', textAlign: 'center' },
-  colGross: { width: '10%', textAlign: 'right' },
-  colDed: { width: '10%', textAlign: 'right' },
-  colNet: { width: '10%', textAlign: 'right' },
-  colGsis: { width: '8%', textAlign: 'right' },
-  colTax: { width: '8%', textAlign: 'right' },
-  colStatus: { width: '5%', textAlign: 'center' },
+  colName: { width: "20%" },
+  colEmpNo: { width: "8%" },
+  colPos: { width: "15%" },
+  colSG: { width: "6%", textAlign: "center" },
+  colGross: { width: "10%", textAlign: "right" },
+  colDed: { width: "10%", textAlign: "right" },
+  colNet: { width: "10%", textAlign: "right" },
+  colGsis: { width: "8%", textAlign: "right" },
+  colTax: { width: "8%", textAlign: "right" },
+  colStatus: { width: "5%", textAlign: "center" },
   // Totals
   totalsRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingVertical: 4,
     paddingHorizontal: 4,
     backgroundColor: NAVY,
     marginTop: 2,
   },
   totalLabel: {
-    color: '#FFFFFF',
-    fontFamily: 'Helvetica-Bold',
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
     fontSize: 7.5,
   },
   totalValue: {
     color: GOLD,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     fontSize: 7.5,
-    textAlign: 'right',
+    textAlign: "right",
   },
   footer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 20,
     left: 28,
     right: 28,
     borderTopWidth: 1,
     borderTopColor: BORDER,
     paddingTop: 6,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   footerText: {
     color: GRAY,
     fontSize: 6.5,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   pageNumber: {
     color: GRAY,
@@ -133,14 +133,17 @@ const styles = StyleSheet.create({
 });
 
 function formatPeso(value: string | null | undefined): string {
-  if (!value) return '0.00';
+  if (!value) return "0.00";
   const num = parseFloat(value);
-  return num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return num.toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function shortName(r: PayrollRecordWithEmployee): string {
   const emp = r.employee;
-  const mi = emp.middleName ? ` ${emp.middleName.charAt(0)}.` : '';
+  const mi = emp.middleName ? ` ${emp.middleName.charAt(0)}.` : "";
   return `${emp.lastName}, ${emp.firstName}${mi}`;
 }
 
@@ -156,35 +159,47 @@ export function PayrollRegisterDocument({
   generatedAt,
 }: PayrollRegisterDocumentProps) {
   const totalGross = records.reduce((s, r) => s + parseFloat(r.grossPay), 0);
-  const totalDed = records.reduce((s, r) => s + parseFloat(r.totalDeductions), 0);
+  const totalDed = records.reduce(
+    (s, r) => s + parseFloat(r.totalDeductions),
+    0,
+  );
   const totalNet = records.reduce((s, r) => s + parseFloat(r.netPay), 0);
   const totalGsis = records.reduce((s, r) => s + parseFloat(r.gsisPersonal), 0);
-  const totalTax = records.reduce((s, r) => s + parseFloat(r.withholdingTax), 0);
+  const totalTax = records.reduce(
+    (s, r) => s + parseFloat(r.withholdingTax),
+    0,
+  );
 
   const genTs = generatedAt
-    ? new Date(generatedAt).toLocaleString('en-PH')
-    : new Date().toLocaleString('en-PH');
+    ? new Date(generatedAt).toLocaleString("en-PH")
+    : new Date().toLocaleString("en-PH");
 
   return (
     <Document
       title={`Payroll Register - ${period.name}`}
-      author="Senate of the Philippines HRIS"
+      author="PCSO HRIS"
       subject="Payroll Register"
     >
       <Page size="LEGAL" orientation="landscape" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.agencyName}>SENATE OF THE PHILIPPINES</Text>
+            <Text style={styles.agencyName}>
+              PHILIPPINE CHARITY SWEEPSTAKES OFFICE
+            </Text>
             <Text style={styles.headerMeta}>Financial Services Department</Text>
           </View>
           <View>
             <Text style={styles.reportTitle}>PAYROLL REGISTER</Text>
-            <Text style={[styles.headerMeta, { textAlign: 'right' }]}>{period.name}</Text>
-            <Text style={[styles.headerMeta, { textAlign: 'right' }]}>
-              Scope:{' '}
-              {period.scope === 'jo_cos' ? 'JO/COS Employees' : 'Regular Employees'} |
-              Records: {records.length}
+            <Text style={[styles.headerMeta, { textAlign: "right" }]}>
+              {period.name}
+            </Text>
+            <Text style={[styles.headerMeta, { textAlign: "right" }]}>
+              Scope:{" "}
+              {period.scope === "jo_cos"
+                ? "JO/COS Employees"
+                : "Regular Employees"}{" "}
+              | Records: {records.length}
             </Text>
           </View>
         </View>
@@ -210,44 +225,72 @@ export function PayrollRegisterDocument({
             style={[styles.row, index % 2 === 1 ? styles.rowAlt : {}]}
           >
             <Text style={[styles.td, styles.colName]}>{shortName(r)}</Text>
-            <Text style={[styles.td, styles.colEmpNo]}>{r.employee.employeeNo}</Text>
+            <Text style={[styles.td, styles.colEmpNo]}>
+              {r.employee.employeeNo}
+            </Text>
             <Text style={[styles.td, styles.colPos]} numberOfLines={2}>
               {r.positionTitle}
             </Text>
             <Text style={[styles.td, styles.colSG]}>
               {r.salaryGrade}-{r.step}
             </Text>
-            <Text style={[styles.tdMono, styles.colGross]}>{formatPeso(r.grossPay)}</Text>
-            <Text style={[styles.tdMono, styles.colGsis]}>{formatPeso(r.gsisPersonal)}</Text>
-            <Text style={[styles.tdMono, styles.colTax]}>{formatPeso(r.withholdingTax)}</Text>
-            <Text style={[styles.tdMono, styles.colDed]}>{formatPeso(r.totalDeductions)}</Text>
-            <Text style={[styles.tdMono, styles.colNet, { fontFamily: 'Helvetica-Bold' }]}>
+            <Text style={[styles.tdMono, styles.colGross]}>
+              {formatPeso(r.grossPay)}
+            </Text>
+            <Text style={[styles.tdMono, styles.colGsis]}>
+              {formatPeso(r.gsisPersonal)}
+            </Text>
+            <Text style={[styles.tdMono, styles.colTax]}>
+              {formatPeso(r.withholdingTax)}
+            </Text>
+            <Text style={[styles.tdMono, styles.colDed]}>
+              {formatPeso(r.totalDeductions)}
+            </Text>
+            <Text
+              style={[
+                styles.tdMono,
+                styles.colNet,
+                { fontFamily: "Helvetica-Bold" },
+              ]}
+            >
               {formatPeso(r.netPay)}
             </Text>
             <Text style={[styles.td, styles.colStatus]}>
-              {r.hasException ? '!' : r.status.charAt(0).toUpperCase()}
+              {r.hasException ? "!" : r.status.charAt(0).toUpperCase()}
             </Text>
           </View>
         ))}
 
         {/* Totals */}
         <View style={styles.totalsRow}>
-          <Text style={[styles.totalLabel, styles.colName]}>TOTAL ({records.length})</Text>
+          <Text style={[styles.totalLabel, styles.colName]}>
+            TOTAL ({records.length})
+          </Text>
           <Text style={[styles.totalLabel, styles.colEmpNo]} />
           <Text style={[styles.totalLabel, styles.colPos]} />
           <Text style={[styles.totalLabel, styles.colSG]} />
-          <Text style={[styles.totalValue, styles.colGross]}>{formatPeso(totalGross.toFixed(2))}</Text>
-          <Text style={[styles.totalValue, styles.colGsis]}>{formatPeso(totalGsis.toFixed(2))}</Text>
-          <Text style={[styles.totalValue, styles.colTax]}>{formatPeso(totalTax.toFixed(2))}</Text>
-          <Text style={[styles.totalValue, styles.colDed]}>{formatPeso(totalDed.toFixed(2))}</Text>
-          <Text style={[styles.totalValue, styles.colNet]}>{formatPeso(totalNet.toFixed(2))}</Text>
+          <Text style={[styles.totalValue, styles.colGross]}>
+            {formatPeso(totalGross.toFixed(2))}
+          </Text>
+          <Text style={[styles.totalValue, styles.colGsis]}>
+            {formatPeso(totalGsis.toFixed(2))}
+          </Text>
+          <Text style={[styles.totalValue, styles.colTax]}>
+            {formatPeso(totalTax.toFixed(2))}
+          </Text>
+          <Text style={[styles.totalValue, styles.colDed]}>
+            {formatPeso(totalDed.toFixed(2))}
+          </Text>
+          <Text style={[styles.totalValue, styles.colNet]}>
+            {formatPeso(totalNet.toFixed(2))}
+          </Text>
           <Text style={[styles.totalLabel, styles.colStatus]} />
         </View>
 
         {/* Footer */}
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
-            Senate HRIS — Payroll Register — {period.name} — Generated: {genTs}
+            PCSO HRIS — Payroll Register — {period.name} — Generated: {genTs}
           </Text>
           <Text
             style={styles.pageNumber}

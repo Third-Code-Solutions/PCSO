@@ -5,9 +5,9 @@
  * Uses Resend's React email renderer.
  */
 
-import * as React from 'react';
-import { LEAVE_TYPES } from '@/lib/constants/leave-types';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
+import * as React from "react";
+import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,7 +32,7 @@ export interface LeaveSubmittedEmailProps {
   leaveApplicationId: string;
   /** Full name of the approver receiving this email. */
   approverName: string;
-  /** Base URL of the application (e.g., https://hris.senate.gov.ph). */
+  /** Base URL of the application (e.g., https://hris.pcso.gov.ph). */
   appUrl: string;
 }
 
@@ -41,10 +41,10 @@ export interface LeaveSubmittedEmailProps {
 // ---------------------------------------------------------------------------
 
 function formatDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  return new Date(isoDate).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 }
 
@@ -80,43 +80,43 @@ export function LeaveSubmittedEmail({
       </head>
       <body
         style={{
-          backgroundColor: '#f8f5ee',
+          backgroundColor: "#f8f5ee",
           fontFamily: "'Inter', Arial, sans-serif",
           margin: 0,
-          padding: '24px',
+          padding: "24px",
         }}
       >
         <table
           width="100%"
           cellPadding={0}
           cellSpacing={0}
-          style={{ maxWidth: '600px', margin: '0 auto' }}
+          style={{ maxWidth: "600px", margin: "0 auto" }}
         >
           {/* Header */}
           <tbody>
             <tr>
               <td
                 style={{
-                  backgroundColor: '#0B2545',
-                  borderRadius: '8px 8px 0 0',
-                  padding: '24px 32px',
+                  backgroundColor: "#0B2545",
+                  borderRadius: "8px 8px 0 0",
+                  padding: "24px 32px",
                 }}
               >
                 <p
                   style={{
-                    color: '#C8A84B',
-                    fontSize: '11px',
-                    letterSpacing: '2px',
-                    textTransform: 'uppercase',
-                    margin: '0 0 4px',
+                    color: "#C8A84B",
+                    fontSize: "11px",
+                    letterSpacing: "2px",
+                    textTransform: "uppercase",
+                    margin: "0 0 4px",
                   }}
                 >
-                  Senate of the Philippines
+                  Philippine Charity Sweepstakes Office
                 </p>
                 <h1
                   style={{
-                    color: '#FAF4E6',
-                    fontSize: '20px',
+                    color: "#FAF4E6",
+                    fontSize: "20px",
                     fontWeight: 600,
                     margin: 0,
                     lineHeight: 1.4,
@@ -131,17 +131,30 @@ export function LeaveSubmittedEmail({
             <tr>
               <td
                 style={{
-                  backgroundColor: '#ffffff',
-                  padding: '32px',
-                  borderLeft: '1px solid #e5e7eb',
-                  borderRight: '1px solid #e5e7eb',
+                  backgroundColor: "#ffffff",
+                  padding: "32px",
+                  borderLeft: "1px solid #e5e7eb",
+                  borderRight: "1px solid #e5e7eb",
                 }}
               >
-                <p style={{ margin: '0 0 20px', color: '#374151', fontSize: '15px' }}>
+                <p
+                  style={{
+                    margin: "0 0 20px",
+                    color: "#374151",
+                    fontSize: "15px",
+                  }}
+                >
                   Dear <strong>{approverName}</strong>,
                 </p>
-                <p style={{ margin: '0 0 24px', color: '#374151', fontSize: '15px' }}>
-                  A leave application has been submitted and is pending your review.
+                <p
+                  style={{
+                    margin: "0 0 24px",
+                    color: "#374151",
+                    fontSize: "15px",
+                  }}
+                >
+                  A leave application has been submitted and is pending your
+                  review.
                 </p>
 
                 {/* Application Details Card */}
@@ -150,61 +163,61 @@ export function LeaveSubmittedEmail({
                   cellPadding={0}
                   cellSpacing={0}
                   style={{
-                    backgroundColor: '#f9fafb',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    marginBottom: '24px',
+                    backgroundColor: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    marginBottom: "24px",
                   }}
                 >
                   <tbody>
                     <tr>
-                      <td style={{ padding: '20px' }}>
+                      <td style={{ padding: "20px" }}>
                         <h2
                           style={{
-                            color: '#0B2545',
-                            fontSize: '13px',
+                            color: "#0B2545",
+                            fontSize: "13px",
                             fontWeight: 600,
-                            letterSpacing: '1px',
-                            textTransform: 'uppercase',
-                            margin: '0 0 16px',
+                            letterSpacing: "1px",
+                            textTransform: "uppercase",
+                            margin: "0 0 16px",
                           }}
                         >
                           Application Details
                         </h2>
 
                         {[
-                          ['Employee', `${applicantName} (${employeeNo})`],
-                          ['Leave Type', leaveTypeName],
-                          ['Date From', formatDate(startDate)],
-                          ['Date To', formatDate(endDate)],
-                          ['Working Days', String(workingDays)],
-                          ...(reason ? [['Reason', reason]] : []),
+                          ["Employee", `${applicantName} (${employeeNo})`],
+                          ["Leave Type", leaveTypeName],
+                          ["Date From", formatDate(startDate)],
+                          ["Date To", formatDate(endDate)],
+                          ["Working Days", String(workingDays)],
+                          ...(reason ? [["Reason", reason]] : []),
                         ].map(([label, value]) => (
                           <table
                             key={label}
                             width="100%"
                             cellPadding={0}
                             cellSpacing={0}
-                            style={{ marginBottom: '12px' }}
+                            style={{ marginBottom: "12px" }}
                           >
                             <tbody>
                               <tr>
                                 <td
                                   style={{
-                                    color: '#6b7280',
-                                    fontSize: '12px',
+                                    color: "#6b7280",
+                                    fontSize: "12px",
                                     fontWeight: 500,
-                                    width: '130px',
-                                    verticalAlign: 'top',
-                                    paddingTop: '2px',
+                                    width: "130px",
+                                    verticalAlign: "top",
+                                    paddingTop: "2px",
                                   }}
                                 >
                                   {label}
                                 </td>
                                 <td
                                   style={{
-                                    color: '#111827',
-                                    fontSize: '14px',
+                                    color: "#111827",
+                                    fontSize: "14px",
                                     fontWeight: 500,
                                   }}
                                 >
@@ -223,18 +236,18 @@ export function LeaveSubmittedEmail({
                 <table width="100%" cellPadding={0} cellSpacing={0}>
                   <tbody>
                     <tr>
-                      <td style={{ paddingBottom: '24px' }}>
+                      <td style={{ paddingBottom: "24px" }}>
                         <a
                           href={approvalUrl}
                           style={{
-                            backgroundColor: '#0B2545',
-                            borderRadius: '6px',
-                            color: '#FAF4E6',
-                            display: 'inline-block',
-                            fontSize: '14px',
+                            backgroundColor: "#0B2545",
+                            borderRadius: "6px",
+                            color: "#FAF4E6",
+                            display: "inline-block",
+                            fontSize: "14px",
                             fontWeight: 600,
-                            padding: '12px 24px',
-                            textDecoration: 'none',
+                            padding: "12px 24px",
+                            textDecoration: "none",
                           }}
                         >
                           Review Application
@@ -244,11 +257,11 @@ export function LeaveSubmittedEmail({
                   </tbody>
                 </table>
 
-                <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>
-                  Or copy this link:{' '}
+                <p style={{ color: "#6b7280", fontSize: "13px", margin: 0 }}>
+                  Or copy this link:{" "}
                   <a
                     href={approvalUrl}
-                    style={{ color: '#0B2545', wordBreak: 'break-all' }}
+                    style={{ color: "#0B2545", wordBreak: "break-all" }}
                   >
                     {approvalUrl}
                   </a>
@@ -260,23 +273,24 @@ export function LeaveSubmittedEmail({
             <tr>
               <td
                 style={{
-                  backgroundColor: '#f3f4f6',
-                  borderRadius: '0 0 8px 8px',
-                  borderLeft: '1px solid #e5e7eb',
-                  borderRight: '1px solid #e5e7eb',
-                  borderBottom: '1px solid #e5e7eb',
-                  padding: '16px 32px',
-                  textAlign: 'center',
+                  backgroundColor: "#f3f4f6",
+                  borderRadius: "0 0 8px 8px",
+                  borderLeft: "1px solid #e5e7eb",
+                  borderRight: "1px solid #e5e7eb",
+                  borderBottom: "1px solid #e5e7eb",
+                  padding: "16px 32px",
+                  textAlign: "center",
                 }}
               >
                 <p
                   style={{
-                    color: '#9ca3af',
-                    fontSize: '12px',
+                    color: "#9ca3af",
+                    fontSize: "12px",
                     margin: 0,
                   }}
                 >
-                  This is an automated message from the Senate HRIS. Do not reply to this email.
+                  This is an automated message from the PCSO HRIS. Do not reply
+                  to this email.
                 </p>
               </td>
             </tr>
@@ -308,19 +322,19 @@ export function leaveSubmittedPlainText({
 
   return [
     `Dear ${approverName},`,
-    '',
-    'A leave application has been submitted and requires your review.',
-    '',
+    "",
+    "A leave application has been submitted and requires your review.",
+    "",
     `Employee:      ${applicantName} (${employeeNo})`,
     `Leave Type:    ${leaveTypeName}`,
     `Date From:     ${formatDate(startDate)}`,
     `Date To:       ${formatDate(endDate)}`,
     `Working Days:  ${workingDays}`,
     ...(reason ? [`Reason:        ${reason}`] : []),
-    '',
+    "",
     `Review the application here: ${approvalUrl}`,
-    '',
-    '---',
-    'This is an automated message from the Senate HRIS.',
-  ].join('\n');
+    "",
+    "---",
+    "This is an automated message from the PCSO HRIS.",
+  ].join("\n");
 }

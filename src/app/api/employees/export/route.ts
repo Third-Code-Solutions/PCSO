@@ -1,20 +1,20 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { and, eq, ilike, isNull, or, sql, desc } from 'drizzle-orm';
-import { db } from '@/lib/db';
-import { employees, offices } from '@/lib/db/schema';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
+import { NextResponse, type NextRequest } from "next/server";
+import { and, eq, ilike, isNull, or, sql, desc } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { employees, offices } from "@/lib/db/schema";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
 import {
   APPOINTMENT_TYPE_VALUES,
   EMPLOYEE_STATUS_VALUES,
   EmployeeListParamsSchema,
-} from '@/lib/validations/employees';
-import { APPOINTMENT_TYPE_LABELS } from '@/lib/constants/appointment-types';
+} from "@/lib/validations/employees";
+import { APPOINTMENT_TYPE_LABELS } from "@/lib/constants/appointment-types";
 
 // CSV export — mirrors the filter/search logic in queries.ts so the exported
 // rows match exactly what the user sees in the table.
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
 /**
  * Escape a single CSV cell per RFC 4180.
@@ -22,7 +22,7 @@ export const runtime = 'nodejs';
  * newline gets wrapped in double quotes with embedded quotes doubled.
  */
 function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) return "";
   const str = String(value);
   if (/[",\n\r]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
@@ -31,28 +31,29 @@ function csvCell(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
-  const user = await requirePermission('employees', 'view');
+  const user = await requirePermission("employees", "view");
 
   // Parse + validate query params with the same schema used by the list page.
   const searchParams = request.nextUrl.searchParams;
   const parsed = EmployeeListParamsSchema.safeParse({
-    page: searchParams.get('page') ?? undefined,
-    perPage: searchParams.get('perPage') ?? undefined,
-    search: searchParams.get('search') ?? undefined,
-    appointmentType: searchParams.get('appointmentType') ?? undefined,
-    officeId: searchParams.get('officeId') ?? undefined,
-    status: searchParams.get('status') ?? undefined,
-    salaryGrade: searchParams.get('salaryGrade') ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    perPage: searchParams.get("perPage") ?? undefined,
+    search: searchParams.get("search") ?? undefined,
+    appointmentType: searchParams.get("appointmentType") ?? undefined,
+    officeId: searchParams.get("officeId") ?? undefined,
+    status: searchParams.get("status") ?? undefined,
+    salaryGrade: searchParams.get("salaryGrade") ?? undefined,
   });
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Invalid query parameters', details: parsed.error.flatten() },
+      { error: "Invalid query parameters", details: parsed.error.flatten() },
       { status: 400 },
     );
   }
 
-  const { search, appointmentType, officeId, status, salaryGrade } = parsed.data;
+  const { search, appointmentType, officeId, status, salaryGrade } =
+    parsed.data;
 
   const conditions = [isNull(employees.deletedAt)];
 
@@ -115,78 +116,79 @@ export async function GET(request: NextRequest) {
     .limit(MAX_EXPORT_ROWS);
 
   const header = [
-    'Employee No.',
-    'Last Name',
-    'First Name',
-    'Middle Name',
-    'Suffix',
-    'Position Title',
-    'Appointment Type',
-    'Salary Grade',
-    'Step',
-    'Status',
-    'Office',
-    'Email',
-    'Phone',
-    'Date Hired',
-    'Date Regularized',
-    'Birth Date',
-    'Gender',
-    'Civil Status',
-    'TIN',
-    'GSIS No.',
-    'PhilHealth No.',
-    'Pag-IBIG No.',
+    "Employee No.",
+    "Last Name",
+    "First Name",
+    "Middle Name",
+    "Suffix",
+    "Position Title",
+    "Appointment Type",
+    "Salary Grade",
+    "Step",
+    "Status",
+    "Office",
+    "Email",
+    "Phone",
+    "Date Hired",
+    "Date Regularized",
+    "Birth Date",
+    "Gender",
+    "Civil Status",
+    "TIN",
+    "GSIS No.",
+    "PhilHealth No.",
+    "Pag-IBIG No.",
   ];
 
-  const lines: string[] = [header.map(csvCell).join(',')];
+  const lines: string[] = [header.map(csvCell).join(",")];
 
   for (const r of rows) {
     const apptLabel =
-      APPOINTMENT_TYPE_LABELS[r.appointmentType as keyof typeof APPOINTMENT_TYPE_LABELS] ??
-      r.appointmentType;
+      APPOINTMENT_TYPE_LABELS[
+        r.appointmentType as keyof typeof APPOINTMENT_TYPE_LABELS
+      ] ?? r.appointmentType;
     const statusLabel = r.status
-      .replace(/_/g, ' ')
+      .replace(/_/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     lines.push(
       [
         r.employeeNo,
         r.lastName,
         r.firstName,
-        r.middleName ?? '',
-        r.suffix ?? '',
+        r.middleName ?? "",
+        r.suffix ?? "",
         r.positionTitle,
         apptLabel,
         `SG-${r.salaryGrade}`,
         r.step,
         statusLabel,
-        r.officeName ?? '',
-        r.email ?? '',
-        r.phone ?? '',
+        r.officeName ?? "",
+        r.email ?? "",
+        r.phone ?? "",
         r.dateHired,
-        r.dateRegularized ?? '',
+        r.dateRegularized ?? "",
         r.birthDate,
         r.gender,
         r.civilStatus,
-        r.tin ?? '',
-        r.gsisNo ?? '',
-        r.philhealthNo ?? '',
-        r.pagibigNo ?? '',
+        r.tin ?? "",
+        r.gsisNo ?? "",
+        r.philhealthNo ?? "",
+        r.pagibigNo ?? "",
       ]
         .map(csvCell)
-        .join(','),
+        .join(","),
     );
   }
 
   // BOM for Excel UTF-8 compatibility.
-  const body = '\uFEFF' + lines.join('\n');
+  const body = "\uFEFF" + lines.join("\n");
   const stamp = new Date().toISOString().slice(0, 10);
 
   await auditLog({
     userId: user.id,
-    action: 'export',
-    table: 'employees',
-    recordId: 'bulk',
+    action: "export",
+    table: "employees",
+    recordId: "bulk",
     newValues: {
       exportedRows: rows.length,
       filters: {
@@ -202,9 +204,9 @@ export async function GET(request: NextRequest) {
   return new NextResponse(body, {
     status: 200,
     headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="senate-employees-${stamp}.csv"`,
-      'Cache-Control': 'no-store',
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="pcso-employees-${stamp}.csv"`,
+      "Cache-Control": "no-store",
     },
   });
 }

@@ -12,13 +12,7 @@
  * CONVENTIONS.md is used for attendance types not yet exposed from Phase 11.
  */
 
-import {
-  Document,
-  Page,
-  View,
-  Text,
-  StyleSheet,
-} from '@react-pdf/renderer';
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 
 // ─── Attendance types (Phase 11 will export these from @/lib/db/schema) ───────
 // TODO: import from '@/lib/db/schema/attendance' once Phase 11 is complete
@@ -26,7 +20,7 @@ import {
 interface DailyAttendanceEntry {
   date: string; // ISO date string
   dayOfWeek: string; // "Mon", "Tue", etc.
-  morningIn: string | null;  // "08:00" or null if absent
+  morningIn: string | null; // "08:00" or null if absent
   morningOut: string | null; // "12:00" or null
   afternoonIn: string | null;
   afternoonOut: string | null;
@@ -52,36 +46,36 @@ interface DtrAttendanceSummary {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const BORDER = '#D1D5DB';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const BORDER = "#D1D5DB";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 7.5,
     padding: 28,
-    color: '#111827',
+    color: "#111827",
   },
   headerCenter: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 8,
   },
   formNo: {
     fontSize: 6.5,
-    color: '#6B7280',
+    color: "#6B7280",
     marginBottom: 2,
   },
   formTitle: {
     fontSize: 12,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   formSubtitle: {
     fontSize: 7,
-    color: '#374151',
+    color: "#374151",
     marginTop: 1,
   },
   divider: {
@@ -90,8 +84,8 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 8,
     gap: 16,
   },
@@ -100,14 +94,14 @@ const styles = StyleSheet.create({
   },
   metaLabel: {
     fontSize: 6,
-    color: '#6B7280',
-    textTransform: 'uppercase',
+    color: "#6B7280",
+    textTransform: "uppercase",
     marginBottom: 1,
   },
   metaValue: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111827',
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
     borderBottomWidth: 0.5,
     borderBottomColor: BORDER,
     paddingBottom: 2,
@@ -118,40 +112,40 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
   tableHead: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
   },
   thCell: {
-    color: '#FFFFFF',
-    fontFamily: 'Helvetica-Bold',
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
     fontSize: 6,
-    textTransform: 'uppercase',
-    textAlign: 'center',
+    textTransform: "uppercase",
+    textAlign: "center",
     paddingHorizontal: 3,
     paddingVertical: 4,
     borderRightWidth: 0.3,
-    borderRightColor: 'rgba(255,255,255,0.2)',
+    borderRightColor: "rgba(255,255,255,0.2)",
   },
   tdRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderBottomWidth: 0.3,
     borderBottomColor: BORDER,
   },
   tdRowAlt: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
   },
   tdCell: {
     fontSize: 6.5,
-    textAlign: 'center',
+    textAlign: "center",
     paddingHorizontal: 3,
     paddingVertical: 3,
     borderRightWidth: 0.3,
     borderRightColor: BORDER,
-    color: '#374151',
+    color: "#374151",
   },
   tdCellDate: {
     fontSize: 6.5,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     paddingHorizontal: 3,
     paddingVertical: 3,
     borderRightWidth: 0.3,
@@ -159,30 +153,30 @@ const styles = StyleSheet.create({
     color: NAVY,
   },
   tdCellHoliday: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
     fontSize: 5.5,
-    textAlign: 'center',
+    textAlign: "center",
     paddingHorizontal: 3,
     paddingVertical: 3,
-    color: '#92400E',
+    color: "#92400E",
     borderRightWidth: 0.3,
     borderRightColor: BORDER,
   },
   tdCellAbsent: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: "#FEE2E2",
     fontSize: 6.5,
-    textAlign: 'center',
+    textAlign: "center",
     paddingHorizontal: 3,
     paddingVertical: 3,
-    color: '#B91C1C',
+    color: "#B91C1C",
     borderRightWidth: 0.3,
     borderRightColor: BORDER,
   },
   // Summary block
   summarySection: {
     marginTop: 12,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "flex-end",
   },
   summaryBox: {
     borderWidth: 0.5,
@@ -192,41 +186,41 @@ const styles = StyleSheet.create({
     width: 220,
   },
   summaryTitle: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     fontSize: 7,
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     marginBottom: 5,
     borderBottomWidth: 0.5,
     borderBottomColor: NAVY,
     paddingBottom: 3,
   },
   summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 2,
   },
   summaryLabel: {
     fontSize: 7,
-    color: '#374151',
+    color: "#374151",
   },
   summaryValue: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    color: '#111827',
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
   },
   certBlock: {
     marginTop: 16,
   },
   certText: {
     fontSize: 7,
-    color: '#374151',
+    color: "#374151",
     marginBottom: 12,
     lineHeight: 1.4,
   },
   signRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 8,
   },
   signField: {
@@ -234,41 +228,41 @@ const styles = StyleSheet.create({
   },
   signLine: {
     borderTopWidth: 0.5,
-    borderTopColor: '#374151',
+    borderTopColor: "#374151",
     paddingTop: 3,
   },
   signLabel: {
     fontSize: 6,
-    color: '#6B7280',
-    textTransform: 'uppercase',
+    color: "#6B7280",
+    textTransform: "uppercase",
   },
   pageNumber: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 14,
     right: 28,
     fontSize: 6,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
 });
 
 // ─── Column widths ────────────────────────────────────────────────────────────
 
 const C = {
-  day:     '5%',
-  date:    '8%',
-  amIn:    '10%',
-  amOut:   '10%',
-  pmIn:    '10%',
-  pmOut:   '10%',
-  late:    '8%',
-  utime:   '8%',
-  remarks: '31%',
+  day: "5%",
+  date: "8%",
+  amIn: "10%",
+  amOut: "10%",
+  pmIn: "10%",
+  pmOut: "10%",
+  late: "8%",
+  utime: "8%",
+  remarks: "31%",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtMinutes(minutes: number): string {
-  if (minutes === 0) return '';
+  if (minutes === 0) return "";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
@@ -286,7 +280,7 @@ interface GsisForm48Props {
     step: number;
   };
   period: {
-    month: string;   // e.g. "January"
+    month: string; // e.g. "January"
     year: number;
   };
   entries: DailyAttendanceEntry[];
@@ -308,7 +302,7 @@ export function GsisForm48Pdf({
   return (
     <Document
       title={`CSC Form 48 — DTR — ${employee.name} — ${period.month} ${period.year}`}
-      author="Senate HRIS"
+      author="PCSO HRIS"
       subject="Civil Service Commission Form 48 — Daily Time Record"
     >
       <Page size="LETTER" orientation="portrait" style={styles.page}>
@@ -316,7 +310,9 @@ export function GsisForm48Pdf({
         <View style={styles.headerCenter}>
           <Text style={styles.formNo}>CSC Form No. 48 (Revised 2018)</Text>
           <Text style={styles.formTitle}>Daily Time Record</Text>
-          <Text style={styles.formSubtitle}>Civil Service Commission — Republic of the Philippines</Text>
+          <Text style={styles.formSubtitle}>
+            Civil Service Commission — Republic of the Philippines
+          </Text>
         </View>
 
         <View style={styles.divider} />
@@ -340,7 +336,9 @@ export function GsisForm48Pdf({
           </View>
           <View style={styles.metaField}>
             <Text style={styles.metaLabel}>Salary Grade / Step</Text>
-            <Text style={styles.metaValue}>{`SG ${employee.salaryGrade} / Step ${employee.step}`}</Text>
+            <Text
+              style={styles.metaValue}
+            >{`SG ${employee.salaryGrade} / Step ${employee.step}`}</Text>
           </View>
         </View>
 
@@ -351,7 +349,9 @@ export function GsisForm48Pdf({
           </View>
           <View style={styles.metaField}>
             <Text style={styles.metaLabel}>Period</Text>
-            <Text style={styles.metaValue}>{`${period.month} ${period.year}`}</Text>
+            <Text
+              style={styles.metaValue}
+            >{`${period.month} ${period.year}`}</Text>
           </View>
         </View>
 
@@ -381,22 +381,37 @@ export function GsisForm48Pdf({
                 key={entry.date}
                 style={[styles.tdRow, idx % 2 === 1 ? styles.tdRowAlt : {}]}
               >
-                <Text style={[styles.tdCell, { width: C.day }]}>{entry.dayOfWeek}</Text>
+                <Text style={[styles.tdCell, { width: C.day }]}>
+                  {entry.dayOfWeek}
+                </Text>
                 <Text style={[styles.tdCellDate, { width: C.date }]}>
                   {new Date(entry.date).getDate()}
                 </Text>
 
                 {entry.isHoliday ? (
                   <>
-                    <Text style={[styles.tdCellHoliday, { width: `calc(${C.amIn} + ${C.amOut} + ${C.pmIn} + ${C.pmOut} + ${C.late} + ${C.utime})` }]}>
-                      HOLIDAY{entry.holidayName ? ` — ${entry.holidayName}` : ''}
+                    <Text
+                      style={[
+                        styles.tdCellHoliday,
+                        {
+                          width: `calc(${C.amIn} + ${C.amOut} + ${C.pmIn} + ${C.pmOut} + ${C.late} + ${C.utime})`,
+                        },
+                      ]}
+                    >
+                      HOLIDAY
+                      {entry.holidayName ? ` — ${entry.holidayName}` : ""}
                     </Text>
                     <Text style={[styles.tdCell, { width: C.remarks }]} />
                   </>
                 ) : isAbsent ? (
                   <>
                     <Text
-                      style={[styles.tdCellAbsent, { width: `calc(${C.amIn} + ${C.amOut} + ${C.pmIn} + ${C.pmOut} + ${C.late} + ${C.utime})` }]}
+                      style={[
+                        styles.tdCellAbsent,
+                        {
+                          width: `calc(${C.amIn} + ${C.amOut} + ${C.pmIn} + ${C.pmOut} + ${C.late} + ${C.utime})`,
+                        },
+                      ]}
                     >
                       ABSENT
                     </Text>
@@ -404,10 +419,18 @@ export function GsisForm48Pdf({
                   </>
                 ) : (
                   <>
-                    <Text style={[styles.tdCell, { width: C.amIn }]}>{entry.morningIn ?? ''}</Text>
-                    <Text style={[styles.tdCell, { width: C.amOut }]}>{entry.morningOut ?? ''}</Text>
-                    <Text style={[styles.tdCell, { width: C.pmIn }]}>{entry.afternoonIn ?? ''}</Text>
-                    <Text style={[styles.tdCell, { width: C.pmOut }]}>{entry.afternoonOut ?? ''}</Text>
+                    <Text style={[styles.tdCell, { width: C.amIn }]}>
+                      {entry.morningIn ?? ""}
+                    </Text>
+                    <Text style={[styles.tdCell, { width: C.amOut }]}>
+                      {entry.morningOut ?? ""}
+                    </Text>
+                    <Text style={[styles.tdCell, { width: C.pmIn }]}>
+                      {entry.afternoonIn ?? ""}
+                    </Text>
+                    <Text style={[styles.tdCell, { width: C.pmOut }]}>
+                      {entry.afternoonOut ?? ""}
+                    </Text>
                     <Text style={[styles.tdCell, { width: C.late }]}>
                       {fmtMinutes(entry.lateMinutes)}
                     </Text>
@@ -415,7 +438,7 @@ export function GsisForm48Pdf({
                       {fmtMinutes(entry.undertimeMinutes)}
                     </Text>
                     <Text style={[styles.tdCell, { width: C.remarks }]}>
-                      {entry.isLeave && entry.leaveType ? entry.leaveType : ''}
+                      {entry.isLeave && entry.leaveType ? entry.leaveType : ""}
                     </Text>
                   </>
                 )}
@@ -430,7 +453,9 @@ export function GsisForm48Pdf({
             <Text style={styles.summaryTitle}>Monthly Summary</Text>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Days Present</Text>
-              <Text style={styles.summaryValue}>{summary.totalDaysPresent}</Text>
+              <Text style={styles.summaryValue}>
+                {summary.totalDaysPresent}
+              </Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Days Absent (LWOP)</Text>
@@ -438,15 +463,21 @@ export function GsisForm48Pdf({
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Leave Credits Used</Text>
-              <Text style={styles.summaryValue}>{summary.totalLeaveCreditsUsed}</Text>
+              <Text style={styles.summaryValue}>
+                {summary.totalLeaveCreditsUsed}
+              </Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Total Late (minutes)</Text>
-              <Text style={styles.summaryValue}>{summary.totalLateMinutes}</Text>
+              <Text style={styles.summaryValue}>
+                {summary.totalLateMinutes}
+              </Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Total Undertime (minutes)</Text>
-              <Text style={styles.summaryValue}>{summary.totalUndertimeMinutes}</Text>
+              <Text style={styles.summaryValue}>
+                {summary.totalUndertimeMinutes}
+              </Text>
             </View>
           </View>
         </View>
@@ -455,21 +486,27 @@ export function GsisForm48Pdf({
         <View style={styles.certBlock}>
           <Text style={styles.certText}>
             I certify on my honor that the above is a true and correct report of
-            the hours of work performed, record of which was made daily at the time of
-            arrival and departure from the office.
+            the hours of work performed, record of which was made daily at the
+            time of arrival and departure from the office.
           </Text>
 
           <View style={styles.signRow}>
             <View style={styles.signField}>
               <View style={styles.signLine}>
-                <Text style={[styles.summaryValue, { fontSize: 7.5 }]}>{preparedBy}</Text>
+                <Text style={[styles.summaryValue, { fontSize: 7.5 }]}>
+                  {preparedBy}
+                </Text>
                 <Text style={styles.signLabel}>Signature of Employee</Text>
               </View>
             </View>
             <View style={styles.signField}>
               <View style={styles.signLine}>
-                <Text style={[styles.summaryValue, { fontSize: 7.5 }]}>{approvedBy}</Text>
-                <Text style={styles.signLabel}>In charge of attendance records</Text>
+                <Text style={[styles.summaryValue, { fontSize: 7.5 }]}>
+                  {approvedBy}
+                </Text>
+                <Text style={styles.signLabel}>
+                  In charge of attendance records
+                </Text>
               </View>
             </View>
           </View>
@@ -478,7 +515,9 @@ export function GsisForm48Pdf({
         {/* Page number */}
         <Text
           style={styles.pageNumber}
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+          render={({ pageNumber, totalPages }) =>
+            `Page ${pageNumber} of ${totalPages}`
+          }
           fixed
         />
       </Page>

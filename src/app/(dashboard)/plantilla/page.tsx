@@ -6,27 +6,33 @@
  * Pagination is server-side (50/page default, selectable 10/25/50/100).
  */
 
-import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import Link from 'next/link';
-import { Plus, FileDown } from 'lucide-react';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { PlantillaTableClient } from './_client';
-import { PlantillaListSkeleton } from '@/components/plantilla/plantilla-list-skeleton';
-import { getPlantillaPositions, getOffices, getActiveEmployees } from './queries';
-import { PlantillaListParamsSchema } from '@/lib/validations/plantilla';
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import Link from "next/link";
+import { Plus, FileDown } from "lucide-react";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { PlantillaTableClient } from "./_client";
+import { PlantillaListSkeleton } from "@/components/plantilla/plantilla-list-skeleton";
+import {
+  getPlantillaPositions,
+  getOffices,
+  getActiveEmployees,
+} from "./queries";
+import { PlantillaListParamsSchema } from "@/lib/validations/plantilla";
 
 export const metadata: Metadata = {
-  title: 'Plantilla of Personnel',
+  title: "Plantilla of Personnel",
 };
 
 interface PlantillaPageProps {
   searchParams: Promise<Record<string, string | string[]>>;
 }
 
-export default async function PlantillaPage({ searchParams }: PlantillaPageProps) {
+export default async function PlantillaPage({
+  searchParams,
+}: PlantillaPageProps) {
   const raw = await searchParams;
   const flat = Object.fromEntries(
     Object.entries(raw).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]),
@@ -40,10 +46,11 @@ export default async function PlantillaPage({ searchParams }: PlantillaPageProps
 
   // Build export QS from validated filters only.
   const exportParams = new URLSearchParams();
-  if (params.search) exportParams.set('search', params.search);
-  if (params.officeId) exportParams.set('officeId', params.officeId);
-  if (params.salaryGrade) exportParams.set('salaryGrade', String(params.salaryGrade));
-  if (params.status !== 'all') exportParams.set('status', params.status);
+  if (params.search) exportParams.set("search", params.search);
+  if (params.officeId) exportParams.set("officeId", params.officeId);
+  if (params.salaryGrade)
+    exportParams.set("salaryGrade", String(params.salaryGrade));
+  if (params.status !== "all") exportParams.set("status", params.status);
   const exportQS = exportParams.toString();
 
   const [{ rows, total }, offices, employees] = await Promise.all([
@@ -61,16 +68,23 @@ export default async function PlantillaPage({ searchParams }: PlantillaPageProps
 
   return (
     <div>
-      <RealtimeBoundary tables={['plantilla_items']} />
+      <RealtimeBoundary tables={["plantilla_items"]} />
       <PageHeader
         title="Plantilla of Personnel"
-        description="Official record of authorized positions in the Senate of the Philippines."
-        breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Plantilla' }]}
+        description="Official record of authorized positions in the Philippine Charity Sweepstakes Office."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Plantilla" },
+        ]}
         actions={
           <>
             <Button variant="outline" size="sm" asChild>
               <a
-                href={exportQS ? `/api/plantilla/export?${exportQS}` : '/api/plantilla/export'}
+                href={
+                  exportQS
+                    ? `/api/plantilla/export?${exportQS}`
+                    : "/api/plantilla/export"
+                }
                 download
               >
                 <FileDown className="mr-2 h-4 w-4" />
@@ -87,7 +101,9 @@ export default async function PlantillaPage({ searchParams }: PlantillaPageProps
         }
       />
 
-      <Suspense fallback={<PlantillaListSkeleton rows={Math.min(params.perPage, 10)} />}>
+      <Suspense
+        fallback={<PlantillaListSkeleton rows={Math.min(params.perPage, 10)} />}
+      >
         <PlantillaTableClient
           rows={rows}
           total={total}

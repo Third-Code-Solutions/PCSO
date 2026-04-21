@@ -1,5 +1,5 @@
 /**
- * SALN filing deadline utilities — Senate HRIS Phase 13
+ * SALN filing deadline utilities — PCSO HRIS Phase 13
  *
  * Annual SALN filing deadline: April 30 of the following year,
  * covering assets and liabilities as of December 31 of the reference year.
@@ -9,7 +9,7 @@
  * Separation SALN: within 30 days of separation.
  */
 
-import type { FilingType } from '@/lib/validations/saln';
+import type { FilingType } from "@/lib/validations/saln";
 
 /** Annual deadline: April 30 of the year AFTER the covered calendar year. */
 export const ANNUAL_DEADLINE_MONTH = 4; // April (1-indexed)
@@ -28,7 +28,11 @@ export const EVENT_BASED_FILING_DAYS = 30;
  * Example: year=2024 → deadline is April 30, 2025.
  */
 export function annualDeadline(coverageYear: number): Date {
-  return new Date(coverageYear + 1, ANNUAL_DEADLINE_MONTH - 1, ANNUAL_DEADLINE_DAY);
+  return new Date(
+    coverageYear + 1,
+    ANNUAL_DEADLINE_MONTH - 1,
+    ANNUAL_DEADLINE_DAY,
+  );
 }
 
 /**
@@ -49,7 +53,10 @@ export function currentCoverageYear(now: Date = new Date()): number {
  * Returns whether the given date is within the annual filing window
  * (January 1 through April 30 of the year after the coverage year).
  */
-export function isWithinAnnualWindow(coverageYear: number, now: Date = new Date()): boolean {
+export function isWithinAnnualWindow(
+  coverageYear: number,
+  now: Date = new Date(),
+): boolean {
   const windowOpen = new Date(coverageYear + 1, 0, 1); // Jan 1
   const windowClose = annualDeadline(coverageYear);
   return now >= windowOpen && now <= windowClose;
@@ -69,7 +76,7 @@ export function isFilingLate(
 ): boolean {
   const filed = new Date(fileDateIso);
 
-  if (filingType === 'annual') {
+  if (filingType === "annual") {
     return filed > annualDeadline(coverageYear);
   }
 
@@ -86,10 +93,10 @@ export function isFilingLate(
  */
 export function deadlineLabel(coverageYear: number): string {
   const d = annualDeadline(coverageYear);
-  return d.toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  return d.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 }
 
@@ -97,7 +104,10 @@ export function deadlineLabel(coverageYear: number): string {
  * Days remaining until the annual deadline.
  * Negative values indicate the deadline has passed.
  */
-export function daysUntilDeadline(coverageYear: number, now: Date = new Date()): number {
+export function daysUntilDeadline(
+  coverageYear: number,
+  now: Date = new Date(),
+): number {
   const deadline = annualDeadline(coverageYear);
   const diffMs = deadline.getTime() - now.getTime();
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));

@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import Link from 'next/link';
-import { sendPasswordReset } from './actions';
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import Link from "next/link";
+import { sendPasswordReset } from "./actions";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const ForgotPasswordSchema = z.object({
-  email: z.string().email('Enter a valid email address.'),
+  email: z.string().email("Enter a valid email address."),
 });
 
 type ForgotPasswordFields = z.infer<typeof ForgotPasswordSchema>;
@@ -18,15 +18,31 @@ type ForgotPasswordFields = z.infer<typeof ForgotPasswordSchema>;
 // ─── Minimal primitives (mirrors login page; intentionally not extracted to avoid
 //     coupling with components that don't exist yet in this phase) ──────────────
 
-function Label({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+function Label({
+  htmlFor,
+  children,
+}: {
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-slate-700 mb-1.5 font-sans">
+    <label
+      htmlFor={htmlFor}
+      className="block text-sm font-medium text-slate-700 mb-1.5 font-sans"
+    >
       {children}
     </label>
   );
 }
 
-function Input({ id, type = 'text', placeholder, autoComplete, disabled, ...rest }: React.InputHTMLAttributes<HTMLInputElement>) {
+function Input({
+  id,
+  type = "text",
+  placeholder,
+  autoComplete,
+  disabled,
+  ...rest
+}: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       id={id}
@@ -60,7 +76,9 @@ export default function ForgotPasswordPage() {
     handleSubmit,
     formState: { errors },
     getValues,
-  } = useForm<ForgotPasswordFields>({ resolver: zodResolver(ForgotPasswordSchema) });
+  } = useForm<ForgotPasswordFields>({
+    resolver: zodResolver(ForgotPasswordSchema),
+  });
 
   async function onSubmit(data: ForgotPasswordFields) {
     setServerError(null);
@@ -70,7 +88,9 @@ export default function ForgotPasswordPage() {
       if (result.success) {
         setSubmitted(true);
       } else {
-        setServerError(result.error ?? 'Something went wrong. Please try again.');
+        setServerError(
+          result.error ?? "Something went wrong. Please try again.",
+        );
       }
     } finally {
       setIsSubmitting(false);
@@ -86,8 +106,18 @@ export default function ForgotPasswordPage() {
           className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-senate-navy
                      transition-colors font-sans mb-5"
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          <svg
+            className="w-3.5 h-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
           Back to sign in
         </Link>
@@ -97,7 +127,7 @@ export default function ForgotPasswordPage() {
           Reset your password
         </h2>
         <p className="mt-1.5 text-sm text-slate-500 font-sans">
-          Enter your Senate email address and we&rsquo;ll send you a reset link.
+          Enter your PCSO email address and we&rsquo;ll send you a reset link.
         </p>
       </div>
 
@@ -105,13 +135,20 @@ export default function ForgotPasswordPage() {
       {submitted ? (
         <div className="space-y-5">
           <div className="rounded-lg border border-senate-gold/40 bg-senate-gold/10 px-5 py-5 space-y-2">
-            <p className="text-sm font-semibold text-senate-navy font-sans">Check your email</p>
-            <p className="text-sm text-slate-600 font-sans">
-              If an account exists for{' '}
-              <span className="font-medium text-senate-navy">{getValues('email')}</span>, we&rsquo;ve
-              sent a password reset link. Check your inbox and spam folder.
+            <p className="text-sm font-semibold text-senate-navy font-sans">
+              Check your email
             </p>
-            <p className="text-xs text-slate-400 font-sans mt-1">The link expires in 60 minutes.</p>
+            <p className="text-sm text-slate-600 font-sans">
+              If an account exists for{" "}
+              <span className="font-medium text-senate-navy">
+                {getValues("email")}
+              </span>
+              , we&rsquo;ve sent a password reset link. Check your inbox and
+              spam folder.
+            </p>
+            <p className="text-xs text-slate-400 font-sans mt-1">
+              The link expires in 60 minutes.
+            </p>
           </div>
 
           <Link
@@ -124,7 +161,11 @@ export default function ForgotPasswordPage() {
           </Link>
         </div>
       ) : (
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          noValidate
+          className="space-y-5"
+        >
           {/* Server error */}
           {serverError && (
             <div
@@ -140,10 +181,10 @@ export default function ForgotPasswordPage() {
             <Input
               id="fp-email"
               type="email"
-              placeholder="you@senate.gov.ph"
+              placeholder="you@pcso.gov.ph"
               autoComplete="email"
               disabled={isSubmitting}
-              {...register('email')}
+              {...register("email")}
             />
             <FieldError message={errors.email?.message} />
           </div>
@@ -156,11 +197,11 @@ export default function ForgotPasswordPage() {
                        focus:ring-2 focus:ring-senate-navy focus:ring-offset-2
                        disabled:opacity-60 disabled:cursor-not-allowed transition-colors font-sans"
           >
-            {isSubmitting ? 'Sending…' : 'Send reset link'}
+            {isSubmitting ? "Sending…" : "Send reset link"}
           </button>
 
           <p className="text-xs text-slate-400 font-sans text-center">
-            Only official Senate email addresses are supported.
+            Only official PCSO email addresses are supported.
           </p>
         </form>
       )}

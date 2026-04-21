@@ -1,11 +1,11 @@
-import Link from 'next/link';
-import { ChevronLeft } from 'lucide-react';
-import { EmployeeForm } from '@/components/employees/employee-form';
-import { getOfficesForSelect } from '../queries';
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
+import { EmployeeForm } from "@/components/employees/employee-form";
+import { getOfficesForSelect } from "../queries";
 
 export const metadata = {
-  title: 'Add Employee',
-  description: 'Onboard a new Senate employee.',
+  title: "Add Employee",
+  description: "Onboard a new PCSO employee.",
 };
 
 export default async function NewEmployeePage() {
@@ -30,8 +30,8 @@ export default async function NewEmployeePage() {
           Add New Employee
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Complete all required fields across each tab. Documents can be uploaded after
-          saving the employee record.
+          Complete all required fields across each tab. Documents can be
+          uploaded after saving the employee record.
         </p>
       </header>
 

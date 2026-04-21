@@ -1,5 +1,5 @@
 /**
- * Database Seed Script — Senate HRIS
+ * Database Seed Script — PCSO HRIS
  *
  * Usage: pnpm db:seed
  *
@@ -9,26 +9,26 @@
  *
  * Seed order matters: tables with FKs come after their dependencies.
  */
-import { config as loadEnv } from 'dotenv';
-loadEnv({ path: '.env.local' });
-loadEnv({ path: '.env' });
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, and } from 'drizzle-orm';
-import * as schema from './schema';
-import { buildSalaryGradeSeeds } from './seeds/salary-grades';
-import { buildGsisRateSeeds } from './seeds/gsis-rates';
-import { buildPhilhealthRateSeeds } from './seeds/philhealth-rates';
-import { buildPagibigRateSeeds } from './seeds/pagibig-rates';
-import { buildBirTaxTableSeeds } from './seeds/bir-tax-tables';
-import { buildLeaveTypeSeeds } from './seeds/leave-types';
-import { buildAllowanceSeeds } from './seeds/allowances';
+import { config as loadEnv } from "dotenv";
+loadEnv({ path: ".env.local" });
+loadEnv({ path: ".env" });
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { eq, and } from "drizzle-orm";
+import * as schema from "./schema";
+import { buildSalaryGradeSeeds } from "./seeds/salary-grades";
+import { buildGsisRateSeeds } from "./seeds/gsis-rates";
+import { buildPhilhealthRateSeeds } from "./seeds/philhealth-rates";
+import { buildPagibigRateSeeds } from "./seeds/pagibig-rates";
+import { buildBirTaxTableSeeds } from "./seeds/bir-tax-tables";
+import { buildLeaveTypeSeeds } from "./seeds/leave-types";
+import { buildAllowanceSeeds } from "./seeds/allowances";
 
 // ─── DB Connection ────────────────────────────────────────────────────────────
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  throw new Error('DATABASE_URL is not set');
+  throw new Error("DATABASE_URL is not set");
 }
 
 const client = postgres(connectionString, { max: 1 });
@@ -64,7 +64,7 @@ async function seedSalaryGrades(): Promise<void> {
       });
   }
 
-  log('salary_grades', seeds.length);
+  log("salary_grades", seeds.length);
 }
 
 async function seedGsisRates(): Promise<void> {
@@ -89,7 +89,7 @@ async function seedGsisRates(): Promise<void> {
       });
   }
 
-  log('gsis_rates', seeds.length);
+  log("gsis_rates", seeds.length);
 }
 
 async function seedPhilhealthRates(): Promise<void> {
@@ -120,7 +120,7 @@ async function seedPhilhealthRates(): Promise<void> {
       });
   }
 
-  log('philhealth_rates', seeds.length);
+  log("philhealth_rates", seeds.length);
 }
 
 async function seedPagibigRates(): Promise<void> {
@@ -149,7 +149,7 @@ async function seedPagibigRates(): Promise<void> {
       });
   }
 
-  log('pagibig_rates', seeds.length);
+  log("pagibig_rates", seeds.length);
 }
 
 async function seedBirTaxTables(): Promise<void> {
@@ -170,7 +170,7 @@ async function seedBirTaxTables(): Promise<void> {
       .onConflictDoNothing();
   }
 
-  log('bir_tax_tables', seeds.length);
+  log("bir_tax_tables", seeds.length);
 }
 
 async function seedLeaveTypes(): Promise<void> {
@@ -198,7 +198,7 @@ async function seedLeaveTypes(): Promise<void> {
       });
   }
 
-  log('leave_types', seeds.length);
+  log("leave_types", seeds.length);
 }
 
 async function seedAllowances(): Promise<void> {
@@ -225,14 +225,14 @@ async function seedAllowances(): Promise<void> {
       });
   }
 
-  log('allowances', seeds.length);
+  log("allowances", seeds.length);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  console.log('Senate HRIS — Database Seed');
-  console.log('─'.repeat(50));
+  console.log("PCSO HRIS — Database Seed");
+  console.log("─".repeat(50));
 
   try {
     await seedSalaryGrades();
@@ -243,10 +243,10 @@ async function main(): Promise<void> {
     await seedLeaveTypes();
     await seedAllowances();
 
-    console.log('─'.repeat(50));
-    console.log('Seed completed successfully.');
+    console.log("─".repeat(50));
+    console.log("Seed completed successfully.");
   } catch (err) {
-    console.error('Seed failed:', err);
+    console.error("Seed failed:", err);
     process.exit(1);
   } finally {
     await client.end();

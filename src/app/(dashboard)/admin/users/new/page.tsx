@@ -1,23 +1,29 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { createUser } from '../actions';
-import { SYSTEM_ROLE_VALUES } from '@/lib/validations/admin';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import { createUser } from "../actions";
+import { SYSTEM_ROLE_VALUES } from "@/lib/validations/admin";
 
-const ROLE_LABELS: Record<typeof SYSTEM_ROLE_VALUES[number], string> = {
-  super_admin: 'Super Admin',
-  hr_admin: 'HR Admin',
-  payroll_admin: 'Payroll Admin',
-  leave_approver: 'Leave Approver',
-  viewer: 'Viewer',
-  employee_self_service: 'Employee (Self-Service)',
+const ROLE_LABELS: Record<(typeof SYSTEM_ROLE_VALUES)[number], string> = {
+  super_admin: "Super Admin",
+  hr_admin: "HR Admin",
+  payroll_admin: "Payroll Admin",
+  leave_approver: "Leave Approver",
+  viewer: "Viewer",
+  employee_self_service: "Employee (Self-Service)",
 };
 
 export default function NewUserPage() {
@@ -29,22 +35,25 @@ export default function NewUserPage() {
     setPending(true);
 
     const formData = new FormData(e.currentTarget);
-    const officeIdRaw = formData.get('officeId');
+    const officeIdRaw = formData.get("officeId");
 
     try {
       await createUser({
-        email: formData.get('email') as string,
-        role: formData.get('role') as string,
-        officeId: officeIdRaw && officeIdRaw !== '' ? (officeIdRaw as string) : null,
+        email: formData.get("email") as string,
+        role: formData.get("role") as string,
+        officeId:
+          officeIdRaw && officeIdRaw !== "" ? (officeIdRaw as string) : null,
         employeeId: null,
       });
-      toast.success('Invite sent', {
-        description: 'The user will receive a setup email to complete their account.',
+      toast.success("Invite sent", {
+        description:
+          "The user will receive a setup email to complete their account.",
       });
-      router.push('/admin/users');
+      router.push("/admin/users");
     } catch (err) {
-      toast.error('Error', {
-        description: err instanceof Error ? err.message : 'Failed to create user.',
+      toast.error("Error", {
+        description:
+          err instanceof Error ? err.message : "Failed to create user.",
       });
     } finally {
       setPending(false);
@@ -57,10 +66,10 @@ export default function NewUserPage() {
         title="Add System User"
         description="Invite a new user by email. They will receive a link to set their password."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin', href: '/admin' },
-          { label: 'Users', href: '/admin/users' },
-          { label: 'New' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Admin", href: "/admin" },
+          { label: "Users", href: "/admin/users" },
+          { label: "New" },
         ]}
       />
 
@@ -71,7 +80,7 @@ export default function NewUserPage() {
             id="email"
             name="email"
             type="email"
-            placeholder="user@senate.gov.ph"
+            placeholder="user@pcso.gov.ph"
             required
             autoComplete="email"
           />
@@ -108,8 +117,8 @@ export default function NewUserPage() {
             placeholder="Office UUID — leave blank for org-wide access"
           />
           <p className="text-xs text-muted-foreground">
-            When set, this user can only view records belonging to the specified office.
-            Leave blank for organization-wide access (based on role).
+            When set, this user can only view records belonging to the specified
+            office. Leave blank for organization-wide access (based on role).
           </p>
         </div>
 
@@ -119,9 +128,13 @@ export default function NewUserPage() {
             disabled={pending}
             className="bg-senate-navy text-white hover:bg-senate-navy-light"
           >
-            {pending ? 'Sending invite…' : 'Send invite'}
+            {pending ? "Sending invite…" : "Send invite"}
           </Button>
-          <Button type="button" variant="outline" onClick={() => router.push('/admin/users')}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => router.push("/admin/users")}
+          >
             Cancel
           </Button>
         </div>

@@ -1,5 +1,5 @@
 /**
- * CSC Performance Management System constants — Senate HRIS Phase 12
+ * CSC Performance Management System constants — PCSO HRIS Phase 12
  *
  * Sources:
  * - CSC MC No. 6, s. 2012 (SPMS Guidelines)
@@ -9,60 +9,60 @@
 // ─── CSC Adjectival Rating Bands ────────────────────────────────────────────
 
 export type AdjectivalRating =
-  | 'outstanding'
-  | 'very_satisfactory'
-  | 'satisfactory'
-  | 'unsatisfactory'
-  | 'poor';
+  | "outstanding"
+  | "very_satisfactory"
+  | "satisfactory"
+  | "unsatisfactory"
+  | "poor";
 
 export interface RatingBand {
   label: string;
   min: number;
   max: number;
   /** Tailwind color tokens for display */
-  color: 'emerald' | 'blue' | 'amber' | 'orange' | 'red';
+  color: "emerald" | "blue" | "amber" | "orange" | "red";
 }
 
 export const RATING_BANDS: Record<AdjectivalRating, RatingBand> = {
   outstanding: {
-    label: 'Outstanding',
+    label: "Outstanding",
     min: 4.5,
     max: 5.0,
-    color: 'emerald',
+    color: "emerald",
   },
   very_satisfactory: {
-    label: 'Very Satisfactory',
+    label: "Very Satisfactory",
     min: 3.5,
     max: 4.499,
-    color: 'blue',
+    color: "blue",
   },
   satisfactory: {
-    label: 'Satisfactory',
+    label: "Satisfactory",
     min: 2.5,
     max: 3.499,
-    color: 'amber',
+    color: "amber",
   },
   unsatisfactory: {
-    label: 'Unsatisfactory',
+    label: "Unsatisfactory",
     min: 1.5,
     max: 2.499,
-    color: 'orange',
+    color: "orange",
   },
   poor: {
-    label: 'Poor',
+    label: "Poor",
     min: 1.0,
     max: 1.499,
-    color: 'red',
+    color: "red",
   },
 } as const;
 
 /** Ordered from highest to lowest for display purposes */
 export const RATING_ORDER: AdjectivalRating[] = [
-  'outstanding',
-  'very_satisfactory',
-  'satisfactory',
-  'unsatisfactory',
-  'poor',
+  "outstanding",
+  "very_satisfactory",
+  "satisfactory",
+  "unsatisfactory",
+  "poor",
 ];
 
 // ─── Step Increment Rules ─────────────────────────────────────────────────────
@@ -102,9 +102,9 @@ export const MAX_RATING = 5.0;
 // ─── IPCRF Phase Labels ───────────────────────────────────────────────────────
 
 export const IPCRF_PHASES = {
-  planning: 'Performance Planning',
-  monitoring: 'Performance Monitoring',
-  review: 'Performance Review',
+  planning: "Performance Planning",
+  monitoring: "Performance Monitoring",
+  review: "Performance Review",
 } as const;
 
 export type IpcrfPhase = keyof typeof IPCRF_PHASES;
@@ -112,27 +112,27 @@ export type IpcrfPhase = keyof typeof IPCRF_PHASES;
 // ─── Performance Period Status Labels ────────────────────────────────────────
 
 export const PERIOD_STATUS_LABEL: Record<string, string> = {
-  open: 'Open',
-  rating: 'Rating Phase',
-  review: 'Under Review',
-  closed: 'Closed',
+  open: "Open",
+  rating: "Rating Phase",
+  review: "Under Review",
+  closed: "Closed",
 };
 
 // ─── Rating Status Labels ─────────────────────────────────────────────────────
 
 export const RATING_STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft',
-  submitted: 'Submitted',
-  reviewed: 'Reviewed',
-  approved: 'Approved',
-  disapproved: 'Disapproved',
+  draft: "Draft",
+  submitted: "Submitted",
+  reviewed: "Reviewed",
+  approved: "Approved",
+  disapproved: "Disapproved",
 };
 
 // ─── Step Increment Status Labels ────────────────────────────────────────────
 
 export const STEP_INCREMENT_STATUS_LABEL: Record<string, string> = {
-  pending: 'Pending',
-  approved: 'Approved',
-  implemented: 'Implemented',
-  cancelled: 'Cancelled',
+  pending: "Pending",
+  approved: "Approved",
+  implemented: "Implemented",
+  cancelled: "Cancelled",
 };

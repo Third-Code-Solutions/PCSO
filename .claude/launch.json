@@ -3,14 +3,20 @@
   "configurations": [
     {
       "name": "next-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "source ~/.nvm/nvm.sh && nvm use 20 > /dev/null && exec npm run dev"
+      ],
       "port": 3000
     },
     {
       "name": "drizzle-studio",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "db:studio"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "source ~/.nvm/nvm.sh && nvm use 20 > /dev/null && exec npm run db:studio"
+      ],
       "port": 4983
     }
   ]

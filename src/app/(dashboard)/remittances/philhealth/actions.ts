@@ -1,30 +1,34 @@
-'use server';
+"use server";
 
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
 import {
   remittanceBatches,
   remittanceRecords,
   employees,
   payrollPeriods,
   payrollRecords,
-} from '@/lib/db/schema';
-import { eq, and, isNull, desc, asc } from 'drizzle-orm';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
-import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
-import { lockKey } from '@/lib/concurrency';
+} from "@/lib/db/schema";
+import { eq, and, isNull, desc, asc } from "drizzle-orm";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
+import { withTx, withRetry, type Tx } from "@/lib/db/transaction";
+import { lockKey } from "@/lib/concurrency";
 import {
   GeneratePhilHealthBatchSchema,
   ExportPhilHealthSchema,
   MarkPhilHealthSubmittedSchema,
-} from '@/lib/validations/remittances';
-import { parseMoney, roundMoney, roundHalfEven } from '@/lib/utils/payroll/rounding';
+} from "@/lib/validations/remittances";
+import {
+  parseMoney,
+  roundMoney,
+  roundHalfEven,
+} from "@/lib/utils/payroll/rounding";
 import {
   generatePhilHealthEprsExport,
   type PhilHealthEprsRow,
   type PhilHealthEprsMeta,
-} from '@/lib/utils/remittances/philhealth-eprs';
+} from "@/lib/utils/remittances/philhealth-eprs";
 
 const REMITTANCE_RECORD_INSERT_CHUNK = 200;
 
@@ -56,7 +60,7 @@ async function chunkInsertRemittanceRecords(
  */
 export async function generatePhilHealthBatch(input: unknown) {
   const parsed = GeneratePhilHealthBatchSchema.parse(input);
-  const user = await requirePermission('remittances', 'create');
+  const user = await requirePermission("remittances", "create");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -73,11 +77,11 @@ export async function generatePhilHealthBatch(input: unknown) {
         )
         .limit(1);
 
-      if (!period) throw new Error('Payroll period not found.');
-      if (period.status !== 'approved' && period.status !== 'paid') {
+      if (!period) throw new Error("Payroll period not found.");
+      if (period.status !== "approved" && period.status !== "paid") {
         throw new Error(
           `Cannot generate PhilHealth remittance for a period in "${period.status}" status. ` +
-            'Period must be approved or paid.',
+            "Period must be approved or paid.",
         );
       }
 
@@ -86,7 +90,7 @@ export async function generatePhilHealthBatch(input: unknown) {
         .from(remittanceBatches)
         .where(
           and(
-            eq(remittanceBatches.type, 'philhealth'),
+            eq(remittanceBatches.type, "philhealth"),
             eq(remittanceBatches.periodStart, period.periodStart),
             eq(remittanceBatches.periodEnd, period.periodEnd),
           ),
@@ -95,7 +99,7 @@ export async function generatePhilHealthBatch(input: unknown) {
 
       if (existing.length > 0) {
         throw new Error(
-          `A PhilHealth remittance batch already exists for this period (ID: ${existing[0]?.id ?? 'unknown'}).`,
+          `A PhilHealth remittance batch already exists for this period (ID: ${existing[0]?.id ?? "unknown"}).`,
         );
       }
 
@@ -123,17 +127,17 @@ export async function generatePhilHealthBatch(input: unknown) {
         .orderBy(asc(employees.lastName), asc(employees.firstName));
 
       if (records.length === 0) {
-        throw new Error('No payroll records found for the selected period.');
+        throw new Error("No payroll records found for the selected period.");
       }
 
       const phRecords = records.filter(
-        (r) => r.emp.philhealthNo != null && r.emp.philhealthNo !== '',
+        (r) => r.emp.philhealthNo != null && r.emp.philhealthNo !== "",
       );
 
       if (phRecords.length === 0) {
         throw new Error(
-          'No employees with a PhilHealth number found. ' +
-            'Ensure PhilHealth numbers are encoded before generating the remittance.',
+          "No employees with a PhilHealth number found. " +
+            "Ensure PhilHealth numbers are encoded before generating the remittance.",
         );
       }
 
@@ -161,20 +165,21 @@ export async function generatePhilHealthBatch(input: unknown) {
       const batchRows = await tx
         .insert(remittanceBatches)
         .values({
-          type: 'philhealth',
+          type: "philhealth",
           periodStart: period.periodStart,
           periodEnd: period.periodEnd,
           totalAmount: roundMoney(totalAmount),
           totalPersonalShare: roundMoney(totalPersonal),
           totalEmployerShare: roundMoney(totalEmployer),
           employeeCount: phRecords.length,
-          status: 'generated',
+          status: "generated",
           remarks: parsed.remarks ?? null,
         })
         .returning();
 
       const batch = batchRows[0];
-      if (!batch) throw new Error('Failed to insert PhilHealth remittance batch.');
+      if (!batch)
+        throw new Error("Failed to insert PhilHealth remittance batch.");
 
       const linesWithBatchId = recordValues.map((rv) => ({
         ...rv,
@@ -192,11 +197,11 @@ export async function generatePhilHealthBatch(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'create',
-    table: 'remittance_batches',
+    action: "create",
+    table: "remittance_batches",
     recordId: result.batch.id,
     newValues: {
-      type: 'philhealth',
+      type: "philhealth",
       periodStart: result.batch.periodStart,
       periodEnd: result.batch.periodEnd,
       employeeCount: result.employeeCount,
@@ -204,7 +209,7 @@ export async function generatePhilHealthBatch(input: unknown) {
     },
   });
 
-  revalidatePath('/remittances/philhealth');
+  revalidatePath("/remittances/philhealth");
   return result.batch;
 }
 
@@ -212,7 +217,7 @@ export async function generatePhilHealthBatch(input: unknown) {
 
 export async function exportPhilHealthEprs(input: unknown) {
   const parsed = ExportPhilHealthSchema.parse(input);
-  await requirePermission('remittances', 'export');
+  await requirePermission("remittances", "export");
 
   const [batch] = await db
     .select()
@@ -220,12 +225,12 @@ export async function exportPhilHealthEprs(input: unknown) {
     .where(
       and(
         eq(remittanceBatches.id, parsed.batchId),
-        eq(remittanceBatches.type, 'philhealth'),
+        eq(remittanceBatches.type, "philhealth"),
       ),
     )
     .limit(1);
 
-  if (!batch) throw new Error('PhilHealth remittance batch not found.');
+  if (!batch) throw new Error("PhilHealth remittance batch not found.");
 
   const lines = await db
     .select({
@@ -258,7 +263,7 @@ export async function exportPhilHealthEprs(input: unknown) {
               ),
             )
             .limit(1)
-            .as('periodSub'),
+            .as("periodSub"),
         ),
       ),
     )
@@ -283,7 +288,7 @@ export async function exportPhilHealthEprs(input: unknown) {
     .orderBy(asc(employees.lastName), asc(employees.firstName));
 
   if (recordsWithEmps.length === 0) {
-    throw new Error('No remittance records found for this batch.');
+    throw new Error("No remittance records found for this batch.");
   }
 
   // Fetch authorizedSalary from payroll records for the period
@@ -317,9 +322,9 @@ export async function exportPhilHealthEprs(input: unknown) {
   }
 
   const rows: PhilHealthEprsRow[] = recordsWithEmps.map((r) => {
-    const salary = salaryMap.get(r.rr.employeeId) ?? '0.00';
+    const salary = salaryMap.get(r.rr.employeeId) ?? "0.00";
     return {
-      philhealthNo: r.emp.philhealthNo ?? '',
+      philhealthNo: r.emp.philhealthNo ?? "",
       lastName: r.emp.lastName,
       firstName: r.emp.firstName,
       middleName: r.emp.middleName ?? null,
@@ -332,8 +337,8 @@ export async function exportPhilHealthEprs(input: unknown) {
   });
 
   const meta: PhilHealthEprsMeta = {
-    agencyName: 'Senate of the Philippines',
-    employerNo: 'PH-ER-0000-0001', // TODO: pull from system config
+    agencyName: "Philippine Charity Sweepstakes Office",
+    employerNo: "PH-ER-0000-0001", // TODO: replace with real PhilHealth employer number from org_profile
     periodLabel: `${batch.periodStart} to ${batch.periodEnd}`,
     periodStart: batch.periodStart,
     periodEnd: batch.periodEnd,
@@ -341,7 +346,7 @@ export async function exportPhilHealthEprs(input: unknown) {
   };
 
   const { data, mimeType, filename } = generatePhilHealthEprsExport(rows, meta);
-  const base64 = Buffer.from(data).toString('base64');
+  const base64 = Buffer.from(data).toString("base64");
 
   return { base64, mimeType, filename };
 }
@@ -350,7 +355,7 @@ export async function exportPhilHealthEprs(input: unknown) {
 
 export async function markPhilHealthSubmitted(input: unknown) {
   const parsed = MarkPhilHealthSubmittedSchema.parse(input);
-  const user = await requirePermission('remittances', 'process');
+  const user = await requirePermission("remittances", "process");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -362,16 +367,16 @@ export async function markPhilHealthSubmitted(input: unknown) {
         .where(
           and(
             eq(remittanceBatches.id, parsed.batchId),
-            eq(remittanceBatches.type, 'philhealth'),
+            eq(remittanceBatches.type, "philhealth"),
           ),
         )
         .limit(1);
 
-      if (!batch) throw new Error('PhilHealth remittance batch not found.');
-      if (batch.status === 'submitted') {
-        throw new Error('Batch is already marked as submitted.');
+      if (!batch) throw new Error("PhilHealth remittance batch not found.");
+      if (batch.status === "submitted") {
+        throw new Error("Batch is already marked as submitted.");
       }
-      if (batch.status !== 'generated') {
+      if (batch.status !== "generated") {
         throw new Error(
           `Batch must be in "generated" status to submit. Current: ${batch.status}`,
         );
@@ -381,7 +386,7 @@ export async function markPhilHealthSubmitted(input: unknown) {
       const updatedRows = await tx
         .update(remittanceBatches)
         .set({
-          status: 'submitted',
+          status: "submitted",
           referenceNo: parsed.referenceNo,
           submittedAt: now,
           remarks: parsed.remarks ?? batch.remarks,
@@ -391,7 +396,8 @@ export async function markPhilHealthSubmitted(input: unknown) {
         .returning();
 
       const updated = updatedRows[0];
-      if (!updated) throw new Error('Failed to update PhilHealth batch status.');
+      if (!updated)
+        throw new Error("Failed to update PhilHealth batch status.");
 
       return { updated, submittedAt: now };
     }),
@@ -399,18 +405,18 @@ export async function markPhilHealthSubmitted(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'edit',
-    table: 'remittance_batches',
+    action: "edit",
+    table: "remittance_batches",
     recordId: parsed.batchId,
-    oldValues: { status: 'generated' },
+    oldValues: { status: "generated" },
     newValues: {
-      status: 'submitted',
+      status: "submitted",
       referenceNo: parsed.referenceNo,
       submittedAt: result.submittedAt,
     },
   });
 
-  revalidatePath('/remittances/philhealth');
+  revalidatePath("/remittances/philhealth");
   revalidatePath(`/remittances/philhealth/${parsed.batchId}`);
   return result.updated;
 }
@@ -422,7 +428,7 @@ export async function getPhilHealthBatches(params: {
   perPage?: number;
   status?: string;
 }) {
-  await requirePermission('remittances', 'view');
+  await requirePermission("remittances", "view");
 
   const page = params.page ?? 1;
   const perPage = params.perPage ?? 20;
@@ -431,9 +437,7 @@ export async function getPhilHealthBatches(params: {
   const batches = await db
     .select()
     .from(remittanceBatches)
-    .where(
-      eq(remittanceBatches.type, 'philhealth'),
-    )
+    .where(eq(remittanceBatches.type, "philhealth"))
     .orderBy(desc(remittanceBatches.createdAt))
     .limit(perPage)
     .offset(offset);
@@ -442,7 +446,7 @@ export async function getPhilHealthBatches(params: {
 }
 
 export async function getPhilHealthBatchDetail(batchId: string) {
-  await requirePermission('remittances', 'view');
+  await requirePermission("remittances", "view");
 
   const [batch] = await db
     .select()
@@ -450,7 +454,7 @@ export async function getPhilHealthBatchDetail(batchId: string) {
     .where(
       and(
         eq(remittanceBatches.id, batchId),
-        eq(remittanceBatches.type, 'philhealth'),
+        eq(remittanceBatches.type, "philhealth"),
       ),
     )
     .limit(1);

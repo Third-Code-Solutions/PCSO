@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { AppSidebar } from '@/components/layouts/app-sidebar';
-import { TopNav } from '@/components/layouts/top-nav';
-import { useCurrentUser } from '@/hooks/use-current-user';
-import { createBrowserClient } from '@/lib/supabase/client';
+import * as React from "react";
+import { AppSidebar } from "@/components/layouts/app-sidebar";
+import { TopNav } from "@/components/layouts/top-nav";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 export default function DashboardLayout({
   children,
@@ -16,7 +16,7 @@ export default function DashboardLayout({
   const auth = useCurrentUser();
 
   function handleToggleSidebar() {
-    if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+    if (typeof window !== "undefined" && window.innerWidth >= 1024) {
       setSidebarOpen((v) => !v);
     } else {
       setMobileOpen((v) => !v);
@@ -32,12 +32,12 @@ export default function DashboardLayout({
     } catch {
       // Ignore — the server route below will still tear down the session cookies.
     }
-    window.location.href = '/api/auth/signout';
+    window.location.href = "/api/auth/signout";
   }, []);
 
-  const displayName = auth.user?.email?.split('@')[0] ?? 'User';
-  const displayEmail = auth.user?.email ?? '';
-  const role = auth.user?.role ?? 'employee_self_service';
+  const displayName = auth.user?.email?.split("@")[0] ?? "User";
+  const displayEmail = auth.user?.email ?? "";
+  const role = auth.user?.role ?? "employee_self_service";
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -52,12 +52,16 @@ export default function DashboardLayout({
         <TopNav
           sidebarOpen={sidebarOpen}
           onToggleSidebar={handleToggleSidebar}
-          breadcrumbs={[{ label: 'Senate HRIS' }]}
+          breadcrumbs={[{ label: "PCSO HRIS" }]}
           user={{ name: displayName, email: displayEmail }}
           onSignOut={handleSignOut}
         />
 
-        <main className="flex-1 overflow-y-auto" id="main-content" tabIndex={-1}>
+        <main
+          className="flex-1 overflow-y-auto"
+          id="main-content"
+          tabIndex={-1}
+        >
           <div className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
             {children}
           </div>

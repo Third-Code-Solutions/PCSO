@@ -1,5 +1,5 @@
 /**
- * SALN module read-only queries — Senate HRIS Phase 13
+ * SALN module read-only queries — PCSO HRIS Phase 13
  *
  * All queries enforce SALN access rules:
  *   - super_admin: sees all submissions
@@ -9,8 +9,8 @@
  * is highly restricted under RA 6713 and EO 17).
  */
 
-import { createServerClient } from '@/lib/supabase/server';
-import type { FilingType, SalnStatus } from '@/lib/validations/saln';
+import { createServerClient } from "@/lib/supabase/server";
+import type { FilingType, SalnStatus } from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Shape types
@@ -62,21 +62,22 @@ export interface ComplianceRow {
 
 function toSubmissionRow(row: Record<string, unknown>): SalnSubmissionRow {
   return {
-    id: String(row['id'] ?? ''),
-    employeeId: String(row['employee_id'] ?? ''),
-    employeeNo: String(row['employee_no'] ?? ''),
-    employeeName: String(row['employee_name'] ?? ''),
-    year: Number(row['year'] ?? 0),
-    filingType: (row['filing_type'] as FilingType) ?? 'annual',
-    status: (row['status'] as SalnStatus) ?? 'draft',
-    totalAssets: String(row['total_assets'] ?? '0.00'),
-    totalLiabilities: String(row['total_liabilities'] ?? '0.00'),
-    netWorth: String(row['net_worth'] ?? '0.00'),
-    dateFiled: typeof row['date_filed'] === 'string' ? row['date_filed'] : null,
-    documentUrl: typeof row['document_url'] === 'string' ? row['document_url'] : null,
-    remarks: typeof row['remarks'] === 'string' ? row['remarks'] : null,
-    createdAt: String(row['created_at'] ?? ''),
-    updatedAt: String(row['updated_at'] ?? ''),
+    id: String(row["id"] ?? ""),
+    employeeId: String(row["employee_id"] ?? ""),
+    employeeNo: String(row["employee_no"] ?? ""),
+    employeeName: String(row["employee_name"] ?? ""),
+    year: Number(row["year"] ?? 0),
+    filingType: (row["filing_type"] as FilingType) ?? "annual",
+    status: (row["status"] as SalnStatus) ?? "draft",
+    totalAssets: String(row["total_assets"] ?? "0.00"),
+    totalLiabilities: String(row["total_liabilities"] ?? "0.00"),
+    netWorth: String(row["net_worth"] ?? "0.00"),
+    dateFiled: typeof row["date_filed"] === "string" ? row["date_filed"] : null,
+    documentUrl:
+      typeof row["document_url"] === "string" ? row["document_url"] : null,
+    remarks: typeof row["remarks"] === "string" ? row["remarks"] : null,
+    createdAt: String(row["created_at"] ?? ""),
+    updatedAt: String(row["updated_at"] ?? ""),
   };
 }
 
@@ -96,34 +97,42 @@ function unpackPersonalProperties(raw: unknown): {
     // Legacy flat format — treat the whole array as personal properties, no investments.
     return { personalProperties: raw as unknown[], investments: [] };
   }
-  if (typeof raw === 'object' && raw !== null && 'v' in raw) {
+  if (typeof raw === "object" && raw !== null && "v" in raw) {
     const envelope = raw as Record<string, unknown>;
     return {
-      personalProperties: Array.isArray(envelope['personalProperties'])
-        ? (envelope['personalProperties'] as unknown[])
+      personalProperties: Array.isArray(envelope["personalProperties"])
+        ? (envelope["personalProperties"] as unknown[])
         : [],
-      investments: Array.isArray(envelope['investments'])
-        ? (envelope['investments'] as unknown[])
+      investments: Array.isArray(envelope["investments"])
+        ? (envelope["investments"] as unknown[])
         : [],
     };
   }
   return { personalProperties: [], investments: [] };
 }
 
-function toSubmissionDetail(row: Record<string, unknown>): SalnSubmissionDetail {
-  const { personalProperties, investments } = unpackPersonalProperties(row['personal_properties']);
+function toSubmissionDetail(
+  row: Record<string, unknown>,
+): SalnSubmissionDetail {
+  const { personalProperties, investments } = unpackPersonalProperties(
+    row["personal_properties"],
+  );
   return {
     ...toSubmissionRow(row),
-    realAssets: Array.isArray(row['real_assets']) ? (row['real_assets'] as unknown[]) : [],
+    realAssets: Array.isArray(row["real_assets"])
+      ? (row["real_assets"] as unknown[])
+      : [],
     personalProperties,
     investments,
-    liabilities: Array.isArray(row['liabilities'])
-      ? (row['liabilities'] as unknown[])
+    liabilities: Array.isArray(row["liabilities"])
+      ? (row["liabilities"] as unknown[])
       : [],
-    businessInterests: Array.isArray(row['business_interests'])
-      ? (row['business_interests'] as unknown[])
+    businessInterests: Array.isArray(row["business_interests"])
+      ? (row["business_interests"] as unknown[])
       : [],
-    relatives: Array.isArray(row['relatives']) ? (row['relatives'] as unknown[]) : [],
+    relatives: Array.isArray(row["relatives"])
+      ? (row["relatives"] as unknown[])
+      : [],
   };
 }
 
@@ -140,14 +149,14 @@ async function writeSalnViewAudit(
     ipAddress?: string;
   },
 ): Promise<void> {
-  await supabase.from('audit_logs').insert({
+  await supabase.from("audit_logs").insert({
     user_id: params.viewerUserId,
-    action: 'view',
-    table_name: 'saln_submissions',
+    action: "view",
+    table_name: "saln_submissions",
     record_id: params.submissionId,
     new_values: {
       target_employee_id: params.targetEmployeeId,
-      note: 'SALN record accessed — highly restricted data',
+      note: "SALN record accessed — highly restricted data",
     },
     ip_address: params.ipAddress ?? null,
   });
@@ -164,7 +173,7 @@ export async function getMySalnSubmissions(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('saln_submissions')
+    .from("saln_submissions")
     .select(
       `
       id,
@@ -188,8 +197,8 @@ export async function getMySalnSubmissions(
       )
     `,
     )
-    .eq('employee_id', employeeId)
-    .order('year', { ascending: false });
+    .eq("employee_id", employeeId)
+    .order("year", { ascending: false });
 
   if (error) {
     throw new Error(`Failed to load SALN submissions: ${error.message}`);
@@ -197,13 +206,17 @@ export async function getMySalnSubmissions(
 
   return (data ?? []).map((row) => {
     const empRaw = row.employees;
-    const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<string, unknown> | null ?? {};
-    const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
+    const emp =
+      ((Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<
+        string,
+        unknown
+      > | null) ?? {};
+    const name = [emp["first_name"], emp["middle_name"], emp["last_name"]]
       .filter(Boolean)
-      .join(' ');
+      .join(" ");
     return toSubmissionRow({
       ...row,
-      employee_no: emp['employee_no'],
+      employee_no: emp["employee_no"],
       employee_name: name,
     });
   });
@@ -222,7 +235,7 @@ export async function getSalnSubmissionById(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('saln_submissions')
+    .from("saln_submissions")
     .select(
       `
       id,
@@ -251,21 +264,23 @@ export async function getSalnSubmissionById(
       )
     `,
     )
-    .eq('id', submissionId)
+    .eq("id", submissionId)
     .single();
 
   if (error || !data) return null;
 
-  const employeeId = String(data.employee_id ?? '');
+  const employeeId = String(data.employee_id ?? "");
 
   // Enforce self-only for non-super_admin
   if (!isSuperAdmin && viewerEmployeeId !== employeeId) {
-    throw Object.assign(new Error('Forbidden: SALN record access denied.'), { status: 403 });
+    throw Object.assign(new Error("Forbidden: SALN record access denied."), {
+      status: 403,
+    });
   }
 
   // Audit log every view of a submitted SALN (not drafts)
-  const status = String(data.status ?? '');
-  if (status !== 'draft') {
+  const status = String(data.status ?? "");
+  if (status !== "draft") {
     await writeSalnViewAudit(supabase, {
       viewerUserId,
       targetEmployeeId: employeeId,
@@ -274,14 +289,18 @@ export async function getSalnSubmissionById(
   }
 
   const empRaw = data.employees;
-  const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<string, unknown> | null ?? {};
-  const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
+  const emp =
+    ((Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<
+      string,
+      unknown
+    > | null) ?? {};
+  const name = [emp["first_name"], emp["middle_name"], emp["last_name"]]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 
   return toSubmissionDetail({
     ...data,
-    employee_no: emp['employee_no'],
+    employee_no: emp["employee_no"],
     employee_name: name,
   });
 }
@@ -290,12 +309,14 @@ export async function getSalnSubmissionById(
 // Query: compliance tracker (super_admin only)
 // ---------------------------------------------------------------------------
 
-export async function getSalnComplianceForYear(year: number): Promise<ComplianceRow[]> {
+export async function getSalnComplianceForYear(
+  year: number,
+): Promise<ComplianceRow[]> {
   const supabase = await createServerClient();
 
   // Fetch all active employees
   const { data: empData, error: empError } = await supabase
-    .from('employees')
+    .from("employees")
     .select(
       `
       id,
@@ -307,9 +328,9 @@ export async function getSalnComplianceForYear(year: number): Promise<Compliance
       offices (name)
     `,
     )
-    .is('deleted_at', null)
-    .eq('status', 'active')
-    .order('last_name', { ascending: true });
+    .is("deleted_at", null)
+    .eq("status", "active")
+    .order("last_name", { ascending: true });
 
   if (empError) {
     throw new Error(`Failed to load employees: ${empError.message}`);
@@ -317,10 +338,10 @@ export async function getSalnComplianceForYear(year: number): Promise<Compliance
 
   // Fetch SALN submissions for the year
   const { data: salnData, error: salnError } = await supabase
-    .from('saln_submissions')
-    .select('id, employee_id, status, date_filed, created_at')
-    .eq('year', year)
-    .eq('filing_type', 'annual');
+    .from("saln_submissions")
+    .select("id, employee_id, status, date_filed, created_at")
+    .eq("year", year)
+    .eq("filing_type", "annual");
 
   if (salnError) {
     throw new Error(`Failed to load SALN submissions: ${salnError.message}`);
@@ -329,7 +350,10 @@ export async function getSalnComplianceForYear(year: number): Promise<Compliance
   // Build lookup map: employeeId → submission
   const submissionMap = new Map<string, Record<string, unknown>>();
   for (const s of salnData ?? []) {
-    submissionMap.set(String(s.employee_id ?? ''), s as Record<string, unknown>);
+    submissionMap.set(
+      String(s.employee_id ?? ""),
+      s as Record<string, unknown>,
+    );
   }
 
   // April 30 deadline for the year's filing (covers previous year)
@@ -337,8 +361,12 @@ export async function getSalnComplianceForYear(year: number): Promise<Compliance
 
   return (empData ?? []).map((emp) => {
     const officeRaw = emp.offices;
-    const office = (Array.isArray(officeRaw) ? officeRaw[0] : officeRaw) as Record<string, unknown> | null;
-    const name = [emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ');
+    const office = (
+      Array.isArray(officeRaw) ? officeRaw[0] : officeRaw
+    ) as Record<string, unknown> | null;
+    const name = [emp.first_name, emp.middle_name, emp.last_name]
+      .filter(Boolean)
+      .join(" ");
     const submission = submissionMap.get(emp.id);
 
     let hasFiled = false;
@@ -348,10 +376,13 @@ export async function getSalnComplianceForYear(year: number): Promise<Compliance
     let dateFiled: string | null = null;
 
     if (submission) {
-      hasFiled = submission['status'] !== 'draft';
-      submissionId = String(submission['id'] ?? '');
-      status = (submission['status'] as SalnStatus) ?? null;
-      dateFiled = typeof submission['date_filed'] === 'string' ? submission['date_filed'] : null;
+      hasFiled = submission["status"] !== "draft";
+      submissionId = String(submission["id"] ?? "");
+      status = (submission["status"] as SalnStatus) ?? null;
+      dateFiled =
+        typeof submission["date_filed"] === "string"
+          ? submission["date_filed"]
+          : null;
 
       if (hasFiled && dateFiled) {
         isLate = new Date(dateFiled) > deadline;
@@ -363,7 +394,7 @@ export async function getSalnComplianceForYear(year: number): Promise<Compliance
       employeeNo: emp.employee_no,
       employeeName: name,
       positionTitle: emp.position_title,
-      officeName: office ? String(office['name'] ?? '') : null,
+      officeName: office ? String(office["name"] ?? "") : null,
       hasFiled,
       isLate,
       submissionId,
@@ -409,12 +440,15 @@ export async function getAllSubmissionsForSuperAdmin(
 ): Promise<PaginatedSubmissions> {
   const supabase = await createServerClient();
   const page = Math.max(1, filter.page ?? 1);
-  const perPage = Math.min(200, Math.max(1, filter.perPage ?? SUBMISSIONS_PAGE_SIZE));
+  const perPage = Math.min(
+    200,
+    Math.max(1, filter.perPage ?? SUBMISSIONS_PAGE_SIZE),
+  );
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;
 
   let q = supabase
-    .from('saln_submissions')
+    .from("saln_submissions")
     .select(
       `
       id,
@@ -432,15 +466,15 @@ export async function getAllSubmissionsForSuperAdmin(
       updated_at,
       employees!inner ( employee_no, first_name, middle_name, last_name )
     `,
-      { count: 'exact' },
+      { count: "exact" },
     )
-    .order('year', { ascending: false })
-    .order('created_at', { ascending: false })
+    .order("year", { ascending: false })
+    .order("created_at", { ascending: false })
     .range(from, to);
 
-  if (filter.status) q = q.eq('status', filter.status);
-  if (filter.year) q = q.eq('year', filter.year);
-  if (filter.employeeNo) q = q.eq('employees.employee_no', filter.employeeNo);
+  if (filter.status) q = q.eq("status", filter.status);
+  if (filter.year) q = q.eq("year", filter.year);
+  if (filter.employeeNo) q = q.eq("employees.employee_no", filter.employeeNo);
 
   const { data, error, count } = await q;
   if (error) {
@@ -449,15 +483,17 @@ export async function getAllSubmissionsForSuperAdmin(
 
   const rows = (data ?? []).map((row) => {
     const empRaw = row.employees;
-    const emp = (Array.isArray(empRaw) ? empRaw[0] : empRaw) as
-      | Record<string, unknown>
-      | null ?? {};
-    const name = [emp['first_name'], emp['middle_name'], emp['last_name']]
+    const emp =
+      ((Array.isArray(empRaw) ? empRaw[0] : empRaw) as Record<
+        string,
+        unknown
+      > | null) ?? {};
+    const name = [emp["first_name"], emp["middle_name"], emp["last_name"]]
       .filter(Boolean)
-      .join(' ');
+      .join(" ");
     return toSubmissionRow({
       ...row,
-      employee_no: emp['employee_no'],
+      employee_no: emp["employee_no"],
       employee_name: name,
     });
   });

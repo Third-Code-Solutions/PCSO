@@ -5,33 +5,27 @@
  * Covers office-level performance commitment for the semester.
  */
 
-import React from 'react';
-import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-} from '@react-pdf/renderer';
-import type { KraRatingData } from '@/app/(dashboard)/performance/queries';
-import { RATING_BANDS } from '@/lib/constants/performance';
-import type { AdjectivalRating } from '@/lib/constants/performance';
+import React from "react";
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import type { KraRatingData } from "@/app/(dashboard)/performance/queries";
+import { RATING_BANDS } from "@/lib/constants/performance";
+import type { AdjectivalRating } from "@/lib/constants/performance";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const GRAY = '#6B7280';
-const LIGHT_GRAY = '#F9FAFB';
-const BORDER = '#E5E7EB';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const GRAY = "#6B7280";
+const LIGHT_GRAY = "#F9FAFB";
+const BORDER = "#E5E7EB";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
-    backgroundColor: '#FFFFFF',
+    fontFamily: "Helvetica",
+    backgroundColor: "#FFFFFF",
     padding: 36,
     fontSize: 8,
-    color: '#111827',
+    color: "#111827",
   },
   header: {
     borderBottomWidth: 2,
@@ -41,16 +35,16 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 11,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textAlign: 'center',
-    textTransform: 'uppercase',
+    textAlign: "center",
+    textTransform: "uppercase",
     letterSpacing: 1,
   },
   headerSubtitle: {
     fontSize: 8,
     color: GRAY,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 2,
   },
   section: {
@@ -58,19 +52,19 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 4,
     backgroundColor: LIGHT_GRAY,
-    padding: '4 8',
+    padding: "4 8",
     borderLeftWidth: 3,
     borderLeftColor: GOLD,
   },
   infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     marginBottom: 8,
   },
@@ -81,14 +75,14 @@ const styles = StyleSheet.create({
   infoLabel: {
     fontSize: 7,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.3,
     marginBottom: 2,
   },
   infoValue: {
     fontSize: 8,
-    color: '#111827',
-    fontFamily: 'Helvetica-Bold',
+    color: "#111827",
+    fontFamily: "Helvetica-Bold",
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
     paddingBottom: 2,
@@ -97,102 +91,102 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 2,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   tableRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
   },
   tableHeaderRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
   },
   tableHeader: {
-    padding: '5 6',
+    padding: "5 6",
     fontSize: 7,
-    color: '#FFFFFF',
-    fontFamily: 'Helvetica-Bold',
-    textTransform: 'uppercase',
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
   },
   tableCell: {
-    padding: '5 6',
+    padding: "5 6",
     fontSize: 8,
-    color: '#111827',
+    color: "#111827",
   },
   tableCellAlt: {
-    padding: '5 6',
+    padding: "5 6",
     fontSize: 8,
-    color: '#111827',
+    color: "#111827",
     backgroundColor: LIGHT_GRAY,
   },
   ratingCell: {
-    padding: '5 6',
+    padding: "5 6",
     fontSize: 8,
     color: NAVY,
-    fontFamily: 'Helvetica-Bold',
-    textAlign: 'center',
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
   },
   finalRatingBox: {
     marginTop: 8,
     borderWidth: 2,
     borderColor: NAVY,
     borderRadius: 4,
-    padding: '8 12',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    padding: "8 12",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   finalRatingLabel: {
     fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
   },
   finalRatingValue: {
     fontSize: 16,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
   },
   finalRatingAdjectival: {
     fontSize: 10,
     color: GOLD,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
   },
   signatureSection: {
     marginTop: 16,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 24,
   },
   signatureBlock: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
   signatureLine: {
     borderBottomWidth: 1,
     borderBottomColor: NAVY,
-    width: '100%',
+    width: "100%",
     marginBottom: 4,
     height: 32,
   },
   signatureLabel: {
     fontSize: 7,
     color: GRAY,
-    textTransform: 'uppercase',
-    textAlign: 'center',
+    textTransform: "uppercase",
+    textAlign: "center",
   },
   signatureName: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
-    textAlign: 'center',
-    color: '#111827',
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
+    color: "#111827",
   },
   footer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 20,
     left: 36,
     right: 36,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     borderTopWidth: 1,
     borderTopColor: BORDER,
     paddingTop: 6,
@@ -212,7 +206,7 @@ export interface OpcrfPdfProps {
   };
   period: {
     year: number;
-    semester: '1' | '2';
+    semester: "1" | "2";
     dateFrom: string;
     dateTo: string;
   };
@@ -236,16 +230,17 @@ export function OpcrfPdf({
   approvedByName,
   generatedAt,
 }: OpcrfPdfProps) {
-  const semLabel = period.semester === '1' ? '1st Semester' : '2nd Semester';
+  const semLabel = period.semester === "1" ? "1st Semester" : "2nd Semester";
   const periodLabel = `${semLabel}, ${period.year}`;
-  const hasRatings = kras.some((k) => typeof k.rating === 'number');
-  const adjectivalLabel =
-    adjectivalRating ? RATING_BANDS[adjectivalRating].label : 'Not Yet Rated';
+  const hasRatings = kras.some((k) => typeof k.rating === "number");
+  const adjectivalLabel = adjectivalRating
+    ? RATING_BANDS[adjectivalRating].label
+    : "Not Yet Rated";
 
   return (
     <Document
       title={`OPCRF — ${office.name} — ${periodLabel}`}
-      author="Senate of the Philippines HRIS"
+      author="PCSO HRIS"
     >
       <Page size="LEGAL" orientation="landscape" style={styles.page}>
         {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -254,7 +249,8 @@ export function OpcrfPdf({
             Office Performance Commitment and Review Form (OPCRF)
           </Text>
           <Text style={styles.headerSubtitle}>
-            Senate of the Philippines — SPMS Form No. 2 — {periodLabel}
+            Philippine Charity Sweepstakes Office — SPMS Form No. 2 —{" "}
+            {periodLabel}
           </Text>
         </View>
 
@@ -281,17 +277,29 @@ export function OpcrfPdf({
 
         {/* ── KRA Table ──────────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Office Performance Targets and Ratings</Text>
+          <Text style={styles.sectionTitle}>
+            Office Performance Targets and Ratings
+          </Text>
           <View style={styles.table}>
             <View style={styles.tableHeaderRow}>
               <Text style={[styles.tableHeader, { width: 20 }]}>#</Text>
-              <Text style={[styles.tableHeader, { flex: 2 }]}>Key Result Area</Text>
-              <Text style={[styles.tableHeader, { flex: 2 }]}>Success Indicators / Targets</Text>
-              <Text style={[styles.tableHeader, { width: 40 }]}>Weight (%)</Text>
+              <Text style={[styles.tableHeader, { flex: 2 }]}>
+                Key Result Area
+              </Text>
+              <Text style={[styles.tableHeader, { flex: 2 }]}>
+                Success Indicators / Targets
+              </Text>
+              <Text style={[styles.tableHeader, { width: 40 }]}>
+                Weight (%)
+              </Text>
               {hasRatings && (
                 <>
-                  <Text style={[styles.tableHeader, { flex: 2 }]}>Actual Accomplishments</Text>
-                  <Text style={[styles.tableHeader, { width: 45 }]}>Rating</Text>
+                  <Text style={[styles.tableHeader, { flex: 2 }]}>
+                    Actual Accomplishments
+                  </Text>
+                  <Text style={[styles.tableHeader, { width: 45 }]}>
+                    Rating
+                  </Text>
                 </>
               )}
             </View>
@@ -301,17 +309,25 @@ export function OpcrfPdf({
               const cell = isAlt ? styles.tableCellAlt : styles.tableCell;
               return (
                 <View key={kra.position} style={styles.tableRow}>
-                  <Text style={[cell, { width: 20, textAlign: 'center' }]}>{kra.position}</Text>
+                  <Text style={[cell, { width: 20, textAlign: "center" }]}>
+                    {kra.position}
+                  </Text>
                   <Text style={[cell, { flex: 2 }]}>{kra.title}</Text>
-                  <Text style={[cell, { flex: 2 }]}>{kra.successIndicators}</Text>
-                  <Text style={[cell, { width: 40, textAlign: 'center' }]}>{kra.weight}%</Text>
+                  <Text style={[cell, { flex: 2 }]}>
+                    {kra.successIndicators}
+                  </Text>
+                  <Text style={[cell, { width: 40, textAlign: "center" }]}>
+                    {kra.weight}%
+                  </Text>
                   {hasRatings && (
                     <>
                       <Text style={[cell, { flex: 2 }]}>
-                        {kra.actualAccomplishments ?? ''}
+                        {kra.actualAccomplishments ?? ""}
                       </Text>
                       <Text style={[cell, styles.ratingCell, { width: 45 }]}>
-                        {typeof kra.rating === 'number' ? kra.rating.toFixed(3) : '—'}
+                        {typeof kra.rating === "number"
+                          ? kra.rating.toFixed(3)
+                          : "—"}
                       </Text>
                     </>
                   )}
@@ -324,10 +340,18 @@ export function OpcrfPdf({
         {/* ── Final Rating ───────────────────────────────────────────────── */}
         {hasRatings && numericalRating !== undefined && (
           <View style={styles.finalRatingBox}>
-            <Text style={styles.finalRatingLabel}>Final Office Performance Rating</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-              <Text style={styles.finalRatingValue}>{numericalRating.toFixed(3)}</Text>
-              <Text style={styles.finalRatingAdjectival}>{adjectivalLabel}</Text>
+            <Text style={styles.finalRatingLabel}>
+              Final Office Performance Rating
+            </Text>
+            <View
+              style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}
+            >
+              <Text style={styles.finalRatingValue}>
+                {numericalRating.toFixed(3)}
+              </Text>
+              <Text style={styles.finalRatingAdjectival}>
+                {adjectivalLabel}
+              </Text>
             </View>
           </View>
         )}
@@ -337,27 +361,31 @@ export function OpcrfPdf({
           <View style={styles.signatureBlock}>
             <View style={styles.signatureLine} />
             <Text style={styles.signatureName}>{office.head}</Text>
-            <Text style={styles.signatureLabel}>Office Head / Authorized Representative</Text>
+            <Text style={styles.signatureLabel}>
+              Office Head / Authorized Representative
+            </Text>
           </View>
           <View style={styles.signatureBlock}>
             <View style={styles.signatureLine} />
-            <Text style={styles.signatureName}>{preparedByName ?? '________________________'}</Text>
+            <Text style={styles.signatureName}>
+              {preparedByName ?? "________________________"}
+            </Text>
             <Text style={styles.signatureLabel}>Prepared By</Text>
           </View>
           <View style={styles.signatureBlock}>
             <View style={styles.signatureLine} />
-            <Text style={styles.signatureName}>{approvedByName ?? '________________________'}</Text>
+            <Text style={styles.signatureName}>
+              {approvedByName ?? "________________________"}
+            </Text>
             <Text style={styles.signatureLabel}>Approving Authority</Text>
           </View>
         </View>
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>SPMS Form No. 2 — PCSO HRIS</Text>
           <Text style={styles.footerText}>
-            SPMS Form No. 2 — Senate of the Philippines HRIS
-          </Text>
-          <Text style={styles.footerText}>
-            Generated: {generatedAt ?? new Date().toLocaleDateString('en-PH')}
+            Generated: {generatedAt ?? new Date().toLocaleDateString("en-PH")}
           </Text>
         </View>
       </Page>

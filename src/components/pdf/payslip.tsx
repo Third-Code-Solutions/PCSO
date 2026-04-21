@@ -1,8 +1,8 @@
 /**
- * Senate-branded payslip — React-PDF template.
- * Matches layout spec: Senate seal, two-column earnings/deductions, net pay in gold.
+ * PCSO-branded payslip — React-PDF template.
+ * Matches layout spec: PCSO seal, two-column earnings/deductions, net pay in gold.
  */
-import React from 'react';
+import React from "react";
 import {
   Document,
   Page,
@@ -11,29 +11,29 @@ import {
   StyleSheet,
   Font,
   Image,
-} from '@react-pdf/renderer';
-import type { PayrollRecord, PayrollPeriod } from '@/lib/db/schema';
+} from "@react-pdf/renderer";
+import type { PayrollRecord, PayrollPeriod } from "@/lib/db/schema";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const CREAM = '#FAF4E6';
-const GRAY = '#6B7280';
-const BORDER = '#E5E7EB';
+const NAVY = "#1B4F9E";
+const GOLD = "#FFCB05";
+const CREAM = "#FFF8E7";
+const GRAY = "#6B7280";
+const BORDER = "#E5E7EB";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
-    backgroundColor: '#FFFFFF',
+    fontFamily: "Helvetica",
+    backgroundColor: "#FFFFFF",
     padding: 36,
     fontSize: 9,
-    color: '#111827',
+    color: "#111827",
   },
   // ── Header ─────────────────────────────────────────────────────────────────
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderBottomWidth: 2,
     borderBottomColor: NAVY,
     paddingBottom: 12,
@@ -45,21 +45,21 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 25,
     backgroundColor: NAVY,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   sealText: {
     color: GOLD,
     fontSize: 7,
-    textAlign: 'center',
-    fontFamily: 'Helvetica-Bold',
+    textAlign: "center",
+    fontFamily: "Helvetica-Bold",
   },
   headerTextBlock: {
     flex: 1,
   },
   headerTitle: {
     fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
     letterSpacing: 1,
   },
@@ -70,14 +70,14 @@ const styles = StyleSheet.create({
   },
   payslipTitle: {
     fontSize: 11,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textAlign: 'right',
+    textAlign: "right",
   },
   periodLabel: {
     fontSize: 8,
     color: GRAY,
-    textAlign: 'right',
+    textAlign: "right",
     marginTop: 2,
   },
   // ── Employee Block ──────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   employeeGrid: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 16,
   },
   employeeCol: {
@@ -99,19 +99,19 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 7,
     color: GRAY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   fieldValue: {
     fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
     marginBottom: 8,
   },
   // ── Two-column body ─────────────────────────────────────────────────────────
   columns: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 14,
     marginBottom: 12,
   },
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 4,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   colHeader: {
     backgroundColor: NAVY,
@@ -128,57 +128,57 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   colHeaderText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     letterSpacing: 0.5,
   },
   lineItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingHorizontal: 8,
     paddingVertical: 3.5,
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
   },
   lineItemAlt: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
   },
   lineLabel: {
-    color: '#374151',
+    color: "#374151",
     flex: 1,
   },
   lineValue: {
-    fontFamily: 'Helvetica-Bold',
-    textAlign: 'right',
+    fontFamily: "Helvetica-Bold",
+    textAlign: "right",
   },
   lineValueNeg: {
-    color: '#DC2626',
-    fontFamily: 'Helvetica-Bold',
-    textAlign: 'right',
+    color: "#DC2626",
+    fontFamily: "Helvetica-Bold",
+    textAlign: "right",
   },
   totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingHorizontal: 8,
     paddingVertical: 5,
     backgroundColor: NAVY,
   },
   totalLabel: {
-    color: '#FFFFFF',
-    fontFamily: 'Helvetica-Bold',
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
     fontSize: 9,
   },
   totalValue: {
     color: GOLD,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     fontSize: 9,
   },
   // ── Net Pay ─────────────────────────────────────────────────────────────────
   netPayBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     backgroundColor: NAVY,
     borderRadius: 6,
     paddingHorizontal: 16,
@@ -187,13 +187,13 @@ const styles = StyleSheet.create({
   },
   netPayLabel: {
     color: GOLD,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     fontSize: 13,
     letterSpacing: 2,
   },
   netPayValue: {
-    color: '#FFFFFF',
-    fontFamily: 'Helvetica-Bold',
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
     fontSize: 16,
   },
   // ── Footer ──────────────────────────────────────────────────────────────────
@@ -201,31 +201,31 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: BORDER,
     paddingTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   footerText: {
     color: GRAY,
     fontSize: 7,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatPeso(value: string | null | undefined): string {
-  if (!value) return '₱0.00';
+  if (!value) return "₱0.00";
   const num = parseFloat(value);
-  return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  return d.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 }
 
@@ -295,47 +295,49 @@ export function PayslipDocument({
 }: PayslipDocumentProps) {
   const fullName = [employee.lastName, employee.firstName, employee.middleName]
     .filter(Boolean)
-    .join(', ');
+    .join(", ");
 
   const periodRange = `${formatDate(period.periodStart)} – ${formatDate(period.periodEnd)}`;
   const genTimestamp = generatedAt
-    ? new Date(generatedAt).toLocaleString('en-PH')
-    : new Date().toLocaleString('en-PH');
+    ? new Date(generatedAt).toLocaleString("en-PH")
+    : new Date().toLocaleString("en-PH");
 
   const earningsLines = [
-    { label: 'Basic Pay', value: record.basicPay },
-    { label: 'RATA (Rep. & Trans.)', value: record.rata },
-    { label: 'Longevity Pay', value: record.longevityPay },
-    { label: 'Overtime Pay', value: record.overtimePay },
-    { label: 'PERA', value: record.pera },
-    { label: 'Other Adjustments', value: record.otherEarnings },
+    { label: "Basic Pay", value: record.basicPay },
+    { label: "RATA (Rep. & Trans.)", value: record.rata },
+    { label: "Longevity Pay", value: record.longevityPay },
+    { label: "Overtime Pay", value: record.overtimePay },
+    { label: "PERA", value: record.pera },
+    { label: "Other Adjustments", value: record.otherEarnings },
   ];
 
   const deductionLines = [
-    { label: 'GSIS Personal', value: record.gsisPersonal },
-    { label: 'PhilHealth Personal', value: record.philhealthPersonal },
-    { label: 'Pag-IBIG Personal', value: record.pagibigPersonal },
-    { label: 'Withholding Tax', value: record.withholdingTax },
-    { label: 'Late Deduction', value: record.lateDeduction },
-    { label: 'Undertime Deduction', value: record.undertimeDeduction },
-    { label: 'Absence Deduction', value: record.absenceDeduction },
-    { label: 'Other Deductions', value: record.otherDeductions },
+    { label: "GSIS Personal", value: record.gsisPersonal },
+    { label: "PhilHealth Personal", value: record.philhealthPersonal },
+    { label: "Pag-IBIG Personal", value: record.pagibigPersonal },
+    { label: "Withholding Tax", value: record.withholdingTax },
+    { label: "Late Deduction", value: record.lateDeduction },
+    { label: "Undertime Deduction", value: record.undertimeDeduction },
+    { label: "Absence Deduction", value: record.absenceDeduction },
+    { label: "Other Deductions", value: record.otherDeductions },
   ];
 
   return (
     <Document
       title={`Payslip - ${fullName} - ${period.name}`}
-      author="Senate of the Philippines HRIS"
+      author="PCSO HRIS"
       subject="Official Payslip"
     >
       <Page size="LETTER" style={styles.page}>
         {/* ── Header ────────────────────────────────────────────────── */}
         <View style={styles.header}>
           <View style={styles.sealPlaceholder}>
-            <Text style={styles.sealText}>SENATE{'\n'}PH</Text>
+            <Text style={styles.sealText}>PCSO{"\n"}PH</Text>
           </View>
           <View style={styles.headerTextBlock}>
-            <Text style={styles.headerTitle}>SENATE OF THE PHILIPPINES</Text>
+            <Text style={styles.headerTitle}>
+              PHILIPPINE CHARITY SWEEPSTAKES OFFICE
+            </Text>
             <Text style={styles.headerSubtitle}>
               Financial Services Department — Payroll Division
             </Text>
@@ -346,7 +348,9 @@ export function PayslipDocument({
           <View>
             <Text style={styles.payslipTitle}>PAYSLIP</Text>
             <Text style={styles.periodLabel}>Period: {period.name}</Text>
-            <Text style={styles.periodLabel}>Pay Date: {formatDate(period.payDate)}</Text>
+            <Text style={styles.periodLabel}>
+              Pay Date: {formatDate(period.payDate)}
+            </Text>
           </View>
         </View>
 
@@ -363,7 +367,9 @@ export function PayslipDocument({
               <Text style={styles.fieldLabel}>Position Title</Text>
               <Text style={styles.fieldValue}>{employee.positionTitle}</Text>
               <Text style={styles.fieldLabel}>Office / Division</Text>
-              <Text style={styles.fieldValue}>{employee.officeName ?? '—'}</Text>
+              <Text style={styles.fieldValue}>
+                {employee.officeName ?? "—"}
+              </Text>
             </View>
             <View style={styles.employeeCol}>
               <Text style={styles.fieldLabel}>Salary Grade / Step</Text>
@@ -384,11 +390,18 @@ export function PayslipDocument({
               <Text style={styles.colHeaderText}>EARNINGS</Text>
             </View>
             {earningsLines.map((line, i) => (
-              <EarningLine key={line.label} label={line.label} value={line.value} index={i} />
+              <EarningLine
+                key={line.label}
+                label={line.label}
+                value={line.value}
+                index={i}
+              />
             ))}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>GROSS PAY</Text>
-              <Text style={styles.totalValue}>{formatPeso(record.grossPay)}</Text>
+              <Text style={styles.totalValue}>
+                {formatPeso(record.grossPay)}
+              </Text>
             </View>
           </View>
 
@@ -407,7 +420,9 @@ export function PayslipDocument({
             ))}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>TOTAL DEDUCTIONS</Text>
-              <Text style={styles.totalValue}>{formatPeso(record.totalDeductions)}</Text>
+              <Text style={styles.totalValue}>
+                {formatPeso(record.totalDeductions)}
+              </Text>
             </View>
           </View>
         </View>

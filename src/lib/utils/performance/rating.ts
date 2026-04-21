@@ -1,5 +1,5 @@
 /**
- * CSC rating utilities — Senate HRIS Phase 12
+ * CSC rating utilities — PCSO HRIS Phase 12
  *
  * Implements the Civil Service Commission (CSC) SPMS rating system:
  *   Outstanding:       4.500 – 5.000
@@ -11,8 +11,12 @@
  * Source: CSC MC No. 6, s. 2012
  */
 
-import type { AdjectivalRating } from '@/lib/constants/performance';
-import { RATING_BANDS, MIN_RATING, MAX_RATING } from '@/lib/constants/performance';
+import type { AdjectivalRating } from "@/lib/constants/performance";
+import {
+  RATING_BANDS,
+  MIN_RATING,
+  MAX_RATING,
+} from "@/lib/constants/performance";
 
 // ─── Core Conversion ─────────────────────────────────────────────────────────
 
@@ -30,11 +34,11 @@ export function ratingToAdjectival(rating: number): AdjectivalRating | null {
   // Note: max values overlap slightly at boundaries (e.g. 4.499 vs 4.500).
   // The CSC rule uses the lower bound as the inclusive floor and upper bound
   // as the exclusive ceiling, except for Outstanding where 5.000 is inclusive.
-  if (rating >= 4.5 && rating <= 5.0) return 'outstanding';
-  if (rating >= 3.5 && rating < 4.5) return 'very_satisfactory';
-  if (rating >= 2.5 && rating < 3.5) return 'satisfactory';
-  if (rating >= 1.5 && rating < 2.5) return 'unsatisfactory';
-  if (rating >= 1.0 && rating < 1.5) return 'poor';
+  if (rating >= 4.5 && rating <= 5.0) return "outstanding";
+  if (rating >= 3.5 && rating < 4.5) return "very_satisfactory";
+  if (rating >= 2.5 && rating < 3.5) return "satisfactory";
+  if (rating >= 1.5 && rating < 2.5) return "unsatisfactory";
+  if (rating >= 1.0 && rating < 1.5) return "poor";
 
   return null;
 }
@@ -51,8 +55,8 @@ export function adjectivalLabel(adjectival: AdjectivalRating): string {
 // ─── Weighted Average ─────────────────────────────────────────────────────────
 
 export interface KraRatingInput {
-  weight: number;   // percentage weight (1–100)
-  rating: number;   // numerical rating (1.000–5.000)
+  weight: number; // percentage weight (1–100)
+  rating: number; // numerical rating (1.000–5.000)
 }
 
 /**

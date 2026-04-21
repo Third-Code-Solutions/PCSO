@@ -1,7 +1,7 @@
-'use server';
+"use server";
 
 /**
- * SALN module server actions — Senate HRIS Phase 13
+ * SALN module server actions — PCSO HRIS Phase 13
  *
  * Actions: fileSaln, updateSaln, sendReminders, exportDocuments
  *
@@ -14,30 +14,30 @@
  *  - Never silently fail.
  */
 
-import { revalidatePath } from 'next/cache';
-import { createServerClient } from '@/lib/supabase/server';
-import { requirePermission } from '@/lib/auth/guards';
+import { revalidatePath } from "next/cache";
+import { createServerClient } from "@/lib/supabase/server";
+import { requirePermission } from "@/lib/auth/guards";
 import {
   FileSalnSchema,
   UpdateSalnSchema,
   SendRemindersSchema,
-} from '@/lib/validations/saln';
-import { computeNetWorth } from '@/lib/utils/saln/net-worth';
-import { notifyEmployee, notifyRoles } from '@/lib/notifications';
-import { annualDeadline, daysUntilDeadline } from '@/lib/utils/saln/deadline';
+} from "@/lib/validations/saln";
+import { computeNetWorth } from "@/lib/utils/saln/net-worth";
+import { notifyEmployee, notifyRoles } from "@/lib/notifications";
+import { annualDeadline, daysUntilDeadline } from "@/lib/utils/saln/deadline";
 import {
   SalnReminderEmail,
   salnReminderPlainText,
-} from '@/lib/email/templates/saln-reminder';
-import { Resend } from 'resend';
-import { env } from '@/lib/env';
-import React from 'react';
+} from "@/lib/email/templates/saln-reminder";
+import { Resend } from "resend";
+import { env } from "@/lib/env";
+import React from "react";
 import type {
   RealAsset,
   PersonalProperty,
   Investment,
   Liability,
-} from '@/lib/validations/saln';
+} from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -48,7 +48,7 @@ function getResend(): Resend | null {
   return new Resend(env.RESEND_API_KEY);
 }
 
-const FROM_EMAIL = env.RESEND_FROM_EMAIL ?? 'noreply@senate.gov.ph';
+const FROM_EMAIL = env.RESEND_FROM_EMAIL ?? "noreply@pcso.gov.ph";
 const APP_URL = env.NEXT_PUBLIC_APP_URL;
 
 async function writeAuditLog(
@@ -61,10 +61,10 @@ async function writeAuditLog(
     newValues?: Record<string, unknown>;
   },
 ): Promise<void> {
-  await supabase.from('audit_logs').insert({
+  await supabase.from("audit_logs").insert({
     user_id: params.userId,
     action: params.action,
-    table_name: 'saln_submissions',
+    table_name: "saln_submissions",
     record_id: params.recordId,
     old_values: params.oldValues ?? null,
     new_values: params.newValues ?? null,
@@ -77,15 +77,15 @@ async function writeAuditLog(
 
 export async function fileSaln(input: unknown): Promise<{ id: string }> {
   const parsed = FileSalnSchema.parse(input);
-  const user = await requirePermission('saln', 'create');
+  const user = await requirePermission("saln", "create");
 
   // Enforce self-only for employee_self_service
   if (
-    user.role === 'employee_self_service' &&
+    user.role === "employee_self_service" &&
     user.employeeId !== parsed.employeeId
   ) {
     throw Object.assign(
-      new Error('Forbidden: You may only file your own SALN.'),
+      new Error("Forbidden: You may only file your own SALN."),
       { status: 403 },
     );
   }
@@ -101,7 +101,7 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
   );
 
   const now = new Date();
-  const status = parsed.submit ? 'submitted' : 'draft';
+  const status = parsed.submit ? "submitted" : "draft";
   const dateFiled = parsed.submit ? now.toISOString().slice(0, 10) : null;
 
   // Investments are stored inside the personal_properties JSONB column
@@ -113,7 +113,7 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
   };
 
   const { data, error } = await supabase
-    .from('saln_submissions')
+    .from("saln_submissions")
     .insert({
       employee_id: parsed.employeeId,
       year: parsed.year,
@@ -129,16 +129,18 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
       status,
       date_filed: dateFiled,
     })
-    .select('id')
+    .select("id")
     .single();
 
   if (error || !data) {
-    throw new Error(`Failed to create SALN: ${error?.message ?? 'Unknown error'}`);
+    throw new Error(
+      `Failed to create SALN: ${error?.message ?? "Unknown error"}`,
+    );
   }
 
   await writeAuditLog(supabase, {
     userId: user.id,
-    action: parsed.submit ? 'submit' : 'create_draft',
+    action: parsed.submit ? "submit" : "create_draft",
     recordId: data.id,
     newValues: {
       employee_id: parsed.employeeId,
@@ -153,23 +155,23 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
   // Draft saves do not trigger notifications.
   if (parsed.submit) {
     try {
-      await notifyRoles(['super_admin'], {
-        type: 'saln_reminder',
+      await notifyRoles(["super_admin"], {
+        type: "saln_reminder",
         title: `New SALN submission — CY ${parsed.year}`,
         body: `An employee has submitted their SALN for calendar year ${parsed.year} for review.`,
         actionUrl: `/saln/${data.id}`,
-        entityType: 'saln_submission',
+        entityType: "saln_submission",
         entityId: data.id,
       });
     } catch (notifyErr) {
-      console.error('[saln/actions] fileSaln notifyRoles failed:', notifyErr);
+      console.error("[saln/actions] fileSaln notifyRoles failed:", notifyErr);
     }
   }
 
-  revalidatePath('/saln');
-  revalidatePath('/saln/submissions');
-  revalidatePath('/saln/admin');
-  revalidatePath('/saln/tracking');
+  revalidatePath("/saln");
+  revalidatePath("/saln/submissions");
+  revalidatePath("/saln/admin");
+  revalidatePath("/saln/tracking");
 
   return { id: data.id };
 }
@@ -180,38 +182,40 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
 
 export async function updateSaln(input: unknown): Promise<{ id: string }> {
   const parsed = UpdateSalnSchema.parse(input);
-  const user = await requirePermission('saln', 'edit');
+  const user = await requirePermission("saln", "edit");
 
   const supabase = await createServerClient();
 
   // Fetch existing record to check ownership
   // personal_properties stores a compound envelope { v, personalProperties, investments }
   const { data: existing, error: fetchError } = await supabase
-    .from('saln_submissions')
-    .select('id, employee_id, status, real_assets, personal_properties, liabilities')
-    .eq('id', parsed.id)
+    .from("saln_submissions")
+    .select(
+      "id, employee_id, status, real_assets, personal_properties, liabilities",
+    )
+    .eq("id", parsed.id)
     .single();
 
   if (fetchError || !existing) {
-    throw new Error('SALN submission not found.');
+    throw new Error("SALN submission not found.");
   }
 
   // Enforce self-only
   if (
-    user.role === 'employee_self_service' &&
-    user.employeeId !== String(existing.employee_id ?? '')
+    user.role === "employee_self_service" &&
+    user.employeeId !== String(existing.employee_id ?? "")
   ) {
     throw Object.assign(
-      new Error('Forbidden: You may only edit your own SALN.'),
+      new Error("Forbidden: You may only edit your own SALN."),
       { status: 403 },
     );
   }
 
   // Cannot edit a verified/received SALN unless super_admin
-  const currentStatus = String(existing.status ?? '');
+  const currentStatus = String(existing.status ?? "");
   if (
-    user.role !== 'super_admin' &&
-    (currentStatus === 'verified' || currentStatus === 'received')
+    user.role !== "super_admin" &&
+    (currentStatus === "verified" || currentStatus === "received")
   ) {
     throw new Error(
       `Cannot edit a SALN with status "${currentStatus}". Contact HR.`,
@@ -220,7 +224,11 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
 
   // Unpack the compound envelope stored in personal_properties
   const existingEnvelope = existing.personal_properties as
-    | { v: number; personalProperties: PersonalProperty[]; investments: Investment[] }
+    | {
+        v: number;
+        personalProperties: PersonalProperty[];
+        investments: Investment[];
+      }
     | PersonalProperty[]
     | null;
 
@@ -230,29 +238,38 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
   if (Array.isArray(existingEnvelope)) {
     // Legacy flat format from seeder — no investments stored
     existingPersonalProperties = existingEnvelope as PersonalProperty[];
-  } else if (existingEnvelope && typeof existingEnvelope === 'object' && 'v' in existingEnvelope) {
+  } else if (
+    existingEnvelope &&
+    typeof existingEnvelope === "object" &&
+    "v" in existingEnvelope
+  ) {
     existingPersonalProperties = existingEnvelope.personalProperties ?? [];
     existingInvestments = existingEnvelope.investments ?? [];
   }
 
   // Recompute net worth from latest data
-  const realAssets = (parsed.realAssets ?? (existing.real_assets as RealAsset[])) as RealAsset[];
-  const personalProperties = (
-    parsed.personalProperties ?? existingPersonalProperties
-  ) as PersonalProperty[];
-  const investments = (
-    parsed.investments ?? existingInvestments
-  ) as Investment[];
-  const liabilities = (
-    parsed.liabilities ?? (existing.liabilities as Liability[])
-  ) as Liability[];
+  const realAssets = (parsed.realAssets ??
+    (existing.real_assets as RealAsset[])) as RealAsset[];
+  const personalProperties = (parsed.personalProperties ??
+    existingPersonalProperties) as PersonalProperty[];
+  const investments = (parsed.investments ??
+    existingInvestments) as Investment[];
+  const liabilities = (parsed.liabilities ??
+    (existing.liabilities as Liability[])) as Liability[];
 
-  const worth = computeNetWorth(realAssets, personalProperties, investments, liabilities);
+  const worth = computeNetWorth(
+    realAssets,
+    personalProperties,
+    investments,
+    liabilities,
+  );
 
   const now = new Date();
-  const newStatus = parsed.submit ? 'submitted' : (parsed.status ?? currentStatus);
+  const newStatus = parsed.submit
+    ? "submitted"
+    : (parsed.status ?? currentStatus);
   const dateFiled =
-    parsed.submit && currentStatus === 'draft'
+    parsed.submit && currentStatus === "draft"
       ? now.toISOString().slice(0, 10)
       : undefined;
 
@@ -264,28 +281,34 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
     updated_at: now.toISOString(),
   };
 
-  if (parsed.realAssets !== undefined) updatePayload['real_assets'] = parsed.realAssets;
+  if (parsed.realAssets !== undefined)
+    updatePayload["real_assets"] = parsed.realAssets;
 
   // Always rebuild the compound envelope when either personalProperties or investments changes.
-  if (parsed.personalProperties !== undefined || parsed.investments !== undefined) {
-    updatePayload['personal_properties'] = {
+  if (
+    parsed.personalProperties !== undefined ||
+    parsed.investments !== undefined
+  ) {
+    updatePayload["personal_properties"] = {
       v: 1,
       personalProperties,
       investments,
     };
   }
 
-  if (parsed.liabilities !== undefined) updatePayload['liabilities'] = parsed.liabilities;
+  if (parsed.liabilities !== undefined)
+    updatePayload["liabilities"] = parsed.liabilities;
   if (parsed.businessInterests !== undefined)
-    updatePayload['business_interests'] = parsed.businessInterests;
-  if (parsed.relatives !== undefined) updatePayload['relatives'] = parsed.relatives;
-  if (parsed.remarks !== undefined) updatePayload['remarks'] = parsed.remarks;
-  if (dateFiled !== undefined) updatePayload['date_filed'] = dateFiled;
+    updatePayload["business_interests"] = parsed.businessInterests;
+  if (parsed.relatives !== undefined)
+    updatePayload["relatives"] = parsed.relatives;
+  if (parsed.remarks !== undefined) updatePayload["remarks"] = parsed.remarks;
+  if (dateFiled !== undefined) updatePayload["date_filed"] = dateFiled;
 
   const { error: updateError } = await supabase
-    .from('saln_submissions')
+    .from("saln_submissions")
     .update(updatePayload)
-    .eq('id', parsed.id);
+    .eq("id", parsed.id);
 
   if (updateError) {
     throw new Error(`Failed to update SALN: ${updateError.message}`);
@@ -293,7 +316,11 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
 
   await writeAuditLog(supabase, {
     userId: user.id,
-    action: parsed.submit ? 'submit' : newStatus !== currentStatus ? 'review' : 'update',
+    action: parsed.submit
+      ? "submit"
+      : newStatus !== currentStatus
+        ? "review"
+        : "update",
     recordId: parsed.id,
     oldValues: {
       status: currentStatus,
@@ -307,57 +334,57 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
   });
 
   // Fan-out notifications
-  const ownerEmployeeId = String(existing.employee_id ?? '');
+  const ownerEmployeeId = String(existing.employee_id ?? "");
 
   try {
-    if (parsed.submit && currentStatus === 'draft') {
+    if (parsed.submit && currentStatus === "draft") {
       // Newly submitted: notify super_admin compliance office
-      await notifyRoles(['super_admin'], {
-        type: 'saln_reminder',
+      await notifyRoles(["super_admin"], {
+        type: "saln_reminder",
         title: `SALN submitted for review`,
         body: `A SALN draft has been submitted and is now awaiting compliance review.`,
         actionUrl: `/saln/${parsed.id}`,
-        entityType: 'saln_submission',
+        entityType: "saln_submission",
         entityId: parsed.id,
       });
     }
     // Admin action: notify owning employee of status changes (received/verified/deficient).
     if (
-      user.role === 'super_admin' &&
+      user.role === "super_admin" &&
       newStatus !== currentStatus &&
-      (newStatus === 'received' ||
-        newStatus === 'verified' ||
-        newStatus === 'deficient') &&
+      (newStatus === "received" ||
+        newStatus === "verified" ||
+        newStatus === "deficient") &&
       ownerEmployeeId
     ) {
       const titleMap: Record<string, string> = {
-        received: 'SALN received by compliance office',
-        verified: 'SALN verified — thank you for your compliance',
-        deficient: 'SALN flagged as deficient — action required',
+        received: "SALN received by compliance office",
+        verified: "SALN verified — thank you for your compliance",
+        deficient: "SALN flagged as deficient — action required",
       };
       await notifyEmployee(ownerEmployeeId, {
-        type: 'saln_reminder',
+        type: "saln_reminder",
         title: titleMap[newStatus] ?? `SALN status updated: ${newStatus}`,
         body:
-          newStatus === 'deficient'
+          newStatus === "deficient"
             ? parsed.remarks
               ? `Remarks: ${parsed.remarks}`
-              : 'Please review the HR remarks on your SALN and re-submit.'
+              : "Please review the HR remarks on your SALN and re-submit."
             : undefined,
         actionUrl: `/saln/${parsed.id}`,
-        entityType: 'saln_submission',
+        entityType: "saln_submission",
         entityId: parsed.id,
       });
     }
   } catch (notifyErr) {
-    console.error('[saln/actions] updateSaln notification failed:', notifyErr);
+    console.error("[saln/actions] updateSaln notification failed:", notifyErr);
   }
 
-  revalidatePath('/saln');
+  revalidatePath("/saln");
   revalidatePath(`/saln/${parsed.id}`);
-  revalidatePath('/saln/submissions');
-  revalidatePath('/saln/admin');
-  revalidatePath('/saln/tracking');
+  revalidatePath("/saln/submissions");
+  revalidatePath("/saln/admin");
+  revalidatePath("/saln/tracking");
 
   return { id: parsed.id };
 }
@@ -373,22 +400,27 @@ export interface SendRemindersResult {
   errors: string[];
 }
 
-export async function sendReminders(input: unknown): Promise<SendRemindersResult> {
+export async function sendReminders(
+  input: unknown,
+): Promise<SendRemindersResult> {
   const parsed = SendRemindersSchema.parse(input);
-  const user = await requirePermission('saln', 'approve');
+  const user = await requirePermission("saln", "approve");
 
   // Only super_admin can send reminders
-  if (user.role !== 'super_admin') {
-    throw Object.assign(new Error('Forbidden: Only super_admin can send SALN reminders.'), {
-      status: 403,
-    });
+  if (user.role !== "super_admin") {
+    throw Object.assign(
+      new Error("Forbidden: Only super_admin can send SALN reminders."),
+      {
+        status: 403,
+      },
+    );
   }
 
   const supabase = await createServerClient();
 
   // Get non-filers
   let query = supabase
-    .from('employees')
+    .from("employees")
     .select(
       `
       id,
@@ -405,11 +437,11 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
       )
     `,
     )
-    .is('deleted_at', null)
-    .eq('status', 'active');
+    .is("deleted_at", null)
+    .eq("status", "active");
 
   if (parsed.employeeIds && parsed.employeeIds.length > 0) {
-    query = query.in('id', parsed.employeeIds);
+    query = query.in("id", parsed.employeeIds);
   }
 
   const { data: employees, error: empError } = await query;
@@ -420,10 +452,10 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
 
   const resend = getResend();
   const deadline = annualDeadline(parsed.year);
-  const deadlineFormatted = deadline.toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  const deadlineFormatted = deadline.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
   const days = daysUntilDeadline(parsed.year);
 
@@ -439,29 +471,33 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const { data: alreadySentToday } = await supabase
-    .from('audit_logs')
-    .select('record_id, new_values, created_at')
-    .eq('action', 'send_reminder_individual')
-    .eq('table_name', 'saln_submissions')
-    .gte('created_at', todayStart.toISOString());
+    .from("audit_logs")
+    .select("record_id, new_values, created_at")
+    .eq("action", "send_reminder_individual")
+    .eq("table_name", "saln_submissions")
+    .gte("created_at", todayStart.toISOString());
 
   const alreadySentEmployeeIds = new Set<string>();
   for (const row of alreadySentToday ?? []) {
     const nv = row.new_values as Record<string, unknown> | null;
     const empId =
-      typeof nv?.['employee_id'] === 'string' ? (nv['employee_id'] as string) : null;
-    const yr = Number(nv?.['year'] ?? 0);
+      typeof nv?.["employee_id"] === "string"
+        ? (nv["employee_id"] as string)
+        : null;
+    const yr = Number(nv?.["year"] ?? 0);
     if (empId && yr === parsed.year) alreadySentEmployeeIds.add(empId);
   }
 
   for (const emp of employees ?? []) {
     // Check if they've filed for this year
-    const submissions = emp.saln_submissions as Array<Record<string, unknown>> | null;
+    const submissions = emp.saln_submissions as Array<
+      Record<string, unknown>
+    > | null;
     const hasFiled = (submissions ?? []).some(
       (s) =>
-        Number(s['year']) === parsed.year &&
-        s['filing_type'] === 'annual' &&
-        s['status'] !== 'draft',
+        Number(s["year"]) === parsed.year &&
+        s["filing_type"] === "annual" &&
+        s["status"] !== "draft",
     );
 
     if (hasFiled) continue;
@@ -472,7 +508,7 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
       continue;
     }
 
-    const recipientEmail = typeof emp.email === 'string' ? emp.email : null;
+    const recipientEmail = typeof emp.email === "string" ? emp.email : null;
     if (!recipientEmail) {
       errors.push(`${emp.employee_no}: no email on file`);
       failed++;
@@ -481,7 +517,7 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
 
     const fullName = [emp.first_name, emp.middle_name, emp.last_name]
       .filter(Boolean)
-      .join(' ');
+      .join(" ");
 
     const emailProps = {
       employeeName: fullName,
@@ -494,7 +530,7 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
 
     if (resend) {
       const { error: emailError } = await resend.emails.send({
-        from: `Senate HRMO <${FROM_EMAIL}>`,
+        from: `PCSO HRMO <${FROM_EMAIL}>`,
         to: recipientEmail,
         subject: `[ACTION REQUIRED] SALN Filing ${parsed.year} — Deadline: ${deadlineFormatted}`,
         react: React.createElement(SalnReminderEmail, emailProps),
@@ -514,7 +550,7 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
     // the same day will see the dedupe record and skip this employee.
     await writeAuditLog(supabase, {
       userId: user.id,
-      action: 'send_reminder_individual',
+      action: "send_reminder_individual",
       recordId: String(emp.id),
       newValues: {
         employee_id: String(emp.id),
@@ -527,27 +563,30 @@ export async function sendReminders(input: unknown): Promise<SendRemindersResult
     // Real-time push notification to the employee
     try {
       await notifyEmployee(String(emp.id), {
-        type: 'saln_reminder',
+        type: "saln_reminder",
         title: `SALN filing reminder (${parsed.year})`,
         body: `Deadline: April 30. ${days} days remaining.`,
-        actionUrl: '/saln/new',
+        actionUrl: "/saln/new",
       });
     } catch (notifyErr) {
-      console.error('[saln/actions] sendReminders notification failed:', notifyErr);
+      console.error(
+        "[saln/actions] sendReminders notification failed:",
+        notifyErr,
+      );
     }
   }
 
   // Audit log the bulk action
   await writeAuditLog(supabase, {
     userId: user.id,
-    action: 'send_reminders',
+    action: "send_reminders",
     recordId: user.id,
     newValues: {
       year: parsed.year,
       sent,
       failed,
       skipped,
-      employee_ids: parsed.employeeIds ?? 'all',
+      employee_ids: parsed.employeeIds ?? "all",
     },
   });
 

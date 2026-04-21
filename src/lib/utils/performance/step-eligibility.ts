@@ -1,5 +1,5 @@
 /**
- * Step increment eligibility utilities — Senate HRIS Phase 12
+ * Step increment eligibility utilities — PCSO HRIS Phase 12
  *
  * CSC / DBM rules:
  *  - 3 consecutive Very Satisfactory (or better) → eligible for one step up
@@ -11,13 +11,13 @@
  *  - DBM National Budget Circular 461 (Step Increment Rules)
  */
 
-import type { AdjectivalRating } from '@/lib/constants/performance';
+import type { AdjectivalRating } from "@/lib/constants/performance";
 import {
   STEP_INCREMENT_CONSECUTIVE_VS,
   STEP_INCREMENT_CONSECUTIVE_OUTSTANDING,
   STEP_INCREMENT_COOLDOWN_YEARS,
-} from '@/lib/constants/performance';
-import { ratingToAdjectival } from './rating';
+} from "@/lib/constants/performance";
+import { ratingToAdjectival } from "./rating";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ export interface StepEligibilityResult {
   /** How many consecutive qualifying periods were found */
   consecutiveCount: number;
   /** Which rule triggered eligibility */
-  triggerRule: 'three_consecutive_vs' | 'two_consecutive_outstanding' | 'none';
+  triggerRule: "three_consecutive_vs" | "two_consecutive_outstanding" | "none";
   /** The qualifying periods that triggered eligibility */
   qualifyingPeriods: RatingRecord[];
   /** Reason when not eligible */
@@ -50,14 +50,14 @@ export interface StepEligibilityResult {
  * Returns true when an adjectival rating is Very Satisfactory or better.
  */
 function isVeryStatisfactoryOrBetter(adjectival: AdjectivalRating): boolean {
-  return adjectival === 'very_satisfactory' || adjectival === 'outstanding';
+  return adjectival === "very_satisfactory" || adjectival === "outstanding";
 }
 
 /**
  * Returns true when an adjectival rating is Outstanding.
  */
 function isOutstanding(adjectival: AdjectivalRating): boolean {
-  return adjectival === 'outstanding';
+  return adjectival === "outstanding";
 }
 
 // ─── Core Eligibility Check ───────────────────────────────────────────────────
@@ -78,13 +78,13 @@ export function checkStepEligibility(
   const notEligible = (reason: string): StepEligibilityResult => ({
     eligible: false,
     consecutiveCount: 0,
-    triggerRule: 'none',
+    triggerRule: "none",
     qualifyingPeriods: [],
     ineligibilityReason: reason,
   });
 
   if (ratings.length === 0) {
-    return notEligible('No performance ratings on record.');
+    return notEligible("No performance ratings on record.");
   }
 
   // Cooldown check: cannot receive a step increment within 3 years of the last one
@@ -95,10 +95,10 @@ export function checkStepEligibility(
     const today = new Date();
 
     if (today < cutoff) {
-      const eligible = cutoff.toLocaleDateString('en-PH', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
+      const eligible = cutoff.toLocaleDateString("en-PH", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
       });
       return notEligible(
         `Step increment cooldown active. Next eligible date: ${eligible}.`,
@@ -109,7 +109,8 @@ export function checkStepEligibility(
   // Sort ratings chronologically (ascending) — ensure correct order
   const sorted = [...ratings].sort(
     (a, b) =>
-      new Date(a.periodDateFrom).getTime() - new Date(b.periodDateFrom).getTime(),
+      new Date(a.periodDateFrom).getTime() -
+      new Date(b.periodDateFrom).getTime(),
   );
 
   // Check for 2 consecutive Outstanding (most favorable rule first)
@@ -122,7 +123,7 @@ export function checkStepEligibility(
     return {
       eligible: true,
       consecutiveCount: outstandingResult.length,
-      triggerRule: 'two_consecutive_outstanding',
+      triggerRule: "two_consecutive_outstanding",
       qualifyingPeriods: outstandingResult,
       ineligibilityReason: null,
     };
@@ -138,7 +139,7 @@ export function checkStepEligibility(
     return {
       eligible: true,
       consecutiveCount: vsResult.length,
-      triggerRule: 'three_consecutive_vs',
+      triggerRule: "three_consecutive_vs",
       qualifyingPeriods: vsResult,
       ineligibilityReason: null,
     };
@@ -186,10 +187,7 @@ function findConsecutiveStreak(
     const streakLength = streakEnd - streakStart + 1;
     if (streakLength >= requiredCount) {
       // Return the most recent `requiredCount` records from the streak
-      const slice = ratings.slice(
-        streakEnd - requiredCount + 1,
-        streakEnd + 1,
-      );
+      const slice = ratings.slice(streakEnd - requiredCount + 1, streakEnd + 1);
       return slice;
     }
 
@@ -238,11 +236,11 @@ export function toRatingRecord(row: {
   periodDateFrom: string;
 }): RatingRecord {
   const numerical =
-    typeof row.numericalRating === 'string'
+    typeof row.numericalRating === "string"
       ? parseFloat(row.numericalRating)
       : row.numericalRating;
 
-  const adjectival = ratingToAdjectival(numerical) ?? 'poor';
+  const adjectival = ratingToAdjectival(numerical) ?? "poor";
 
   return {
     periodLabel: row.periodLabel,

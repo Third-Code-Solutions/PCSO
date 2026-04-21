@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * Client wrapper for the org chart page.
@@ -8,11 +8,11 @@
  * TODO: Add html-to-image to dependencies to enable PNG export.
  */
 
-import { useState } from 'react';
-import { createElement } from 'react';
-import { Button } from '@/components/ui/button';
-import { FileDown, Loader2 } from 'lucide-react';
-import { OrgChart, type OrgTreeNode } from '@/components/org-chart/org-chart';
+import { useState } from "react";
+import { createElement } from "react";
+import { Button } from "@/components/ui/button";
+import { FileDown, Loader2 } from "lucide-react";
+import { OrgChart, type OrgTreeNode } from "@/components/org-chart/org-chart";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -33,8 +33,8 @@ export function OrgChartClient({ roots }: OrgChartClientProps) {
     setIsExporting(true);
     try {
       const [{ pdf }, { OrgChartPdfDocument }] = await Promise.all([
-        import('@react-pdf/renderer'),
-        import('./_pdf-document'),
+        import("@react-pdf/renderer"),
+        import("./_pdf-document"),
       ]);
 
       // Use createElement to avoid needing JSX in async function context
@@ -42,16 +42,16 @@ export function OrgChartClient({ roots }: OrgChartClientProps) {
       const doc = createElement(OrgChartPdfDocument, { roots }) as any;
       const blob = await pdf(doc).toBlob();
       const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
+      const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `senate-org-chart-${new Date().toISOString().slice(0, 10)}.pdf`;
+      anchor.download = `pcso-org-chart-${new Date().toISOString().slice(0, 10)}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
     } catch (err) {
       // Export failures must not crash the UI
-      console.error('[OrgChartClient] PDF export failed:', err);
+      console.error("[OrgChartClient] PDF export failed:", err);
     } finally {
       setIsExporting(false);
     }
@@ -75,7 +75,7 @@ export function OrgChartClient({ roots }: OrgChartClientProps) {
           ) : (
             <FileDown className="mr-2 h-4 w-4" />
           )}
-          {isExporting ? 'Exporting…' : 'Export PDF'}
+          {isExporting ? "Exporting…" : "Export PDF"}
         </Button>
       </div>
 
@@ -83,7 +83,7 @@ export function OrgChartClient({ roots }: OrgChartClientProps) {
       <OrgChart
         roots={roots}
         className="flex-1"
-        style={{ minHeight: '60vh' }}
+        style={{ minHeight: "60vh" }}
       />
     </div>
   );

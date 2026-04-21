@@ -1,24 +1,27 @@
 /**
- * Performance module read-only queries — Senate HRIS Phase 12
+ * Performance module read-only queries — PCSO HRIS Phase 12
  *
  * Used by Server Components. All queries use the Supabase server client
  * with RLS awareness.
  */
 
-import { createServerClient } from '@/lib/supabase/server';
-import type { AdjectivalRating } from '@/lib/constants/performance';
-import { RATING_BANDS } from '@/lib/constants/performance';
-import { checkStepEligibility, toRatingRecord } from '@/lib/utils/performance/step-eligibility';
+import { createServerClient } from "@/lib/supabase/server";
+import type { AdjectivalRating } from "@/lib/constants/performance";
+import { RATING_BANDS } from "@/lib/constants/performance";
+import {
+  checkStepEligibility,
+  toRatingRecord,
+} from "@/lib/utils/performance/step-eligibility";
 
 // ─── Shared Row Types ─────────────────────────────────────────────────────────
 
 export interface PerformancePeriodRow {
   id: string;
   year: number;
-  semester: '1' | '2';
+  semester: "1" | "2";
   dateFrom: string;
   dateTo: string;
-  status: 'open' | 'rating' | 'review' | 'closed';
+  status: "open" | "rating" | "review" | "closed";
   label: string;
   createdAt: string;
 }
@@ -28,7 +31,7 @@ export interface PerformanceRatingRow {
   employeeId: string;
   periodId: string;
   periodLabel: string;
-  ratingType: 'ipcrf' | 'opcrf';
+  ratingType: "ipcrf" | "opcrf";
   numericalRating: string;
   adjectivalRating: AdjectivalRating;
   ratedBy: string;
@@ -84,21 +87,21 @@ export interface EligibleEmployeeRow {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makePeriodLabel(year: number, semester: string): string {
-  return `${year}-${semester === '1' ? 'S1' : 'S2'}`;
+  return `${year}-${semester === "1" ? "S1" : "S2"}`;
 }
 
 function toPeriodRow(row: Record<string, unknown>): PerformancePeriodRow {
-  const year = Number(row['year'] ?? 0);
-  const semester = String(row['semester'] ?? '1') as '1' | '2';
+  const year = Number(row["year"] ?? 0);
+  const semester = String(row["semester"] ?? "1") as "1" | "2";
   return {
-    id: String(row['id'] ?? ''),
+    id: String(row["id"] ?? ""),
     year,
     semester,
-    dateFrom: String(row['date_from'] ?? ''),
-    dateTo: String(row['date_to'] ?? ''),
-    status: String(row['status'] ?? 'open') as PerformancePeriodRow['status'],
+    dateFrom: String(row["date_from"] ?? ""),
+    dateTo: String(row["date_to"] ?? ""),
+    status: String(row["status"] ?? "open") as PerformancePeriodRow["status"],
     label: makePeriodLabel(year, semester),
-    createdAt: String(row['created_at'] ?? ''),
+    createdAt: String(row["created_at"] ?? ""),
   };
 }
 
@@ -109,9 +112,10 @@ function toPeriodRow(row: Record<string, unknown>): PerformancePeriodRow {
  */
 function extractKras(krasRaw: unknown): KraRatingData[] | null {
   if (Array.isArray(krasRaw)) return krasRaw as KraRatingData[];
-  if (krasRaw !== null && typeof krasRaw === 'object') {
+  if (krasRaw !== null && typeof krasRaw === "object") {
     const envelope = krasRaw as Record<string, unknown>;
-    if (Array.isArray(envelope['items'])) return envelope['items'] as KraRatingData[];
+    if (Array.isArray(envelope["items"]))
+      return envelope["items"] as KraRatingData[];
   }
   return null;
 }
@@ -121,20 +125,28 @@ function extractMonitoringData(krasRaw: unknown): {
   midYearRemarks: string | null;
   raterRemarks: string | null;
 } {
-  if (krasRaw !== null && typeof krasRaw === 'object' && !Array.isArray(krasRaw)) {
+  if (
+    krasRaw !== null &&
+    typeof krasRaw === "object" &&
+    !Array.isArray(krasRaw)
+  ) {
     const envelope = krasRaw as Record<string, unknown>;
 
     const raterRemarks =
-      typeof envelope['raterRemarks'] === 'string' ? envelope['raterRemarks'] : null;
+      typeof envelope["raterRemarks"] === "string"
+        ? envelope["raterRemarks"]
+        : null;
 
-    const mon = envelope['monitoring'];
-    if (mon !== null && typeof mon === 'object') {
+    const mon = envelope["monitoring"];
+    if (mon !== null && typeof mon === "object") {
       const m = mon as Record<string, unknown>;
       return {
         supervisorFeedback:
-          typeof m['supervisorFeedback'] === 'string' ? m['supervisorFeedback'] : null,
+          typeof m["supervisorFeedback"] === "string"
+            ? m["supervisorFeedback"]
+            : null,
         midYearRemarks:
-          typeof m['midYearRemarks'] === 'string' ? m['midYearRemarks'] : null,
+          typeof m["midYearRemarks"] === "string" ? m["midYearRemarks"] : null,
         raterRemarks,
       };
     }
@@ -147,26 +159,30 @@ function toRatingRow(
   row: Record<string, unknown>,
   periodLabel: string,
 ): PerformanceRatingRow {
-  const krasRaw = row['kras'];
+  const krasRaw = row["kras"];
   const kras = extractKras(krasRaw);
-  const { supervisorFeedback, midYearRemarks, raterRemarks } = extractMonitoringData(krasRaw);
+  const { supervisorFeedback, midYearRemarks, raterRemarks } =
+    extractMonitoringData(krasRaw);
 
   return {
-    id: String(row['id'] ?? ''),
-    employeeId: String(row['employee_id'] ?? ''),
-    periodId: String(row['period_id'] ?? ''),
+    id: String(row["id"] ?? ""),
+    employeeId: String(row["employee_id"] ?? ""),
+    periodId: String(row["period_id"] ?? ""),
     periodLabel,
-    ratingType: String(row['rating_type'] ?? 'ipcrf') as 'ipcrf' | 'opcrf',
-    numericalRating: String(row['numerical_rating'] ?? '0'),
-    adjectivalRating: String(row['adjectival_rating'] ?? 'satisfactory') as AdjectivalRating,
-    ratedBy: String(row['rated_by'] ?? ''),
-    approvedBy: typeof row['approved_by'] === 'string' ? row['approved_by'] : null,
-    status: String(row['status'] ?? 'draft'),
+    ratingType: String(row["rating_type"] ?? "ipcrf") as "ipcrf" | "opcrf",
+    numericalRating: String(row["numerical_rating"] ?? "0"),
+    adjectivalRating: String(
+      row["adjectival_rating"] ?? "satisfactory",
+    ) as AdjectivalRating,
+    ratedBy: String(row["rated_by"] ?? ""),
+    approvedBy:
+      typeof row["approved_by"] === "string" ? row["approved_by"] : null,
+    status: String(row["status"] ?? "draft"),
     kras,
     supervisorFeedback,
     raterRemarks,
     midYearRemarks,
-    createdAt: String(row['created_at'] ?? ''),
+    createdAt: String(row["created_at"] ?? ""),
   };
 }
 
@@ -176,16 +192,15 @@ export async function getPerformancePeriods(): Promise<PerformancePeriodRow[]> {
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('performance_periods')
-    .select('id, year, semester, date_from, date_to, status, created_at')
-    .order('year', { ascending: false })
-    .order('semester', { ascending: false });
+    .from("performance_periods")
+    .select("id, year, semester, date_from, date_to, status, created_at")
+    .order("year", { ascending: false })
+    .order("semester", { ascending: false });
 
-  if (error) throw new Error(`Failed to fetch performance periods: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch performance periods: ${error.message}`);
 
-  return (data ?? []).map((row) =>
-    toPeriodRow(row as Record<string, unknown>),
-  );
+  return (data ?? []).map((row) => toPeriodRow(row as Record<string, unknown>));
 }
 
 export async function getPerformancePeriodById(
@@ -194,9 +209,9 @@ export async function getPerformancePeriodById(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('performance_periods')
-    .select('id, year, semester, date_from, date_to, status, created_at')
-    .eq('id', periodId)
+    .from("performance_periods")
+    .select("id, year, semester, date_from, date_to, status, created_at")
+    .eq("id", periodId)
     .single();
 
   if (error || !data) return null;
@@ -212,8 +227,9 @@ export async function getMyPerformanceRatings(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('performance_ratings')
-    .select(`
+    .from("performance_ratings")
+    .select(
+      `
       id,
       employee_id,
       period_id,
@@ -226,17 +242,21 @@ export async function getMyPerformanceRatings(
       kras,
       created_at,
       performance_periods ( year, semester )
-    `)
-    .eq('employee_id', employeeId)
-    .order('created_at', { ascending: false });
+    `,
+    )
+    .eq("employee_id", employeeId)
+    .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Failed to fetch ratings: ${error.message}`);
 
   return (data ?? []).map((row) => {
-    const period = row.performance_periods as { year?: number; semester?: string } | null;
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+    } | null;
     const periodLabel = period
       ? makePeriodLabel(Number(period.year), String(period.semester))
-      : 'Unknown';
+      : "Unknown";
     return toRatingRow(row as Record<string, unknown>, periodLabel);
   });
 }
@@ -258,8 +278,9 @@ export async function getApprovedIpcrfWithPeriodDates(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('performance_ratings')
-    .select(`
+    .from("performance_ratings")
+    .select(
+      `
       id,
       employee_id,
       period_id,
@@ -272,13 +293,15 @@ export async function getApprovedIpcrfWithPeriodDates(
       kras,
       created_at,
       performance_periods ( year, semester, date_from )
-    `)
-    .eq('employee_id', employeeId)
-    .eq('rating_type', 'ipcrf')
-    .eq('status', 'approved')
-    .order('created_at', { ascending: true });
+    `,
+    )
+    .eq("employee_id", employeeId)
+    .eq("rating_type", "ipcrf")
+    .eq("status", "approved")
+    .order("created_at", { ascending: true });
 
-  if (error) throw new Error(`Failed to fetch approved IPCRF ratings: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch approved IPCRF ratings: ${error.message}`);
 
   return (data ?? []).map((row) => {
     const period = row.performance_periods as {
@@ -288,11 +311,13 @@ export async function getApprovedIpcrfWithPeriodDates(
     } | null;
     const periodLabel = period
       ? makePeriodLabel(Number(period.year), String(period.semester))
-      : 'Unknown';
+      : "Unknown";
 
     return {
       ...toRatingRow(row as Record<string, unknown>, periodLabel),
-      periodDateFrom: String(period?.date_from ?? row.created_at ?? '2020-01-01'),
+      periodDateFrom: String(
+        period?.date_from ?? row.created_at ?? "2020-01-01",
+      ),
     };
   });
 }
@@ -303,8 +328,9 @@ export async function getPerformanceRatingById(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('performance_ratings')
-    .select(`
+    .from("performance_ratings")
+    .select(
+      `
       id,
       employee_id,
       period_id,
@@ -317,28 +343,35 @@ export async function getPerformanceRatingById(
       kras,
       created_at,
       performance_periods ( year, semester )
-    `)
-    .eq('id', ratingId)
+    `,
+    )
+    .eq("id", ratingId)
     .single();
 
   if (error || !data) return null;
 
-  const period = data.performance_periods as { year?: number; semester?: string } | null;
+  const period = data.performance_periods as {
+    year?: number;
+    semester?: string;
+  } | null;
   const periodLabel = period
     ? makePeriodLabel(Number(period.year), String(period.semester))
-    : 'Unknown';
+    : "Unknown";
 
   return toRatingRow(data as Record<string, unknown>, periodLabel);
 }
 
 export async function getRatingsByPeriod(
   periodId: string,
-): Promise<(PerformanceRatingRow & { employeeName: string; employeeNo: string })[]> {
+): Promise<
+  (PerformanceRatingRow & { employeeName: string; employeeNo: string })[]
+> {
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('performance_ratings')
-    .select(`
+    .from("performance_ratings")
+    .select(
+      `
       id,
       employee_id,
       period_id,
@@ -352,14 +385,19 @@ export async function getRatingsByPeriod(
       created_at,
       performance_periods ( year, semester ),
       employees ( first_name, last_name, employee_no )
-    `)
-    .eq('period_id', periodId)
-    .order('created_at', { ascending: false });
+    `,
+    )
+    .eq("period_id", periodId)
+    .order("created_at", { ascending: false });
 
-  if (error) throw new Error(`Failed to fetch period ratings: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch period ratings: ${error.message}`);
 
   return (data ?? []).map((row) => {
-    const period = row.performance_periods as { year?: number; semester?: string } | null;
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+    } | null;
     const emp = row.employees as {
       first_name?: string;
       last_name?: string;
@@ -367,12 +405,12 @@ export async function getRatingsByPeriod(
     } | null;
     const periodLabel = period
       ? makePeriodLabel(Number(period.year), String(period.semester))
-      : 'Unknown';
+      : "Unknown";
 
     return {
       ...toRatingRow(row as Record<string, unknown>, periodLabel),
-      employeeName: `${emp?.last_name ?? ''}, ${emp?.first_name ?? ''}`.trim(),
-      employeeNo: String(emp?.employee_no ?? ''),
+      employeeName: `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim(),
+      employeeNo: String(emp?.employee_no ?? ""),
     };
   });
 }
@@ -388,8 +426,9 @@ export async function getOpcfrRatings(periodId?: string): Promise<OpcfrRow[]> {
   const supabase = await createServerClient();
 
   let query = supabase
-    .from('performance_ratings')
-    .select(`
+    .from("performance_ratings")
+    .select(
+      `
       id,
       employee_id,
       period_id,
@@ -403,12 +442,13 @@ export async function getOpcfrRatings(periodId?: string): Promise<OpcfrRow[]> {
       created_at,
       performance_periods ( year, semester ),
       employees ( office_id, offices ( name ) )
-    `)
-    .eq('rating_type', 'opcrf')
-    .order('created_at', { ascending: false });
+    `,
+    )
+    .eq("rating_type", "opcrf")
+    .order("created_at", { ascending: false });
 
   if (periodId) {
-    query = query.eq('period_id', periodId);
+    query = query.eq("period_id", periodId);
   }
 
   const { data, error } = await query;
@@ -416,14 +456,17 @@ export async function getOpcfrRatings(periodId?: string): Promise<OpcfrRow[]> {
   if (error) throw new Error(`Failed to fetch OPCRF ratings: ${error.message}`);
 
   return (data ?? []).map((row) => {
-    const period = row.performance_periods as { year?: number; semester?: string } | null;
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+    } | null;
     const emp = row.employees as {
       office_id?: string;
       offices?: { name?: string } | null;
     } | null;
     const periodLabel = period
       ? makePeriodLabel(Number(period.year), String(period.semester))
-      : 'Unknown';
+      : "Unknown";
 
     return {
       ...toRatingRow(row as Record<string, unknown>, periodLabel),
@@ -441,8 +484,9 @@ export async function getStepIncrements(
   const supabase = await createServerClient();
 
   let query = supabase
-    .from('step_increments')
-    .select(`
+    .from("step_increments")
+    .select(
+      `
       id,
       employee_id,
       from_step,
@@ -454,16 +498,18 @@ export async function getStepIncrements(
       remarks,
       created_at,
       employees ( first_name, last_name, employee_no )
-    `)
-    .order('created_at', { ascending: false });
+    `,
+    )
+    .order("created_at", { ascending: false });
 
   if (status) {
-    query = query.eq('status', status);
+    query = query.eq("status", status);
   }
 
   const { data, error } = await query;
 
-  if (error) throw new Error(`Failed to fetch step increments: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch step increments: ${error.message}`);
 
   return (data ?? []).map((row) => {
     const emp = row.employees as {
@@ -475,17 +521,17 @@ export async function getStepIncrements(
     return {
       id: String(row.id),
       employeeId: String(row.employee_id),
-      employeeName: `${emp?.last_name ?? ''}, ${emp?.first_name ?? ''}`.trim(),
-      employeeNo: String(emp?.employee_no ?? ''),
+      employeeName: `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim(),
+      employeeNo: String(emp?.employee_no ?? ""),
       fromStep: Number(row.from_step),
       toStep: Number(row.to_step),
       effectivityDate: String(row.effectivity_date),
       basisPeriodIds: Array.isArray(row.basis_period_ids)
         ? (row.basis_period_ids as string[])
         : [],
-      status: String(row.status ?? 'pending'),
-      approvedBy: typeof row.approved_by === 'string' ? row.approved_by : null,
-      remarks: typeof row.remarks === 'string' ? row.remarks : null,
+      status: String(row.status ?? "pending"),
+      approvedBy: typeof row.approved_by === "string" ? row.approved_by : null,
+      remarks: typeof row.remarks === "string" ? row.remarks : null,
       createdAt: String(row.created_at),
     };
   });
@@ -497,8 +543,9 @@ export async function getStepIncrementsByEmployee(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('step_increments')
-    .select(`
+    .from("step_increments")
+    .select(
+      `
       id,
       employee_id,
       from_step,
@@ -510,11 +557,15 @@ export async function getStepIncrementsByEmployee(
       remarks,
       created_at,
       employees ( first_name, last_name, employee_no )
-    `)
-    .eq('employee_id', employeeId)
-    .order('effectivity_date', { ascending: false });
+    `,
+    )
+    .eq("employee_id", employeeId)
+    .order("effectivity_date", { ascending: false });
 
-  if (error) throw new Error(`Failed to fetch employee step increments: ${error.message}`);
+  if (error)
+    throw new Error(
+      `Failed to fetch employee step increments: ${error.message}`,
+    );
 
   return (data ?? []).map((row) => {
     const emp = row.employees as {
@@ -526,17 +577,17 @@ export async function getStepIncrementsByEmployee(
     return {
       id: String(row.id),
       employeeId: String(row.employee_id),
-      employeeName: `${emp?.last_name ?? ''}, ${emp?.first_name ?? ''}`.trim(),
-      employeeNo: String(emp?.employee_no ?? ''),
+      employeeName: `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim(),
+      employeeNo: String(emp?.employee_no ?? ""),
       fromStep: Number(row.from_step),
       toStep: Number(row.to_step),
       effectivityDate: String(row.effectivity_date),
       basisPeriodIds: Array.isArray(row.basis_period_ids)
         ? (row.basis_period_ids as string[])
         : [],
-      status: String(row.status ?? 'pending'),
-      approvedBy: typeof row.approved_by === 'string' ? row.approved_by : null,
-      remarks: typeof row.remarks === 'string' ? row.remarks : null,
+      status: String(row.status ?? "pending"),
+      approvedBy: typeof row.approved_by === "string" ? row.approved_by : null,
+      remarks: typeof row.remarks === "string" ? row.remarks : null,
       createdAt: String(row.created_at),
     };
   });
@@ -544,13 +595,16 @@ export async function getStepIncrementsByEmployee(
 
 // ─── Eligible Employees for Step Increment ────────────────────────────────────
 
-export async function getEligibleEmployeesForStepIncrement(): Promise<EligibleEmployeeRow[]> {
+export async function getEligibleEmployeesForStepIncrement(): Promise<
+  EligibleEmployeeRow[]
+> {
   const supabase = await createServerClient();
 
   // Fetch all active employees with their recent ratings
   const { data: employees, error: empError } = await supabase
-    .from('employees')
-    .select(`
+    .from("employees")
+    .select(
+      `
       id,
       employee_no,
       first_name,
@@ -560,12 +614,14 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<EligibleEm
       step,
       office_id,
       offices ( name )
-    `)
-    .eq('status', 'active')
-    .is('deleted_at', null)
-    .order('last_name');
+    `,
+    )
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .order("last_name");
 
-  if (empError) throw new Error(`Failed to fetch employees: ${empError.message}`);
+  if (empError)
+    throw new Error(`Failed to fetch employees: ${empError.message}`);
 
   const eligible: EligibleEmployeeRow[] = [];
 
@@ -574,25 +630,27 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<EligibleEm
 
     // Fetch ratings for this employee (IPCRF only, approved)
     const { data: ratingsData } = await supabase
-      .from('performance_ratings')
-      .select(`
+      .from("performance_ratings")
+      .select(
+        `
         numerical_rating,
         adjectival_rating,
         period_id,
         performance_periods ( year, semester, date_from )
-      `)
-      .eq('employee_id', empId)
-      .eq('rating_type', 'ipcrf')
-      .eq('status', 'approved')
-      .order('created_at', { ascending: true });
+      `,
+      )
+      .eq("employee_id", empId)
+      .eq("rating_type", "ipcrf")
+      .eq("status", "approved")
+      .order("created_at", { ascending: true });
 
     // Fetch last approved step increment for cooldown check
     const { data: lastIncrement } = await supabase
-      .from('step_increments')
-      .select('effectivity_date')
-      .eq('employee_id', empId)
-      .in('status', ['approved', 'implemented'])
-      .order('effectivity_date', { ascending: false })
+      .from("step_increments")
+      .select("effectivity_date")
+      .eq("employee_id", empId)
+      .in("status", ["approved", "implemented"])
+      .order("effectivity_date", { ascending: false })
       .limit(1)
       .single();
 
@@ -606,14 +664,14 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<EligibleEm
       return toRatingRecord({
         periodLabel: period
           ? makePeriodLabel(Number(period.year), String(period.semester))
-          : 'Unknown',
-        numericalRating: String(r.numerical_rating ?? '1'),
-        periodDateFrom: String(period?.date_from ?? '2020-01-01'),
+          : "Unknown",
+        numericalRating: String(r.numerical_rating ?? "1"),
+        periodDateFrom: String(period?.date_from ?? "2020-01-01"),
       });
     });
 
     const lastIncrementDate =
-      lastIncrement && typeof lastIncrement.effectivity_date === 'string'
+      lastIncrement && typeof lastIncrement.effectivity_date === "string"
         ? lastIncrement.effectivity_date
         : null;
 
@@ -629,11 +687,13 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<EligibleEm
         positionTitle: String(emp.position_title),
         salaryGrade: Number(emp.salary_grade),
         currentStep: Number(emp.step),
-        officeId: typeof emp.office_id === 'string' ? emp.office_id : null,
+        officeId: typeof emp.office_id === "string" ? emp.office_id : null,
         officeName: officeData?.name ?? null,
         consecutiveCount: eligibility.consecutiveCount,
         triggerRule: eligibility.triggerRule,
-        qualifyingPeriods: eligibility.qualifyingPeriods.map((p) => p.periodLabel),
+        qualifyingPeriods: eligibility.qualifyingPeriods.map(
+          (p) => p.periodLabel,
+        ),
       });
     }
   }
@@ -662,25 +722,28 @@ export async function getPerformanceAnalytics(
   const supabase = await createServerClient();
 
   let query = supabase
-    .from('performance_ratings')
-    .select(`
+    .from("performance_ratings")
+    .select(
+      `
       id,
       employee_id,
       numerical_rating,
       adjectival_rating,
       period_id,
       employees ( first_name, last_name )
-    `)
-    .eq('rating_type', 'ipcrf')
-    .eq('status', 'approved');
+    `,
+    )
+    .eq("rating_type", "ipcrf")
+    .eq("status", "approved");
 
   if (periodId) {
-    query = query.eq('period_id', periodId);
+    query = query.eq("period_id", periodId);
   }
 
   const { data, error } = await query;
 
-  if (error) throw new Error(`Failed to fetch analytics data: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch analytics data: ${error.message}`);
 
   const rows = data ?? [];
 
@@ -694,10 +757,7 @@ export async function getPerformanceAnalytics(
   };
 
   // Group by employee for averages
-  const byEmployee = new Map<
-    string,
-    { name: string; ratings: number[] }
-  >();
+  const byEmployee = new Map<string, { name: string; ratings: number[] }>();
 
   let ratingSum = 0;
 
@@ -705,12 +765,16 @@ export async function getPerformanceAnalytics(
     const adj = String(row.adjectival_rating) as AdjectivalRating;
     if (adj in byAdjectival) byAdjectival[adj]++;
 
-    const numerical = parseFloat(String(row.numerical_rating ?? '0'));
+    const numerical = parseFloat(String(row.numerical_rating ?? "0"));
     ratingSum += numerical;
 
     const empId = String(row.employee_id);
-    const empData = row.employees as { first_name?: string; last_name?: string } | null;
-    const name = `${empData?.last_name ?? ''}, ${empData?.first_name ?? ''}`.trim();
+    const empData = row.employees as {
+      first_name?: string;
+      last_name?: string;
+    } | null;
+    const name =
+      `${empData?.last_name ?? ""}, ${empData?.first_name ?? ""}`.trim();
 
     const existing = byEmployee.get(empId);
     if (existing) {
@@ -728,7 +792,10 @@ export async function getPerformanceAnalytics(
     .map(([employeeId, { name, ratings }]) => ({
       employeeId,
       employeeName: name,
-      averageRating: Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 1000) / 1000,
+      averageRating:
+        Math.round(
+          (ratings.reduce((a, b) => a + b, 0) / ratings.length) * 1000,
+        ) / 1000,
       periodCount: ratings.length,
     }))
     .filter((e) => RATING_BANDS.outstanding.min <= e.averageRating)
@@ -775,29 +842,31 @@ export async function getPerformanceDashboardKpis(): Promise<PerformanceDashboar
     dueThisYearRes,
   ] = await Promise.all([
     supabase
-      .from('performance_periods')
-      .select('id', { count: 'exact', head: true })
-      .neq('status', 'closed'),
-    supabase.from('performance_ratings').select('id', { count: 'exact', head: true }),
+      .from("performance_periods")
+      .select("id", { count: "exact", head: true })
+      .neq("status", "closed"),
     supabase
-      .from('performance_ratings')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['submitted', 'reviewed']),
+      .from("performance_ratings")
+      .select("id", { count: "exact", head: true }),
     supabase
-      .from('performance_ratings')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'approved')
-      .gte('created_at', yearStart)
-      .lte('created_at', `${yearEnd}T23:59:59`),
+      .from("performance_ratings")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["submitted", "reviewed"]),
     supabase
-      .from('step_increments')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['pending', 'approved']),
+      .from("performance_ratings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "approved")
+      .gte("created_at", yearStart)
+      .lte("created_at", `${yearEnd}T23:59:59`),
     supabase
-      .from('step_increments')
-      .select('id', { count: 'exact', head: true })
-      .gte('effectivity_date', yearStart)
-      .lte('effectivity_date', yearEnd),
+      .from("step_increments")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["pending", "approved"]),
+    supabase
+      .from("step_increments")
+      .select("id", { count: "exact", head: true })
+      .gte("effectivity_date", yearStart)
+      .lte("effectivity_date", yearEnd),
   ]);
 
   return {
@@ -830,21 +899,24 @@ export async function getPerformancePeriodsPaginated(
   const to = from + limit - 1;
 
   let query = supabase
-    .from('performance_periods')
-    .select('id, year, semester, date_from, date_to, status, created_at', {
-      count: 'exact',
+    .from("performance_periods")
+    .select("id, year, semester, date_from, date_to, status, created_at", {
+      count: "exact",
     })
-    .order('year', { ascending: false })
-    .order('semester', { ascending: false })
+    .order("year", { ascending: false })
+    .order("semester", { ascending: false })
     .range(from, to);
 
-  if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
+  if (statusFilter && statusFilter !== "all")
+    query = query.eq("status", statusFilter);
 
   const { data, error, count } = await query;
   if (error) throw new Error(`Failed to fetch periods: ${error.message}`);
 
   return {
-    rows: (data ?? []).map((row) => toPeriodRow(row as Record<string, unknown>)),
+    rows: (data ?? []).map((row) =>
+      toPeriodRow(row as Record<string, unknown>),
+    ),
     total: count ?? 0,
     page,
     limit,
@@ -880,7 +952,7 @@ export async function getAllIpcrfPaginated(
   const to = from + limit - 1;
 
   let query = supabase
-    .from('performance_ratings')
+    .from("performance_ratings")
     .select(
       `
       id,
@@ -897,20 +969,24 @@ export async function getAllIpcrfPaginated(
       performance_periods ( year, semester ),
       employees!inner ( first_name, last_name, employee_no, offices ( name ) )
     `,
-      { count: 'exact' },
+      { count: "exact" },
     )
-    .eq('rating_type', 'ipcrf')
-    .order('created_at', { ascending: false })
+    .eq("rating_type", "ipcrf")
+    .order("created_at", { ascending: false })
     .range(from, to);
 
-  if (filters.periodId) query = query.eq('period_id', filters.periodId);
-  if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
+  if (filters.periodId) query = query.eq("period_id", filters.periodId);
+  if (filters.status && filters.status !== "all")
+    query = query.eq("status", filters.status);
 
   const { data, error, count } = await query;
   if (error) throw new Error(`Failed to fetch IPCRF list: ${error.message}`);
 
   const mapped = (data ?? []).map((row) => {
-    const period = row.performance_periods as { year?: number; semester?: string } | null;
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+    } | null;
     const emp = row.employees as {
       first_name?: string;
       last_name?: string;
@@ -919,11 +995,11 @@ export async function getAllIpcrfPaginated(
     } | null;
     const periodLabel = period
       ? makePeriodLabel(Number(period.year), String(period.semester))
-      : 'Unknown';
+      : "Unknown";
     return {
       ...toRatingRow(row as Record<string, unknown>, periodLabel),
-      employeeName: `${emp?.last_name ?? ''}, ${emp?.first_name ?? ''}`.trim(),
-      employeeNo: String(emp?.employee_no ?? ''),
+      employeeName: `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim(),
+      employeeNo: String(emp?.employee_no ?? ""),
       officeName: emp?.offices?.name ?? null,
     };
   });
@@ -932,7 +1008,8 @@ export async function getAllIpcrfPaginated(
   const filtered = q
     ? mapped.filter(
         (r) =>
-          r.employeeName.toLowerCase().includes(q) || r.employeeNo.toLowerCase().includes(q),
+          r.employeeName.toLowerCase().includes(q) ||
+          r.employeeNo.toLowerCase().includes(q),
       )
     : mapped;
 
@@ -958,7 +1035,7 @@ export async function getStepIncrementsPaginated(
   const to = from + limit - 1;
 
   let query = supabase
-    .from('step_increments')
+    .from("step_increments")
     .select(
       `
       id,
@@ -973,15 +1050,17 @@ export async function getStepIncrementsPaginated(
       created_at,
       employees ( first_name, last_name, employee_no )
     `,
-      { count: 'exact' },
+      { count: "exact" },
     )
-    .order('created_at', { ascending: false })
+    .order("created_at", { ascending: false })
     .range(from, to);
 
-  if (statusFilter && statusFilter !== 'all') query = query.eq('status', statusFilter);
+  if (statusFilter && statusFilter !== "all")
+    query = query.eq("status", statusFilter);
 
   const { data, error, count } = await query;
-  if (error) throw new Error(`Failed to fetch step increments: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch step increments: ${error.message}`);
 
   const rows: StepIncrementRow[] = (data ?? []).map((row) => {
     const emp = row.employees as {
@@ -992,17 +1071,17 @@ export async function getStepIncrementsPaginated(
     return {
       id: String(row.id),
       employeeId: String(row.employee_id),
-      employeeName: `${emp?.last_name ?? ''}, ${emp?.first_name ?? ''}`.trim(),
-      employeeNo: String(emp?.employee_no ?? ''),
+      employeeName: `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim(),
+      employeeNo: String(emp?.employee_no ?? ""),
       fromStep: Number(row.from_step),
       toStep: Number(row.to_step),
       effectivityDate: String(row.effectivity_date),
       basisPeriodIds: Array.isArray(row.basis_period_ids)
         ? (row.basis_period_ids as string[])
         : [],
-      status: String(row.status ?? 'pending'),
-      approvedBy: typeof row.approved_by === 'string' ? row.approved_by : null,
-      remarks: typeof row.remarks === 'string' ? row.remarks : null,
+      status: String(row.status ?? "pending"),
+      approvedBy: typeof row.approved_by === "string" ? row.approved_by : null,
+      remarks: typeof row.remarks === "string" ? row.remarks : null,
       createdAt: String(row.created_at),
     };
   });
@@ -1029,7 +1108,7 @@ export async function getOfficePerformanceBreakdown(
   const supabase = await createServerClient();
 
   let query = supabase
-    .from('performance_ratings')
+    .from("performance_ratings")
     .select(
       `
       numerical_rating,
@@ -1037,13 +1116,14 @@ export async function getOfficePerformanceBreakdown(
       employees!inner ( office_id, offices ( name ) )
     `,
     )
-    .eq('rating_type', 'ipcrf')
-    .eq('status', 'approved');
+    .eq("rating_type", "ipcrf")
+    .eq("status", "approved");
 
-  if (periodId) query = query.eq('period_id', periodId);
+  if (periodId) query = query.eq("period_id", periodId);
 
   const { data, error } = await query;
-  if (error) throw new Error(`Failed to fetch office breakdown: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch office breakdown: ${error.message}`);
 
   const byOffice = new Map<
     string,
@@ -1065,9 +1145,9 @@ export async function getOfficePerformanceBreakdown(
       offices?: { name?: string } | null;
     } | null;
     const officeId = emp?.office_id ?? null;
-    const officeName = emp?.offices?.name ?? 'Unassigned';
-    const key = officeId ?? '__unassigned__';
-    const numerical = parseFloat(String(row.numerical_rating ?? '0'));
+    const officeName = emp?.offices?.name ?? "Unassigned";
+    const key = officeId ?? "__unassigned__";
+    const numerical = parseFloat(String(row.numerical_rating ?? "0"));
     const adj = String(row.adjectival_rating);
 
     const existing = byOffice.get(key) ?? {
@@ -1083,9 +1163,9 @@ export async function getOfficePerformanceBreakdown(
 
     existing.sum += numerical;
     existing.count++;
-    if (adj === 'outstanding') existing.outstanding++;
-    else if (adj === 'very_satisfactory') existing.verySatisfactory++;
-    else if (adj === 'satisfactory') existing.satisfactory++;
+    if (adj === "outstanding") existing.outstanding++;
+    else if (adj === "very_satisfactory") existing.verySatisfactory++;
+    else if (adj === "satisfactory") existing.satisfactory++;
     else existing.belowSatisfactory++;
 
     byOffice.set(key, existing);
@@ -1096,7 +1176,8 @@ export async function getOfficePerformanceBreakdown(
       officeId: o.officeId,
       officeName: o.officeName,
       totalRatings: o.count,
-      averageRating: o.count > 0 ? Math.round((o.sum / o.count) * 1000) / 1000 : 0,
+      averageRating:
+        o.count > 0 ? Math.round((o.sum / o.count) * 1000) / 1000 : 0,
       outstanding: o.outstanding,
       verySatisfactory: o.verySatisfactory,
       satisfactory: o.satisfactory,
@@ -1118,7 +1199,7 @@ export async function getRatingTrend(): Promise<CycleTrendRow[]> {
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('performance_ratings')
+    .from("performance_ratings")
     .select(
       `
       period_id,
@@ -1126,19 +1207,25 @@ export async function getRatingTrend(): Promise<CycleTrendRow[]> {
       performance_periods ( year, semester )
     `,
     )
-    .eq('rating_type', 'ipcrf')
-    .eq('status', 'approved');
+    .eq("rating_type", "ipcrf")
+    .eq("status", "approved");
 
   if (error) throw new Error(`Failed to fetch rating trend: ${error.message}`);
 
-  const byPeriod = new Map<string, { label: string; sum: number; count: number }>();
+  const byPeriod = new Map<
+    string,
+    { label: string; sum: number; count: number }
+  >();
   for (const row of data ?? []) {
-    const period = row.performance_periods as { year?: number; semester?: string } | null;
+    const period = row.performance_periods as {
+      year?: number;
+      semester?: string;
+    } | null;
     const key = String(row.period_id);
     const label = period
       ? makePeriodLabel(Number(period.year), String(period.semester))
-      : 'Unknown';
-    const numerical = parseFloat(String(row.numerical_rating ?? '0'));
+      : "Unknown";
+    const numerical = parseFloat(String(row.numerical_rating ?? "0"));
     const existing = byPeriod.get(key) ?? { label, sum: 0, count: 0 };
     existing.sum += numerical;
     existing.count++;

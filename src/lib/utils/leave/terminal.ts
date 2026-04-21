@@ -1,5 +1,5 @@
 /**
- * Terminal Leave computation — Senate HRIS Phase 08
+ * Terminal Leave computation — PCSO HRIS Phase 08
  *
  * CSC Omnibus Rules on Leave, Rule XVI, Section 56.
  *
@@ -15,7 +15,7 @@
  *  - SL balance is factored at 50% per CSC rules (only half of SL is commuted).
  */
 
-import { roundHalfEven } from '@/lib/utils/payroll/rounding';
+import { roundHalfEven } from "@/lib/utils/payroll/rounding";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,7 +40,12 @@ export interface TerminalLeaveInput {
    * Type of separation — affects tax treatment (informational only;
    * actual tax computation is performed by the payroll engine).
    */
-  separationType?: 'retirement' | 'resignation' | 'end_of_term' | 'death' | 'other';
+  separationType?:
+    | "retirement"
+    | "resignation"
+    | "end_of_term"
+    | "death"
+    | "other";
 }
 
 export interface TerminalLeaveResult {
@@ -61,7 +66,7 @@ export interface TerminalLeaveResult {
   /** Date of separation (if provided). */
   separationDate: Date | undefined;
   /** Separation type (if provided). */
-  separationType: TerminalLeaveInput['separationType'];
+  separationType: TerminalLeaveInput["separationType"];
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +83,16 @@ export interface TerminalLeaveResult {
  * @returns Full computation breakdown.
  * @throws {RangeError} If balances or salary are negative.
  */
-export function computeTerminalLeave(input: TerminalLeaveInput): TerminalLeaveResult {
-  const { vlBalance, slBalance, monthlyBasicSalary, separationDate, separationType } = input;
+export function computeTerminalLeave(
+  input: TerminalLeaveInput,
+): TerminalLeaveResult {
+  const {
+    vlBalance,
+    slBalance,
+    monthlyBasicSalary,
+    separationDate,
+    separationType,
+  } = input;
 
   if (vlBalance < 0) {
     throw new RangeError(
@@ -129,5 +142,5 @@ export function computeTerminalLeave(input: TerminalLeaveInput): TerminalLeaveRe
  * @returns Formatted string, e.g., "₱ 123,456.78".
  */
 export function formatTerminalLeavePay(amount: number): string {
-  return `₱ ${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱ ${amount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

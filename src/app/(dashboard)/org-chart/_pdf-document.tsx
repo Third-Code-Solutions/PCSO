@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * PDF document for org chart export.
@@ -6,24 +6,24 @@
  * are not supported natively in @react-pdf/renderer.
  */
 
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import type { OrgTreeNode } from '@/components/org-chart/org-chart';
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import type { OrgTreeNode } from "@/components/org-chart/org-chart";
 
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 9,
     paddingTop: 40,
     paddingBottom: 40,
     paddingHorizontal: 36,
-    color: '#111827',
+    color: "#111827",
   },
   header: {
     marginBottom: 20,
@@ -32,92 +32,92 @@ const styles = StyleSheet.create({
   },
   orgName: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1,
   },
   title: {
     fontSize: 16,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
     marginTop: 4,
   },
   subtitle: {
     fontSize: 8,
-    color: '#6b7280',
+    color: "#6b7280",
     marginTop: 2,
   },
   section: {
     marginBottom: 4,
   },
   rootNode: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     backgroundColor: NAVY,
-    color: '#ffffff',
+    color: "#ffffff",
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 4,
     marginBottom: 2,
   },
   rootNodeText: {
-    color: '#ffffff',
-    fontFamily: 'Helvetica-Bold',
+    color: "#ffffff",
+    fontFamily: "Helvetica-Bold",
     fontSize: 10,
   },
   rootNodeCode: {
-    color: '#93c5fd',
-    fontFamily: 'Courier',
+    color: "#93c5fd",
+    fontFamily: "Courier",
     fontSize: 8,
     marginLeft: 4,
   },
   childNode: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 4,
     paddingHorizontal: 10,
-    borderBottom: '0.5px solid #e5e7eb',
+    borderBottom: "0.5px solid #e5e7eb",
     marginLeft: 20,
   },
   childNodeText: {
     fontSize: 9,
-    color: '#374151',
+    color: "#374151",
     flex: 1,
   },
   childNodeCode: {
-    fontFamily: 'Courier',
+    fontFamily: "Courier",
     fontSize: 7,
-    color: '#6b7280',
+    color: "#6b7280",
   },
   grandChildNode: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 3,
     paddingHorizontal: 10,
     marginLeft: 40,
-    borderLeft: '1px solid #e5e7eb',
+    borderLeft: "1px solid #e5e7eb",
   },
   grandChildNodeText: {
     fontSize: 8,
-    color: '#6b7280',
+    color: "#6b7280",
     flex: 1,
   },
   statsText: {
     fontSize: 7,
-    color: '#9ca3af',
+    color: "#9ca3af",
   },
   footer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 20,
     left: 36,
     right: 36,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     fontSize: 7,
-    color: '#9ca3af',
-    borderTop: '0.5px solid #e5e7eb',
+    color: "#9ca3af",
+    borderTop: "0.5px solid #e5e7eb",
     paddingTop: 4,
   },
 });
@@ -137,7 +137,7 @@ function NodeRow({ node, depth = 0 }: { node: OrgTreeNode; depth?: number }) {
         <View style={styles.rootNode}>
           <Text style={styles.rootNodeText}>{node.name}</Text>
           <Text style={styles.rootNodeCode}>({node.code})</Text>
-          <Text style={[styles.rootNodeCode, { marginLeft: 'auto' }]}>
+          <Text style={[styles.rootNodeCode, { marginLeft: "auto" }]}>
             {node.memberCount} members · {node.totalPositions} positions
           </Text>
         </View>
@@ -153,7 +153,7 @@ function NodeRow({ node, depth = 0 }: { node: OrgTreeNode; depth?: number }) {
       <View>
         <View style={styles.childNode}>
           <Text style={styles.childNodeText}>
-            {'\u25B8'} {node.name}
+            {"\u25B8"} {node.name}
           </Text>
           <Text style={styles.childNodeCode}>{node.code}</Text>
           <Text style={[styles.statsText, { marginLeft: 8 }]}>
@@ -172,11 +172,9 @@ function NodeRow({ node, depth = 0 }: { node: OrgTreeNode; depth?: number }) {
     <View>
       <View style={[styles.grandChildNode, { marginLeft: indent }]}>
         <Text style={styles.grandChildNodeText}>
-          {'\u2013'} {node.name} ({node.code})
+          {"\u2013"} {node.name} ({node.code})
         </Text>
-        <Text style={styles.statsText}>
-          {node.memberCount}m
-        </Text>
+        <Text style={styles.statsText}>{node.memberCount}m</Text>
       </View>
       {node.children.map((child) => (
         <NodeRow key={child.id} node={child} depth={depth + 1} />
@@ -194,10 +192,10 @@ interface OrgChartPdfDocumentProps {
 }
 
 export function OrgChartPdfDocument({ roots }: OrgChartPdfDocumentProps) {
-  const generatedOn = new Date().toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  const generatedOn = new Date().toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 
   return (
@@ -205,7 +203,9 @@ export function OrgChartPdfDocument({ roots }: OrgChartPdfDocumentProps) {
       <Page size="LETTER" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.orgName}>Senate of the Philippines</Text>
+          <Text style={styles.orgName}>
+            Philippine Charity Sweepstakes Office
+          </Text>
           <Text style={styles.title}>Organization Chart</Text>
           <Text style={styles.subtitle}>As of {generatedOn}</Text>
         </View>
@@ -221,7 +221,9 @@ export function OrgChartPdfDocument({ roots }: OrgChartPdfDocumentProps) {
 
         {/* Footer */}
         <View style={styles.footer} fixed>
-          <Text>Senate of the Philippines HRIS — Organization Chart</Text>
+          <Text>
+            Philippine Charity Sweepstakes Office HRIS — Organization Chart
+          </Text>
           <Text
             render={({ pageNumber, totalPages }) =>
               `Page ${pageNumber} of ${totalPages}`

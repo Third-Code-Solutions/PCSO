@@ -10,81 +10,84 @@
  *   const { Bir1604CPdf } = await import('@/components/pdf/bir-1604-c')
  */
 
-import {
-  Document,
-  Page,
-  View,
-  Text,
-  StyleSheet,
-} from '@react-pdf/renderer';
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const CREAM = '#FAF4E6';
-const BORDER = '#D1D5DB';
-const BIR_BLUE = '#1D4ED8';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const CREAM = "#FAF4E6";
+const BORDER = "#D1D5DB";
+const BIR_BLUE = "#1D4ED8";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 7,
     padding: 32,
-    color: '#111827',
+    color: "#111827",
   },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 6,
   },
   leftHeader: { flex: 1 },
-  rightHeader: { width: 150, alignItems: 'flex-end' },
+  rightHeader: { width: 150, alignItems: "flex-end" },
   birTitle: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: BIR_BLUE,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  formCode: { fontSize: 20, fontFamily: 'Helvetica-Bold', color: BIR_BLUE },
+  formCode: { fontSize: 20, fontFamily: "Helvetica-Bold", color: BIR_BLUE },
   formTitle: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     lineHeight: 1.4,
     marginTop: 2,
   },
-  metaLabel: { fontSize: 5.5, color: '#9CA3AF', textTransform: 'uppercase' },
-  metaValue: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: BIR_BLUE },
+  metaLabel: { fontSize: 5.5, color: "#9CA3AF", textTransform: "uppercase" },
+  metaValue: { fontSize: 7, fontFamily: "Helvetica-Bold", color: BIR_BLUE },
   blueDivider: { height: 1.5, backgroundColor: BIR_BLUE, marginVertical: 6 },
   goldDivider: { height: 0.5, backgroundColor: GOLD, marginBottom: 8 },
   sectionLabel: {
     fontSize: 6,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: BIR_BLUE,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.3,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     paddingHorizontal: 5,
     paddingVertical: 2,
     marginBottom: 5,
   },
   // Field grid
-  twoCol: { flexDirection: 'row', gap: 6, marginBottom: 6 },
+  twoCol: { flexDirection: "row", gap: 6, marginBottom: 6 },
   fieldBox: {
     flex: 1,
     borderBottomWidth: 0.5,
     borderBottomColor: BORDER,
     paddingBottom: 2,
   },
-  fieldLabel: { fontSize: 5.5, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 1 },
-  fieldValue: { fontSize: 7.5, color: '#111827' },
-  fieldValueBold: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#111827' },
+  fieldLabel: {
+    fontSize: 5.5,
+    color: "#9CA3AF",
+    textTransform: "uppercase",
+    marginBottom: 1,
+  },
+  fieldValue: { fontSize: 7.5, color: "#111827" },
+  fieldValueBold: {
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
+  },
   // Summary table
   summaryTable: {
     borderWidth: 0.5,
@@ -93,7 +96,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   summaryHead: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
     borderTopLeftRadius: 2,
     borderTopRightRadius: 2,
@@ -103,56 +106,66 @@ const styles = StyleSheet.create({
   summaryHeadLabel: {
     flex: 1,
     fontSize: 6,
-    fontFamily: 'Helvetica-Bold',
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
+    fontFamily: "Helvetica-Bold",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
   },
   summaryHeadAmt: {
     width: 110,
     fontSize: 6,
-    fontFamily: 'Helvetica-Bold',
-    color: '#FFFFFF',
-    textAlign: 'right',
-    textTransform: 'uppercase',
+    fontFamily: "Helvetica-Bold",
+    color: "#FFFFFF",
+    textAlign: "right",
+    textTransform: "uppercase",
   },
   summaryRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 8,
     paddingVertical: 3.5,
     borderBottomWidth: 0.3,
     borderBottomColor: BORDER,
   },
   summaryRowAlt: { backgroundColor: CREAM },
-  summaryLabel: { flex: 1, fontSize: 7, color: '#374151' },
-  summaryLabelBold: { flex: 1, fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#111827' },
+  summaryLabel: { flex: 1, fontSize: 7, color: "#374151" },
+  summaryLabelBold: {
+    flex: 1,
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
+  },
   summaryAmt: {
     width: 110,
     fontSize: 7,
-    fontFamily: 'Courier',
-    textAlign: 'right',
-    color: '#1F2937',
+    fontFamily: "Courier",
+    textAlign: "right",
+    color: "#1F2937",
   },
   summaryAmtBold: {
     width: 110,
     fontSize: 7,
-    fontFamily: 'Courier-Bold',
-    textAlign: 'right',
-    color: '#111827',
+    fontFamily: "Courier-Bold",
+    textAlign: "right",
+    color: "#111827",
   },
   grandTotalRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
     borderBottomLeftRadius: 2,
     borderBottomRightRadius: 2,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  grandTotalLabel: { flex: 1, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#FFFFFF' },
+  grandTotalLabel: {
+    flex: 1,
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    color: "#FFFFFF",
+  },
   grandTotalAmt: {
     width: 110,
     fontSize: 7.5,
-    fontFamily: 'Courier-Bold',
-    textAlign: 'right',
+    fontFamily: "Courier-Bold",
+    textAlign: "right",
     color: GOLD,
   },
   // Payee breakdown
@@ -162,66 +175,84 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     padding: 8,
     marginBottom: 10,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
-  payeeCard: { flex: 1, alignItems: 'center' },
+  payeeCard: { flex: 1, alignItems: "center" },
   payeeCardLabel: {
     fontSize: 6,
-    color: '#6B7280',
-    textTransform: 'uppercase',
+    color: "#6B7280",
+    textTransform: "uppercase",
     marginBottom: 3,
-    textAlign: 'center',
+    textAlign: "center",
   },
-  payeeCardValue: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: NAVY },
+  payeeCardValue: { fontSize: 14, fontFamily: "Helvetica-Bold", color: NAVY },
   // Certification
   certBox: {
     borderWidth: 0.5,
-    borderColor: '#D97706',
+    borderColor: "#D97706",
     borderRadius: 2,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: "#FFFBEB",
     padding: 6,
     marginBottom: 10,
   },
-  certText: { fontSize: 6, color: '#78350F', lineHeight: 1.6 },
+  certText: { fontSize: 6, color: "#78350F", lineHeight: 1.6 },
   // Alphalist note
   alphalistNote: {
     borderWidth: 0.5,
-    borderColor: '#16A34A',
+    borderColor: "#16A34A",
     borderRadius: 2,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: "#F0FDF4",
     padding: 6,
     marginBottom: 10,
   },
-  alphalistNoteText: { fontSize: 6.5, color: '#14532D', lineHeight: 1.5 },
+  alphalistNoteText: { fontSize: 6.5, color: "#14532D", lineHeight: 1.5 },
   // Signature
-  signatureRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  signatureLine: { borderTopWidth: 0.5, borderTopColor: '#374151', width: 160, paddingTop: 4 },
-  signatureLabel: { fontSize: 5.5, color: '#6B7280', textTransform: 'uppercase' },
-  signatureName: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: NAVY, marginBottom: 1 },
+  signatureRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  signatureLine: {
+    borderTopWidth: 0.5,
+    borderTopColor: "#374151",
+    width: 160,
+    paddingTop: 4,
+  },
+  signatureLabel: {
+    fontSize: 5.5,
+    color: "#6B7280",
+    textTransform: "uppercase",
+  },
+  signatureName: {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: NAVY,
+    marginBottom: 1,
+  },
   // Footer
   pageNumber: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 14,
     right: 32,
     fontSize: 6,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
   disclaimer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 14,
     left: 32,
     fontSize: 6,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (!Number.isFinite(num)) return '0.00';
-  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (!Number.isFinite(num)) return "0.00";
+  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -266,7 +297,12 @@ export interface Bir1604CProps {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) {
+export function Bir1604CPdf({
+  employer,
+  period,
+  summary,
+  meta,
+}: Bir1604CProps) {
   const netNum = parseFloat(summary.netOverUnder);
   const isOver = netNum > 0;
 
@@ -283,7 +319,7 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
             <Text style={styles.birTitle}>Bureau of Internal Revenue</Text>
             <Text style={styles.formCode}>1604-C</Text>
             <Text style={styles.formTitle}>
-              Annual Information Return of Income{'\n'}
+              Annual Information Return of Income{"\n"}
               Taxes Withheld on Compensation
             </Text>
           </View>
@@ -303,7 +339,9 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
         <View style={styles.blueDivider} />
 
         {/* Employer */}
-        <Text style={styles.sectionLabel}>Part I — Employer / Withholding Agent Information</Text>
+        <Text style={styles.sectionLabel}>
+          Part I — Employer / Withholding Agent Information
+        </Text>
 
         <View style={styles.twoCol}>
           <View style={[styles.fieldBox, { flex: 2 }]}>
@@ -334,7 +372,9 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
         <View style={styles.goldDivider} />
 
         {/* Payee counts */}
-        <Text style={styles.sectionLabel}>Part II — Payee Information Summary</Text>
+        <Text style={styles.sectionLabel}>
+          Part II — Payee Information Summary
+        </Text>
 
         <View style={styles.payeeBox}>
           <View style={styles.payeeCard}>
@@ -342,11 +382,15 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
             <Text style={styles.payeeCardValue}>{summary.totalPayees}</Text>
           </View>
           <View style={styles.payeeCard}>
-            <Text style={styles.payeeCardLabel}>Minimum Wage Earners (MWE)</Text>
+            <Text style={styles.payeeCardLabel}>
+              Minimum Wage Earners (MWE)
+            </Text>
             <Text style={styles.payeeCardValue}>{summary.mweCount}</Text>
           </View>
           <View style={styles.payeeCard}>
-            <Text style={styles.payeeCardLabel}>Purely Compensation (Non-MWE)</Text>
+            <Text style={styles.payeeCardLabel}>
+              Purely Compensation (Non-MWE)
+            </Text>
             <Text style={styles.payeeCardValue}>
               {summary.totalPayees - summary.mweCount}
             </Text>
@@ -363,13 +407,40 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
           </View>
 
           {[
-            { label: 'Total Gross Compensation Income', value: summary.totalGrossCompensation, alt: true, bold: false },
-            { label: 'Total Non-Taxable Compensation', value: summary.totalNonTaxable, alt: false, bold: false },
-            { label: 'Total Taxable Compensation Income', value: summary.totalTaxableCompensation, alt: true, bold: true },
-            { label: 'Total Income Tax Due', value: summary.totalTaxDue, alt: false, bold: false },
-            { label: 'Total Income Tax Withheld', value: summary.totalTaxWithheld, alt: true, bold: false },
             {
-              label: isOver ? 'Net Over-Remittance (Refundable)' : 'Net Under-Remittance (Payable)',
+              label: "Total Gross Compensation Income",
+              value: summary.totalGrossCompensation,
+              alt: true,
+              bold: false,
+            },
+            {
+              label: "Total Non-Taxable Compensation",
+              value: summary.totalNonTaxable,
+              alt: false,
+              bold: false,
+            },
+            {
+              label: "Total Taxable Compensation Income",
+              value: summary.totalTaxableCompensation,
+              alt: true,
+              bold: true,
+            },
+            {
+              label: "Total Income Tax Due",
+              value: summary.totalTaxDue,
+              alt: false,
+              bold: false,
+            },
+            {
+              label: "Total Income Tax Withheld",
+              value: summary.totalTaxWithheld,
+              alt: true,
+              bold: false,
+            },
+            {
+              label: isOver
+                ? "Net Over-Remittance (Refundable)"
+                : "Net Under-Remittance (Payable)",
               value: Math.abs(netNum).toFixed(2),
               alt: false,
               bold: true,
@@ -379,36 +450,46 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
               key={idx}
               style={[styles.summaryRow, row.alt ? styles.summaryRowAlt : {}]}
             >
-              <Text style={row.bold ? styles.summaryLabelBold : styles.summaryLabel}>
+              <Text
+                style={row.bold ? styles.summaryLabelBold : styles.summaryLabel}
+              >
                 {row.label}
               </Text>
-              <Text style={row.bold ? styles.summaryAmtBold : styles.summaryAmt}>
+              <Text
+                style={row.bold ? styles.summaryAmtBold : styles.summaryAmt}
+              >
                 {fmt(row.value)}
               </Text>
             </View>
           ))}
 
           <View style={styles.grandTotalRow}>
-            <Text style={styles.grandTotalLabel}>TOTAL TAX WITHHELD FOR THE YEAR</Text>
-            <Text style={styles.grandTotalAmt}>{fmt(summary.totalTaxWithheld)}</Text>
+            <Text style={styles.grandTotalLabel}>
+              TOTAL TAX WITHHELD FOR THE YEAR
+            </Text>
+            <Text style={styles.grandTotalAmt}>
+              {fmt(summary.totalTaxWithheld)}
+            </Text>
           </View>
         </View>
 
         {/* Alphalist note */}
         <View style={styles.alphalistNote}>
           <Text style={styles.alphalistNoteText}>
-            Alphalist (Schedule 1 — Payees with Compensation Income) has been generated separately
-            as a CSV file compatible with BIR eBIRForms / ADAS import. Reference batch: {meta.batchNo}.
+            Alphalist (Schedule 1 — Payees with Compensation Income) has been
+            generated separately as a CSV file compatible with BIR eBIRForms /
+            ADAS import. Reference batch: {meta.batchNo}.
           </Text>
         </View>
 
         {/* Certification */}
         <View style={styles.certBox}>
           <Text style={styles.certText}>
-            I/We declare, under the penalties of perjury, that this return has been made in good
-            faith, verified by me/us, and to the best of my/our knowledge and belief is true and
-            correct, pursuant to the provisions of the National Internal Revenue Code, as amended,
-            and the regulations issued under authority thereof.
+            I/We declare, under the penalties of perjury, that this return has
+            been made in good faith, verified by me/us, and to the best of
+            my/our knowledge and belief is true and correct, pursuant to the
+            provisions of the National Internal Revenue Code, as amended, and
+            the regulations issued under authority thereof.
           </Text>
         </View>
 
@@ -423,12 +504,16 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
           <View>
             <View style={styles.signatureLine}>
               <Text style={styles.signatureName}>{meta.certifiedBy}</Text>
-              <Text style={styles.signatureLabel}>Authorized Signatory / Treasurer</Text>
+              <Text style={styles.signatureLabel}>
+                Authorized Signatory / Treasurer
+              </Text>
             </View>
           </View>
           <View>
             <View style={styles.signatureLine}>
-              <Text style={[styles.signatureName, { color: 'transparent' }]}>{'  '}</Text>
+              <Text style={[styles.signatureName, { color: "transparent" }]}>
+                {"  "}
+              </Text>
               <Text style={styles.signatureLabel}>Date Filed / BIR Stamp</Text>
             </View>
           </View>
@@ -436,11 +521,13 @@ export function Bir1604CPdf({ employer, period, summary, meta }: Bir1604CProps) 
 
         <Text
           style={styles.pageNumber}
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+          render={({ pageNumber, totalPages }) =>
+            `Page ${pageNumber} of ${totalPages}`
+          }
           fixed
         />
         <Text style={styles.disclaimer} fixed>
-          Generated by Senate HRIS — Confidential — For Official Use Only
+          Generated by PCSO HRIS — Confidential — For Official Use Only
         </Text>
       </Page>
     </Document>

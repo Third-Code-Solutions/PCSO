@@ -1,7 +1,7 @@
-'use server';
+"use server";
 
 /**
- * Leave module server actions — Senate HRIS Phase 08
+ * Leave module server actions — PCSO HRIS Phase 08
  *
  * Actions: applyLeave, approveLeave, disapproveLeave, cancelLeave,
  *          accrueMonthlyCredits (cron target)
@@ -18,9 +18,9 @@
  *    (`AND status = ?`) so a second approver cannot double-process.
  */
 
-import { revalidatePath } from 'next/cache';
-import { and, eq, inArray, gte, lte, isNull } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { revalidatePath } from "next/cache";
+import { and, eq, inArray, gte, lte, isNull } from "drizzle-orm";
+import { db } from "@/lib/db";
 import {
   leaveTypes,
   leaveCredits,
@@ -28,40 +28,46 @@ import {
   employees,
   systemUsers,
   auditLogs,
-} from '@/lib/db/schema';
-import { createServerClient } from '@/lib/supabase/server';
-import { requirePermission, requireAuth } from '@/lib/auth/guards';
-import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
-import { lockKey } from '@/lib/concurrency';
+} from "@/lib/db/schema";
+import { createServerClient } from "@/lib/supabase/server";
+import { requirePermission, requireAuth } from "@/lib/auth/guards";
+import { withTx, withRetry, type Tx } from "@/lib/db/transaction";
+import { lockKey } from "@/lib/concurrency";
 import {
   ApplyLeaveSchema,
   ApproveLeaveSchema,
   DisapproveLeaveSchema,
   CancelLeaveSchema,
   AccrueMonthlyCreditsSchema,
-} from '@/lib/validations/leave';
+} from "@/lib/validations/leave";
 import {
   LEAVE_TYPES,
   MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS,
   MONTHLY_ACCRUAL_RATE,
-} from '@/lib/constants/leave-types';
+} from "@/lib/constants/leave-types";
 import {
   computeAnnualAccrual,
   accrueMonthlyCredits as accrueEmployeeMonthlyCredits,
   deductLeaveCredits,
   restoreLeaveCredits,
-} from '@/lib/utils/leave/credits';
-import { Resend } from 'resend';
-import { env } from '@/lib/env';
-import { LeaveSubmittedEmail, leaveSubmittedPlainText } from '@/lib/email/templates/leave-submitted';
-import { LeaveDecisionEmail, leaveDecisionPlainText } from '@/lib/email/templates/leave-decision';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
+} from "@/lib/utils/leave/credits";
+import { Resend } from "resend";
+import { env } from "@/lib/env";
+import {
+  LeaveSubmittedEmail,
+  leaveSubmittedPlainText,
+} from "@/lib/email/templates/leave-submitted";
+import {
+  LeaveDecisionEmail,
+  leaveDecisionPlainText,
+} from "@/lib/email/templates/leave-decision";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
 import {
   createNotification,
   notifyEmployee,
   notifyRoles,
-} from '@/lib/notifications';
-import { z } from 'zod';
+} from "@/lib/notifications";
+import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -72,7 +78,7 @@ function getResend(): Resend | null {
   return new Resend(env.RESEND_API_KEY);
 }
 
-const FROM_EMAIL = env.RESEND_FROM_EMAIL ?? 'noreply@senate.gov.ph';
+const FROM_EMAIL = env.RESEND_FROM_EMAIL ?? "noreply@pcso.gov.ph";
 const APP_URL = env.NEXT_PUBLIC_APP_URL;
 
 /**
@@ -80,12 +86,12 @@ const APP_URL = env.NEXT_PUBLIC_APP_URL;
  * credits, status, or application rows.
  */
 function revalidateLeavePaths(): void {
-  revalidatePath('/leave');
-  revalidatePath('/leave/apply');
-  revalidatePath('/leave/applications');
-  revalidatePath('/leave/credits');
-  revalidatePath('/leave/approvals');
-  revalidatePath('/leave/calendar');
+  revalidatePath("/leave");
+  revalidatePath("/leave/apply");
+  revalidatePath("/leave/applications");
+  revalidatePath("/leave/credits");
+  revalidatePath("/leave/approvals");
+  revalidatePath("/leave/calendar");
 }
 
 async function sendEmail(params: {
@@ -98,7 +104,7 @@ async function sendEmail(params: {
   if (!resend) return; // skip in dev/test without API key
 
   const { error } = await resend.emails.send({
-    from: `Senate HRIS <${FROM_EMAIL}>`,
+    from: `PCSO HRIS <${FROM_EMAIL}>`,
     to: params.to,
     subject: params.subject,
     react: params.react,
@@ -107,7 +113,7 @@ async function sendEmail(params: {
 
   if (error) {
     // Log but do not throw — email failure should not block the leave action
-    console.error('[leave/actions] Email delivery failed:', error);
+    console.error("[leave/actions] Email delivery failed:", error);
   }
 }
 
@@ -146,12 +152,15 @@ async function resolveOwnerUserId(employeeId: string): Promise<string | null> {
       .select({ id: systemUsers.id })
       .from(systemUsers)
       .where(
-        and(eq(systemUsers.employeeId, employeeId), eq(systemUsers.isActive, true)),
+        and(
+          eq(systemUsers.employeeId, employeeId),
+          eq(systemUsers.isActive, true),
+        ),
       )
       .limit(1);
     return row?.id ?? null;
   } catch (err) {
-    console.error('[leave/actions] resolveOwnerUserId failed:', err);
+    console.error("[leave/actions] resolveOwnerUserId failed:", err);
     return null;
   }
 }
@@ -166,11 +175,16 @@ export interface ApplyLeaveResult {
 
 export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
   const parsed = ApplyLeaveSchema.parse(input);
-  const user = await requirePermission('leave', 'create');
+  const user = await requirePermission("leave", "create");
 
   // Self-service employees may only apply for themselves
-  if (user.role === 'employee_self_service' && user.employeeId !== parsed.employeeId) {
-    throw new Error('Forbidden: you may only apply for leave on your own behalf.');
+  if (
+    user.role === "employee_self_service" &&
+    user.employeeId !== parsed.employeeId
+  ) {
+    throw new Error(
+      "Forbidden: you may only apply for leave on your own behalf.",
+    );
   }
 
   const currentYear = new Date().getFullYear();
@@ -195,7 +209,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
       }
 
       const isAccruedLeave =
-        leaveTypeRef.code === 'VL' || leaveTypeRef.code === 'SL';
+        leaveTypeRef.code === "VL" || leaveTypeRef.code === "SL";
 
       // Serialize concurrent applyLeave calls for the same employee/type/year.
       // Advisory lock is released automatically when the tx ends.
@@ -218,7 +232,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
         .where(
           and(
             eq(leaveApplications.employeeId, parsed.employeeId),
-            inArray(leaveApplications.status, ['pending', 'approved']),
+            inArray(leaveApplications.status, ["pending", "approved"]),
             lte(leaveApplications.dateFrom, parsed.endDate),
             gte(leaveApplications.dateTo, parsed.startDate),
           ),
@@ -256,24 +270,24 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
         if (!creditRow) {
           throw new Error(
             `No ${leaveTypeRef.code} credit record found for ${currentYear}. ` +
-              'Please contact HR to initialize your leave credits.',
+              "Please contact HR to initialize your leave credits.",
           );
         }
 
         const currentBalance = {
-          vl: leaveTypeRef.code === 'VL' ? Number(creditRow.balance) : 0,
-          sl: leaveTypeRef.code === 'SL' ? Number(creditRow.balance) : 0,
+          vl: leaveTypeRef.code === "VL" ? Number(creditRow.balance) : 0,
+          sl: leaveTypeRef.code === "SL" ? Number(creditRow.balance) : 0,
         };
 
         // Throws RangeError on insufficient balance — rolls back the tx.
         const updatedBalance = deductLeaveCredits(
           currentBalance,
-          leaveTypeRef.code as 'VL' | 'SL',
+          leaveTypeRef.code as "VL" | "SL",
           parsed.workingDays,
         );
 
         const newBalance =
-          leaveTypeRef.code === 'VL' ? updatedBalance.vl : updatedBalance.sl;
+          leaveTypeRef.code === "VL" ? updatedBalance.vl : updatedBalance.sl;
         const newUsed = Number(creditRow.usedCredits) + parsed.workingDays;
 
         await tx
@@ -296,19 +310,19 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           dateTo: parsed.endDate,
           noOfDays: String(parsed.workingDays),
           reason: parsed.reason ?? null,
-          status: 'pending',
+          status: "pending",
         })
         .returning({ id: leaveApplications.id });
 
       const application = insertedRows[0];
       if (!application) {
-        throw new Error('Failed to insert leave application.');
+        throw new Error("Failed to insert leave application.");
       }
 
       await writeAuditLogTx(tx, {
         userId: user.id,
-        action: 'create',
-        tableName: 'leave_applications',
+        action: "create",
+        tableName: "leave_applications",
         recordId: String(application.id),
         newValues: {
           employeeId: parsed.employeeId,
@@ -316,7 +330,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           startDate: parsed.startDate,
           endDate: parsed.endDate,
           workingDays: parsed.workingDays,
-          status: 'pending',
+          status: "pending",
         },
       });
 
@@ -335,55 +349,55 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
 
   // Approver notification (HR admin + leave approvers). Non-blocking.
   try {
-    await notifyRoles(['hr_admin', 'leave_approver'], {
-      type: 'leave_submitted',
-      title: 'New leave application',
+    await notifyRoles(["hr_admin", "leave_approver"], {
+      type: "leave_submitted",
+      title: "New leave application",
       body: `A ${result.leaveTypeName} application for ${parsed.workingDays} day${
-        parsed.workingDays === 1 ? '' : 's'
+        parsed.workingDays === 1 ? "" : "s"
       } is awaiting review.`,
-      actionUrl: '/leave/approvals',
-      entityType: 'leave_applications',
+      actionUrl: "/leave/approvals",
+      entityType: "leave_applications",
       entityId: result.leaveApplicationId,
     });
   } catch (err) {
-    console.error('[leave/actions] notifyRoles(applyLeave) failed:', err);
+    console.error("[leave/actions] notifyRoles(applyLeave) failed:", err);
   }
 
   // Confirm to the applicant that their submission was received.
   try {
     await notifyEmployee(parsed.employeeId, {
-      type: 'leave_submitted',
-      title: 'Leave application submitted',
+      type: "leave_submitted",
+      title: "Leave application submitted",
       body: `Your ${result.leaveTypeName} from ${parsed.startDate} to ${parsed.endDate} (${parsed.workingDays} day${
-        parsed.workingDays === 1 ? '' : 's'
+        parsed.workingDays === 1 ? "" : "s"
       }) is pending approval.`,
-      actionUrl: '/leave/applications',
-      entityType: 'leave_applications',
+      actionUrl: "/leave/applications",
+      entityType: "leave_applications",
       entityId: result.leaveApplicationId,
     });
   } catch (err) {
-    console.error('[leave/actions] notifyEmployee(applyLeave) failed:', err);
+    console.error("[leave/actions] notifyEmployee(applyLeave) failed:", err);
   }
 
   // Approver emails (best-effort; do not abort on failure).
   try {
     const { data: approvers } = await supabase
-      .from('system_users')
-      .select('email, employees ( first_name, last_name )')
-      .in('role', ['hr_admin', 'leave_approver'])
-      .eq('is_active', true)
+      .from("system_users")
+      .select("email, employees ( first_name, last_name )")
+      .in("role", ["hr_admin", "leave_approver"])
+      .eq("is_active", true)
       .limit(5);
 
     const { data: empData } = await supabase
-      .from('employees')
-      .select('first_name, last_name, employee_no')
-      .eq('id', parsed.employeeId)
+      .from("employees")
+      .select("first_name, last_name, employee_no")
+      .eq("id", parsed.employeeId)
       .single();
 
     const applicantName = empData
       ? `${empData.first_name} ${empData.last_name}`
-      : 'Employee';
-    const employeeNo = String(empData?.employee_no ?? '');
+      : "Employee";
+    const employeeNo = String(empData?.employee_no ?? "");
     const leaveTypeCode = parsed.leaveTypeCode as LeaveTypeCode;
 
     for (const approver of approvers ?? []) {
@@ -393,7 +407,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
       } | null;
       const approverName = approverEmpData
         ? `${approverEmpData.first_name} ${approverEmpData.last_name}`
-        : 'Approver';
+        : "Approver";
 
       await sendEmail({
         to: approver.email,
@@ -425,7 +439,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
       });
     }
   } catch (err) {
-    console.error('[leave/actions] approver email delivery failed:', err);
+    console.error("[leave/actions] approver email delivery failed:", err);
   }
 
   revalidateLeavePaths();
@@ -439,7 +453,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
 
 export async function approveLeave(input: unknown): Promise<void> {
   const parsed = ApproveLeaveSchema.parse(input);
-  const user = await requirePermission('leave', 'approve');
+  const user = await requirePermission("leave", "approve");
 
   // Fast pre-check for idempotency: a second call after approval is a no-op.
   const [preCheck] = await db
@@ -449,13 +463,15 @@ export async function approveLeave(input: unknown): Promise<void> {
     .limit(1);
 
   if (!preCheck) {
-    throw new Error('Leave application not found.');
+    throw new Error("Leave application not found.");
   }
-  if (preCheck.status === 'approved') {
+  if (preCheck.status === "approved") {
     return;
   }
-  if (preCheck.status !== 'pending') {
-    throw new Error(`Cannot approve an application in '${preCheck.status}' status.`);
+  if (preCheck.status !== "pending") {
+    throw new Error(
+      `Cannot approve an application in '${preCheck.status}' status.`,
+    );
   }
 
   const txResult = await withRetry(() =>
@@ -476,17 +492,17 @@ export async function approveLeave(input: unknown): Promise<void> {
         .limit(1);
 
       if (!app) {
-        throw new Error('Leave application not found.');
+        throw new Error("Leave application not found.");
       }
 
-      if (app.status !== 'pending') {
+      if (app.status !== "pending") {
         // Another process won the race. Signal optimistic failure.
         return {
           raced: true as const,
           app,
-          nextStatus: 'approved' as 'approved' | 'pending',
-          leaveTypeCode: '',
-          leaveTypeName: '',
+          nextStatus: "approved" as "approved" | "pending",
+          leaveTypeCode: "",
+          leaveTypeName: "",
           workingDays: Number(app.noOfDays ?? 0),
         };
       }
@@ -504,10 +520,10 @@ export async function approveLeave(input: unknown): Promise<void> {
       const needsEscalation = workingDays > MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS;
 
       // Multi-level escalation: supervisor approval at >15 days routes to HR.
-      let nextStatus: 'approved' | 'pending' = 'approved';
+      let nextStatus: "approved" | "pending" = "approved";
       if (needsEscalation) {
-        if (user.role === 'leave_approver') nextStatus = 'pending';
-        else nextStatus = 'approved';
+        if (user.role === "leave_approver") nextStatus = "pending";
+        else nextStatus = "approved";
       }
 
       // Optimistic concurrency: UPDATE ... WHERE status = 'pending'.
@@ -525,7 +541,7 @@ export async function approveLeave(input: unknown): Promise<void> {
         .where(
           and(
             eq(leaveApplications.id, parsed.leaveApplicationId),
-            eq(leaveApplications.status, 'pending'),
+            eq(leaveApplications.status, "pending"),
           ),
         )
         .returning({ id: leaveApplications.id });
@@ -536,18 +552,18 @@ export async function approveLeave(input: unknown): Promise<void> {
           raced: true as const,
           app,
           nextStatus,
-          leaveTypeCode: leaveTypeRef?.code ?? '',
-          leaveTypeName: leaveTypeRef?.name ?? '',
+          leaveTypeCode: leaveTypeRef?.code ?? "",
+          leaveTypeName: leaveTypeRef?.name ?? "",
           workingDays,
         };
       }
 
       await writeAuditLogTx(tx, {
         userId: user.id,
-        action: 'approve',
-        tableName: 'leave_applications',
+        action: "approve",
+        tableName: "leave_applications",
         recordId: parsed.leaveApplicationId,
-        oldValues: { status: 'pending' },
+        oldValues: { status: "pending" },
         newValues: {
           status: nextStatus,
           approvedBy: user.id,
@@ -559,38 +575,38 @@ export async function approveLeave(input: unknown): Promise<void> {
         raced: false as const,
         app,
         nextStatus,
-        leaveTypeCode: leaveTypeRef?.code ?? '',
-        leaveTypeName: leaveTypeRef?.name ?? '',
+        leaveTypeCode: leaveTypeRef?.code ?? "",
+        leaveTypeName: leaveTypeRef?.name ?? "",
         workingDays,
       };
     }),
   );
 
   if (txResult.raced) {
-    throw new Error('Already processed by another approver');
+    throw new Error("Already processed by another approver");
   }
 
   const workingDays = txResult.workingDays;
-  const leaveTypeCode = (txResult.leaveTypeCode || 'VL') as LeaveTypeCode;
+  const leaveTypeCode = (txResult.leaveTypeCode || "VL") as LeaveTypeCode;
   const leaveTypeName = txResult.leaveTypeName || leaveTypeCode;
   const employeeId = String(txResult.app.employeeId);
 
   // ── Post-commit notifications + email ────────────────────────────────────
   const ownerUserId = await resolveOwnerUserId(employeeId);
 
-  if (txResult.nextStatus === 'approved') {
+  if (txResult.nextStatus === "approved") {
     const body = `Your ${leaveTypeName} from ${String(txResult.app.dateFrom)} to ${String(
       txResult.app.dateTo,
-    )} (${workingDays} day${workingDays === 1 ? '' : 's'}) has been approved.`;
+    )} (${workingDays} day${workingDays === 1 ? "" : "s"}) has been approved.`;
 
     if (ownerUserId) {
       await createNotification({
         userId: ownerUserId,
-        type: 'leave_approved',
-        title: 'Leave application approved',
+        type: "leave_approved",
+        title: "Leave application approved",
         body,
-        actionUrl: '/leave/applications',
-        entityType: 'leave_applications',
+        actionUrl: "/leave/applications",
+        entityType: "leave_applications",
         entityId: parsed.leaveApplicationId,
       });
     }
@@ -599,13 +615,14 @@ export async function approveLeave(input: unknown): Promise<void> {
     try {
       const supabase = await createServerClient();
       const { data: empData } = await supabase
-        .from('employees')
-        .select('email, first_name, last_name')
-        .eq('id', employeeId)
+        .from("employees")
+        .select("email, first_name, last_name")
+        .eq("id", employeeId)
         .single();
 
       if (empData?.email) {
-        const applicantName = `${empData.first_name ?? ''} ${empData.last_name ?? ''}`.trim();
+        const applicantName =
+          `${empData.first_name ?? ""} ${empData.last_name ?? ""}`.trim();
         await sendEmail({
           to: empData.email,
           subject: `Your Leave Application Has Been Approved`,
@@ -615,7 +632,7 @@ export async function approveLeave(input: unknown): Promise<void> {
             startDate: String(txResult.app.dateFrom),
             endDate: String(txResult.app.dateTo),
             workingDays,
-            decision: 'approved',
+            decision: "approved",
             approverName: user.email,
             remarks: parsed.remarks ?? null,
             leaveApplicationId: parsed.leaveApplicationId,
@@ -627,7 +644,7 @@ export async function approveLeave(input: unknown): Promise<void> {
             startDate: String(txResult.app.dateFrom),
             endDate: String(txResult.app.dateTo),
             workingDays,
-            decision: 'approved',
+            decision: "approved",
             approverName: user.email,
             remarks: parsed.remarks ?? null,
             leaveApplicationId: parsed.leaveApplicationId,
@@ -636,23 +653,23 @@ export async function approveLeave(input: unknown): Promise<void> {
         });
       }
     } catch (err) {
-      console.error('[leave/actions] approveLeave email failed:', err);
+      console.error("[leave/actions] approveLeave email failed:", err);
     }
-  } else if (txResult.nextStatus === 'pending') {
+  } else if (txResult.nextStatus === "pending") {
     // Escalation: route to HR admin queue.
     try {
-      await notifyRoles(['hr_admin'], {
-        type: 'leave_submitted',
-        title: 'Leave awaiting HR review',
+      await notifyRoles(["hr_admin"], {
+        type: "leave_submitted",
+        title: "Leave awaiting HR review",
         body: `A leave application of ${workingDays} day${
-          workingDays === 1 ? '' : 's'
+          workingDays === 1 ? "" : "s"
         } was approved at supervisor level and needs HR review.`,
-        actionUrl: '/leave/approvals',
-        entityType: 'leave_applications',
+        actionUrl: "/leave/approvals",
+        entityType: "leave_applications",
         entityId: parsed.leaveApplicationId,
       });
     } catch (err) {
-      console.error('[leave/actions] escalation notify failed:', err);
+      console.error("[leave/actions] escalation notify failed:", err);
     }
   }
 
@@ -665,9 +682,9 @@ export async function approveLeave(input: unknown): Promise<void> {
 
 const BatchApproveSchema = z.object({
   leaveApplicationIds: z
-    .array(z.string().uuid('Invalid leave application ID.'))
-    .min(1, 'Select at least one application.')
-    .max(100, 'Batch approve is limited to 100 applications per call.'),
+    .array(z.string().uuid("Invalid leave application ID."))
+    .min(1, "Select at least one application.")
+    .max(100, "Batch approve is limited to 100 applications per call."),
   remarks: z.string().max(500).optional(),
 });
 
@@ -688,7 +705,7 @@ export async function batchApproveLeaves(
   input: unknown,
 ): Promise<BatchApproveResult> {
   const parsed = BatchApproveSchema.parse(input);
-  await requirePermission('leave', 'approve');
+  await requirePermission("leave", "approve");
 
   const result: BatchApproveResult = { processed: 0, skipped: 0, errors: [] };
 
@@ -700,8 +717,8 @@ export async function batchApproveLeaves(
       const message = err instanceof Error ? err.message : String(err);
       if (
         message.includes("Cannot approve an application in 'approved'") ||
-        message.includes('Already processed by another approver') ||
-        message.includes('already')
+        message.includes("Already processed by another approver") ||
+        message.includes("already")
       ) {
         result.skipped++;
       } else {
@@ -720,7 +737,7 @@ export async function batchApproveLeaves(
 
 export async function disapproveLeave(input: unknown): Promise<void> {
   const parsed = DisapproveLeaveSchema.parse(input);
-  const user = await requirePermission('leave', 'approve');
+  const user = await requirePermission("leave", "approve");
 
   const txResult = await withRetry(() =>
     withTx(async (tx) => {
@@ -738,13 +755,15 @@ export async function disapproveLeave(input: unknown): Promise<void> {
         .where(eq(leaveApplications.id, parsed.leaveApplicationId))
         .limit(1);
 
-      if (!app) throw new Error('Leave application not found.');
+      if (!app) throw new Error("Leave application not found.");
 
-      if (app.status === 'disapproved') {
-        return { noOp: true as const, app, leaveTypeCode: '' };
+      if (app.status === "disapproved") {
+        return { noOp: true as const, app, leaveTypeCode: "" };
       }
-      if (app.status !== 'pending') {
-        throw new Error(`Cannot disapprove an application in '${app.status}' status.`);
+      if (app.status !== "pending") {
+        throw new Error(
+          `Cannot disapprove an application in '${app.status}' status.`,
+        );
       }
 
       const [leaveTypeRef] = await tx
@@ -753,9 +772,9 @@ export async function disapproveLeave(input: unknown): Promise<void> {
         .where(eq(leaveTypes.id, app.leaveTypeId))
         .limit(1);
 
-      const disapproveLeaveCode = leaveTypeRef?.code ?? '';
+      const disapproveLeaveCode = leaveTypeRef?.code ?? "";
       const isAccrued =
-        disapproveLeaveCode === 'VL' || disapproveLeaveCode === 'SL';
+        disapproveLeaveCode === "VL" || disapproveLeaveCode === "SL";
       const year = new Date().getFullYear();
 
       if (isAccrued) {
@@ -769,7 +788,7 @@ export async function disapproveLeave(input: unknown): Promise<void> {
       const updated = await tx
         .update(leaveApplications)
         .set({
-          status: 'disapproved',
+          status: "disapproved",
           approvedBy: user.id,
           remarks: parsed.remarks,
           approvedAt: new Date(),
@@ -778,13 +797,17 @@ export async function disapproveLeave(input: unknown): Promise<void> {
         .where(
           and(
             eq(leaveApplications.id, parsed.leaveApplicationId),
-            eq(leaveApplications.status, 'pending'),
+            eq(leaveApplications.status, "pending"),
           ),
         )
         .returning({ id: leaveApplications.id });
 
       if (updated.length === 0) {
-        return { raced: true as const, app, leaveTypeCode: disapproveLeaveCode };
+        return {
+          raced: true as const,
+          app,
+          leaveTypeCode: disapproveLeaveCode,
+        };
       }
 
       // Restore accrued credits in the same tx.
@@ -809,16 +832,16 @@ export async function disapproveLeave(input: unknown): Promise<void> {
 
           if (creditRow) {
             const currentBalance = {
-              vl: disapproveLeaveCode === 'VL' ? Number(creditRow.balance) : 0,
-              sl: disapproveLeaveCode === 'SL' ? Number(creditRow.balance) : 0,
+              vl: disapproveLeaveCode === "VL" ? Number(creditRow.balance) : 0,
+              sl: disapproveLeaveCode === "SL" ? Number(creditRow.balance) : 0,
             };
             const restored = restoreLeaveCredits(
               currentBalance,
-              disapproveLeaveCode as 'VL' | 'SL',
+              disapproveLeaveCode as "VL" | "SL",
               daysToRestore,
             );
             const newBalance =
-              disapproveLeaveCode === 'VL' ? restored.vl : restored.sl;
+              disapproveLeaveCode === "VL" ? restored.vl : restored.sl;
             const newUsed = Math.max(
               0,
               Number(creditRow.usedCredits) - daysToRestore,
@@ -838,12 +861,12 @@ export async function disapproveLeave(input: unknown): Promise<void> {
 
       await writeAuditLogTx(tx, {
         userId: user.id,
-        action: 'disapprove',
-        tableName: 'leave_applications',
+        action: "disapprove",
+        tableName: "leave_applications",
         recordId: parsed.leaveApplicationId,
-        oldValues: { status: 'pending' },
+        oldValues: { status: "pending" },
         newValues: {
-          status: 'disapproved',
+          status: "disapproved",
           approvedBy: user.id,
           remarks: parsed.remarks,
         },
@@ -858,29 +881,29 @@ export async function disapproveLeave(input: unknown): Promise<void> {
     }),
   );
 
-  if ('noOp' in txResult && txResult.noOp) return;
-  if ('raced' in txResult && txResult.raced) {
-    throw new Error('Already processed by another approver');
+  if ("noOp" in txResult && txResult.noOp) return;
+  if ("raced" in txResult && txResult.raced) {
+    throw new Error("Already processed by another approver");
   }
 
   // ── Post-commit notifications + email ────────────────────────────────────
   const employeeId = String(txResult.app.employeeId);
   const workingDays = Number(txResult.app.noOfDays ?? 0);
-  const leaveTypeCode = (txResult.leaveTypeCode || 'VL') as LeaveTypeCode;
+  const leaveTypeCode = (txResult.leaveTypeCode || "VL") as LeaveTypeCode;
 
   const ownerUserId = await resolveOwnerUserId(employeeId);
   if (ownerUserId) {
     await createNotification({
       userId: ownerUserId,
-      type: 'leave_disapproved',
-      title: 'Leave application disapproved',
+      type: "leave_disapproved",
+      title: "Leave application disapproved",
       body: `Your leave from ${String(txResult.app.dateFrom)} to ${String(
         txResult.app.dateTo,
       )} (${workingDays} day${
-        workingDays === 1 ? '' : 's'
+        workingDays === 1 ? "" : "s"
       }) was disapproved. Remarks: ${parsed.remarks}`,
-      actionUrl: '/leave/applications',
-      entityType: 'leave_applications',
+      actionUrl: "/leave/applications",
+      entityType: "leave_applications",
       entityId: parsed.leaveApplicationId,
     });
   }
@@ -888,13 +911,14 @@ export async function disapproveLeave(input: unknown): Promise<void> {
   try {
     const supabase = await createServerClient();
     const { data: empData } = await supabase
-      .from('employees')
-      .select('email, first_name, last_name')
-      .eq('id', employeeId)
+      .from("employees")
+      .select("email, first_name, last_name")
+      .eq("id", employeeId)
       .single();
 
     if (empData?.email) {
-      const applicantName = `${empData.first_name ?? ''} ${empData.last_name ?? ''}`.trim();
+      const applicantName =
+        `${empData.first_name ?? ""} ${empData.last_name ?? ""}`.trim();
       await sendEmail({
         to: empData.email,
         subject: `Your Leave Application Has Been Disapproved`,
@@ -904,7 +928,7 @@ export async function disapproveLeave(input: unknown): Promise<void> {
           startDate: String(txResult.app.dateFrom),
           endDate: String(txResult.app.dateTo),
           workingDays,
-          decision: 'disapproved',
+          decision: "disapproved",
           approverName: user.email,
           remarks: parsed.remarks,
           leaveApplicationId: parsed.leaveApplicationId,
@@ -916,7 +940,7 @@ export async function disapproveLeave(input: unknown): Promise<void> {
           startDate: String(txResult.app.dateFrom),
           endDate: String(txResult.app.dateTo),
           workingDays,
-          decision: 'disapproved',
+          decision: "disapproved",
           approverName: user.email,
           remarks: parsed.remarks,
           leaveApplicationId: parsed.leaveApplicationId,
@@ -925,7 +949,7 @@ export async function disapproveLeave(input: unknown): Promise<void> {
       });
     }
   } catch (err) {
-    console.error('[leave/actions] disapproveLeave email failed:', err);
+    console.error("[leave/actions] disapproveLeave email failed:", err);
   }
 
   revalidateLeavePaths();
@@ -957,22 +981,24 @@ export async function cancelLeave(input: unknown): Promise<void> {
         .where(eq(leaveApplications.id, parsed.leaveApplicationId))
         .limit(1);
 
-      if (!app) throw new Error('Leave application not found.');
+      if (!app) throw new Error("Leave application not found.");
 
       if (
-        user.role === 'employee_self_service' &&
+        user.role === "employee_self_service" &&
         user.employeeId !== String(app.employeeId)
       ) {
         throw new Error(
-          'Forbidden: you may only cancel your own leave applications.',
+          "Forbidden: you may only cancel your own leave applications.",
         );
       }
 
-      if (app.status === 'cancelled') {
-        return { noOp: true as const, app, leaveTypeCode: '' };
+      if (app.status === "cancelled") {
+        return { noOp: true as const, app, leaveTypeCode: "" };
       }
-      if (!['pending', 'approved'].includes(String(app.status))) {
-        throw new Error(`Cannot cancel an application in '${app.status}' status.`);
+      if (!["pending", "approved"].includes(String(app.status))) {
+        throw new Error(
+          `Cannot cancel an application in '${app.status}' status.`,
+        );
       }
 
       const [leaveTypeRef] = await tx
@@ -981,8 +1007,8 @@ export async function cancelLeave(input: unknown): Promise<void> {
         .where(eq(leaveTypes.id, app.leaveTypeId))
         .limit(1);
 
-      const leaveCode = leaveTypeRef?.code ?? '';
-      const isAccrued = leaveCode === 'VL' || leaveCode === 'SL';
+      const leaveCode = leaveTypeRef?.code ?? "";
+      const isAccrued = leaveCode === "VL" || leaveCode === "SL";
       const year = new Date().getFullYear();
 
       if (isAccrued) {
@@ -998,14 +1024,14 @@ export async function cancelLeave(input: unknown): Promise<void> {
       const updated = await tx
         .update(leaveApplications)
         .set({
-          status: 'cancelled',
+          status: "cancelled",
           remarks: parsed.reason ?? null,
           updatedAt: new Date(),
         })
         .where(
           and(
             eq(leaveApplications.id, parsed.leaveApplicationId),
-            inArray(leaveApplications.status, ['pending', 'approved']),
+            inArray(leaveApplications.status, ["pending", "approved"]),
           ),
         )
         .returning({ id: leaveApplications.id });
@@ -1036,15 +1062,15 @@ export async function cancelLeave(input: unknown): Promise<void> {
 
           if (creditRow) {
             const currentBalance = {
-              vl: leaveCode === 'VL' ? Number(creditRow.balance) : 0,
-              sl: leaveCode === 'SL' ? Number(creditRow.balance) : 0,
+              vl: leaveCode === "VL" ? Number(creditRow.balance) : 0,
+              sl: leaveCode === "SL" ? Number(creditRow.balance) : 0,
             };
             const restored = restoreLeaveCredits(
               currentBalance,
-              leaveCode as 'VL' | 'SL',
+              leaveCode as "VL" | "SL",
               daysToRestore,
             );
-            const newBalance = leaveCode === 'VL' ? restored.vl : restored.sl;
+            const newBalance = leaveCode === "VL" ? restored.vl : restored.sl;
             const newUsed = Math.max(
               0,
               Number(creditRow.usedCredits) - daysToRestore,
@@ -1064,11 +1090,11 @@ export async function cancelLeave(input: unknown): Promise<void> {
 
       await writeAuditLogTx(tx, {
         userId: user.id,
-        action: 'cancel',
-        tableName: 'leave_applications',
+        action: "cancel",
+        tableName: "leave_applications",
         recordId: parsed.leaveApplicationId,
         oldValues: { status: previousStatus },
-        newValues: { status: 'cancelled', reason: parsed.reason },
+        newValues: { status: "cancelled", reason: parsed.reason },
       });
 
       return {
@@ -1080,24 +1106,26 @@ export async function cancelLeave(input: unknown): Promise<void> {
     }),
   );
 
-  if ('noOp' in txResult && txResult.noOp) return;
-  if ('raced' in txResult && txResult.raced) {
-    throw new Error('Already processed by another approver');
+  if ("noOp" in txResult && txResult.noOp) return;
+  if ("raced" in txResult && txResult.raced) {
+    throw new Error("Already processed by another approver");
   }
 
   // Notify the applicant only when cancelled by someone else (HR).
   if (String(txResult.app.employeeId) !== user.employeeId) {
-    const ownerUserId = await resolveOwnerUserId(String(txResult.app.employeeId));
+    const ownerUserId = await resolveOwnerUserId(
+      String(txResult.app.employeeId),
+    );
     if (ownerUserId) {
       await createNotification({
         userId: ownerUserId,
-        type: 'leave_cancelled',
-        title: 'Leave application cancelled',
+        type: "leave_cancelled",
+        title: "Leave application cancelled",
         body: `Your leave was cancelled by HR.${
-          parsed.reason ? ` Reason: ${parsed.reason}` : ''
+          parsed.reason ? ` Reason: ${parsed.reason}` : ""
         }`,
-        actionUrl: '/leave/applications',
-        entityType: 'leave_applications',
+        actionUrl: "/leave/applications",
+        entityType: "leave_applications",
         entityId: parsed.leaveApplicationId,
       });
     }
@@ -1121,10 +1149,12 @@ export interface AccrualSummary {
  * Intended to be triggered by a monthly cron job (e.g., end of month).
  * Idempotent: employees who already received credit for the given month are skipped.
  */
-export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSummary> {
+export async function accrueMonthlyCredits(
+  input: unknown,
+): Promise<AccrualSummary> {
   const parsed = AccrueMonthlyCreditsSchema.parse(input);
   // `process` permission is empty for leave; approvers (hr_admin, super_admin) run accrual.
-  const user = await requirePermission('leave', 'approve');
+  const user = await requirePermission("leave", "approve");
   const supabase = await createServerClient();
 
   const now = new Date();
@@ -1135,36 +1165,39 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
 
   // Fetch VL leave type ID
   const { data: vlType, error: ltError } = await supabase
-    .from('leave_types')
-    .select('id')
-    .eq('code', 'VL')
+    .from("leave_types")
+    .select("id")
+    .eq("code", "VL")
     .single();
 
   const { data: slType, error: slLtError } = await supabase
-    .from('leave_types')
-    .select('id')
-    .eq('code', 'SL')
+    .from("leave_types")
+    .select("id")
+    .eq("code", "SL")
     .single();
 
   if (ltError || !vlType || slLtError || !slType) {
-    throw new Error('VL or SL leave type not found in reference table. Cannot accrue.');
+    throw new Error(
+      "VL or SL leave type not found in reference table. Cannot accrue.",
+    );
   }
 
   // Fetch employees to process
   let employeeQuery = supabase
-    .from('employees')
-    .select('id, date_hired, appointment_type')
-    .eq('status', 'active')
-    .is('deleted_at', null)
-    .not('appointment_type', 'in', '("job_order","contract_of_service")');
+    .from("employees")
+    .select("id, date_hired, appointment_type")
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .not("appointment_type", "in", '("job_order","contract_of_service")');
 
   if (parsed.employeeIds && parsed.employeeIds.length > 0) {
-    employeeQuery = employeeQuery.in('id', parsed.employeeIds);
+    employeeQuery = employeeQuery.in("id", parsed.employeeIds);
   }
 
   const { data: empRows, error: empError } = await employeeQuery;
 
-  if (empError) throw new Error(`Failed to fetch employees: ${empError.message}`);
+  if (empError)
+    throw new Error(`Failed to fetch employees: ${empError.message}`);
 
   for (const emp of empRows ?? []) {
     try {
@@ -1172,19 +1205,19 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
 
       // Fetch current balances
       const { data: vlCredit } = await supabase
-        .from('leave_credits')
-        .select('id, balance, carry_over, total_credits, used_credits')
-        .eq('employee_id', emp.id)
-        .eq('leave_type_id', vlType.id)
-        .eq('year', creditYear)
+        .from("leave_credits")
+        .select("id, balance, carry_over, total_credits, used_credits")
+        .eq("employee_id", emp.id)
+        .eq("leave_type_id", vlType.id)
+        .eq("year", creditYear)
         .single();
 
       const { data: slCredit } = await supabase
-        .from('leave_credits')
-        .select('id, balance, carry_over, total_credits, used_credits')
-        .eq('employee_id', emp.id)
-        .eq('leave_type_id', slType.id)
-        .eq('year', creditYear)
+        .from("leave_credits")
+        .select("id, balance, carry_over, total_credits, used_credits")
+        .eq("employee_id", emp.id)
+        .eq("leave_type_id", slType.id)
+        .eq("year", creditYear)
         .single();
 
       const currentBalance = {
@@ -1205,7 +1238,7 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
       }
 
       // Upsert VL credit
-      await supabase.from('leave_credits').upsert(
+      await supabase.from("leave_credits").upsert(
         {
           employee_id: emp.id,
           leave_type_id: vlType.id,
@@ -1218,11 +1251,11 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
           carry_over: String(vlCredit?.carry_over ?? 0),
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'employee_id,leave_type_id,year' },
+        { onConflict: "employee_id,leave_type_id,year" },
       );
 
       // Upsert SL credit
-      await supabase.from('leave_credits').upsert(
+      await supabase.from("leave_credits").upsert(
         {
           employee_id: emp.id,
           leave_type_id: slType.id,
@@ -1235,14 +1268,14 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
           carry_over: String(slCredit?.carry_over ?? 0),
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'employee_id,leave_type_id,year' },
+        { onConflict: "employee_id,leave_type_id,year" },
       );
 
       // Audit via Drizzle for consistency with the rest of this module.
       await db.insert(auditLogs).values({
         userId: user.id,
-        action: 'accrue',
-        tableName: 'leave_credits',
+        action: "accrue",
+        tableName: "leave_credits",
         recordId: String(emp.id),
         newValues: {
           month: creditMonth,
@@ -1259,8 +1292,8 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
     }
   }
 
-  revalidatePath('/leave/credits');
-  revalidatePath('/leave/credits/admin');
+  revalidatePath("/leave/credits");
+  revalidatePath("/leave/credits/admin");
 
   return summary;
 }
@@ -1270,16 +1303,19 @@ export async function accrueMonthlyCredits(input: unknown): Promise<AccrualSumma
 // ---------------------------------------------------------------------------
 
 const AdjustLeaveCreditsSchema = z.object({
-  employeeId: z.string().uuid('Invalid employee ID.'),
+  employeeId: z.string().uuid("Invalid employee ID."),
   year: z.number().int().min(2000).max(2100),
-  leaveTypeCode: z.enum(['VL', 'SL']),
+  leaveTypeCode: z.enum(["VL", "SL"]),
   delta: z
     .number()
-    .refine((v) => v !== 0, 'Adjustment cannot be zero.')
-    .refine((v) => Math.abs(v) <= 200, 'Adjustment must be within +/- 200 days.'),
+    .refine((v) => v !== 0, "Adjustment cannot be zero.")
+    .refine(
+      (v) => Math.abs(v) <= 200,
+      "Adjustment must be within +/- 200 days.",
+    ),
   reason: z
     .string()
-    .min(5, 'Please provide a reason (min 5 characters) for audit.')
+    .min(5, "Please provide a reason (min 5 characters) for audit.")
     .max(500),
 });
 
@@ -1300,7 +1336,7 @@ export async function adjustLeaveCredits(
   input: unknown,
 ): Promise<AdjustLeaveCreditsResult> {
   const parsed = AdjustLeaveCreditsSchema.parse(input);
-  const user = await requirePermission('leave', 'approve');
+  const user = await requirePermission("leave", "approve");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -1369,19 +1405,19 @@ export async function adjustLeaveCredits(
             year: parsed.year,
             balance: String(newBalance),
             totalCredits: String(Math.max(0, parsed.delta)),
-            usedCredits: '0',
-            carryOver: '0',
+            usedCredits: "0",
+            carryOver: "0",
           })
           .returning({ id: leaveCredits.id });
         const row = inserted[0];
-        if (!row) throw new Error('Failed to seed leave_credits row.');
+        if (!row) throw new Error("Failed to seed leave_credits row.");
         creditId = String(row.id);
       }
 
       await writeAuditLogTx(tx, {
         userId: user.id,
-        action: 'adjust',
-        tableName: 'leave_credits',
+        action: "adjust",
+        tableName: "leave_credits",
         recordId: creditId,
         oldValues: { balance: previousBalance },
         newValues: {
@@ -1402,18 +1438,21 @@ export async function adjustLeaveCredits(
     if (ownerUserId) {
       await createNotification({
         userId: ownerUserId,
-        type: 'generic',
-        title: 'Leave credits adjusted',
+        type: "generic",
+        title: "Leave credits adjusted",
         body: `Your ${parsed.leaveTypeCode} balance was adjusted by ${
-          parsed.delta > 0 ? '+' : ''
+          parsed.delta > 0 ? "+" : ""
         }${parsed.delta.toFixed(3)} day(s). New balance: ${result.newBalance.toFixed(3)}.`,
-        actionUrl: '/leave/credits',
-        entityType: 'leave_credits',
+        actionUrl: "/leave/credits",
+        entityType: "leave_credits",
         entityId: result.creditId,
       });
     }
   } catch (err) {
-    console.error('[leave/actions] adjustLeaveCredits notification failed:', err);
+    console.error(
+      "[leave/actions] adjustLeaveCredits notification failed:",
+      err,
+    );
   }
 
   revalidateLeavePaths();
@@ -1434,4 +1473,4 @@ void employees;
 void isNull;
 
 // Required for React JSX in server-side email rendering
-import type * as React from 'react';
+import type * as React from "react";

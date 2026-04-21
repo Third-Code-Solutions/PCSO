@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PCSO seal — simplified vector reconstruction for in-app chrome
+  (sidebar, top nav, auth hero). Faithful to the official seal:
+  gold circular border enclosing four interleaved swirl bands in
+  the Philippine flag palette (blue, yellow, red) with a central
+  yellow "S" mark. Use /logos/pcso-official.png for PDF/print
+  output that must carry the exact Government-issued seal.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" role="img" aria-label="Philippine Charity Sweepstakes Office seal">
+  <defs>
+    <clipPath id="ring">
+      <circle cx="480" cy="480" r="460" />
+    </clipPath>
+  </defs>
+
+  <!-- Gold outer ring -->
+  <circle cx="480" cy="480" r="470" fill="#FFCB05" />
+  <circle cx="480" cy="480" r="455" fill="#FFFFFF" />
+
+  <g clip-path="url(#ring)">
+    <!-- Blue band (upper-left swirl) -->
+    <path fill="#1B4F9E" d="
+      M 20 480
+      C 60 220, 240 60, 480 60
+      C 400 160, 320 280, 280 420
+      C 240 560, 220 700, 220 820
+      C 140 740, 60 620, 20 480
+      Z" />
+
+    <!-- Red band (upper-right swirl) -->
+    <path fill="#CE1126" d="
+      M 480 60
+      C 720 60, 900 220, 940 480
+      C 880 420, 800 380, 700 380
+      C 600 380, 520 420, 480 500
+      C 480 420, 480 300, 480 60 Z" />
+
+    <!-- White accent bands (layered) -->
+    <path fill="#FFFFFF" d="
+      M 120 300
+      C 220 220, 340 180, 460 200
+      C 400 260, 340 340, 300 440
+      C 260 540, 240 660, 240 780
+      C 180 700, 140 600, 120 500
+      Z" opacity="0.92" />
+
+    <path fill="#FFFFFF" d="
+      M 940 480
+      C 900 620, 820 740, 700 820
+      C 700 720, 680 620, 640 520
+      C 600 420, 540 340, 460 300
+      C 580 300, 720 340, 820 420
+      C 860 440, 900 460, 940 480
+      Z" opacity="0.92" />
+
+    <!-- Central yellow S swirl -->
+    <path fill="#FFCB05" d="
+      M 420 220
+      C 520 220, 600 260, 620 340
+      C 640 420, 580 480, 500 500
+      C 420 520, 360 560, 360 640
+      C 360 720, 440 760, 540 760
+      C 500 820, 420 840, 340 820
+      C 260 800, 220 740, 220 660
+      C 220 580, 260 520, 340 500
+      C 420 480, 480 440, 480 380
+      C 480 320, 420 300, 360 320
+      C 380 260, 400 220, 420 220
+      Z" />
+  </g>
+
+  <!-- Restore gold rim over clipped content -->
+  <circle cx="480" cy="480" r="470" fill="none" stroke="#FFCB05" stroke-width="20" />
+</svg>

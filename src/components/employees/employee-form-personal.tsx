@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import { useFormContext } from 'react-hook-form';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useFormContext } from "react-hook-form";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { GENDER_OPTIONS } from '@/lib/constants/gender';
-import { CIVIL_STATUS_OPTIONS } from '@/lib/constants/civil-status';
-import { BLOOD_TYPE_OPTIONS } from '@/lib/constants/blood-types';
-import type { EmployeeInput } from '@/lib/validations/employees';
+} from "@/components/ui/select";
+import { GENDER_OPTIONS } from "@/lib/constants/gender";
+import { CIVIL_STATUS_OPTIONS } from "@/lib/constants/civil-status";
+import { BLOOD_TYPE_OPTIONS } from "@/lib/constants/blood-types";
+import type { EmployeeInput } from "@/lib/validations/employees";
 
 function FieldError({ name }: { name: string }) {
   const {
@@ -60,30 +60,40 @@ export function EmployeeFormPersonal() {
       {/* Name row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <FormField name="firstName" label="First Name" required>
-          <Input id="firstName" {...register('firstName')} placeholder="Juan" />
+          <Input id="firstName" {...register("firstName")} placeholder="Juan" />
         </FormField>
         <FormField name="middleName" label="Middle Name">
-          <Input id="middleName" {...register('middleName')} placeholder="Santos" />
+          <Input
+            id="middleName"
+            {...register("middleName")}
+            placeholder="Santos"
+          />
         </FormField>
         <FormField name="lastName" label="Last Name" required>
-          <Input id="lastName" {...register('lastName')} placeholder="dela Cruz" />
+          <Input
+            id="lastName"
+            {...register("lastName")}
+            placeholder="dela Cruz"
+          />
         </FormField>
         <FormField name="suffix" label="Suffix">
-          <Input id="suffix" {...register('suffix')} placeholder="Jr., III…" />
+          <Input id="suffix" {...register("suffix")} placeholder="Jr., III…" />
         </FormField>
       </div>
 
       {/* Demographics */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <FormField name="birthDate" label="Date of Birth" required>
-          <Input id="birthDate" type="date" {...register('birthDate')} />
+          <Input id="birthDate" type="date" {...register("birthDate")} />
         </FormField>
 
         <FormField name="gender" label="Gender" required>
           <Select
-            value={watch('gender') ?? ''}
+            value={watch("gender") ?? ""}
             onValueChange={(v) =>
-              setValue('gender', v as EmployeeInput['gender'], { shouldValidate: true })
+              setValue("gender", v as EmployeeInput["gender"], {
+                shouldValidate: true,
+              })
             }
           >
             <SelectTrigger id="gender">
@@ -101,9 +111,11 @@ export function EmployeeFormPersonal() {
 
         <FormField name="civilStatus" label="Civil Status" required>
           <Select
-            value={watch('civilStatus') ?? ''}
+            value={watch("civilStatus") ?? ""}
             onValueChange={(v) =>
-              setValue('civilStatus', v as EmployeeInput['civilStatus'], { shouldValidate: true })
+              setValue("civilStatus", v as EmployeeInput["civilStatus"], {
+                shouldValidate: true,
+              })
             }
           >
             <SelectTrigger id="civilStatus">
@@ -120,18 +132,28 @@ export function EmployeeFormPersonal() {
         </FormField>
 
         <FormField name="nationality" label="Nationality">
-          <Input id="nationality" {...register('nationality')} placeholder="Filipino" />
+          <Input
+            id="nationality"
+            {...register("nationality")}
+            placeholder="Filipino"
+          />
         </FormField>
 
         <FormField name="religion" label="Religion">
-          <Input id="religion" {...register('religion')} placeholder="Roman Catholic" />
+          <Input
+            id="religion"
+            {...register("religion")}
+            placeholder="Roman Catholic"
+          />
         </FormField>
 
         <FormField name="bloodType" label="Blood Type">
           <Select
-            value={watch('bloodType') ?? ''}
+            value={watch("bloodType") ?? ""}
             onValueChange={(v) =>
-              setValue('bloodType', v as EmployeeInput['bloodType'], { shouldValidate: true })
+              setValue("bloodType", v as EmployeeInput["bloodType"], {
+                shouldValidate: true,
+              })
             }
           >
             <SelectTrigger id="bloodType">
@@ -154,12 +176,16 @@ export function EmployeeFormPersonal() {
           <Input
             id="email"
             type="email"
-            {...register('email')}
-            placeholder="juan@senate.gov.ph"
+            {...register("email")}
+            placeholder="juan@pcso.gov.ph"
           />
         </FormField>
         <FormField name="phone" label="Mobile Number">
-          <Input id="phone" {...register('phone')} placeholder="+639XXXXXXXXX or 09XXXXXXXXX" />
+          <Input
+            id="phone"
+            {...register("phone")}
+            placeholder="+639XXXXXXXXX or 09XXXXXXXXX"
+          />
         </FormField>
       </div>
 
@@ -170,19 +196,34 @@ export function EmployeeFormPersonal() {
         </h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField name="permanentAddressStreet" label="Street / House No.">
-            <Input id="permanentAddressStreet" {...register('permanentAddressStreet')} />
+            <Input
+              id="permanentAddressStreet"
+              {...register("permanentAddressStreet")}
+            />
           </FormField>
           <FormField name="permanentAddressBarangay" label="Barangay">
-            <Input id="permanentAddressBarangay" {...register('permanentAddressBarangay')} />
+            <Input
+              id="permanentAddressBarangay"
+              {...register("permanentAddressBarangay")}
+            />
           </FormField>
           <FormField name="permanentAddressCity" label="City / Municipality">
-            <Input id="permanentAddressCity" {...register('permanentAddressCity')} />
+            <Input
+              id="permanentAddressCity"
+              {...register("permanentAddressCity")}
+            />
           </FormField>
           <FormField name="permanentAddressProvince" label="Province">
-            <Input id="permanentAddressProvince" {...register('permanentAddressProvince')} />
+            <Input
+              id="permanentAddressProvince"
+              {...register("permanentAddressProvince")}
+            />
           </FormField>
           <FormField name="permanentAddressZip" label="ZIP Code">
-            <Input id="permanentAddressZip" {...register('permanentAddressZip')} />
+            <Input
+              id="permanentAddressZip"
+              {...register("permanentAddressZip")}
+            />
           </FormField>
         </div>
       </section>
@@ -190,24 +231,38 @@ export function EmployeeFormPersonal() {
       {/* Current address */}
       <section>
         <h3 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Current Address{' '}
-          <span className="text-xs normal-case font-normal">(if different from permanent)</span>
+          Current Address{" "}
+          <span className="text-xs normal-case font-normal">
+            (if different from permanent)
+          </span>
         </h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField name="currentAddressStreet" label="Street / House No.">
-            <Input id="currentAddressStreet" {...register('currentAddressStreet')} />
+            <Input
+              id="currentAddressStreet"
+              {...register("currentAddressStreet")}
+            />
           </FormField>
           <FormField name="currentAddressBarangay" label="Barangay">
-            <Input id="currentAddressBarangay" {...register('currentAddressBarangay')} />
+            <Input
+              id="currentAddressBarangay"
+              {...register("currentAddressBarangay")}
+            />
           </FormField>
           <FormField name="currentAddressCity" label="City / Municipality">
-            <Input id="currentAddressCity" {...register('currentAddressCity')} />
+            <Input
+              id="currentAddressCity"
+              {...register("currentAddressCity")}
+            />
           </FormField>
           <FormField name="currentAddressProvince" label="Province">
-            <Input id="currentAddressProvince" {...register('currentAddressProvince')} />
+            <Input
+              id="currentAddressProvince"
+              {...register("currentAddressProvince")}
+            />
           </FormField>
           <FormField name="currentAddressZip" label="ZIP Code">
-            <Input id="currentAddressZip" {...register('currentAddressZip')} />
+            <Input id="currentAddressZip" {...register("currentAddressZip")} />
           </FormField>
         </div>
       </section>
@@ -219,15 +274,21 @@ export function EmployeeFormPersonal() {
         </h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <FormField name="emergencyContactName" label="Name">
-            <Input id="emergencyContactName" {...register('emergencyContactName')} />
+            <Input
+              id="emergencyContactName"
+              {...register("emergencyContactName")}
+            />
           </FormField>
           <FormField name="emergencyContactRelation" label="Relationship">
-            <Input id="emergencyContactRelation" {...register('emergencyContactRelation')} />
+            <Input
+              id="emergencyContactRelation"
+              {...register("emergencyContactRelation")}
+            />
           </FormField>
           <FormField name="emergencyContactPhone" label="Mobile Number">
             <Input
               id="emergencyContactPhone"
-              {...register('emergencyContactPhone')}
+              {...register("emergencyContactPhone")}
               placeholder="+639XXXXXXXXX or 09XXXXXXXXX"
             />
           </FormField>

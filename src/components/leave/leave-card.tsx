@@ -20,7 +20,7 @@
  * access, no heavy dependencies, works in any runtime.
  */
 
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
 
 // ---------------------------------------------------------------------------
 // Public prop types
@@ -92,23 +92,23 @@ export interface LeaveCardProps {
 // ---------------------------------------------------------------------------
 
 function fmt3(n: number): string {
-  return Number.isFinite(n) ? n.toFixed(3) : '';
+  return Number.isFinite(n) ? n.toFixed(3) : "";
 }
 
 function fmtDate(iso: string): string {
-  if (!iso) return '';
+  if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+  return d.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 
 function fmtPeso(amount: number): string {
-  if (!Number.isFinite(amount)) return '';
-  return `PHP ${amount.toLocaleString('en-PH', {
+  if (!Number.isFinite(amount)) return "";
+  return `PHP ${amount.toLocaleString("en-PH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -119,7 +119,7 @@ function fmtPeso(amount: number): string {
  * Quote fields containing comma, quote, CR, LF, or leading/trailing whitespace.
  */
 function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) return "";
   const s = String(value);
   const needsQuote = /[",\r\n]/.test(s) || /^\s|\s$/.test(s);
   if (!needsQuote) return s;
@@ -127,7 +127,7 @@ function csvCell(value: unknown): string {
 }
 
 function csvRow(cells: Array<unknown>): string {
-  return cells.map(csvCell).join(',');
+  return cells.map(csvCell).join(",");
 }
 
 // ---------------------------------------------------------------------------
@@ -144,51 +144,81 @@ function csvRow(cells: Array<unknown>): string {
  * same bytes. Safe to call during server rendering if needed.
  */
 export function generateLeaveCardCSV(props: LeaveCardProps): string {
-  const { employee, credits, usageEntries, accrualSchedule, terminalEstimate, certifyingOfficer } =
-    props;
+  const {
+    employee,
+    credits,
+    usageEntries,
+    accrualSchedule,
+    terminalEstimate,
+    certifyingOfficer,
+  } = props;
 
   const fullName = [employee.lastName, employee.firstName, employee.middleName]
     .filter(Boolean)
-    .join(', ');
+    .join(", ");
 
   const rows: string[] = [];
 
   // ── Header ───────────────────────────────────────────────────────────────
-  rows.push(csvRow(['REPUBLIC OF THE PHILIPPINES']));
-  rows.push(csvRow(['SENATE OF THE PHILIPPINES']));
-  rows.push(csvRow(['Human Resources Information System']));
-  rows.push(csvRow(['INDIVIDUAL LEAVE RECORD (CSC Form 6)']));
-  rows.push(csvRow(['Per CSC Omnibus Rules on Leave, Rule XIV Section 53']));
+  rows.push(csvRow(["REPUBLIC OF THE PHILIPPINES"]));
+  rows.push(csvRow(["PHILIPPINE CHARITY SWEEPSTAKES OFFICE"]));
+  rows.push(csvRow(["Human Resources Information System"]));
+  rows.push(csvRow(["INDIVIDUAL LEAVE RECORD (CSC Form 6)"]));
+  rows.push(csvRow(["Per CSC Omnibus Rules on Leave, Rule XIV Section 53"]));
   rows.push(csvRow([`Calendar Year: ${credits.year}`]));
-  rows.push('');
+  rows.push("");
 
   // ── I. Employee Information ──────────────────────────────────────────────
-  rows.push(csvRow(['I. EMPLOYEE INFORMATION']));
-  rows.push(csvRow(['Field', 'Value']));
-  rows.push(csvRow(['Name (Last, First, Middle)', fullName]));
-  rows.push(csvRow(['Employee No.', employee.employeeNo]));
-  rows.push(csvRow(['Position Title', employee.positionTitle]));
-  rows.push(csvRow(['Office / Department', employee.officeName]));
-  rows.push(csvRow(['Date Hired', employee.dateHired ? fmtDate(employee.dateHired) : '']));
-  rows.push(csvRow(['Monthly Basic Salary', `PHP ${employee.monthlyBasicSalary}`]));
-  rows.push('');
+  rows.push(csvRow(["I. EMPLOYEE INFORMATION"]));
+  rows.push(csvRow(["Field", "Value"]));
+  rows.push(csvRow(["Name (Last, First, Middle)", fullName]));
+  rows.push(csvRow(["Employee No.", employee.employeeNo]));
+  rows.push(csvRow(["Position Title", employee.positionTitle]));
+  rows.push(csvRow(["Office / Department", employee.officeName]));
+  rows.push(
+    csvRow([
+      "Date Hired",
+      employee.dateHired ? fmtDate(employee.dateHired) : "",
+    ]),
+  );
+  rows.push(
+    csvRow(["Monthly Basic Salary", `PHP ${employee.monthlyBasicSalary}`]),
+  );
+  rows.push("");
 
   // ── II. Opening Balances ─────────────────────────────────────────────────
   rows.push(csvRow([`II. OPENING BALANCES — ${credits.year}`]));
-  rows.push(csvRow(['Item', 'Days']));
-  rows.push(csvRow([`VL Carry-over from ${credits.year - 1}`, fmt3(credits.vlCarryOver)]));
-  rows.push(csvRow([`SL Carry-over from ${credits.year - 1}`, fmt3(credits.slCarryOver)]));
-  rows.push(csvRow(['VL Earned this year', fmt3(credits.vlEarned)]));
-  rows.push(csvRow(['SL Earned this year', fmt3(credits.slEarned)]));
-  rows.push(csvRow(['VL Forfeited (cap exceeded)', fmt3(credits.vlForfeited)]));
-  rows.push(csvRow(['Current VL Balance', fmt3(credits.vlBalance)]));
-  rows.push(csvRow(['Current SL Balance', fmt3(credits.slBalance)]));
-  rows.push('');
+  rows.push(csvRow(["Item", "Days"]));
+  rows.push(
+    csvRow([
+      `VL Carry-over from ${credits.year - 1}`,
+      fmt3(credits.vlCarryOver),
+    ]),
+  );
+  rows.push(
+    csvRow([
+      `SL Carry-over from ${credits.year - 1}`,
+      fmt3(credits.slCarryOver),
+    ]),
+  );
+  rows.push(csvRow(["VL Earned this year", fmt3(credits.vlEarned)]));
+  rows.push(csvRow(["SL Earned this year", fmt3(credits.slEarned)]));
+  rows.push(csvRow(["VL Forfeited (cap exceeded)", fmt3(credits.vlForfeited)]));
+  rows.push(csvRow(["Current VL Balance", fmt3(credits.vlBalance)]));
+  rows.push(csvRow(["Current SL Balance", fmt3(credits.slBalance)]));
+  rows.push("");
 
   // ── III. Monthly Accrual Schedule ────────────────────────────────────────
   rows.push(csvRow([`III. MONTHLY ACCRUAL SCHEDULE — ${credits.year}`]));
   rows.push(
-    csvRow(['Month', 'VL Added', 'SL Added', 'VL Running Total', 'SL Running Total', 'Notes']),
+    csvRow([
+      "Month",
+      "VL Added",
+      "SL Added",
+      "VL Running Total",
+      "SL Running Total",
+      "Notes",
+    ]),
   );
   for (const row of accrualSchedule) {
     const isFuture = row.vlRunning === null;
@@ -196,32 +226,40 @@ export function generateLeaveCardCSV(props: LeaveCardProps): string {
     rows.push(
       csvRow([
         row.monthLabel,
-        isFuture ? '' : row.vlAdded.toFixed(3),
-        isFuture ? '' : row.slAdded.toFixed(3),
-        row.vlRunning !== null ? fmt3(row.vlRunning) : '',
-        row.slRunning !== null ? fmt3(row.slRunning) : '',
-        isFuture ? 'Projected (not yet credited)' : noAccrual ? 'No accrual (pre-hire)' : '',
+        isFuture ? "" : row.vlAdded.toFixed(3),
+        isFuture ? "" : row.slAdded.toFixed(3),
+        row.vlRunning !== null ? fmt3(row.vlRunning) : "",
+        row.slRunning !== null ? fmt3(row.slRunning) : "",
+        isFuture
+          ? "Projected (not yet credited)"
+          : noAccrual
+            ? "No accrual (pre-hire)"
+            : "",
       ]),
     );
   }
-  rows.push('');
+  rows.push("");
 
   // ── IV. Leave Usage ──────────────────────────────────────────────────────
-  rows.push(csvRow([`IV. LEAVE USAGE — APPROVED APPLICATIONS (${credits.year})`]));
+  rows.push(
+    csvRow([`IV. LEAVE USAGE — APPROVED APPLICATIONS (${credits.year})`]),
+  );
   rows.push(
     csvRow([
-      'Date From',
-      'Date To',
-      'Leave Type',
-      'Days Deducted',
-      'VL Balance After',
-      'SL Balance After',
-      'Status',
+      "Date From",
+      "Date To",
+      "Leave Type",
+      "Days Deducted",
+      "VL Balance After",
+      "SL Balance After",
+      "Status",
     ]),
   );
 
   if (usageEntries.length === 0) {
-    rows.push(csvRow([`No VL or SL applications recorded for ${credits.year}.`]));
+    rows.push(
+      csvRow([`No VL or SL applications recorded for ${credits.year}.`]),
+    );
   } else {
     // Compute running balances starting from total earned + carry-over, then
     // deducting each approved application chronologically. This gives HR an
@@ -230,9 +268,9 @@ export function generateLeaveCardCSV(props: LeaveCardProps): string {
     let runningSl = credits.slCarryOver + credits.slEarned;
 
     for (const entry of usageEntries) {
-      if (entry.leaveTypeCode === 'VL') {
+      if (entry.leaveTypeCode === "VL") {
         runningVl = Math.max(0, runningVl - entry.daysDeducted);
-      } else if (entry.leaveTypeCode === 'SL') {
+      } else if (entry.leaveTypeCode === "SL") {
         runningSl = Math.max(0, runningSl - entry.daysDeducted);
       }
       rows.push(
@@ -248,55 +286,83 @@ export function generateLeaveCardCSV(props: LeaveCardProps): string {
       );
     }
   }
-  rows.push('');
+  rows.push("");
 
   // ── V. Terminal Leave Estimate ───────────────────────────────────────────
   if (terminalEstimate) {
-    rows.push(csvRow(['V. TERMINAL LEAVE ESTIMATE (CSC Omnibus Rules, Rule XVI Section 56)']));
-    rows.push(csvRow(['Item', 'Value']));
-    rows.push(csvRow(['VL Balance (days)', fmt3(terminalEstimate.vlBalance)]));
-    rows.push(csvRow(['SL @ 50% (days)', fmt3(terminalEstimate.slEffectiveDays)]));
-    rows.push(csvRow(['Total Effective Days', fmt3(terminalEstimate.totalEffectiveDays)]));
-    rows.push(csvRow(['Daily Rate (Salary / 22)', fmtPeso(terminalEstimate.dailyRate)]));
-    rows.push(csvRow(['Estimated Terminal Leave Pay', fmtPeso(terminalEstimate.terminalLeavePay)]));
     rows.push(
       csvRow([
-        'Formula: (VL + SL x 0.50) x (Monthly Basic Salary / 22). Estimate only — actual computed at separation.',
+        "V. TERMINAL LEAVE ESTIMATE (CSC Omnibus Rules, Rule XVI Section 56)",
       ]),
     );
-    rows.push('');
+    rows.push(csvRow(["Item", "Value"]));
+    rows.push(csvRow(["VL Balance (days)", fmt3(terminalEstimate.vlBalance)]));
+    rows.push(
+      csvRow(["SL @ 50% (days)", fmt3(terminalEstimate.slEffectiveDays)]),
+    );
+    rows.push(
+      csvRow([
+        "Total Effective Days",
+        fmt3(terminalEstimate.totalEffectiveDays),
+      ]),
+    );
+    rows.push(
+      csvRow(["Daily Rate (Salary / 22)", fmtPeso(terminalEstimate.dailyRate)]),
+    );
+    rows.push(
+      csvRow([
+        "Estimated Terminal Leave Pay",
+        fmtPeso(terminalEstimate.terminalLeavePay),
+      ]),
+    );
+    rows.push(
+      csvRow([
+        "Formula: (VL + SL x 0.50) x (Monthly Basic Salary / 22). Estimate only — actual computed at separation.",
+      ]),
+    );
+    rows.push("");
   }
 
   // ── VI. Certification ────────────────────────────────────────────────────
-  rows.push(csvRow(['VI. CERTIFICATION']));
-  rows.push(csvRow(['Employee Signature over Printed Name / Date', '____________________']));
+  rows.push(csvRow(["VI. CERTIFICATION"]));
   rows.push(
     csvRow([
-      certifyingOfficer ?? 'Authorized HR Officer',
-      'Certifying Officer — Chief, Human Resources',
+      "Employee Signature over Printed Name / Date",
+      "____________________",
     ]),
   );
-  rows.push('');
+  rows.push(
+    csvRow([
+      certifyingOfficer ?? "Authorized HR Officer",
+      "Certifying Officer — Chief, Human Resources",
+    ]),
+  );
+  rows.push("");
 
   // ── Footer ───────────────────────────────────────────────────────────────
   rows.push(
     csvRow([
-      `Generated by Senate HRIS on ${new Date().toLocaleDateString('en-PH')}`,
+      `Generated by PCSO HRIS on ${new Date().toLocaleDateString("en-PH")}`,
     ]),
   );
   rows.push(
-    csvRow([`Calendar Year ${credits.year} — ${fullName} (${employee.employeeNo})`]),
+    csvRow([
+      `Calendar Year ${credits.year} — ${fullName} (${employee.employeeNo})`,
+    ]),
   );
-  rows.push(csvRow(['Per CSC Omnibus Rules on Leave, MC No. 41, s. 1998']));
+  rows.push(csvRow(["Per CSC Omnibus Rules on Leave, MC No. 41, s. 1998"]));
 
   // Join with CRLF (RFC 4180), prepend UTF-8 BOM for Excel compatibility.
-  return '\ufeff' + rows.join('\r\n') + '\r\n';
+  return "\ufeff" + rows.join("\r\n") + "\r\n";
 }
 
 /**
  * Returns a standard filename for the generated Leave Card CSV.
  */
 export function leaveCardFilename(props: LeaveCardProps): string {
-  const safeNo = (props.employee.employeeNo || 'employee').replace(/[^A-Za-z0-9_-]/g, '_');
+  const safeNo = (props.employee.employeeNo || "employee").replace(
+    /[^A-Za-z0-9_-]/g,
+    "_",
+  );
   return `LeaveCard_Form6_${safeNo}_${props.credits.year}.csv`;
 }

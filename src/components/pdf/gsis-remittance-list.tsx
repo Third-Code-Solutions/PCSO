@@ -10,77 +10,71 @@
  * Import dynamically in page components to avoid SSR issues.
  */
 
-import {
-  Document,
-  Page,
-  View,
-  Text,
-  StyleSheet,
-} from '@react-pdf/renderer';
-import type { GsisRemittanceLine } from '@/lib/db/schema/gsis';
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import type { GsisRemittanceLine } from "@/lib/db/schema/gsis";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const CREAM = '#FAF4E6';
-const BORDER = '#D1D5DB';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const CREAM = "#FAF4E6";
+const BORDER = "#D1D5DB";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 7,
     padding: 28,
-    color: '#111827',
+    color: "#111827",
   },
   // Header section
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 10,
   },
   agencyBlock: {
-    flexDirection: 'column',
+    flexDirection: "column",
     gap: 2,
   },
   agencyName: {
     fontSize: 11,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
   },
   agencySubtitle: {
     fontSize: 7,
-    color: '#6B7280',
+    color: "#6B7280",
   },
   titleBlock: {
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
   },
   formTitle: {
     fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   formSubtitle: {
     fontSize: 7,
-    color: '#374151',
+    color: "#374151",
     marginTop: 1,
   },
   metaBlock: {
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
     gap: 2,
   },
   metaLabel: {
     fontSize: 6.5,
-    color: '#6B7280',
-    textTransform: 'uppercase',
+    color: "#6B7280",
+    textTransform: "uppercase",
   },
   metaValue: {
     fontSize: 7.5,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
   },
   // Divider
@@ -96,22 +90,22 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   tableHead: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
     borderTopLeftRadius: 2,
     borderTopRightRadius: 2,
   },
   tableHeadCell: {
-    color: '#FFFFFF',
-    fontFamily: 'Helvetica-Bold',
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
     fontSize: 6.5,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.3,
     paddingHorizontal: 5,
     paddingVertical: 5,
   },
   tableRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderBottomWidth: 0.3,
     borderBottomColor: BORDER,
   },
@@ -122,111 +116,111 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 3.5,
     fontSize: 7,
-    color: '#1F2937',
+    color: "#1F2937",
   },
   tableCellMono: {
     paddingHorizontal: 5,
     paddingVertical: 3.5,
     fontSize: 6.5,
-    fontFamily: 'Courier',
-    color: '#374151',
+    fontFamily: "Courier",
+    color: "#374151",
   },
   tableCellRight: {
     paddingHorizontal: 5,
     paddingVertical: 3.5,
     fontSize: 7,
-    textAlign: 'right',
-    fontFamily: 'Courier',
-    color: '#1F2937',
+    textAlign: "right",
+    fontFamily: "Courier",
+    color: "#1F2937",
   },
   tableCellRightBold: {
     paddingHorizontal: 5,
     paddingVertical: 3.5,
     fontSize: 7,
-    textAlign: 'right',
-    fontFamily: 'Courier-Bold',
-    color: '#111827',
+    textAlign: "right",
+    fontFamily: "Courier-Bold",
+    color: "#111827",
   },
   totalsRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
     borderBottomLeftRadius: 2,
     borderBottomRightRadius: 2,
   },
   totalsLabel: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     fontSize: 7,
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     paddingHorizontal: 5,
     paddingVertical: 4,
   },
   totalsValue: {
-    fontFamily: 'Courier-Bold',
+    fontFamily: "Courier-Bold",
     fontSize: 7,
     color: GOLD,
-    textAlign: 'right',
+    textAlign: "right",
     paddingHorizontal: 5,
     paddingVertical: 4,
   },
   // Footer
   signatureBlock: {
     marginTop: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   signatureLine: {
     borderTopWidth: 0.5,
-    borderTopColor: '#374151',
+    borderTopColor: "#374151",
     width: 160,
     paddingTop: 4,
   },
   signatureLabel: {
     fontSize: 6.5,
-    color: '#6B7280',
-    textTransform: 'uppercase',
+    color: "#6B7280",
+    textTransform: "uppercase",
   },
   signatureName: {
     fontSize: 7.5,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
     marginBottom: 1,
   },
   pageNumber: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 14,
     right: 28,
     fontSize: 6,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
   disclaimer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 14,
     left: 28,
     fontSize: 6,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
 });
 
 // ─── Column widths (must sum to ~100%) ────────────────────────────────────────
 
 const COL = {
-  no:       '5%',
-  empNo:    '9%',
-  gsisNo:   '11%',
-  name:     '24%',
-  msc:      '13%',
-  personal: '11%',
-  employer: '11%',
-  lifeIns:  '9%',
-  total:    '7%',
+  no: "5%",
+  empNo: "9%",
+  gsisNo: "11%",
+  name: "24%",
+  msc: "13%",
+  personal: "11%",
+  employer: "11%",
+  lifeIns: "9%",
+  total: "7%",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (!Number.isFinite(num)) return '0.00';
-  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (!Number.isFinite(num)) return "0.00";
+  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -269,7 +263,9 @@ export function GsisRemittanceListPdf({
         <View style={styles.headerRow}>
           <View style={styles.agencyBlock}>
             <Text style={styles.agencyName}>{meta.agencyName}</Text>
-            <Text style={styles.agencySubtitle}>Republic of the Philippines</Text>
+            <Text style={styles.agencySubtitle}>
+              Republic of the Philippines
+            </Text>
           </View>
 
           <View style={styles.titleBlock}>
@@ -297,22 +293,53 @@ export function GsisRemittanceListPdf({
           {/* Header row */}
           <View style={styles.tableHead}>
             <Text style={[styles.tableHeadCell, { width: COL.no }]}>#</Text>
-            <Text style={[styles.tableHeadCell, { width: COL.empNo }]}>Emp. No.</Text>
-            <Text style={[styles.tableHeadCell, { width: COL.gsisNo }]}>GSIS No.</Text>
-            <Text style={[styles.tableHeadCell, { width: COL.name }]}>Name</Text>
-            <Text style={[styles.tableHeadCell, { width: COL.msc, textAlign: 'right' }]}>
+            <Text style={[styles.tableHeadCell, { width: COL.empNo }]}>
+              Emp. No.
+            </Text>
+            <Text style={[styles.tableHeadCell, { width: COL.gsisNo }]}>
+              GSIS No.
+            </Text>
+            <Text style={[styles.tableHeadCell, { width: COL.name }]}>
+              Name
+            </Text>
+            <Text
+              style={[
+                styles.tableHeadCell,
+                { width: COL.msc, textAlign: "right" },
+              ]}
+            >
               Monthly Salary Credit
             </Text>
-            <Text style={[styles.tableHeadCell, { width: COL.personal, textAlign: 'right' }]}>
+            <Text
+              style={[
+                styles.tableHeadCell,
+                { width: COL.personal, textAlign: "right" },
+              ]}
+            >
               Personal Share
             </Text>
-            <Text style={[styles.tableHeadCell, { width: COL.employer, textAlign: 'right' }]}>
+            <Text
+              style={[
+                styles.tableHeadCell,
+                { width: COL.employer, textAlign: "right" },
+              ]}
+            >
               Employer Share
             </Text>
-            <Text style={[styles.tableHeadCell, { width: COL.lifeIns, textAlign: 'right' }]}>
+            <Text
+              style={[
+                styles.tableHeadCell,
+                { width: COL.lifeIns, textAlign: "right" },
+              ]}
+            >
               Life Ins.
             </Text>
-            <Text style={[styles.tableHeadCell, { width: COL.total, textAlign: 'right' }]}>
+            <Text
+              style={[
+                styles.tableHeadCell,
+                { width: COL.total, textAlign: "right" },
+              ]}
+            >
               Total
             </Text>
           </View>
@@ -323,7 +350,9 @@ export function GsisRemittanceListPdf({
               key={line.id}
               style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}
             >
-              <Text style={[styles.tableCell, { width: COL.no, color: '#9CA3AF' }]}>
+              <Text
+                style={[styles.tableCell, { width: COL.no, color: "#9CA3AF" }]}
+              >
                 {idx + 1}
               </Text>
               <Text style={[styles.tableCellMono, { width: COL.empNo }]}>
@@ -355,8 +384,15 @@ export function GsisRemittanceListPdf({
 
           {/* Totals row */}
           <View style={styles.totalsRow}>
-            <Text style={[styles.totalsLabel, { width: `calc(${COL.no} + ${COL.empNo} + ${COL.gsisNo} + ${COL.name} + ${COL.msc})` }]}>
-              {`TOTAL (${lines.length} employee${lines.length !== 1 ? 's' : ''})`}
+            <Text
+              style={[
+                styles.totalsLabel,
+                {
+                  width: `calc(${COL.no} + ${COL.empNo} + ${COL.gsisNo} + ${COL.name} + ${COL.msc})`,
+                },
+              ]}
+            >
+              {`TOTAL (${lines.length} employee${lines.length !== 1 ? "s" : ""})`}
             </Text>
             <Text style={[styles.totalsValue, { width: COL.personal }]}>
               {fmt(totals.personalShare)}
@@ -378,7 +414,9 @@ export function GsisRemittanceListPdf({
           <View>
             <View style={styles.signatureLine}>
               <Text style={styles.signatureName}>{meta.preparedBy}</Text>
-              <Text style={styles.signatureLabel}>Prepared by — HR / Payroll Officer</Text>
+              <Text style={styles.signatureLabel}>
+                Prepared by — HR / Payroll Officer
+              </Text>
             </View>
           </View>
           <View>
@@ -389,8 +427,12 @@ export function GsisRemittanceListPdf({
           </View>
           <View>
             <View style={styles.signatureLine}>
-              <Text style={[styles.signatureName, { color: 'transparent' }]}>{'  '}</Text>
-              <Text style={styles.signatureLabel}>Received by — GSIS Representative</Text>
+              <Text style={[styles.signatureName, { color: "transparent" }]}>
+                {"  "}
+              </Text>
+              <Text style={styles.signatureLabel}>
+                Received by — GSIS Representative
+              </Text>
             </View>
           </View>
         </View>
@@ -404,7 +446,7 @@ export function GsisRemittanceListPdf({
           fixed
         />
         <Text style={styles.disclaimer} fixed>
-          Generated by Senate HRIS — Confidential — For Official Use Only
+          Generated by PCSO HRIS — Confidential — For Official Use Only
         </Text>
       </Page>
     </Document>

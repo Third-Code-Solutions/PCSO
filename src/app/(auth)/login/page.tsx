@@ -1,22 +1,22 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { signInWithPassword, signInWithMagicLink } from './actions';
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { signInWithPassword, signInWithMagicLink } from "./actions";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const PasswordSchema = z.object({
-  email: z.string().email('Enter a valid email address.'),
-  password: z.string().min(1, 'Password is required.'),
+  email: z.string().email("Enter a valid email address."),
+  password: z.string().min(1, "Password is required."),
 });
 
 const MagicLinkSchema = z.object({
-  email: z.string().email('Enter a valid email address.'),
+  email: z.string().email("Enter a valid email address."),
 });
 
 type PasswordFields = z.infer<typeof PasswordSchema>;
@@ -24,7 +24,13 @@ type MagicLinkFields = z.infer<typeof MagicLinkSchema>;
 
 // ─── Minimal UI primitives (inline so we don't import non-existent shadcn files) ──
 
-function Label({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+function Label({
+  htmlFor,
+  children,
+}: {
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
   return (
     <label
       htmlFor={htmlFor}
@@ -37,7 +43,7 @@ function Label({ htmlFor, children }: { htmlFor: string; children: React.ReactNo
 
 function Input({
   id,
-  type = 'text',
+  type = "text",
   placeholder,
   autoComplete,
   disabled,
@@ -64,7 +70,13 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1.5 text-xs text-red-600 font-sans">{message}</p>;
 }
 
-function SubmitButton({ loading, children }: { loading: boolean; children: React.ReactNode }) {
+function SubmitButton({
+  loading,
+  children,
+}: {
+  loading: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="submit"
@@ -103,14 +115,15 @@ function SubmitButton({ loading, children }: { loading: boolean; children: React
 // ─── Error banner from URL params (e.g. callback failures) ───────────────────
 
 const URL_ERROR_MESSAGES: Record<string, string> = {
-  callback_failed: 'The sign-in link has expired or is invalid. Please try again.',
-  missing_code: 'Invalid sign-in link. Please request a new one.',
-  forbidden: 'You do not have permission to access that page.',
+  callback_failed:
+    "The sign-in link has expired or is invalid. Please try again.",
+  missing_code: "Invalid sign-in link. Please request a new one.",
+  forbidden: "You do not have permission to access that page.",
 };
 
 // ─── Page component ───────────────────────────────────────────────────────────
 
-import { Suspense } from 'react';
+import { Suspense } from "react";
 
 export default function LoginPage() {
   return (
@@ -122,10 +135,10 @@ export default function LoginPage() {
 
 function LoginPageInner() {
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') ?? undefined;
-  const urlError = searchParams.get('error');
+  const next = searchParams.get("next") ?? undefined;
+  const urlError = searchParams.get("error");
 
-  const [mode, setMode] = useState<'password' | 'magic'>('password');
+  const [mode, setMode] = useState<"password" | "magic">("password");
   const [serverError, setServerError] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -150,7 +163,7 @@ function LoginPageInner() {
     try {
       const result = await signInWithPassword({ ...data, next });
       if (result && !result.success) {
-        setServerError(result.error ?? 'Sign in failed.');
+        setServerError(result.error ?? "Sign in failed.");
       }
     } finally {
       setIsSubmitting(false);
@@ -165,7 +178,7 @@ function LoginPageInner() {
       if (result.success) {
         setMagicLinkSent(true);
       } else {
-        setServerError(result.error ?? 'Failed to send magic link.');
+        setServerError(result.error ?? "Failed to send magic link.");
       }
     } finally {
       setIsSubmitting(false);
@@ -183,7 +196,7 @@ function LoginPageInner() {
           Welcome back
         </h2>
         <p className="mt-1.5 text-sm text-slate-500 font-sans">
-          Sign in to the Senate HRIS portal
+          Sign in to the PCSO HRIS portal
         </p>
       </div>
 
@@ -201,22 +214,28 @@ function LoginPageInner() {
       <div className="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
         <button
           type="button"
-          onClick={() => { setMode('password'); setServerError(null); }}
+          onClick={() => {
+            setMode("password");
+            setServerError(null);
+          }}
           className={`flex-1 rounded-md py-1.5 text-sm font-medium font-sans transition-colors ${
-            mode === 'password'
-              ? 'bg-senate-navy text-white shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
+            mode === "password"
+              ? "bg-senate-navy text-white shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
           }`}
         >
           Password
         </button>
         <button
           type="button"
-          onClick={() => { setMode('magic'); setServerError(null); }}
+          onClick={() => {
+            setMode("magic");
+            setServerError(null);
+          }}
           className={`flex-1 rounded-md py-1.5 text-sm font-medium font-sans transition-colors ${
-            mode === 'magic'
-              ? 'bg-senate-navy text-white shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
+            mode === "magic"
+              ? "bg-senate-navy text-white shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
           }`}
         >
           Magic link
@@ -234,17 +253,21 @@ function LoginPageInner() {
       )}
 
       {/* ── Password form ──────────────────────────────────────────────────── */}
-      {mode === 'password' && (
-        <form onSubmit={handlePw(onPasswordSubmit)} noValidate className="space-y-5">
+      {mode === "password" && (
+        <form
+          onSubmit={handlePw(onPasswordSubmit)}
+          noValidate
+          className="space-y-5"
+        >
           <div>
             <Label htmlFor="pw-email">Email address</Label>
             <Input
               id="pw-email"
               type="email"
-              placeholder="you@senate.gov.ph"
+              placeholder="you@pcso.gov.ph"
               autoComplete="email"
               disabled={isSubmitting}
-              {...regPw('email')}
+              {...regPw("email")}
             />
             <FieldError message={pwErrors.email?.message} />
           </div>
@@ -265,7 +288,7 @@ function LoginPageInner() {
               placeholder="••••••••"
               autoComplete="current-password"
               disabled={isSubmitting}
-              {...regPw('password')}
+              {...regPw("password")}
             />
             <FieldError message={pwErrors.password?.message} />
           </div>
@@ -275,17 +298,21 @@ function LoginPageInner() {
       )}
 
       {/* ── Magic link form ────────────────────────────────────────────────── */}
-      {mode === 'magic' && !magicLinkSent && (
-        <form onSubmit={handleMl(onMagicLinkSubmit)} noValidate className="space-y-5">
+      {mode === "magic" && !magicLinkSent && (
+        <form
+          onSubmit={handleMl(onMagicLinkSubmit)}
+          noValidate
+          className="space-y-5"
+        >
           <div>
             <Label htmlFor="ml-email">Email address</Label>
             <Input
               id="ml-email"
               type="email"
-              placeholder="you@senate.gov.ph"
+              placeholder="you@pcso.gov.ph"
               autoComplete="email"
               disabled={isSubmitting}
-              {...regMl('email')}
+              {...regMl("email")}
             />
             <FieldError message={mlErrors.email?.message} />
           </div>
@@ -299,11 +326,14 @@ function LoginPageInner() {
       )}
 
       {/* Magic link success state */}
-      {mode === 'magic' && magicLinkSent && (
+      {mode === "magic" && magicLinkSent && (
         <div className="rounded-lg border border-senate-gold/40 bg-senate-gold/10 px-5 py-4 text-center space-y-2">
-          <p className="text-sm font-semibold text-senate-navy font-sans">Check your inbox</p>
+          <p className="text-sm font-semibold text-senate-navy font-sans">
+            Check your inbox
+          </p>
           <p className="text-sm text-slate-600 font-sans">
-            We&rsquo;ve sent a sign-in link to your email address. The link expires in 60 minutes.
+            We&rsquo;ve sent a sign-in link to your email address. The link
+            expires in 60 minutes.
           </p>
           <button
             type="button"
@@ -318,7 +348,7 @@ function LoginPageInner() {
       {/* Divider with security note */}
       <div className="border-t border-slate-200 pt-4">
         <p className="text-xs text-slate-400 font-sans text-center leading-relaxed">
-          This system is for authorized Senate personnel only.
+          This system is for authorized PCSO personnel only.
           <br />
           All sessions are monitored and audited.
         </p>

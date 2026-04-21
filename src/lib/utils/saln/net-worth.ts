@@ -1,5 +1,5 @@
 /**
- * SALN net worth computation utilities — Senate HRIS Phase 13
+ * SALN net worth computation utilities — PCSO HRIS Phase 13
  *
  * Aggregates assets from all categories and subtracts total liabilities.
  * Money values are string-represented numeric(14,2) values per conventions.
@@ -13,23 +13,23 @@ import type {
   PersonalProperty,
   Investment,
   Liability,
-} from '@/lib/validations/saln';
+} from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
 // Internal: fixed-point integer arithmetic (2 decimal places → multiply × 100)
 // ---------------------------------------------------------------------------
 
 function parseCents(value: string): bigint {
-  const [intPart = '0', fracPart = '00'] = value.split('.');
-  const padded = fracPart.padEnd(2, '0').slice(0, 2);
+  const [intPart = "0", fracPart = "00"] = value.split(".");
+  const padded = fracPart.padEnd(2, "0").slice(0, 2);
   return BigInt(intPart) * 100n + BigInt(padded);
 }
 
 function centsToString(cents: bigint): string {
   const abs = cents < 0n ? -cents : cents;
-  const sign = cents < 0n ? '-' : '';
+  const sign = cents < 0n ? "-" : "";
   const intPart = abs / 100n;
-  const fracPart = (abs % 100n).toString().padStart(2, '0');
+  const fracPart = (abs % 100n).toString().padStart(2, "0");
   return `${sign}${intPart}.${fracPart}`;
 }
 
@@ -112,9 +112,9 @@ export function computeNetWorth(
 /** Format a money string for display (Philippine peso). */
 export function formatPeso(value: string): string {
   const num = parseFloat(value);
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
     minimumFractionDigits: 2,
   }).format(num);
 }

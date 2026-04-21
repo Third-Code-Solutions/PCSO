@@ -1,20 +1,20 @@
 /**
  * Interactive Org Chart — Phase 06
  *
- * Displays the Senate office hierarchy as a pure-SVG interactive tree.
+ * Displays the PCSO office hierarchy as a pure-SVG interactive tree.
  * Click a node to see office head + member count.
  * Export button generates a PDF via React-PDF.
  */
 
-import type { Metadata } from 'next';
-import { createServerClient } from '@/lib/supabase/server';
-import { PageHeader } from '@/components/layouts/page-header';
-import { requirePermission } from '@/lib/auth/guards';
-import { OrgChartClient } from './_client';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import type { Metadata } from "next";
+import { createServerClient } from "@/lib/supabase/server";
+import { PageHeader } from "@/components/layouts/page-header";
+import { requirePermission } from "@/lib/auth/guards";
+import { OrgChartClient } from "./_client";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 
 export const metadata: Metadata = {
-  title: 'Org Chart',
+  title: "Org Chart",
 };
 
 // ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ async function getOrgChartData(): Promise<RawOffice[]> {
 
   // Fetch all offices with head employee name
   const { data: officesData, error: offErr } = await supabase
-    .from('offices')
+    .from("offices")
     .select(
       `
       id,
@@ -54,17 +54,17 @@ async function getOrgChartData(): Promise<RawOffice[]> {
       employees(first_name, last_name)
     `,
     )
-    .is('deleted_at', null)
-    .order('name');
+    .is("deleted_at", null)
+    .order("name");
 
   if (offErr) throw new Error(`Failed to fetch offices: ${offErr.message}`);
 
   // Fetch employee counts per office
   const { data: empCounts } = await supabase
-    .from('employees')
-    .select('office_id')
-    .eq('status', 'active')
-    .is('deleted_at', null);
+    .from("employees")
+    .select("office_id")
+    .eq("status", "active")
+    .is("deleted_at", null);
 
   const empCountMap = new Map<string, number>();
   for (const emp of empCounts ?? []) {
@@ -76,9 +76,9 @@ async function getOrgChartData(): Promise<RawOffice[]> {
 
   // Fetch plantilla position counts per office
   const { data: positions } = await supabase
-    .from('plantilla_positions')
-    .select('office_id, is_filled')
-    .is('deleted_at', null);
+    .from("plantilla_positions")
+    .select("office_id, is_filled")
+    .is("deleted_at", null);
 
   const totalPositionMap = new Map<string, number>();
   const filledPositionMap = new Map<string, number>();
@@ -91,7 +91,9 @@ async function getOrgChartData(): Promise<RawOffice[]> {
   }
 
   return (officesData ?? []).map((row) => {
-    const headEmp = Array.isArray(row.employees) ? row.employees[0] : row.employees;
+    const headEmp = Array.isArray(row.employees)
+      ? row.employees[0]
+      : row.employees;
     return {
       id: row.id as string,
       name: row.name as string,
@@ -170,19 +172,19 @@ function buildTree(offices: RawOffice[]): OrgTreeNode[] {
 // ---------------------------------------------------------------------------
 
 export default async function OrgChartPage() {
-  await requirePermission('plantilla', 'view');
+  await requirePermission("plantilla", "view");
   const offices = await getOrgChartData();
   const roots = buildTree(offices);
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <RealtimeBoundary tables={['offices', 'employees']} />
+      <RealtimeBoundary tables={["offices", "employees"]} />
       <PageHeader
         title="Organization Chart"
-        description="Interactive hierarchy of Senate committees, departments, and offices."
+        description="Interactive hierarchy of PCSO sectors, departments, branches, and offices."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Org Chart' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Org Chart" },
         ]}
       />
 

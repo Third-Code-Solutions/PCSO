@@ -1,30 +1,34 @@
-'use server';
+"use server";
 
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
 import {
   remittanceBatches,
   remittanceRecords,
   employees,
   payrollPeriods,
   payrollRecords,
-} from '@/lib/db/schema';
-import { eq, and, isNull, desc, asc } from 'drizzle-orm';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
-import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
-import { lockKey } from '@/lib/concurrency';
+} from "@/lib/db/schema";
+import { eq, and, isNull, desc, asc } from "drizzle-orm";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
+import { withTx, withRetry, type Tx } from "@/lib/db/transaction";
+import { lockKey } from "@/lib/concurrency";
 import {
   GeneratePagibigBatchSchema,
   ExportPagibigSchema,
   MarkPagibigSubmittedSchema,
-} from '@/lib/validations/remittances';
-import { parseMoney, roundMoney, roundHalfEven } from '@/lib/utils/payroll/rounding';
+} from "@/lib/validations/remittances";
+import {
+  parseMoney,
+  roundMoney,
+  roundHalfEven,
+} from "@/lib/utils/payroll/rounding";
 import {
   generatePagibigVirtualExport,
   type PagibigVirtualRow,
   type PagibigVirtualMeta,
-} from '@/lib/utils/remittances/pagibig-virtual';
+} from "@/lib/utils/remittances/pagibig-virtual";
 
 const REMITTANCE_RECORD_INSERT_CHUNK = 200;
 
@@ -48,7 +52,7 @@ async function chunkInsertRemittanceRecords(
  */
 export async function generatePagibigBatch(input: unknown) {
   const parsed = GeneratePagibigBatchSchema.parse(input);
-  const user = await requirePermission('remittances', 'create');
+  const user = await requirePermission("remittances", "create");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -65,8 +69,8 @@ export async function generatePagibigBatch(input: unknown) {
         )
         .limit(1);
 
-      if (!period) throw new Error('Payroll period not found.');
-      if (period.status !== 'approved' && period.status !== 'paid') {
+      if (!period) throw new Error("Payroll period not found.");
+      if (period.status !== "approved" && period.status !== "paid") {
         throw new Error(
           `Cannot generate Pag-IBIG remittance for a period in "${period.status}" status.`,
         );
@@ -77,7 +81,7 @@ export async function generatePagibigBatch(input: unknown) {
         .from(remittanceBatches)
         .where(
           and(
-            eq(remittanceBatches.type, 'pagibig'),
+            eq(remittanceBatches.type, "pagibig"),
             eq(remittanceBatches.periodStart, period.periodStart),
             eq(remittanceBatches.periodEnd, period.periodEnd),
           ),
@@ -86,7 +90,7 @@ export async function generatePagibigBatch(input: unknown) {
 
       if (existing.length > 0) {
         throw new Error(
-          `A Pag-IBIG remittance batch already exists for this period (ID: ${existing[0]?.id ?? 'unknown'}).`,
+          `A Pag-IBIG remittance batch already exists for this period (ID: ${existing[0]?.id ?? "unknown"}).`,
         );
       }
 
@@ -114,17 +118,17 @@ export async function generatePagibigBatch(input: unknown) {
         .orderBy(asc(employees.lastName), asc(employees.firstName));
 
       if (records.length === 0) {
-        throw new Error('No payroll records found for the selected period.');
+        throw new Error("No payroll records found for the selected period.");
       }
 
       const pagibigRecords = records.filter(
-        (r) => r.emp.pagibigNo != null && r.emp.pagibigNo !== '',
+        (r) => r.emp.pagibigNo != null && r.emp.pagibigNo !== "",
       );
 
       if (pagibigRecords.length === 0) {
         throw new Error(
-          'No employees with a Pag-IBIG number found. ' +
-            'Ensure Pag-IBIG numbers are encoded before generating.',
+          "No employees with a Pag-IBIG number found. " +
+            "Ensure Pag-IBIG numbers are encoded before generating.",
         );
       }
 
@@ -152,20 +156,21 @@ export async function generatePagibigBatch(input: unknown) {
       const batchRows = await tx
         .insert(remittanceBatches)
         .values({
-          type: 'pagibig',
+          type: "pagibig",
           periodStart: period.periodStart,
           periodEnd: period.periodEnd,
           totalAmount: roundMoney(totalAmount),
           totalPersonalShare: roundMoney(totalPersonal),
           totalEmployerShare: roundMoney(totalEmployer),
           employeeCount: pagibigRecords.length,
-          status: 'generated',
+          status: "generated",
           remarks: parsed.remarks ?? null,
         })
         .returning();
 
       const batch = batchRows[0];
-      if (!batch) throw new Error('Failed to insert Pag-IBIG remittance batch.');
+      if (!batch)
+        throw new Error("Failed to insert Pag-IBIG remittance batch.");
 
       const linesWithBatchId = recordValues.map((rv) => ({
         ...rv,
@@ -183,11 +188,11 @@ export async function generatePagibigBatch(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'create',
-    table: 'remittance_batches',
+    action: "create",
+    table: "remittance_batches",
     recordId: result.batch.id,
     newValues: {
-      type: 'pagibig',
+      type: "pagibig",
       periodStart: result.batch.periodStart,
       periodEnd: result.batch.periodEnd,
       employeeCount: result.employeeCount,
@@ -195,7 +200,7 @@ export async function generatePagibigBatch(input: unknown) {
     },
   });
 
-  revalidatePath('/remittances/pagibig');
+  revalidatePath("/remittances/pagibig");
   return result.batch;
 }
 
@@ -203,7 +208,7 @@ export async function generatePagibigBatch(input: unknown) {
 
 export async function exportPagibigVirtual(input: unknown) {
   const parsed = ExportPagibigSchema.parse(input);
-  await requirePermission('remittances', 'export');
+  await requirePermission("remittances", "export");
 
   const [batch] = await db
     .select()
@@ -211,12 +216,12 @@ export async function exportPagibigVirtual(input: unknown) {
     .where(
       and(
         eq(remittanceBatches.id, parsed.batchId),
-        eq(remittanceBatches.type, 'pagibig'),
+        eq(remittanceBatches.type, "pagibig"),
       ),
     )
     .limit(1);
 
-  if (!batch) throw new Error('Pag-IBIG remittance batch not found.');
+  if (!batch) throw new Error("Pag-IBIG remittance batch not found.");
 
   const recordsWithEmps = await db
     .select({
@@ -235,7 +240,7 @@ export async function exportPagibigVirtual(input: unknown) {
     .orderBy(asc(employees.lastName), asc(employees.firstName));
 
   if (recordsWithEmps.length === 0) {
-    throw new Error('No remittance records found for this batch.');
+    throw new Error("No remittance records found for this batch.");
   }
 
   // Fetch monthly salary from payroll records
@@ -267,20 +272,20 @@ export async function exportPagibigVirtual(input: unknown) {
   }
 
   const rows: PagibigVirtualRow[] = recordsWithEmps.map((r) => ({
-    pagibigNo: r.emp.pagibigNo ?? '',
+    pagibigNo: r.emp.pagibigNo ?? "",
     lastName: r.emp.lastName,
     firstName: r.emp.firstName,
     middleName: r.emp.middleName ?? null,
     suffix: r.emp.suffix ?? null,
-    basicMonthlyCompensation: salaryMap.get(r.rr.employeeId) ?? '0.00',
+    basicMonthlyCompensation: salaryMap.get(r.rr.employeeId) ?? "0.00",
     employeeShare: r.rr.personalShare,
     employerShare: r.rr.employerShare,
     total: r.rr.total,
   }));
 
   const meta: PagibigVirtualMeta = {
-    agencyName: 'Senate of the Philippines',
-    employerId: 'PAGIBIG-ER-SENATE', // TODO: pull from system config
+    agencyName: "Philippine Charity Sweepstakes Office",
+    employerId: "PAGIBIG-ER-PCSO", // TODO: replace with real Pag-IBIG employer number from org_profile
     periodLabel: `${batch.periodStart} to ${batch.periodEnd}`,
     periodStart: batch.periodStart,
     periodEnd: batch.periodEnd,
@@ -288,7 +293,7 @@ export async function exportPagibigVirtual(input: unknown) {
   };
 
   const { data, mimeType, filename } = generatePagibigVirtualExport(rows, meta);
-  const base64 = Buffer.from(data).toString('base64');
+  const base64 = Buffer.from(data).toString("base64");
 
   return { base64, mimeType, filename };
 }
@@ -297,7 +302,7 @@ export async function exportPagibigVirtual(input: unknown) {
 
 export async function markPagibigSubmitted(input: unknown) {
   const parsed = MarkPagibigSubmittedSchema.parse(input);
-  const user = await requirePermission('remittances', 'process');
+  const user = await requirePermission("remittances", "process");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -309,16 +314,16 @@ export async function markPagibigSubmitted(input: unknown) {
         .where(
           and(
             eq(remittanceBatches.id, parsed.batchId),
-            eq(remittanceBatches.type, 'pagibig'),
+            eq(remittanceBatches.type, "pagibig"),
           ),
         )
         .limit(1);
 
-      if (!batch) throw new Error('Pag-IBIG remittance batch not found.');
-      if (batch.status === 'submitted') {
-        throw new Error('Batch is already marked as submitted.');
+      if (!batch) throw new Error("Pag-IBIG remittance batch not found.");
+      if (batch.status === "submitted") {
+        throw new Error("Batch is already marked as submitted.");
       }
-      if (batch.status !== 'generated') {
+      if (batch.status !== "generated") {
         throw new Error(
           `Batch must be in "generated" status to submit. Current: ${batch.status}`,
         );
@@ -328,7 +333,7 @@ export async function markPagibigSubmitted(input: unknown) {
       const updatedRows = await tx
         .update(remittanceBatches)
         .set({
-          status: 'submitted',
+          status: "submitted",
           referenceNo: parsed.referenceNo,
           submittedAt: now,
           remarks: parsed.remarks ?? batch.remarks,
@@ -338,7 +343,7 @@ export async function markPagibigSubmitted(input: unknown) {
         .returning();
 
       const updated = updatedRows[0];
-      if (!updated) throw new Error('Failed to update Pag-IBIG batch status.');
+      if (!updated) throw new Error("Failed to update Pag-IBIG batch status.");
 
       return { updated, submittedAt: now };
     }),
@@ -346,25 +351,28 @@ export async function markPagibigSubmitted(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'edit',
-    table: 'remittance_batches',
+    action: "edit",
+    table: "remittance_batches",
     recordId: parsed.batchId,
-    oldValues: { status: 'generated' },
+    oldValues: { status: "generated" },
     newValues: {
-      status: 'submitted',
+      status: "submitted",
       referenceNo: parsed.referenceNo,
       submittedAt: result.submittedAt,
     },
   });
 
-  revalidatePath('/remittances/pagibig');
+  revalidatePath("/remittances/pagibig");
   return result.updated;
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
 
-export async function getPagibigBatches(params: { page?: number; perPage?: number }) {
-  await requirePermission('remittances', 'view');
+export async function getPagibigBatches(params: {
+  page?: number;
+  perPage?: number;
+}) {
+  await requirePermission("remittances", "view");
 
   const page = params.page ?? 1;
   const perPage = params.perPage ?? 20;
@@ -373,16 +381,14 @@ export async function getPagibigBatches(params: { page?: number; perPage?: numbe
   return db
     .select()
     .from(remittanceBatches)
-    .where(
-      eq(remittanceBatches.type, 'pagibig'),
-    )
+    .where(eq(remittanceBatches.type, "pagibig"))
     .orderBy(desc(remittanceBatches.createdAt))
     .limit(perPage)
     .offset(offset);
 }
 
 export async function getPagibigBatchDetail(batchId: string) {
-  await requirePermission('remittances', 'view');
+  await requirePermission("remittances", "view");
 
   const [batch] = await db
     .select()
@@ -390,7 +396,7 @@ export async function getPagibigBatchDetail(batchId: string) {
     .where(
       and(
         eq(remittanceBatches.id, batchId),
-        eq(remittanceBatches.type, 'pagibig'),
+        eq(remittanceBatches.type, "pagibig"),
       ),
     )
     .limit(1);

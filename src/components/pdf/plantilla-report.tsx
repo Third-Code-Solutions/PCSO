@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * PlantillaReport — React-PDF export of the official plantilla.
@@ -10,14 +10,8 @@
  * or BlobProvider from @react-pdf/renderer.
  */
 
-import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-} from '@react-pdf/renderer';
-import type { PlantillaPositionRow } from '@/app/(dashboard)/plantilla/queries';
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import type { PlantillaPositionRow } from "@/app/(dashboard)/plantilla/queries";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,18 +28,18 @@ interface PlantillaReportProps {
 // Styles
 // ---------------------------------------------------------------------------
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const CREAM = '#FAF4E6';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const CREAM = "#FAF4E6";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 8,
     paddingTop: 40,
     paddingBottom: 40,
     paddingHorizontal: 30,
-    color: '#1a1a2e',
+    color: "#1a1a2e",
   },
 
   // Header
@@ -55,38 +49,38 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
   },
   orgName: {
     fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1,
   },
   reportTitle: {
     fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
     marginTop: 4,
   },
   subtitle: {
     fontSize: 8,
-    color: '#6b7280',
+    color: "#6b7280",
     marginTop: 2,
   },
   asOf: {
     fontSize: 7,
-    color: '#9ca3af',
-    textAlign: 'right',
+    color: "#9ca3af",
+    textAlign: "right",
     marginTop: 2,
   },
 
   // Summary row
   summary: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     marginBottom: 12,
     backgroundColor: CREAM,
@@ -94,45 +88,45 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   summaryItem: {
-    flexDirection: 'column',
-    alignItems: 'center',
+    flexDirection: "column",
+    alignItems: "center",
   },
   summaryValue: {
     fontSize: 12,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
   },
   summaryLabel: {
     fontSize: 7,
-    color: '#6b7280',
-    textTransform: 'uppercase',
+    color: "#6b7280",
+    textTransform: "uppercase",
     letterSpacing: 0.5,
     marginTop: 1,
   },
 
   // Table
   table: {
-    width: '100%',
+    width: "100%",
   },
   tableHead: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
-    color: '#ffffff',
+    color: "#ffffff",
     paddingVertical: 5,
     paddingHorizontal: 4,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     fontSize: 7,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   tableRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingVertical: 5,
     paddingHorizontal: 4,
-    borderBottom: '0.5px solid #e5e7eb',
+    borderBottom: "0.5px solid #e5e7eb",
   },
   tableRowAlt: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: "#f9fafb",
   },
 
   // Column widths (total ~535 pt for letter landscape minus margins)
@@ -147,39 +141,39 @@ const styles = StyleSheet.create({
   // Cell text
   cellText: {
     fontSize: 8,
-    color: '#111827',
-    flexWrap: 'wrap',
+    color: "#111827",
+    flexWrap: "wrap",
   },
   cellTextMuted: {
     fontSize: 7,
-    color: '#6b7280',
+    color: "#6b7280",
     marginTop: 1,
   },
   cellTextMono: {
-    fontFamily: 'Courier',
+    fontFamily: "Courier",
     fontSize: 7,
-    color: '#374151',
+    color: "#374151",
   },
   statusFilled: {
-    color: '#065f46',
-    fontFamily: 'Helvetica-Bold',
+    color: "#065f46",
+    fontFamily: "Helvetica-Bold",
   },
   statusVacant: {
-    color: '#92400e',
-    fontFamily: 'Helvetica-Bold',
+    color: "#92400e",
+    fontFamily: "Helvetica-Bold",
   },
 
   // Footer
   footer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 20,
     left: 30,
     right: 30,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     fontSize: 7,
-    color: '#9ca3af',
-    borderTop: '0.5px solid #e5e7eb',
+    color: "#9ca3af",
+    borderTop: "0.5px solid #e5e7eb",
     paddingTop: 4,
   },
 });
@@ -191,9 +185,9 @@ const styles = StyleSheet.create({
 function formatPeso(value: string): string {
   const num = parseFloat(value);
   if (isNaN(num)) return value;
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
     minimumFractionDigits: 2,
   }).format(num);
 }
@@ -249,7 +243,9 @@ function TableBodyRow({
         <Text style={styles.cellTextMono}>{row.salaryGrade}</Text>
       </View>
       <View style={styles.colSalary}>
-        <Text style={styles.cellTextMono}>{formatPeso(row.authorizedSalary)}</Text>
+        <Text style={styles.cellTextMono}>
+          {formatPeso(row.authorizedSalary)}
+        </Text>
       </View>
       <View style={styles.colOffice}>
         <Text style={styles.cellText}>{row.officeCode}</Text>
@@ -268,7 +264,7 @@ function TableBodyRow({
       </View>
       <View style={styles.colStatus}>
         <Text style={row.isFilled ? styles.statusFilled : styles.statusVacant}>
-          {row.isFilled ? 'Filled' : 'Vacant'}
+          {row.isFilled ? "Filled" : "Vacant"}
         </Text>
       </View>
     </View>
@@ -281,19 +277,21 @@ function TableBodyRow({
 
 export function PlantillaReport({
   rows,
-  title = 'Plantilla of Personnel',
-  subtitle = 'Senate of the Philippines',
+  title = "Plantilla of Personnel",
+  subtitle = "Philippine Charity Sweepstakes Office",
   asOf,
 }: PlantillaReportProps) {
   const total = rows.length;
   const filled = rows.filter((r) => r.isFilled).length;
   const vacant = total - filled;
   const fillRate = total > 0 ? Math.round((filled / total) * 100) : 0;
-  const generatedOn = asOf ?? new Date().toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const generatedOn =
+    asOf ??
+    new Date().toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
 
   return (
     <Document>
@@ -339,10 +337,12 @@ export function PlantillaReport({
 
         {/* Footer */}
         <View style={styles.footer} fixed>
-          <Text>Senate of the Philippines HRIS — {title}</Text>
-          <Text render={({ pageNumber, totalPages }) =>
-            `Page ${pageNumber} of ${totalPages}`
-          } />
+          <Text>PCSO HRIS — {title}</Text>
+          <Text
+            render={({ pageNumber, totalPages }) =>
+              `Page ${pageNumber} of ${totalPages}`
+            }
+          />
         </View>
       </Page>
     </Document>

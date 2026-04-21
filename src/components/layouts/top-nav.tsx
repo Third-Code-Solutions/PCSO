@@ -1,12 +1,17 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { NotificationBell } from '@/components/layouts/notification-bell';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { UserMenu } from '@/components/layouts/user-menu';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import * as React from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { NotificationBell } from "@/components/layouts/notification-bell";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { UserMenu } from "@/components/layouts/user-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface BreadcrumbItem {
   label: string;
@@ -33,8 +38,8 @@ export function TopNav({
   onSignOut,
 }: TopNavProps) {
   const displayUser = user ?? {
-    name: 'Senate Staff',
-    email: 'staff@senate.gov.ph',
+    name: "PCSO Staff",
+    email: "staff@pcso.gov.ph",
   };
 
   return (
@@ -47,7 +52,7 @@ export function TopNav({
               variant="ghost"
               size="icon"
               onClick={onToggleSidebar}
-              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
             >
               {sidebarOpen ? (
                 <PanelLeftClose className="h-5 w-5" />
@@ -57,7 +62,7 @@ export function TopNav({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            {sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            {sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -86,11 +91,11 @@ export function TopNav({
                   <span
                     className={
                       index === breadcrumbs.length - 1
-                        ? 'text-foreground font-medium'
+                        ? "text-foreground font-medium"
                         : undefined
                     }
                     aria-current={
-                      index === breadcrumbs.length - 1 ? 'page' : undefined
+                      index === breadcrumbs.length - 1 ? "page" : undefined
                     }
                   >
                     {crumb.label}

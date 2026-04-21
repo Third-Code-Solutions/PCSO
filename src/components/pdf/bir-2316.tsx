@@ -9,79 +9,83 @@
  *   const { Bir2316Pdf } = await import('@/components/pdf/bir-2316')
  */
 
-import {
-  Document,
-  Page,
-  View,
-  Text,
-  StyleSheet,
-} from '@react-pdf/renderer';
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const CREAM = '#FAF4E6';
-const BORDER = '#D1D5DB';
-const BIR_BLUE = '#1D4ED8';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const CREAM = "#FAF4E6";
+const BORDER = "#D1D5DB";
+const BIR_BLUE = "#1D4ED8";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 7,
     padding: 28,
-    color: '#111827',
+    color: "#111827",
   },
   // Header / form title
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 4,
   },
   leftHeader: { flex: 1 },
-  centerHeader: { flex: 1, alignItems: 'center' },
-  rightHeader: { width: 140, alignItems: 'flex-end' },
+  centerHeader: { flex: 1, alignItems: "center" },
+  rightHeader: { width: 140, alignItems: "flex-end" },
   birTitle: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: BIR_BLUE,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  formCode: { fontSize: 20, fontFamily: 'Helvetica-Bold', color: BIR_BLUE, lineHeight: 1 },
+  formCode: {
+    fontSize: 20,
+    fontFamily: "Helvetica-Bold",
+    color: BIR_BLUE,
+    lineHeight: 1,
+  },
   formTitle: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: NAVY,
-    textTransform: 'uppercase',
-    textAlign: 'center',
+    textTransform: "uppercase",
+    textAlign: "center",
     lineHeight: 1.4,
     marginTop: 2,
   },
-  formSubtitle: { fontSize: 6, color: '#6B7280', textAlign: 'center', marginTop: 1 },
-  metaLabel: { fontSize: 5.5, color: '#9CA3AF', textTransform: 'uppercase' },
-  metaValue: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: BIR_BLUE },
+  formSubtitle: {
+    fontSize: 6,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 1,
+  },
+  metaLabel: { fontSize: 5.5, color: "#9CA3AF", textTransform: "uppercase" },
+  metaValue: { fontSize: 7, fontFamily: "Helvetica-Bold", color: BIR_BLUE },
   // Dividers
   blueDivider: { height: 1.5, backgroundColor: BIR_BLUE, marginVertical: 6 },
   goldDivider: { height: 0.5, backgroundColor: GOLD, marginBottom: 8 },
   // Section labels
   sectionLabel: {
     fontSize: 6,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: BIR_BLUE,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.3,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     paddingHorizontal: 4,
     paddingVertical: 2,
     marginBottom: 4,
   },
   // Fields
-  twoCol: { flexDirection: 'row', gap: 6, marginBottom: 6 },
-  threeCol: { flexDirection: 'row', gap: 6, marginBottom: 6 },
+  twoCol: { flexDirection: "row", gap: 6, marginBottom: 6 },
+  threeCol: { flexDirection: "row", gap: 6, marginBottom: 6 },
   fieldBox: {
     flex: 1,
     borderBottomWidth: 0.5,
@@ -95,9 +99,18 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     padding: 4,
   },
-  fieldLabel: { fontSize: 5.5, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 1 },
-  fieldValue: { fontSize: 7.5, color: '#111827' },
-  fieldValueBold: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#111827' },
+  fieldLabel: {
+    fontSize: 5.5,
+    color: "#9CA3AF",
+    textTransform: "uppercase",
+    marginBottom: 1,
+  },
+  fieldValue: { fontSize: 7.5, color: "#111827" },
+  fieldValueBold: {
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
+  },
   // Compensation table
   compTable: {
     borderWidth: 0.5,
@@ -106,7 +119,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   compTableHead: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
     borderTopLeftRadius: 2,
     borderTopRightRadius: 2,
@@ -116,56 +129,72 @@ const styles = StyleSheet.create({
   compHeadLabel: {
     flex: 1,
     fontSize: 6,
-    fontFamily: 'Helvetica-Bold',
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
+    fontFamily: "Helvetica-Bold",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
   },
   compHeadAmt: {
     width: 90,
     fontSize: 6,
-    fontFamily: 'Helvetica-Bold',
-    color: '#FFFFFF',
-    textAlign: 'right',
-    textTransform: 'uppercase',
+    fontFamily: "Helvetica-Bold",
+    color: "#FFFFFF",
+    textAlign: "right",
+    textTransform: "uppercase",
   },
   compRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderBottomWidth: 0.3,
     borderBottomColor: BORDER,
   },
   compRowAlt: { backgroundColor: CREAM },
-  compRowBold: { backgroundColor: '#F0FDF4' },
-  compLabel: { flex: 1, fontSize: 6.5, color: '#374151' },
-  compLabelBold: { flex: 1, fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: '#111827' },
-  compAmt: { width: 90, fontSize: 6.5, fontFamily: 'Courier', textAlign: 'right', color: '#1F2937' },
+  compRowBold: { backgroundColor: "#F0FDF4" },
+  compLabel: { flex: 1, fontSize: 6.5, color: "#374151" },
+  compLabelBold: {
+    flex: 1,
+    fontSize: 6.5,
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
+  },
+  compAmt: {
+    width: 90,
+    fontSize: 6.5,
+    fontFamily: "Courier",
+    textAlign: "right",
+    color: "#1F2937",
+  },
   compAmtBold: {
     width: 90,
     fontSize: 6.5,
-    fontFamily: 'Courier-Bold',
-    textAlign: 'right',
-    color: '#111827',
+    fontFamily: "Courier-Bold",
+    textAlign: "right",
+    color: "#111827",
   },
   totalRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: NAVY,
     borderBottomLeftRadius: 2,
     borderBottomRightRadius: 2,
     paddingHorizontal: 6,
     paddingVertical: 4,
   },
-  totalLabel: { flex: 1, fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#FFFFFF' },
+  totalLabel: {
+    flex: 1,
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: "#FFFFFF",
+  },
   totalAmt: {
     width: 90,
     fontSize: 7,
-    fontFamily: 'Courier-Bold',
-    textAlign: 'right',
+    fontFamily: "Courier-Bold",
+    textAlign: "right",
     color: GOLD,
   },
   // Summary box
   summaryBox: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
     marginBottom: 10,
   },
@@ -175,49 +204,72 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     borderRadius: 2,
     padding: 6,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  summaryCardLabel: { fontSize: 6, color: '#6B7280', textTransform: 'uppercase', marginBottom: 3 },
-  summaryCardValue: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: NAVY },
-  summaryCardSub: { fontSize: 6, color: '#9CA3AF', marginTop: 1 },
+  summaryCardLabel: {
+    fontSize: 6,
+    color: "#6B7280",
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+  summaryCardValue: { fontSize: 11, fontFamily: "Helvetica-Bold", color: NAVY },
+  summaryCardSub: { fontSize: 6, color: "#9CA3AF", marginTop: 1 },
   // Certification
   certBox: {
     borderWidth: 0.5,
-    borderColor: '#D97706',
+    borderColor: "#D97706",
     borderRadius: 2,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: "#FFFBEB",
     padding: 6,
     marginBottom: 10,
   },
-  certText: { fontSize: 6, color: '#78350F', lineHeight: 1.6 },
+  certText: { fontSize: 6, color: "#78350F", lineHeight: 1.6 },
   // Signature
-  signatureRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  signatureLine: { borderTopWidth: 0.5, borderTopColor: '#374151', width: 160, paddingTop: 4 },
-  signatureLabel: { fontSize: 5.5, color: '#6B7280', textTransform: 'uppercase' },
-  signatureName: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: NAVY, marginBottom: 1 },
+  signatureRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  signatureLine: {
+    borderTopWidth: 0.5,
+    borderTopColor: "#374151",
+    width: 160,
+    paddingTop: 4,
+  },
+  signatureLabel: {
+    fontSize: 5.5,
+    color: "#6B7280",
+    textTransform: "uppercase",
+  },
+  signatureName: {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: NAVY,
+    marginBottom: 1,
+  },
   // Footer
   pageNumber: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 12,
     right: 28,
     fontSize: 5.5,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
   disclaimer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 12,
     left: 28,
     fontSize: 5.5,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (!Number.isFinite(num)) return '0.00';
-  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (!Number.isFinite(num)) return "0.00";
+  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -279,7 +331,14 @@ export interface Bir2316Props {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta }: Bir2316Props) {
+export function Bir2316Pdf({
+  employer,
+  employee,
+  period,
+  compensation,
+  tax,
+  meta,
+}: Bir2316Props) {
   const overUnderNum = parseFloat(tax.overUnder);
   const isOverRemittance = overUnderNum > 0;
   const isUnder = overUnderNum < 0;
@@ -287,11 +346,11 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
   const fullName = [
     employee.lastName.toUpperCase(),
     employee.firstName,
-    employee.middleName ? `${employee.middleName.charAt(0)}.` : '',
-    employee.suffix ?? '',
+    employee.middleName ? `${employee.middleName.charAt(0)}.` : "",
+    employee.suffix ?? "",
   ]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 
   return (
     <Document
@@ -309,7 +368,7 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
 
           <View style={styles.centerHeader}>
             <Text style={styles.formTitle}>
-              Certificate of Compensation{'\n'}Payment / Tax Withheld
+              Certificate of Compensation{"\n"}Payment / Tax Withheld
             </Text>
             <Text style={styles.formSubtitle}>
               For Compensation Payment With or Without Tax Withheld
@@ -333,7 +392,9 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
 
         <View style={styles.twoCol}>
           <View style={[styles.fieldBox, { flex: 2 }]}>
-            <Text style={styles.fieldLabel}>Employer / Withholding Agent Name</Text>
+            <Text style={styles.fieldLabel}>
+              Employer / Withholding Agent Name
+            </Text>
             <Text style={styles.fieldValueBold}>{employer.name}</Text>
           </View>
           <View style={styles.fieldBox}>
@@ -377,19 +438,24 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
           <View style={styles.fieldBox}>
             <Text style={styles.fieldLabel}>Civil Status</Text>
             <Text style={styles.fieldValue}>
-              {employee.civilStatus.charAt(0).toUpperCase() + employee.civilStatus.slice(1)}
+              {employee.civilStatus.charAt(0).toUpperCase() +
+                employee.civilStatus.slice(1)}
             </Text>
           </View>
           <View style={[styles.fieldBox, { width: 100 }]}>
             <Text style={styles.fieldLabel}>Primary Employer?</Text>
-            <Text style={styles.fieldValueBold}>{employee.isPrimary ? 'YES' : 'NO'}</Text>
+            <Text style={styles.fieldValueBold}>
+              {employee.isPrimary ? "YES" : "NO"}
+            </Text>
           </View>
         </View>
 
         <View style={styles.goldDivider} />
 
         {/* Part III — Compensation & Tax Summary */}
-        <Text style={styles.sectionLabel}>Part III — Compensation Income & Tax Withheld</Text>
+        <Text style={styles.sectionLabel}>
+          Part III — Compensation Income & Tax Withheld
+        </Text>
 
         <View style={styles.compTable}>
           <View style={styles.compTableHead}>
@@ -398,14 +464,50 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
           </View>
 
           {[
-            { label: 'Basic Salary (Monthly Authorized Rate × Months)', value: compensation.basicSalary, alt: true },
-            { label: 'PERA and Other Allowances', value: compensation.allowances, alt: false },
-            { label: '13th Month Pay and Other Benefits', value: compensation.thirteenthMonthAndOtherBenefits, alt: true },
-            { label: 'Gross Compensation Income', value: compensation.grossCompensation, alt: false, bold: true },
-            { label: 'Less: Mandatory Gov\'t Contributions (GSIS / PhilHealth / Pag-IBIG)', value: compensation.mandatoryContributions, alt: true },
-            { label: 'Less: 13th Month & Other Benefits (Exempt — up to PHP 90,000)', value: compensation.exemptBenefits, alt: false },
-            { label: 'Total Non-Taxable Compensation', value: compensation.nonTaxableCompensation, alt: true },
-            { label: 'Taxable Compensation Income', value: compensation.taxableCompensation, alt: false, bold: true },
+            {
+              label: "Basic Salary (Monthly Authorized Rate × Months)",
+              value: compensation.basicSalary,
+              alt: true,
+            },
+            {
+              label: "PERA and Other Allowances",
+              value: compensation.allowances,
+              alt: false,
+            },
+            {
+              label: "13th Month Pay and Other Benefits",
+              value: compensation.thirteenthMonthAndOtherBenefits,
+              alt: true,
+            },
+            {
+              label: "Gross Compensation Income",
+              value: compensation.grossCompensation,
+              alt: false,
+              bold: true,
+            },
+            {
+              label:
+                "Less: Mandatory Gov't Contributions (GSIS / PhilHealth / Pag-IBIG)",
+              value: compensation.mandatoryContributions,
+              alt: true,
+            },
+            {
+              label:
+                "Less: 13th Month & Other Benefits (Exempt — up to PHP 90,000)",
+              value: compensation.exemptBenefits,
+              alt: false,
+            },
+            {
+              label: "Total Non-Taxable Compensation",
+              value: compensation.nonTaxableCompensation,
+              alt: true,
+            },
+            {
+              label: "Taxable Compensation Income",
+              value: compensation.taxableCompensation,
+              alt: false,
+              bold: true,
+            },
           ].map((row, idx) => (
             <View
               key={idx}
@@ -415,14 +517,20 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
                 row.bold ? styles.compRowBold : {},
               ]}
             >
-              <Text style={row.bold ? styles.compLabelBold : styles.compLabel}>{row.label}</Text>
-              <Text style={row.bold ? styles.compAmtBold : styles.compAmt}>{fmt(row.value)}</Text>
+              <Text style={row.bold ? styles.compLabelBold : styles.compLabel}>
+                {row.label}
+              </Text>
+              <Text style={row.bold ? styles.compAmtBold : styles.compAmt}>
+                {fmt(row.value)}
+              </Text>
             </View>
           ))}
 
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Gross Taxable Compensation</Text>
-            <Text style={styles.totalAmt}>{fmt(compensation.taxableCompensation)}</Text>
+            <Text style={styles.totalAmt}>
+              {fmt(compensation.taxableCompensation)}
+            </Text>
           </View>
         </View>
 
@@ -438,14 +546,35 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
             <Text style={styles.summaryCardValue}>{fmt(tax.taxWithheld)}</Text>
             <Text style={styles.summaryCardSub}>PHP</Text>
           </View>
-          <View style={[styles.summaryCard, { borderColor: isOverRemittance ? '#16A34A' : isUnder ? '#DC2626' : BORDER }]}>
+          <View
+            style={[
+              styles.summaryCard,
+              {
+                borderColor: isOverRemittance
+                  ? "#16A34A"
+                  : isUnder
+                    ? "#DC2626"
+                    : BORDER,
+              },
+            ]}
+          >
             <Text style={styles.summaryCardLabel}>
-              {isOverRemittance ? 'Over-Remittance' : isUnder ? 'Under-Remittance' : 'Balance'}
+              {isOverRemittance
+                ? "Over-Remittance"
+                : isUnder
+                  ? "Under-Remittance"
+                  : "Balance"}
             </Text>
             <Text
               style={[
                 styles.summaryCardValue,
-                { color: isOverRemittance ? '#16A34A' : isUnder ? '#DC2626' : NAVY },
+                {
+                  color: isOverRemittance
+                    ? "#16A34A"
+                    : isUnder
+                      ? "#DC2626"
+                      : NAVY,
+                },
               ]}
             >
               {fmt(Math.abs(overUnderNum))}
@@ -457,10 +586,11 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
         {/* Certification */}
         <View style={styles.certBox}>
           <Text style={styles.certText}>
-            I/We declare, under the penalties of perjury, that this certificate has been made in
-            good faith, verified by me/us, and to the best of my/our knowledge and belief, is true
-            and correct, pursuant to the provisions of the National Internal Revenue Code, as
-            amended, and the regulations issued under authority thereof.
+            I/We declare, under the penalties of perjury, that this certificate
+            has been made in good faith, verified by me/us, and to the best of
+            my/our knowledge and belief, is true and correct, pursuant to the
+            provisions of the National Internal Revenue Code, as amended, and
+            the regulations issued under authority thereof.
           </Text>
         </View>
 
@@ -469,30 +599,40 @@ export function Bir2316Pdf({ employer, employee, period, compensation, tax, meta
           <View>
             <View style={styles.signatureLine}>
               <Text style={styles.signatureName}>{meta.preparedBy}</Text>
-              <Text style={styles.signatureLabel}>Prepared by — Payroll / HR Officer</Text>
+              <Text style={styles.signatureLabel}>
+                Prepared by — Payroll / HR Officer
+              </Text>
             </View>
           </View>
           <View>
             <View style={styles.signatureLine}>
               <Text style={styles.signatureName}>{meta.certifiedBy}</Text>
-              <Text style={styles.signatureLabel}>Certified Correct — Authorized Signatory</Text>
+              <Text style={styles.signatureLabel}>
+                Certified Correct — Authorized Signatory
+              </Text>
             </View>
           </View>
           <View>
             <View style={styles.signatureLine}>
-              <Text style={[styles.signatureName, { color: 'transparent' }]}>{'  '}</Text>
-              <Text style={styles.signatureLabel}>Employee Signature / Date Received</Text>
+              <Text style={[styles.signatureName, { color: "transparent" }]}>
+                {"  "}
+              </Text>
+              <Text style={styles.signatureLabel}>
+                Employee Signature / Date Received
+              </Text>
             </View>
           </View>
         </View>
 
         <Text
           style={styles.pageNumber}
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+          render={({ pageNumber, totalPages }) =>
+            `Page ${pageNumber} of ${totalPages}`
+          }
           fixed
         />
         <Text style={styles.disclaimer} fixed>
-          Generated by Senate HRIS — Confidential — For Official Use Only
+          Generated by PCSO HRIS — Confidential — For Official Use Only
         </Text>
       </Page>
     </Document>

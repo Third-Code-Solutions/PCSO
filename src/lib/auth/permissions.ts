@@ -1,32 +1,84 @@
 // ─── Core Types ──────────────────────────────────────────────────────────────
 
+/**
+ * System roles. Aligns with PRD §3.4 — seven role-based dashboards:
+ *
+ *   super_admin           → SysAdmin dashboard (RBAC, health, integrations)
+ *   hr_admin              → HR Administrator dashboard
+ *   payroll_admin         → Payroll & Compensation dashboard
+ *   supervisor            → Supervisor/Manager dashboard (NEW, replaces leave_approver)
+ *   executive             → Executive/Leadership dashboard (NEW — read-only analytics)
+ *   auditor               → Compliance & Audit dashboard (NEW — read-everything, write-nothing)
+ *   employee_self_service → Employee Self-Service dashboard
+ *
+ * Legacy roles (`leave_approver`, `viewer`) are kept for backwards compatibility
+ * and are auto-mapped to `supervisor` and `auditor` respectively via
+ * `effectiveRolesOf()`. Existing DB rows keep working; new accounts use the
+ * seven PCSO roles.
+ */
 export type Role =
-  | 'super_admin'
-  | 'hr_admin'
-  | 'payroll_admin'
-  | 'leave_approver'
-  | 'viewer'
-  | 'employee_self_service';
+  | "super_admin"
+  | "hr_admin"
+  | "payroll_admin"
+  | "supervisor"
+  | "executive"
+  | "auditor"
+  | "employee_self_service"
+  // Legacy aliases — still valid in DB, auto-mapped at permission check time.
+  | "leave_approver"
+  | "viewer";
+
+/**
+ * Role aliasing map. When a user carries a legacy role, permission checks
+ * behave as if they ALSO held the new equivalent (and vice-versa for aliases).
+ *
+ * This lets us rename roles without rewriting every permissionMatrix entry:
+ * matrix entries still list `'leave_approver'` / `'viewer'`, and a user with
+ * role=`supervisor` / `auditor` / `executive` satisfies those checks via the
+ * expansion below.
+ */
+const ROLE_ALIASES: Readonly<Record<Role, readonly Role[]>> = {
+  super_admin: ["super_admin"],
+  hr_admin: ["hr_admin"],
+  payroll_admin: ["payroll_admin"],
+  supervisor: ["supervisor", "leave_approver"],
+  executive: ["executive", "viewer"],
+  auditor: ["auditor", "viewer"],
+  employee_self_service: ["employee_self_service"],
+  leave_approver: ["leave_approver", "supervisor"],
+  viewer: ["viewer", "executive", "auditor"],
+};
+
+function effectiveRolesOf(role: Role): readonly Role[] {
+  return ROLE_ALIASES[role] ?? [role];
+}
 
 export type Resource =
-  | 'employees'
-  | 'plantilla'
-  | 'attendance'
-  | 'leave'
-  | 'payroll'
-  | 'remittances'
-  | 'performance'
-  | 'saln'
-  | 'reports'
-  | 'admin';
+  | "employees"
+  | "plantilla"
+  | "attendance"
+  | "leave"
+  | "payroll"
+  | "remittances"
+  | "performance"
+  | "saln"
+  | "reports"
+  | "admin";
 
-export type Action = 'view' | 'create' | 'edit' | 'delete' | 'approve' | 'export' | 'process';
+export type Action =
+  | "view"
+  | "create"
+  | "edit"
+  | "delete"
+  | "approve"
+  | "export"
+  | "process";
 
 /**
  * Sentinel that marks an action as self-only for `employee_self_service`.
  * Guards must verify `user.employeeId === record.employeeId` before granting access.
  */
-export const SELF_ONLY = 'self_only' as const;
+export const SELF_ONLY = "self_only" as const;
 export type SelfOnly = typeof SELF_ONLY;
 
 type RoleTuple = readonly Role[];
@@ -35,7 +87,9 @@ type RoleTuple = readonly Role[];
  * A permission entry is either a plain role list or a role list with a self-only
  * constraint (meaning `employee_self_service` may only see their own records).
  */
-export type PermissionEntry = RoleTuple | { roles: RoleTuple; selfOnly: SelfOnly };
+export type PermissionEntry =
+  | RoleTuple
+  | { roles: RoleTuple; selfOnly: SelfOnly };
 
 export type PermissionMatrix = {
   readonly [R in Resource]: {
@@ -51,7 +105,7 @@ export type PermissionMatrix = {
 //     may only touch their own record (not arbitrary records).
 //   - Roles with no access to an action must still be listed as `[]`.
 //
-// Sources: Plan.md Phase 03 + CSC / Senate HR rules.
+// Sources: Plan.md Phase 03 + CSC / PCSO HR rules.
 
 export const permissionMatrix: PermissionMatrix = {
   // ── employees ─────────────────────────────────────────────────────────────
@@ -59,97 +113,121 @@ export const permissionMatrix: PermissionMatrix = {
   // employee_self_service sees only their own profile.
   employees: {
     view: {
-      roles: ['super_admin', 'hr_admin', 'payroll_admin', 'viewer', 'employee_self_service'],
+      roles: [
+        "super_admin",
+        "hr_admin",
+        "payroll_admin",
+        "viewer",
+        "employee_self_service",
+      ],
       selfOnly: SELF_ONLY,
     },
-    create: ['super_admin', 'hr_admin'],
-    edit: ['super_admin', 'hr_admin'],
-    delete: ['super_admin'], // soft-delete only (CONVENTIONS.md rule 2)
-    approve: ['super_admin', 'hr_admin'],
-    export: ['super_admin', 'hr_admin'],
-    process: ['super_admin', 'hr_admin'],
+    create: ["super_admin", "hr_admin"],
+    edit: ["super_admin", "hr_admin"],
+    delete: ["super_admin"], // soft-delete only (CONVENTIONS.md rule 2)
+    approve: ["super_admin", "hr_admin"],
+    export: ["super_admin", "hr_admin"],
+    process: ["super_admin", "hr_admin"],
   },
 
   // ── plantilla ─────────────────────────────────────────────────────────────
   plantilla: {
-    view: ['super_admin', 'hr_admin', 'viewer'],
-    create: ['super_admin', 'hr_admin'],
-    edit: ['super_admin', 'hr_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin'],
-    export: ['super_admin', 'hr_admin'],
-    process: ['super_admin', 'hr_admin'],
+    view: ["super_admin", "hr_admin", "viewer"],
+    create: ["super_admin", "hr_admin"],
+    edit: ["super_admin", "hr_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin"],
+    export: ["super_admin", "hr_admin"],
+    process: ["super_admin", "hr_admin"],
   },
 
   // ── attendance ────────────────────────────────────────────────────────────
   attendance: {
     view: {
-      roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer', 'employee_self_service'],
+      roles: [
+        "super_admin",
+        "hr_admin",
+        "leave_approver",
+        "viewer",
+        "employee_self_service",
+      ],
       selfOnly: SELF_ONLY,
     },
     // employee_self_service may clock in/out (self-only). Permission helpers
     // must enforce the self-only constraint at the call site.
     create: {
-      roles: ['super_admin', 'hr_admin', 'employee_self_service'],
+      roles: ["super_admin", "hr_admin", "employee_self_service"],
       selfOnly: SELF_ONLY,
     },
-    edit: ['super_admin', 'hr_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin', 'hr_admin', 'leave_approver'],
-    export: ['super_admin', 'hr_admin'],
-    process: ['super_admin', 'hr_admin'],
+    edit: ["super_admin", "hr_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin", "hr_admin", "leave_approver"],
+    export: ["super_admin", "hr_admin"],
+    process: ["super_admin", "hr_admin"],
   },
 
   // ── leave ─────────────────────────────────────────────────────────────────
   // employee_self_service may apply (create) for their own leave.
   leave: {
     view: {
-      roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer', 'employee_self_service'],
+      roles: [
+        "super_admin",
+        "hr_admin",
+        "leave_approver",
+        "viewer",
+        "employee_self_service",
+      ],
       selfOnly: SELF_ONLY,
     },
-    create: ['super_admin', 'hr_admin', 'employee_self_service'],
-    edit: ['super_admin', 'hr_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin', 'hr_admin', 'leave_approver'],
-    export: ['super_admin', 'hr_admin'],
-    process: ['super_admin', 'hr_admin'],
+    create: ["super_admin", "hr_admin", "employee_self_service"],
+    edit: ["super_admin", "hr_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin", "hr_admin", "leave_approver"],
+    export: ["super_admin", "hr_admin"],
+    process: ["super_admin", "hr_admin"],
   },
 
   // ── payroll ───────────────────────────────────────────────────────────────
   // Historical payroll is append-only (CONVENTIONS.md rule 3).
   payroll: {
-    view: ['super_admin', 'payroll_admin'],
-    create: ['super_admin', 'payroll_admin'],
-    edit: ['super_admin', 'payroll_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin'],
-    export: ['super_admin', 'payroll_admin'],
-    process: ['super_admin', 'payroll_admin'],
+    view: ["super_admin", "payroll_admin"],
+    create: ["super_admin", "payroll_admin"],
+    edit: ["super_admin", "payroll_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin"],
+    export: ["super_admin", "payroll_admin"],
+    process: ["super_admin", "payroll_admin"],
   },
 
   // ── remittances ───────────────────────────────────────────────────────────
   remittances: {
-    view: ['super_admin', 'payroll_admin'],
-    create: ['super_admin', 'payroll_admin'],
-    edit: ['super_admin', 'payroll_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin'],
-    export: ['super_admin', 'payroll_admin'],
-    process: ['super_admin', 'payroll_admin'],
+    view: ["super_admin", "payroll_admin"],
+    create: ["super_admin", "payroll_admin"],
+    edit: ["super_admin", "payroll_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin"],
+    export: ["super_admin", "payroll_admin"],
+    process: ["super_admin", "payroll_admin"],
   },
 
   // ── performance ───────────────────────────────────────────────────────────
   performance: {
     view: {
-      roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer', 'employee_self_service'],
+      roles: [
+        "super_admin",
+        "hr_admin",
+        "leave_approver",
+        "viewer",
+        "employee_self_service",
+      ],
       selfOnly: SELF_ONLY,
     },
-    create: ['super_admin', 'hr_admin'],
-    edit: ['super_admin', 'hr_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin', 'hr_admin'],
-    export: ['super_admin', 'hr_admin'],
-    process: ['super_admin', 'hr_admin'],
+    create: ["super_admin", "hr_admin"],
+    edit: ["super_admin", "hr_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin", "hr_admin"],
+    export: ["super_admin", "hr_admin"],
+    process: ["super_admin", "hr_admin"],
   },
 
   // ── saln (Statement of Assets, Liabilities, and Net Worth) ───────────────
@@ -157,37 +235,37 @@ export const permissionMatrix: PermissionMatrix = {
   // employee_self_service may view/file/edit only their own SALN.
   saln: {
     view: {
-      roles: ['super_admin', 'employee_self_service'],
+      roles: ["super_admin", "employee_self_service"],
       selfOnly: SELF_ONLY,
     },
-    create: ['super_admin', 'employee_self_service'],
-    edit: ['super_admin', 'employee_self_service'],
-    delete: ['super_admin'],
-    approve: ['super_admin'],
-    export: ['super_admin'],
-    process: ['super_admin'],
+    create: ["super_admin", "employee_self_service"],
+    edit: ["super_admin", "employee_self_service"],
+    delete: ["super_admin"],
+    approve: ["super_admin"],
+    export: ["super_admin"],
+    process: ["super_admin"],
   },
 
   // ── reports ───────────────────────────────────────────────────────────────
   reports: {
-    view: ['super_admin', 'hr_admin', 'payroll_admin', 'viewer'],
-    create: ['super_admin', 'hr_admin', 'payroll_admin'],
-    edit: ['super_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin'],
-    export: ['super_admin', 'hr_admin', 'payroll_admin'],
-    process: ['super_admin'],
+    view: ["super_admin", "hr_admin", "payroll_admin", "viewer"],
+    create: ["super_admin", "hr_admin", "payroll_admin"],
+    edit: ["super_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin"],
+    export: ["super_admin", "hr_admin", "payroll_admin"],
+    process: ["super_admin"],
   },
 
   // ── admin (system config, user management) ────────────────────────────────
   admin: {
-    view: ['super_admin'],
-    create: ['super_admin'],
-    edit: ['super_admin'],
-    delete: ['super_admin'],
-    approve: ['super_admin'],
-    export: ['super_admin'],
-    process: ['super_admin'],
+    view: ["super_admin"],
+    create: ["super_admin"],
+    edit: ["super_admin"],
+    delete: ["super_admin"],
+    approve: ["super_admin"],
+    export: ["super_admin"],
+    process: ["super_admin"],
   },
 } as const;
 
@@ -199,7 +277,7 @@ function resolveEntry(entry: PermissionEntry): RoleTuple {
 }
 
 function hasSelfOnlyConstraint(entry: PermissionEntry): boolean {
-  return !Array.isArray(entry) && 'selfOnly' in entry;
+  return !Array.isArray(entry) && "selfOnly" in entry;
 }
 
 /**
@@ -209,10 +287,15 @@ function hasSelfOnlyConstraint(entry: PermissionEntry): boolean {
  * Does NOT enforce the self-only constraint — callers must separately check
  * `user.employeeId === record.employeeId` when `isSelfOnly()` returns true.
  */
-export function hasPermission(role: Role, resource: Resource, action: Action): boolean {
+export function hasPermission(
+  role: Role,
+  resource: Resource,
+  action: Action,
+): boolean {
   const entry = permissionMatrix[resource][action];
-  const roles = resolveEntry(entry);
-  return (roles as Role[]).includes(role);
+  const roles = resolveEntry(entry) as Role[];
+  const effective = effectiveRolesOf(role);
+  return effective.some((r) => roles.includes(r));
 }
 
 /**
@@ -226,7 +309,10 @@ export function isSelfOnly(resource: Resource, action: Action): boolean {
 /**
  * Returns all roles permitted to perform `resource.action`.
  */
-export function getRolesFor(resource: Resource, action: Action): readonly Role[] {
+export function getRolesFor(
+  resource: Resource,
+  action: Action,
+): readonly Role[] {
   return resolveEntry(permissionMatrix[resource][action]);
 }
 
@@ -258,10 +344,10 @@ type RoleList = ReadonlyArray<Role>;
  * so they short-circuit the allowlist check.
  */
 const ALWAYS_AUTHENTICATED: ReadonlyArray<string> = [
-  '/dashboard',
-  '/profile',
-  '/settings',
-  '/org-chart',
+  "/dashboard",
+  "/profile",
+  "/settings",
+  "/org-chart",
 ];
 
 /**
@@ -274,139 +360,144 @@ const ALWAYS_AUTHENTICATED: ReadonlyArray<string> = [
  */
 export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   // ── Admin panel ───────────────────────────────────────────────────────────
-  '/admin': ['super_admin'],
+  "/admin": ["super_admin"],
 
   // ── Payroll ───────────────────────────────────────────────────────────────
-  '/payroll/new': ['super_admin', 'payroll_admin'],
-  '/payroll/history': ['super_admin', 'payroll_admin'],
-  '/payroll/process': ['super_admin', 'payroll_admin'],
-  '/payroll/approve': ['super_admin'],
-  '/payroll/remittances': ['super_admin', 'payroll_admin'],
-  '/payroll/payslips': [
-    'super_admin',
-    'hr_admin',
-    'payroll_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/payroll/new": ["super_admin", "payroll_admin"],
+  "/payroll/history": ["super_admin", "payroll_admin"],
+  "/payroll/process": ["super_admin", "payroll_admin"],
+  "/payroll/approve": ["super_admin"],
+  "/payroll/remittances": ["super_admin", "payroll_admin"],
+  "/payroll/payslips": [
+    "super_admin",
+    "hr_admin",
+    "payroll_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
-  '/payroll': ['super_admin', 'payroll_admin'],
+  "/payroll": ["super_admin", "payroll_admin"],
 
   // ── Remittances ───────────────────────────────────────────────────────────
-  '/remittances': ['super_admin', 'payroll_admin', 'viewer'],
+  "/remittances": ["super_admin", "payroll_admin", "viewer"],
 
   // ── Plantilla ─────────────────────────────────────────────────────────────
-  '/plantilla': ['super_admin', 'hr_admin', 'viewer'],
+  "/plantilla": ["super_admin", "hr_admin", "viewer"],
 
   // ── SALN ──────────────────────────────────────────────────────────────────
-  '/saln/admin': ['super_admin'],
-  '/saln': ['super_admin', 'employee_self_service'],
+  "/saln/admin": ["super_admin"],
+  "/saln": ["super_admin", "employee_self_service"],
 
   // ── Performance ───────────────────────────────────────────────────────────
-  '/performance/cycles': ['super_admin', 'hr_admin'],
-  '/performance/opcrf': ['super_admin', 'hr_admin'],
-  '/performance/step-increments': ['super_admin', 'hr_admin'],
-  '/performance/analytics': ['super_admin', 'hr_admin'],
-  '/performance/ipcrf': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/performance/cycles": ["super_admin", "hr_admin"],
+  "/performance/opcrf": ["super_admin", "hr_admin"],
+  "/performance/step-increments": ["super_admin", "hr_admin"],
+  "/performance/analytics": ["super_admin", "hr_admin"],
+  "/performance/ipcrf": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
-  '/performance': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/performance": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
 
   // ── Leave ─────────────────────────────────────────────────────────────────
-  '/leave/approvals': ['super_admin', 'hr_admin', 'leave_approver'],
-  '/leave/approve': ['super_admin', 'hr_admin', 'leave_approver'],
+  "/leave/approvals": ["super_admin", "hr_admin", "leave_approver"],
+  "/leave/approve": ["super_admin", "hr_admin", "leave_approver"],
   // Employee-facing applications list: employees see ONLY their own via
   // `selfOnly` enforcement in queries. Route-level access stays open to
   // authenticated leave-relevant roles.
-  '/leave/applications': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'employee_self_service',
+  "/leave/applications": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "employee_self_service",
   ],
-  '/leave/credits/admin': ['super_admin', 'hr_admin'],
-  '/leave/credits': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/leave/credits/admin": ["super_admin", "hr_admin"],
+  "/leave/credits": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
-  '/leave/apply': ['super_admin', 'hr_admin', 'employee_self_service'],
-  '/leave/calendar': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/leave/apply": ["super_admin", "hr_admin", "employee_self_service"],
+  "/leave/calendar": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
-  '/leave': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/leave": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
 
   // ── Attendance ────────────────────────────────────────────────────────────
-  '/attendance/admin': ['super_admin', 'hr_admin'],
-  '/attendance/import': ['super_admin', 'hr_admin'],
-  '/attendance/timesheets': ['super_admin', 'hr_admin', 'payroll_admin', 'viewer'],
-  '/attendance/overtime/new': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/attendance/admin": ["super_admin", "hr_admin"],
+  "/attendance/import": ["super_admin", "hr_admin"],
+  "/attendance/timesheets": [
+    "super_admin",
+    "hr_admin",
+    "payroll_admin",
+    "viewer",
   ],
-  '/attendance/overtime': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/attendance/overtime/new": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
-  '/attendance/dtr': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/attendance/overtime": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
-  '/attendance': [
-    'super_admin',
-    'hr_admin',
-    'leave_approver',
-    'viewer',
-    'employee_self_service',
+  "/attendance/dtr": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
+  ],
+  "/attendance": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "viewer",
+    "employee_self_service",
   ],
 
   // ── Employees ─────────────────────────────────────────────────────────────
-  '/employees/new': ['super_admin', 'hr_admin'],
-  '/employees': [
-    'super_admin',
-    'hr_admin',
-    'payroll_admin',
-    'viewer',
-    'employee_self_service',
+  "/employees/new": ["super_admin", "hr_admin"],
+  "/employees": [
+    "super_admin",
+    "hr_admin",
+    "payroll_admin",
+    "viewer",
+    "employee_self_service",
   ],
 
   // ── Reports ───────────────────────────────────────────────────────────────
-  '/reports': ['super_admin', 'hr_admin', 'payroll_admin', 'viewer'],
+  "/reports": ["super_admin", "hr_admin", "payroll_admin", "viewer"],
 } as const;
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
-  return pathname === prefix || pathname.startsWith(prefix + '/');
+  return pathname === prefix || pathname.startsWith(prefix + "/");
 }
 
 function findLongestPrefix(pathname: string): string | null {
@@ -444,7 +535,8 @@ export function isRouteAllowed(role: Role, pathname: string): boolean {
 
   const allowed = ROUTE_ACCESS[prefix];
   if (!allowed) return true;
-  return (allowed as Role[]).includes(role);
+  const effective = effectiveRolesOf(role);
+  return effective.some((r) => (allowed as Role[]).includes(r));
 }
 
 /**

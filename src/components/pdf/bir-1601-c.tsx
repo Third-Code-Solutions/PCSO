@@ -9,59 +9,58 @@
  *   const { Bir1601CPdf } = await import('@/components/pdf/bir-1601-c')
  */
 
-import {
-  Document,
-  Page,
-  View,
-  Text,
-  StyleSheet,
-} from '@react-pdf/renderer';
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NAVY = '#0B2545';
-const GOLD = '#C8A84B';
-const CREAM = '#FAF4E6';
-const BORDER = '#D1D5DB';
-const BIR_BLUE = '#1D4ED8';
+const NAVY = "#0B2545";
+const GOLD = "#C8A84B";
+const CREAM = "#FAF4E6";
+const BORDER = "#D1D5DB";
+const BIR_BLUE = "#1D4ED8";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 7,
     padding: 32,
-    color: '#111827',
+    color: "#111827",
   },
   // Header
   headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     marginBottom: 6,
     gap: 12,
   },
   leftBlock: { flex: 1 },
-  rightBlock: { width: 160, alignItems: 'flex-end' },
+  rightBlock: { width: 160, alignItems: "flex-end" },
   birLogo: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: BIR_BLUE,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1,
   },
-  formCode: { fontSize: 20, fontFamily: 'Helvetica-Bold', color: BIR_BLUE, lineHeight: 1.1 },
-  formTitle: { fontSize: 7, color: '#374151', marginTop: 2, lineHeight: 1.4 },
-  repNo: { fontSize: 6.5, color: '#6B7280', textTransform: 'uppercase' },
-  repValue: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: BIR_BLUE },
+  formCode: {
+    fontSize: 20,
+    fontFamily: "Helvetica-Bold",
+    color: BIR_BLUE,
+    lineHeight: 1.1,
+  },
+  formTitle: { fontSize: 7, color: "#374151", marginTop: 2, lineHeight: 1.4 },
+  repNo: { fontSize: 6.5, color: "#6B7280", textTransform: "uppercase" },
+  repValue: { fontSize: 8, fontFamily: "Helvetica-Bold", color: BIR_BLUE },
   divider: { height: 2, backgroundColor: BIR_BLUE, marginVertical: 8 },
   goldDivider: { height: 0.5, backgroundColor: GOLD, marginBottom: 10 },
   // Sections
   sectionTitle: {
     fontSize: 6.5,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: BIR_BLUE,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.3,
     marginBottom: 4,
     paddingBottom: 2,
@@ -69,7 +68,7 @@ const styles = StyleSheet.create({
     borderBottomColor: BORDER,
   },
   // Field rows
-  fieldGrid: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  fieldGrid: { flexDirection: "row", gap: 8, marginBottom: 8 },
   fieldBox: {
     flex: 1,
     borderWidth: 0.5,
@@ -77,9 +76,14 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     padding: 5,
   },
-  fieldLabel: { fontSize: 5.5, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 1 },
-  fieldValue: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#111827' },
-  fieldValueSmall: { fontSize: 7, color: '#374151' },
+  fieldLabel: {
+    fontSize: 5.5,
+    color: "#9CA3AF",
+    textTransform: "uppercase",
+    marginBottom: 1,
+  },
+  fieldValue: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#111827" },
+  fieldValueSmall: { fontSize: 7, color: "#374151" },
   // Tax computation table
   computationBox: {
     borderWidth: 0.5,
@@ -88,7 +92,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   compRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderBottomWidth: 0.3,
     borderBottomColor: BORDER,
     paddingHorizontal: 8,
@@ -96,78 +100,93 @@ const styles = StyleSheet.create({
   },
   compRowHighlight: { backgroundColor: CREAM },
   compRowTotal: { backgroundColor: NAVY },
-  compLabel: { flex: 1, fontSize: 7, color: '#374151' },
-  compLabelBold: { flex: 1, fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#111827' },
-  compLabelWhite: { flex: 1, fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#FFFFFF' },
-  compLineNo: { width: 20, fontSize: 6.5, color: '#9CA3AF' },
+  compLabel: { flex: 1, fontSize: 7, color: "#374151" },
+  compLabelBold: {
+    flex: 1,
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
+  },
+  compLabelWhite: {
+    flex: 1,
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: "#FFFFFF",
+  },
+  compLineNo: { width: 20, fontSize: 6.5, color: "#9CA3AF" },
   compAmount: {
     width: 100,
     fontSize: 7,
-    fontFamily: 'Courier',
-    textAlign: 'right',
-    color: '#1F2937',
+    fontFamily: "Courier",
+    textAlign: "right",
+    color: "#1F2937",
   },
   compAmountBold: {
     width: 100,
     fontSize: 7,
-    fontFamily: 'Courier-Bold',
-    textAlign: 'right',
-    color: '#111827',
+    fontFamily: "Courier-Bold",
+    textAlign: "right",
+    color: "#111827",
   },
   compAmountGold: {
     width: 100,
     fontSize: 7,
-    fontFamily: 'Courier-Bold',
-    textAlign: 'right',
+    fontFamily: "Courier-Bold",
+    textAlign: "right",
     color: GOLD,
   },
   // Signature block
   signatureBlock: {
     marginTop: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   signatureLine: {
     borderTopWidth: 0.5,
-    borderTopColor: '#374151',
+    borderTopColor: "#374151",
     width: 180,
     paddingTop: 4,
   },
-  signatureLabel: { fontSize: 6, color: '#6B7280', textTransform: 'uppercase' },
-  signatureName: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: NAVY, marginBottom: 1 },
+  signatureLabel: { fontSize: 6, color: "#6B7280", textTransform: "uppercase" },
+  signatureName: {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    color: NAVY,
+    marginBottom: 1,
+  },
   // Footer
   pageNumber: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 14,
     right: 32,
     fontSize: 6,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
   disclaimer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 14,
     left: 32,
     fontSize: 6,
-    color: '#9CA3AF',
+    color: "#9CA3AF",
   },
   // Note box
   noteBox: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
     borderWidth: 0.5,
-    borderColor: '#D97706',
+    borderColor: "#D97706",
     borderRadius: 2,
     padding: 5,
     marginBottom: 8,
   },
-  noteText: { fontSize: 6.5, color: '#92400E' },
+  noteText: { fontSize: 6.5, color: "#92400E" },
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (!Number.isFinite(num)) return '0.00';
-  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (!Number.isFinite(num)) return "0.00";
+  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -224,7 +243,7 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
             <Text style={styles.birLogo}>Bureau of Internal Revenue</Text>
             <Text style={styles.formCode}>1601-C</Text>
             <Text style={styles.formTitle}>
-              Monthly Remittance Return of Income Taxes{'\n'}
+              Monthly Remittance Return of Income Taxes{"\n"}
               Withheld on Compensation
             </Text>
           </View>
@@ -242,7 +261,9 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
         <View style={styles.divider} />
 
         {/* Employer Information */}
-        <Text style={styles.sectionTitle}>Part I — Background Information (Employer)</Text>
+        <Text style={styles.sectionTitle}>
+          Part I — Background Information (Employer)
+        </Text>
 
         <View style={styles.fieldGrid}>
           <View style={[styles.fieldBox, { flex: 2 }]}>
@@ -275,8 +296,9 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
         {/* Note */}
         <View style={styles.noteBox}>
           <Text style={styles.noteText}>
-            Statutory Deadline: 10th day of the month following the taxable month.
-            Late filing is subject to surcharge, interest, and compromise penalty per Sec. 248–250 NIRC.
+            Statutory Deadline: 10th day of the month following the taxable
+            month. Late filing is subject to surcharge, interest, and compromise
+            penalty per Sec. 248–250 NIRC.
           </Text>
         </View>
 
@@ -286,45 +308,46 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
         <View style={styles.computationBox}>
           {[
             {
-              no: '1',
-              label: 'Total Compensation Income Paid During the Month',
+              no: "1",
+              label: "Total Compensation Income Paid During the Month",
               value: computation.totalCompensation,
               bold: false,
             },
             {
-              no: '2',
-              label: 'Less: Non-Taxable Compensation (Mandatory Contributions + Exempt Benefits)',
+              no: "2",
+              label:
+                "Less: Non-Taxable Compensation (Mandatory Contributions + Exempt Benefits)",
               value: computation.totalNonTaxable,
               bold: false,
             },
             {
-              no: '3',
-              label: 'Taxable Compensation (Line 1 minus Line 2)',
+              no: "3",
+              label: "Taxable Compensation (Line 1 minus Line 2)",
               value: computation.taxableCompensation,
               bold: true,
               highlight: true,
             },
             {
-              no: '4',
-              label: 'Income Tax Withheld This Month (per BIR Tax Table)',
+              no: "4",
+              label: "Income Tax Withheld This Month (per BIR Tax Table)",
               value: computation.taxWithheld,
               bold: false,
             },
             {
-              no: '5',
-              label: 'Adjustments from Prior Periods (Over/Under)',
+              no: "5",
+              label: "Adjustments from Prior Periods (Over/Under)",
               value: computation.adjustments,
               bold: false,
             },
             {
-              no: '6',
-              label: 'Tax Remitted in Prior Months of the Quarter',
+              no: "6",
+              label: "Tax Remitted in Prior Months of the Quarter",
               value: computation.taxRemittedPrior,
               bold: false,
             },
             {
-              no: '7',
-              label: 'Number of Payees This Month',
+              no: "7",
+              label: "Number of Payees This Month",
               value: String(computation.payeeCount),
               bold: false,
               isCount: true,
@@ -344,7 +367,9 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
               {row.isCount ? (
                 <Text style={styles.compAmountBold}>{row.value}</Text>
               ) : (
-                <Text style={row.bold ? styles.compAmountBold : styles.compAmount}>
+                <Text
+                  style={row.bold ? styles.compAmountBold : styles.compAmount}
+                >
                   {row.isCount ? row.value : fmt(row.value)}
                 </Text>
               )}
@@ -357,7 +382,9 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
             <Text style={styles.compLabelWhite}>
               TOTAL TAX STILL DUE / OVERPAYMENT (Line 4 + Line 5 − Line 6)
             </Text>
-            <Text style={styles.compAmountGold}>{fmt(computation.taxStillDue)}</Text>
+            <Text style={styles.compAmountGold}>
+              {fmt(computation.taxStillDue)}
+            </Text>
           </View>
         </View>
 
@@ -379,7 +406,9 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
           </View>
           <View>
             <View style={styles.signatureLine}>
-              <Text style={[styles.signatureName, { color: 'transparent' }]}>{'  '}</Text>
+              <Text style={[styles.signatureName, { color: "transparent" }]}>
+                {"  "}
+              </Text>
               <Text style={styles.signatureLabel}>Date / Stamp of Filing</Text>
             </View>
           </View>
@@ -387,11 +416,13 @@ export function Bir1601CPdf({ meta, computation }: Bir1601CProps) {
 
         <Text
           style={styles.pageNumber}
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+          render={({ pageNumber, totalPages }) =>
+            `Page ${pageNumber} of ${totalPages}`
+          }
           fixed
         />
         <Text style={styles.disclaimer} fixed>
-          Generated by Senate HRIS — Confidential — For Official Use Only
+          Generated by PCSO HRIS — Confidential — For Official Use Only
         </Text>
       </Page>
     </Document>

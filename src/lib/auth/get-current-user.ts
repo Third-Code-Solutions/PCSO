@@ -1,5 +1,5 @@
-import { createServerClient } from '@/lib/supabase/server';
-import type { Role } from '@/lib/auth/permissions';
+import { createServerClient } from "@/lib/supabase/server";
+import type { Role } from "@/lib/auth/permissions";
 
 /**
  * The shape returned by `getCurrentUser()`.
@@ -10,7 +10,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   role: Role;
-  /** UUID of the senate office this user belongs to (null for super_admin). */
+  /** UUID of the PCSO office this user belongs to (null for super_admin). */
   officeId: string | null;
   /** UUID of the linked employee record (null for system-only accounts). */
   employeeId: string | null;
@@ -43,10 +43,12 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   // The trigger `sync_auth_to_system_users` sets these metadata fields on signup.
   // Fall back gracefully if the trigger hasn't run yet (e.g. in dev).
-  const role = (meta['role'] as Role | undefined) ?? 'employee_self_service';
-  const officeId = typeof meta['office_id'] === 'string' ? meta['office_id'] : null;
-  const employeeId = typeof meta['employee_id'] === 'string' ? meta['employee_id'] : null;
-  const email = user.email ?? '';
+  const role = (meta["role"] as Role | undefined) ?? "employee_self_service";
+  const officeId =
+    typeof meta["office_id"] === "string" ? meta["office_id"] : null;
+  const employeeId =
+    typeof meta["employee_id"] === "string" ? meta["employee_id"] : null;
+  const email = user.email ?? "";
 
   return { id: user.id, email, role, officeId, employeeId };
 }

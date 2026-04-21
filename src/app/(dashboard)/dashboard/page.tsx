@@ -1,56 +1,56 @@
-import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import { PageHeader } from '@/components/layouts/page-header';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { requireAuth } from '@/lib/auth/guards';
-import { KpiGridSkeleton } from '@/components/common/loading-skeleton';
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import { PageHeader } from "@/components/layouts/page-header";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requireAuth } from "@/lib/auth/guards";
+import { KpiGridSkeleton } from "@/components/common/loading-skeleton";
 import {
   AdminDashboard,
   PayrollAdminDashboard,
   LeaveApproverDashboard,
   EmployeeDashboard,
-} from './_client';
+} from "./_client";
 import {
   getAdminDashboardKpis,
   getPayrollAdminKpis,
   getLeaveApproverKpis,
   getEmployeeDashboardKpis,
-} from './queries';
-import type { Role } from '@/lib/auth/permissions';
+} from "./queries";
+import type { Role } from "@/lib/auth/permissions";
 
 export const metadata: Metadata = {
-  title: 'Dashboard',
+  title: "Dashboard",
 };
 
 // ─── Realtime subscription tables per role ───────────────────────────────────
 
 const ADMIN_REALTIME_TABLES = [
-  'employees',
-  'leave_applications',
-  'attendance_logs',
-  'overtime_requests',
-  'dtr_periods',
-  'saln_submissions',
-  'holidays',
-  'audit_logs',
+  "employees",
+  "leave_applications",
+  "attendance_logs",
+  "overtime_requests",
+  "dtr_periods",
+  "saln_submissions",
+  "holidays",
+  "audit_logs",
 ] as const;
 
 const PAYROLL_REALTIME_TABLES = [
-  'payroll_periods',
-  'payroll_records',
-  'remittance_batches',
-  'gsis_remittance_batches',
+  "payroll_periods",
+  "payroll_records",
+  "remittance_batches",
+  "gsis_remittance_batches",
 ] as const;
 
-const LEAVE_APPROVER_REALTIME_TABLES = ['leave_applications'] as const;
+const LEAVE_APPROVER_REALTIME_TABLES = ["leave_applications"] as const;
 
 const PERSONAL_REALTIME_TABLES = [
-  'leave_applications',
-  'leave_credits',
-  'payroll_records',
-  'attendance_logs',
-  'saln_submissions',
-  'notifications',
+  "leave_applications",
+  "leave_credits",
+  "payroll_records",
+  "attendance_logs",
+  "saln_submissions",
+  "notifications",
 ] as const;
 
 // ─── Async KPI sections (stream within Suspense) ─────────────────────────────
@@ -90,11 +90,11 @@ function buildRoleConfig(
   employeeId: string | null,
 ): RoleConfig {
   switch (role) {
-    case 'super_admin':
-    case 'hr_admin':
+    case "super_admin":
+    case "hr_admin":
       return {
-        title: 'Dashboard',
-        description: 'System KPIs across the HRIS',
+        title: "Dashboard",
+        description: "System KPIs across the HRIS",
         tables: ADMIN_REALTIME_TABLES,
         body: (
           <Suspense fallback={<KpiGridSkeleton />}>
@@ -103,10 +103,10 @@ function buildRoleConfig(
         ),
       };
 
-    case 'payroll_admin':
+    case "payroll_admin":
       return {
-        title: 'Payroll Dashboard',
-        description: 'Active payroll period, pending entries, and remittances',
+        title: "Payroll Dashboard",
+        description: "Active payroll period, pending entries, and remittances",
         tables: PAYROLL_REALTIME_TABLES,
         body: (
           <Suspense fallback={<KpiGridSkeleton />}>
@@ -115,10 +115,10 @@ function buildRoleConfig(
         ),
       };
 
-    case 'leave_approver':
+    case "leave_approver":
       return {
-        title: 'Approvals Dashboard',
-        description: 'Your pending leave queue and team availability',
+        title: "Approvals Dashboard",
+        description: "Your pending leave queue and team availability",
         tables: LEAVE_APPROVER_REALTIME_TABLES,
         body: (
           <Suspense fallback={<KpiGridSkeleton />}>
@@ -127,12 +127,12 @@ function buildRoleConfig(
         ),
       };
 
-    case 'employee_self_service':
+    case "employee_self_service":
       if (employeeId) {
         return {
-          title: 'My Dashboard',
+          title: "My Dashboard",
           description:
-            'Your leave balance, payslip, attendance, and compliance status',
+            "Your leave balance, payslip, attendance, and compliance status",
           tables: PERSONAL_REALTIME_TABLES,
           body: (
             <Suspense fallback={<KpiGridSkeleton />}>
@@ -143,11 +143,11 @@ function buildRoleConfig(
       }
     // intentional fall-through for self-service without linked employee
     // falls through
-    case 'viewer':
+    case "viewer":
     default:
       return {
-        title: 'Dashboard',
-        description: 'Senate HRIS overview',
+        title: "Dashboard",
+        description: "PCSO HRIS overview",
         tables: ADMIN_REALTIME_TABLES,
         body: (
           <Suspense fallback={<KpiGridSkeleton />}>
@@ -171,8 +171,8 @@ export default async function DashboardPage() {
         title={config.title}
         description={config.description}
         breadcrumbs={[
-          { label: 'Senate HRIS', href: '/dashboard' },
-          { label: 'Dashboard' },
+          { label: "PCSO HRIS", href: "/dashboard" },
+          { label: "Dashboard" },
         ]}
       />
 

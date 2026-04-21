@@ -5,28 +5,34 @@
  * Drill-down links to the plantilla filtered by that office.
  */
 
-import type { Metadata } from 'next';
-import Link from 'next/link';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ArrowRight, TrendingUp, TrendingDown, Minus, FileDown } from 'lucide-react';
-import { getVacancySummary } from '../queries';
-import { cn } from '@/lib/utils/cn';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+import type { Metadata } from "next";
+import Link from "next/link";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  FileDown,
+} from "lucide-react";
+import { getVacancySummary } from "../queries";
+import { cn } from "@/lib/utils/cn";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 
 export const metadata: Metadata = {
-  title: 'Vacancy Dashboard',
+  title: "Vacancy Dashboard",
 };
 
 function FillRateBar({ pct }: { pct: number }) {
   const color =
-    pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+    pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-500" : "bg-rose-500";
   return (
     <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
       <div
-        className={cn('h-full rounded-full transition-all', color)}
+        className={cn("h-full rounded-full transition-all", color)}
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -40,8 +46,8 @@ function FillRateIcon({ pct }: { pct: number }) {
 }
 
 function FillRateBadge({ pct }: { pct: number }) {
-  const variant: 'success' | 'warning' | 'destructive' =
-    pct >= 80 ? 'success' : pct >= 50 ? 'warning' : 'destructive';
+  const variant: "success" | "warning" | "destructive" =
+    pct >= 80 ? "success" : pct >= 50 ? "warning" : "destructive";
   return <Badge variant={variant}>{pct}% filled</Badge>;
 }
 
@@ -56,14 +62,14 @@ export default async function VacanciesPage() {
 
   return (
     <div>
-      <RealtimeBoundary tables={['plantilla_items']} />
+      <RealtimeBoundary tables={["plantilla_items"]} />
       <PageHeader
         title="Vacancy Dashboard"
-        description="Track filled and vacant positions across all Senate offices."
+        description="Track filled and vacant positions across all PCSO offices."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Plantilla', href: '/plantilla' },
-          { label: 'Vacancies' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Plantilla", href: "/plantilla" },
+          { label: "Vacancies" },
         ]}
         actions={
           <>
@@ -83,27 +89,27 @@ export default async function VacanciesPage() {
       {/* Overall summary cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-8">
         {[
-          { label: 'Total Positions', value: totalPositions, className: '' },
+          { label: "Total Positions", value: totalPositions, className: "" },
           {
-            label: 'Filled',
+            label: "Filled",
             value: totalFilled,
-            className: 'text-emerald-600',
+            className: "text-emerald-600",
           },
-          { label: 'Vacant', value: totalVacant, className: 'text-rose-600' },
+          { label: "Vacant", value: totalVacant, className: "text-rose-600" },
           {
-            label: 'Overall Fill Rate',
+            label: "Overall Fill Rate",
             value: `${overallRate}%`,
             className:
               overallRate >= 80
-                ? 'text-emerald-600'
+                ? "text-emerald-600"
                 : overallRate >= 50
-                  ? 'text-amber-600'
-                  : 'text-rose-600',
+                  ? "text-amber-600"
+                  : "text-rose-600",
           },
         ].map(({ label, value, className }) => (
           <Card key={label} className="text-center">
             <CardContent className="pt-6 pb-4">
-              <div className={cn('text-3xl font-bold tabular-nums', className)}>
+              <div className={cn("text-3xl font-bold tabular-nums", className)}>
                 {value}
               </div>
               <div className="text-sm text-muted-foreground mt-1">{label}</div>
@@ -161,20 +167,26 @@ export default async function VacanciesPage() {
                   {/* Position counts */}
                   <div className="flex items-center gap-5 shrink-0">
                     <div className="text-center">
-                      <div className="text-lg font-bold tabular-nums">{s.total}</div>
+                      <div className="text-lg font-bold tabular-nums">
+                        {s.total}
+                      </div>
                       <div className="text-xs text-muted-foreground">Total</div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold tabular-nums text-emerald-600">
                         {s.filled}
                       </div>
-                      <div className="text-xs text-muted-foreground">Filled</div>
+                      <div className="text-xs text-muted-foreground">
+                        Filled
+                      </div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold tabular-nums text-rose-600">
                         {s.vacant}
                       </div>
-                      <div className="text-xs text-muted-foreground">Vacant</div>
+                      <div className="text-xs text-muted-foreground">
+                        Vacant
+                      </div>
                     </div>
 
                     {/* Drill-down link */}

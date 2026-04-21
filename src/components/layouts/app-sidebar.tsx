@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import * as React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Home,
   Users,
@@ -18,16 +18,21 @@ import {
   Network,
   ChevronDown,
   ChevronRight,
-} from 'lucide-react';
-import { cn } from '@/lib/utils/cn';
+} from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 import {
   type Role,
   type Resource,
   type Action,
   hasPermission,
-} from '@/lib/auth/permissions';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Separator } from '@/components/ui/separator';
+} from "@/lib/auth/permissions";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 
 // ─── Nav tree types ──────────────────────────────────────────────────────────
 
@@ -63,12 +68,12 @@ interface NavItem extends NavGate {
 // ─── Role groupings (convenience constants) ──────────────────────────────────
 
 const ALL_ROLES: readonly Role[] = [
-  'super_admin',
-  'hr_admin',
-  'payroll_admin',
-  'leave_approver',
-  'viewer',
-  'employee_self_service',
+  "super_admin",
+  "hr_admin",
+  "payroll_admin",
+  "leave_approver",
+  "viewer",
+  "employee_self_service",
 ] as const;
 
 // ─── Nav tree definition ─────────────────────────────────────────────────────
@@ -89,113 +94,137 @@ const ALL_ROLES: readonly Role[] = [
 
 const NAV_ITEMS: NavItem[] = [
   {
-    label: 'Dashboard',
-    href: '/dashboard',
+    label: "Dashboard",
+    href: "/dashboard",
     icon: Home,
     roles: ALL_ROLES,
   },
 
   // ── Employees / Plantilla / Org ───────────────────────────────────────────
   {
-    label: 'Employees',
+    label: "Employees",
     icon: Users,
-    roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
+    roles: [
+      "super_admin",
+      "hr_admin",
+      "payroll_admin",
+      "leave_approver",
+      "viewer",
+    ],
     children: [
       {
-        label: 'Employee Records',
-        href: '/employees',
-        roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
+        label: "Employee Records",
+        href: "/employees",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "payroll_admin",
+          "leave_approver",
+          "viewer",
+        ],
       },
       {
-        label: 'New Employee',
-        href: '/employees/new',
-        roles: ['super_admin', 'hr_admin'],
+        label: "New Employee",
+        href: "/employees/new",
+        roles: ["super_admin", "hr_admin"],
       },
       {
-        label: 'Plantilla',
-        href: '/plantilla',
-        roles: ['super_admin', 'hr_admin', 'viewer'],
+        label: "Plantilla",
+        href: "/plantilla",
+        roles: ["super_admin", "hr_admin", "viewer"],
       },
       {
-        label: 'New Position',
-        href: '/plantilla/new',
-        roles: ['super_admin', 'hr_admin'],
+        label: "New Position",
+        href: "/plantilla/new",
+        roles: ["super_admin", "hr_admin"],
       },
       {
-        label: 'Vacancies',
-        href: '/plantilla/vacancies',
-        roles: ['super_admin', 'hr_admin', 'viewer'],
+        label: "Vacancies",
+        href: "/plantilla/vacancies",
+        roles: ["super_admin", "hr_admin", "viewer"],
       },
       {
-        label: 'Org Chart',
-        href: '/org-chart',
-        roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
+        label: "Org Chart",
+        href: "/org-chart",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "payroll_admin",
+          "leave_approver",
+          "viewer",
+        ],
       },
     ],
   },
 
   // ── Time & Attendance ─────────────────────────────────────────────────────
   {
-    label: 'Time & Attendance',
+    label: "Time & Attendance",
     icon: Clock,
     roles: [
-      'super_admin',
-      'hr_admin',
-      'payroll_admin',
-      'leave_approver',
-      'viewer',
-      'employee_self_service',
+      "super_admin",
+      "hr_admin",
+      "payroll_admin",
+      "leave_approver",
+      "viewer",
+      "employee_self_service",
     ],
     children: [
       {
-        label: 'Overview',
-        href: '/attendance',
-        roles: ['super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer'],
-      },
-      {
-        label: 'Admin Grid',
-        href: '/attendance/admin',
-        roles: ['super_admin', 'hr_admin'],
-      },
-      {
-        label: 'DTR',
-        href: '/attendance/dtr',
-        // Admins/approvers see team DTR; self-service & payroll_admin see own
+        label: "Overview",
+        href: "/attendance",
         roles: [
-          'super_admin',
-          'hr_admin',
-          'payroll_admin',
-          'leave_approver',
-          'viewer',
-          'employee_self_service',
+          "super_admin",
+          "hr_admin",
+          "payroll_admin",
+          "leave_approver",
+          "viewer",
         ],
       },
       {
-        label: 'Timesheets',
-        href: '/attendance/timesheets',
-        roles: ['super_admin', 'hr_admin'],
+        label: "Admin Grid",
+        href: "/attendance/admin",
+        roles: ["super_admin", "hr_admin"],
       },
       {
-        label: 'Overtime Approvals',
-        href: '/attendance/overtime',
-        roles: ['super_admin', 'hr_admin'],
+        label: "DTR",
+        href: "/attendance/dtr",
+        // Admins/approvers see team DTR; self-service & payroll_admin see own
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "payroll_admin",
+          "leave_approver",
+          "viewer",
+          "employee_self_service",
+        ],
       },
       {
-        label: 'Import Biometric',
-        href: '/attendance/import',
-        roles: ['super_admin', 'hr_admin'],
+        label: "Timesheets",
+        href: "/attendance/timesheets",
+        roles: ["super_admin", "hr_admin"],
+      },
+      {
+        label: "Overtime Approvals",
+        href: "/attendance/overtime",
+        roles: ["super_admin", "hr_admin"],
+      },
+      {
+        label: "Import Biometric",
+        href: "/attendance/import",
+        roles: ["super_admin", "hr_admin"],
       },
       // Self-service surfaces
       {
-        label: 'Clock In / Out',
-        href: '/attendance/clock',
-        roles: ['super_admin', 'hr_admin', 'employee_self_service'],
+        label: "Clock In / Out",
+        href: "/attendance/clock",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
         selfOnly: true,
       },
       {
-        label: 'File Overtime',
-        href: '/attendance/overtime/new',
-        roles: ['super_admin', 'hr_admin', 'employee_self_service'],
+        label: "File Overtime",
+        href: "/attendance/overtime/new",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
         selfOnly: true,
       },
     ],
@@ -203,53 +232,63 @@ const NAV_ITEMS: NavItem[] = [
 
   // ── Leave Management ──────────────────────────────────────────────────────
   {
-    label: 'Leave Management',
+    label: "Leave Management",
     icon: Palmtree,
     roles: [
-      'super_admin',
-      'hr_admin',
-      'leave_approver',
-      'viewer',
-      'employee_self_service',
+      "super_admin",
+      "hr_admin",
+      "leave_approver",
+      "viewer",
+      "employee_self_service",
     ],
     children: [
       {
-        label: 'Applications',
-        href: '/leave/applications',
-        roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer'],
+        label: "Applications",
+        href: "/leave/applications",
+        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
       },
       {
-        label: 'Approvals Queue',
-        href: '/leave/approvals',
-        roles: ['super_admin', 'hr_admin', 'leave_approver'],
+        label: "Approvals Queue",
+        href: "/leave/approvals",
+        roles: ["super_admin", "hr_admin", "leave_approver"],
       },
       {
-        label: 'Credits (Admin)',
-        href: '/leave/credits/admin',
-        roles: ['super_admin', 'hr_admin'],
+        label: "Credits (Admin)",
+        href: "/leave/credits/admin",
+        roles: ["super_admin", "hr_admin"],
       },
       {
-        label: 'Calendar',
-        href: '/leave/calendar',
+        label: "Calendar",
+        href: "/leave/calendar",
         roles: [
-          'super_admin',
-          'hr_admin',
-          'leave_approver',
-          'viewer',
-          'employee_self_service',
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "viewer",
+          "employee_self_service",
         ],
       },
       // Self-service
       {
-        label: 'Apply for Leave',
-        href: '/leave/apply',
-        roles: ['super_admin', 'hr_admin', 'leave_approver', 'employee_self_service'],
+        label: "Apply for Leave",
+        href: "/leave/apply",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "employee_self_service",
+        ],
         selfOnly: true,
       },
       {
-        label: 'My Credits',
-        href: '/leave/credits',
-        roles: ['super_admin', 'hr_admin', 'leave_approver', 'employee_self_service'],
+        label: "My Credits",
+        href: "/leave/credits",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "employee_self_service",
+        ],
         selfOnly: true,
       },
     ],
@@ -257,39 +296,39 @@ const NAV_ITEMS: NavItem[] = [
 
   // ── Payroll ───────────────────────────────────────────────────────────────
   {
-    label: 'Payroll',
+    label: "Payroll",
     icon: Wallet,
-    roles: ['super_admin', 'payroll_admin', 'viewer', 'employee_self_service'],
+    roles: ["super_admin", "payroll_admin", "viewer", "employee_self_service"],
     children: [
       {
-        label: 'Payroll Periods',
-        href: '/payroll',
-        roles: ['super_admin', 'payroll_admin'],
+        label: "Payroll Periods",
+        href: "/payroll",
+        roles: ["super_admin", "payroll_admin"],
       },
       {
-        label: 'New Period',
-        href: '/payroll/new',
-        roles: ['super_admin', 'payroll_admin'],
+        label: "New Period",
+        href: "/payroll/new",
+        roles: ["super_admin", "payroll_admin"],
       },
       {
-        label: 'Payslips (Admin)',
-        href: '/payroll/payslips',
-        roles: ['super_admin', 'payroll_admin'],
+        label: "Payslips (Admin)",
+        href: "/payroll/payslips",
+        roles: ["super_admin", "payroll_admin"],
       },
       {
-        label: 'History',
-        href: '/payroll/history',
-        roles: ['super_admin', 'payroll_admin', 'viewer'],
+        label: "History",
+        href: "/payroll/history",
+        roles: ["super_admin", "payroll_admin", "viewer"],
       },
       {
-        label: 'JO / COS',
-        href: '/payroll/jo-cos',
-        roles: ['super_admin', 'payroll_admin'],
+        label: "JO / COS",
+        href: "/payroll/jo-cos",
+        roles: ["super_admin", "payroll_admin"],
       },
       {
-        label: 'My Payslips',
-        href: '/payroll/payslips',
-        roles: ['super_admin', 'employee_self_service'],
+        label: "My Payslips",
+        href: "/payroll/payslips",
+        roles: ["super_admin", "employee_self_service"],
         selfOnly: true,
       },
     ],
@@ -297,120 +336,126 @@ const NAV_ITEMS: NavItem[] = [
 
   // ── Remittances ───────────────────────────────────────────────────────────
   {
-    label: 'Remittances',
+    label: "Remittances",
     icon: Building2,
-    roles: ['super_admin', 'payroll_admin', 'viewer'],
+    roles: ["super_admin", "payroll_admin", "viewer"],
     children: [
       {
-        label: 'GSIS',
-        href: '/remittances/gsis',
-        roles: ['super_admin', 'payroll_admin', 'viewer'],
+        label: "GSIS",
+        href: "/remittances/gsis",
+        roles: ["super_admin", "payroll_admin", "viewer"],
       },
       {
-        label: 'PhilHealth',
-        href: '/remittances/philhealth',
-        roles: ['super_admin', 'payroll_admin', 'viewer'],
+        label: "PhilHealth",
+        href: "/remittances/philhealth",
+        roles: ["super_admin", "payroll_admin", "viewer"],
       },
       {
-        label: 'Pag-IBIG',
-        href: '/remittances/pagibig',
-        roles: ['super_admin', 'payroll_admin', 'viewer'],
+        label: "Pag-IBIG",
+        href: "/remittances/pagibig",
+        roles: ["super_admin", "payroll_admin", "viewer"],
       },
       {
-        label: 'BIR',
-        href: '/remittances/bir',
-        roles: ['super_admin', 'payroll_admin', 'viewer'],
+        label: "BIR",
+        href: "/remittances/bir",
+        roles: ["super_admin", "payroll_admin", "viewer"],
       },
       {
-        label: 'BIR 1601-C',
-        href: '/remittances/bir/1601-c',
-        roles: ['super_admin', 'payroll_admin'],
+        label: "BIR 1601-C",
+        href: "/remittances/bir/1601-c",
+        roles: ["super_admin", "payroll_admin"],
       },
       {
-        label: 'BIR 2316',
-        href: '/remittances/bir/2316',
-        roles: ['super_admin', 'payroll_admin'],
+        label: "BIR 2316",
+        href: "/remittances/bir/2316",
+        roles: ["super_admin", "payroll_admin"],
       },
       {
-        label: 'BIR 1604-C',
-        href: '/remittances/bir/1604-c',
-        roles: ['super_admin', 'payroll_admin'],
+        label: "BIR 1604-C",
+        href: "/remittances/bir/1604-c",
+        roles: ["super_admin", "payroll_admin"],
       },
     ],
   },
 
   // ── Performance ───────────────────────────────────────────────────────────
   {
-    label: 'Performance',
+    label: "Performance",
     icon: TrendingUp,
-    roles: ['super_admin', 'hr_admin', 'leave_approver', 'viewer', 'employee_self_service'],
+    roles: [
+      "super_admin",
+      "hr_admin",
+      "leave_approver",
+      "viewer",
+      "employee_self_service",
+    ],
     children: [
       {
-        label: 'Cycles',
-        href: '/performance/cycles',
-        roles: ['super_admin', 'hr_admin'],
+        label: "Cycles",
+        href: "/performance/cycles",
+        roles: ["super_admin", "hr_admin"],
       },
       {
-        label: 'IPCRF',
-        href: '/performance/ipcrf',
+        label: "IPCRF",
+        href: "/performance/ipcrf",
         // Admins & viewer see all; approver & self-service see self
         roles: [
-          'super_admin',
-          'hr_admin',
-          'leave_approver',
-          'viewer',
-          'employee_self_service',
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "viewer",
+          "employee_self_service",
         ],
       },
       {
-        label: 'OPCRF',
-        href: '/performance/opcrf',
-        roles: ['super_admin', 'hr_admin', 'viewer'],
+        label: "OPCRF",
+        href: "/performance/opcrf",
+        roles: ["super_admin", "hr_admin", "viewer"],
       },
       {
-        label: 'Step Increments',
-        href: '/performance/step-increments',
-        roles: ['super_admin', 'hr_admin'],
+        label: "Step Increments",
+        href: "/performance/step-increments",
+        roles: ["super_admin", "hr_admin"],
       },
       {
-        label: 'Analytics',
-        href: '/performance/analytics',
-        roles: ['super_admin', 'hr_admin'],
+        label: "Analytics",
+        href: "/performance/analytics",
+        roles: ["super_admin", "hr_admin"],
       },
     ],
   },
 
   // ── SALN ──────────────────────────────────────────────────────────────────
   {
-    label: 'SALN',
+    label: "SALN",
     icon: FileText,
-    roles: ['super_admin', 'employee_self_service'],
+    roles: ["super_admin", "employee_self_service"],
     children: [
       {
-        label: 'Compliance Dashboard',
-        href: '/saln/admin',
-        roles: ['super_admin'],
+        label: "Compliance Dashboard",
+        href: "/saln/admin",
+        roles: ["super_admin"],
       },
       {
-        label: 'Submissions',
-        href: '/saln/submissions',
-        roles: ['super_admin', 'employee_self_service'],
+        label: "Submissions",
+        href: "/saln/submissions",
+        roles: ["super_admin", "employee_self_service"],
         selfOnly: true,
       },
       {
-        label: 'Tracking',
-        href: '/saln/tracking',
-        roles: ['super_admin'],
+        label: "Tracking",
+        href: "/saln/tracking",
+        roles: ["super_admin"],
       },
       {
-        label: 'Non-Filers',
-        href: '/saln/admin/non-filers',
-        roles: ['super_admin'],
+        label: "Non-Filers",
+        href: "/saln/admin/non-filers",
+        roles: ["super_admin"],
       },
       {
-        label: 'File New SALN',
-        href: '/saln/new',
-        roles: ['super_admin', 'employee_self_service'],
+        label: "File New SALN",
+        href: "/saln/new",
+        roles: ["super_admin", "employee_self_service"],
         selfOnly: true,
       },
     ],
@@ -418,33 +463,45 @@ const NAV_ITEMS: NavItem[] = [
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   {
-    label: 'Admin',
+    label: "Admin",
     icon: Shield,
-    roles: ['super_admin'],
+    roles: ["super_admin"],
     children: [
-      { label: 'Users', href: '/admin/users', roles: ['super_admin'] },
-      { label: 'Salary Grades', href: '/admin/salary-grades', roles: ['super_admin'] },
-      { label: 'Rates', href: '/admin/rates', roles: ['super_admin'] },
-      { label: 'Holidays', href: '/admin/holidays', roles: ['super_admin'] },
-      { label: 'Offices', href: '/admin/offices', roles: ['super_admin'] },
-      { label: 'Audit Logs', href: '/admin/audit-logs', roles: ['super_admin'] },
-      { label: 'System Settings', href: '/admin/settings', roles: ['super_admin'] },
+      { label: "Users", href: "/admin/users", roles: ["super_admin"] },
+      {
+        label: "Salary Grades",
+        href: "/admin/salary-grades",
+        roles: ["super_admin"],
+      },
+      { label: "Rates", href: "/admin/rates", roles: ["super_admin"] },
+      { label: "Holidays", href: "/admin/holidays", roles: ["super_admin"] },
+      { label: "Offices", href: "/admin/offices", roles: ["super_admin"] },
+      {
+        label: "Audit Logs",
+        href: "/admin/audit-logs",
+        roles: ["super_admin"],
+      },
+      {
+        label: "System Settings",
+        href: "/admin/settings",
+        roles: ["super_admin"],
+      },
     ],
   },
 
   // ── Org Chart (top-level shortcut) ────────────────────────────────────────
   // Renders for employee_self_service whose Employees group is hidden.
   {
-    label: 'Org Chart',
-    href: '/org-chart',
+    label: "Org Chart",
+    href: "/org-chart",
     icon: Network,
-    roles: ['employee_self_service'],
+    roles: ["employee_self_service"],
   },
 
   // ── Profile (self) ────────────────────────────────────────────────────────
   {
-    label: 'My Profile',
-    href: '/profile',
+    label: "My Profile",
+    href: "/profile",
     icon: UserIcon,
     roles: ALL_ROLES,
     selfOnly: true,
@@ -452,8 +509,8 @@ const NAV_ITEMS: NavItem[] = [
 
   // ── Settings (personal preferences) ───────────────────────────────────────
   {
-    label: 'Settings',
-    href: '/settings',
+    label: "Settings",
+    href: "/settings",
     icon: Settings,
     roles: ALL_ROLES,
   },
@@ -491,7 +548,11 @@ function canSeeItem(item: NavGate, role: Role | undefined): boolean {
   return item.roles.includes(role);
 }
 
-function matchesGate(gate: NavGate, role: Role | undefined, employeeId: string | null): boolean {
+function matchesGate(
+  gate: NavGate,
+  role: Role | undefined,
+  employeeId: string | null,
+): boolean {
   if (gate.selfOnly && !employeeId) return false;
   if (!role) return false;
 
@@ -525,7 +586,9 @@ function isItemVisible(
   if (!matchesGate(item, role, employeeId)) return false;
 
   if (item.children && item.children.length > 0) {
-    const anyVisible = item.children.some((c) => isChildVisible(c, role, employeeId));
+    const anyVisible = item.children.some((c) =>
+      isChildVisible(c, role, employeeId),
+    );
     if (!anyVisible) return false;
   }
   return true;
@@ -540,7 +603,10 @@ function useActiveGroup(items: NavItem[], pathname: string): string | null {
         }
       }
     }
-    if (item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))) {
+    if (
+      item.href &&
+      (pathname === item.href || pathname.startsWith(`${item.href}/`))
+    ) {
       return item.label;
     }
   }
@@ -566,12 +632,12 @@ function NavChildLink({
     <Link
       href={child.href}
       className={cn(
-        'flex items-center rounded-md px-3 py-1.5 text-sm transition-colors ml-6',
+        "flex items-center rounded-md px-3 py-1.5 text-sm transition-colors ml-6",
         isActive
-          ? 'bg-white/10 text-white font-medium border-l-2 border-senate-gold'
-          : 'text-white/60 hover:text-white hover:bg-white/5',
+          ? "bg-white/10 text-white font-medium border-l-2 border-senate-gold"
+          : "text-white/60 hover:text-white hover:bg-white/5",
       )}
-      aria-current={isActive ? 'page' : undefined}
+      aria-current={isActive ? "page" : undefined}
     >
       {child.label}
     </Link>
@@ -596,7 +662,8 @@ function NavGroup({
   const [open, setOpen] = React.useState(defaultOpen);
   const Icon = item.icon;
   const visibleChildren =
-    item.children?.filter((child) => isChildVisible(child, role, employeeId)) ?? [];
+    item.children?.filter((child) => isChildVisible(child, role, employeeId)) ??
+    [];
 
   const button = (
     <button
@@ -605,10 +672,10 @@ function NavGroup({
         if (!collapsed) setOpen((v) => !v);
       }}
       className={cn(
-        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
         open && !collapsed
-          ? 'text-white bg-white/10'
-          : 'text-white/70 hover:text-white hover:bg-white/5',
+          ? "text-white bg-white/10"
+          : "text-white/70 hover:text-white hover:bg-white/5",
       )}
       aria-expanded={collapsed ? undefined : open}
     >
@@ -656,27 +723,21 @@ function NavGroup({
 
 // ─── NavLeaf (no children) ───────────────────────────────────────────────────
 
-function NavLeaf({
-  item,
-  collapsed,
-}: {
-  item: NavItem;
-  collapsed: boolean;
-}) {
+function NavLeaf({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   const pathname = usePathname();
   const isActive = item.href ? pathname === item.href : false;
   const Icon = item.icon;
 
   const link = (
     <Link
-      href={item.href ?? '#'}
+      href={item.href ?? "#"}
       className={cn(
-        'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
         isActive
-          ? 'text-white bg-white/10 border-l-2 border-senate-gold'
-          : 'text-white/70 hover:text-white hover:bg-white/5',
+          ? "text-white bg-white/10 border-l-2 border-senate-gold"
+          : "text-white/70 hover:text-white hover:bg-white/5",
       )}
-      aria-current={isActive ? 'page' : undefined}
+      aria-current={isActive ? "page" : undefined}
     >
       <Icon className="h-5 w-5 shrink-0" />
       {!collapsed && <span>{item.label}</span>}
@@ -708,40 +769,47 @@ export function AppSidebar({
   mobileOpen = false,
   // TODO: Replace with real role from session. Defaulting to super_admin so all
   //       items are visible during development.
-  role = 'super_admin',
+  role = "super_admin",
   employeeId = null,
   onClose,
 }: AppSidebarProps) {
   const pathname = usePathname();
   const activeGroup = useActiveGroup(NAV_ITEMS, pathname);
 
-  const visibleItems = NAV_ITEMS.filter((item) => isItemVisible(item, role, employeeId));
+  const visibleItems = NAV_ITEMS.filter((item) =>
+    isItemVisible(item, role, employeeId),
+  );
 
   const sidebarContent = (
     <nav
       className={cn(
-        'flex h-full flex-col bg-senate-navy transition-all duration-200',
-        open ? 'w-64' : 'w-16',
+        "flex h-full flex-col bg-senate-navy transition-all duration-200",
+        open ? "w-64" : "w-16",
       )}
       aria-label="Main navigation"
     >
       {/* Branding */}
       <div
         className={cn(
-          'flex h-14 items-center border-b border-white/10 px-3',
-          open ? 'gap-3' : 'justify-center',
+          "flex h-14 items-center border-b border-white/10 px-3",
+          open ? "gap-3" : "justify-center",
         )}
       >
-        {/* Senate seal placeholder */}
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-senate-gold">
-          <span className="text-xs font-bold text-senate-navy">S</span>
-        </div>
+        {/* PCSO seal */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logos/pcso-official.png"
+          alt="PCSO seal"
+          width={32}
+          height={32}
+          className="h-8 w-8 shrink-0 rounded-full bg-white/95 object-contain p-0.5"
+        />
         {open && (
           <div className="min-w-0">
             <p className="truncate text-xs font-semibold text-white leading-tight">
-              Senate of the Philippines
+              Philippine Charity Sweepstakes Office
             </p>
-            <p className="text-[10px] text-white/50 leading-tight">HRIS</p>
+            <p className="text-[10px] text-white/60 leading-tight">HRIS</p>
           </div>
         )}
       </div>

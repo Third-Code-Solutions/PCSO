@@ -1,5 +1,5 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
+import type { Metadata } from "next";
+import Link from "next/link";
 import {
   Users,
   DollarSign,
@@ -9,21 +9,21 @@ import {
   Settings,
   ChevronRight,
   Building2,
-} from 'lucide-react';
-import { PageHeader } from '@/components/layouts/page-header';
-import { requirePermission } from '@/lib/auth/guards';
-import { db } from '@/lib/db';
+} from "lucide-react";
+import { PageHeader } from "@/components/layouts/page-header";
+import { requirePermission } from "@/lib/auth/guards";
+import { db } from "@/lib/db";
 import {
   systemUsers,
   offices,
   holidays,
   auditLogs,
   employees,
-} from '@/lib/db/schema';
-import { eq, count, desc, isNull, sql } from 'drizzle-orm';
+} from "@/lib/db/schema";
+import { eq, count, desc, isNull, sql } from "drizzle-orm";
 
 export const metadata: Metadata = {
-  title: 'Admin Panel — Senate HRIS',
+  title: "Admin Panel — PCSO HRIS",
 };
 
 interface NavCard {
@@ -37,43 +37,39 @@ interface NavCard {
 async function getAdminStats() {
   const currentYear = new Date().getFullYear();
 
-  const [
-    userCounts,
-    officeCount,
-    holidayCount,
-    recentAudits,
-  ] = await Promise.all([
-    db
-      .select({
-        total: count(),
-        active: sql<number>`count(*) filter (where ${systemUsers.isActive} = true)`,
-      })
-      .from(systemUsers),
-    db
-      .select({ value: count() })
-      .from(offices)
-      .where(isNull(offices.deletedAt)),
-    db
-      .select({ value: count() })
-      .from(holidays)
-      .where(eq(holidays.year, currentYear)),
-    db
-      .select({
-        id: auditLogs.id,
-        createdAt: auditLogs.createdAt,
-        action: auditLogs.action,
-        tableName: auditLogs.tableName,
-        recordId: auditLogs.recordId,
-        userEmail: systemUsers.email,
-        empFirstName: employees.firstName,
-        empLastName: employees.lastName,
-      })
-      .from(auditLogs)
-      .leftJoin(systemUsers, eq(systemUsers.id, auditLogs.userId))
-      .leftJoin(employees, eq(employees.id, systemUsers.employeeId))
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(10),
-  ]);
+  const [userCounts, officeCount, holidayCount, recentAudits] =
+    await Promise.all([
+      db
+        .select({
+          total: count(),
+          active: sql<number>`count(*) filter (where ${systemUsers.isActive} = true)`,
+        })
+        .from(systemUsers),
+      db
+        .select({ value: count() })
+        .from(offices)
+        .where(isNull(offices.deletedAt)),
+      db
+        .select({ value: count() })
+        .from(holidays)
+        .where(eq(holidays.year, currentYear)),
+      db
+        .select({
+          id: auditLogs.id,
+          createdAt: auditLogs.createdAt,
+          action: auditLogs.action,
+          tableName: auditLogs.tableName,
+          recordId: auditLogs.recordId,
+          userEmail: systemUsers.email,
+          empFirstName: employees.firstName,
+          empLastName: employees.lastName,
+        })
+        .from(auditLogs)
+        .leftJoin(systemUsers, eq(systemUsers.id, auditLogs.userId))
+        .leftJoin(employees, eq(employees.id, systemUsers.employeeId))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(10),
+    ]);
 
   const userStats = userCounts[0] ?? { total: 0, active: 0 };
   return {
@@ -83,74 +79,77 @@ async function getAdminStats() {
     holidayCountThisYear: holidayCount[0]?.value ?? 0,
     recentAudits: recentAudits.map((r) => ({
       id: r.id,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+      createdAt:
+        r.createdAt instanceof Date
+          ? r.createdAt.toISOString()
+          : String(r.createdAt),
       action: r.action,
       tableName: r.tableName,
       recordId: r.recordId,
       userName:
         r.empFirstName && r.empLastName
           ? `${r.empFirstName} ${r.empLastName}`
-          : (r.userEmail ?? 'System'),
+          : (r.userEmail ?? "System"),
     })),
   };
 }
 
 export default async function AdminHomePage() {
-  await requirePermission('admin', 'view');
+  await requirePermission("admin", "view");
   const stats = await getAdminStats();
 
   const NAV_CARDS: NavCard[] = [
     {
-      href: '/admin/users',
+      href: "/admin/users",
       icon: Users,
-      title: 'User Management',
+      title: "User Management",
       description:
-        'Create system accounts, assign roles and office scope, activate or deactivate users.',
+        "Create system accounts, assign roles and office scope, activate or deactivate users.",
       stat: `${stats.activeUserCount.toLocaleString()} active · ${stats.userCount.toLocaleString()} total`,
     },
     {
-      href: '/admin/offices',
+      href: "/admin/offices",
       icon: Building2,
-      title: 'Offices',
+      title: "Offices",
       description:
-        'Manage Senate offices, committees, departments, divisions, and their hierarchy.',
+        "Manage PCSO offices, sectors, departments, divisions, and their hierarchy.",
       stat: `${stats.officeCount.toLocaleString()} offices`,
     },
     {
-      href: '/admin/salary-grades',
+      href: "/admin/salary-grades",
       icon: DollarSign,
-      title: 'Salary Grades (SSL V)',
+      title: "Salary Grades (SSL V)",
       description:
-        'View and update the Salary Standardization Law V grade-step table. Historical rates are preserved.',
+        "View and update the Salary Standardization Law V grade-step table. Historical rates are preserved.",
     },
     {
-      href: '/admin/rates',
+      href: "/admin/rates",
       icon: Landmark,
-      title: 'Government Rates',
+      title: "Government Rates",
       description:
-        'Manage GSIS, PhilHealth, Pag-IBIG, and BIR TRAIN tax table rates with effective-date versioning.',
+        "Manage GSIS, PhilHealth, Pag-IBIG, and BIR TRAIN tax table rates with effective-date versioning.",
     },
     {
-      href: '/admin/holidays',
+      href: "/admin/holidays",
       icon: CalendarDays,
-      title: 'Holiday Calendar',
+      title: "Holiday Calendar",
       description:
-        'Declare regular, special non-working, and special working holidays by proclamation reference.',
+        "Declare regular, special non-working, and special working holidays by proclamation reference.",
       stat: `${stats.holidayCountThisYear.toLocaleString()} declared ${new Date().getFullYear()}`,
     },
     {
-      href: '/admin/audit-logs',
+      href: "/admin/audit-logs",
       icon: ScrollText,
-      title: 'Audit Logs',
+      title: "Audit Logs",
       description:
-        'COA-ready immutable log of every create, update, delete, approve, and export operation.',
+        "COA-ready immutable log of every create, update, delete, approve, and export operation.",
     },
     {
-      href: '/admin/settings',
+      href: "/admin/settings",
       icon: Settings,
-      title: 'System Settings',
+      title: "System Settings",
       description:
-        'Configure organization name, logo, address, email sender, and payroll cutoff dates.',
+        "Configure organization name, logo, address, email sender, and payroll cutoff dates.",
     },
   ];
 
@@ -160,8 +159,8 @@ export default async function AdminHomePage() {
         title="Administration"
         description="System configuration, user management, government rates, and COA-ready audit logs."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Admin" },
         ]}
       />
 
@@ -181,12 +180,16 @@ export default async function AdminHomePage() {
                   {title}
                 </h2>
                 {stat && (
-                  <p className="text-xs font-medium text-senate-navy/70">{stat}</p>
+                  <p className="text-xs font-medium text-senate-navy/70">
+                    {stat}
+                  </p>
                 )}
               </div>
               <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {description}
+            </p>
           </Link>
         ))}
       </div>
@@ -209,25 +212,32 @@ export default async function AdminHomePage() {
             </li>
           ) : (
             stats.recentAudits.map((entry) => (
-              <li key={entry.id} className="flex items-center gap-4 px-5 py-3 text-sm">
+              <li
+                key={entry.id}
+                className="flex items-center gap-4 px-5 py-3 text-sm"
+              >
                 <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground">
-                  {new Date(entry.createdAt).toLocaleString('en-PH', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
+                  {new Date(entry.createdAt).toLocaleString("en-PH", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
                   })}
                 </span>
                 <span className="w-24 shrink-0 rounded bg-muted px-2 py-0.5 text-center text-xs font-semibold capitalize">
                   {entry.action}
                 </span>
-                <span className="w-48 shrink-0 truncate font-medium">{entry.userName}</span>
+                <span className="w-48 shrink-0 truncate font-medium">
+                  {entry.userName}
+                </span>
                 <span className="flex-1 truncate text-muted-foreground">
                   <code className="rounded bg-muted/60 px-1 py-0.5 text-xs">
                     {entry.tableName}
                   </code>
                   {entry.recordId && (
-                    <span className="ml-2 font-mono text-xs">{entry.recordId.slice(0, 8)}…</span>
+                    <span className="ml-2 font-mono text-xs">
+                      {entry.recordId.slice(0, 8)}…
+                    </span>
                   )}
                 </span>
               </li>

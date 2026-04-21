@@ -1,5 +1,5 @@
 /**
- * Leave module read-only queries — Senate HRIS Phase 08
+ * Leave module read-only queries — PCSO HRIS Phase 08
  *
  * Used by Server Components and React Query hooks.
  * All queries go through Supabase RLS-aware client.
@@ -11,9 +11,9 @@
  *    on error or missing data — they never throw on empty result sets.
  */
 
-import { createServerClient } from '@/lib/supabase/server';
-import { LEAVE_TYPES, LEAVE_TYPE_CODES } from '@/lib/constants/leave-types';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
+import { createServerClient } from "@/lib/supabase/server";
+import { LEAVE_TYPES, LEAVE_TYPE_CODES } from "@/lib/constants/leave-types";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
 
 // Known leave type codes we surface across the module. Used to defensively
 // filter out any junk rows the DB might have from pre-migration seed scripts.
@@ -31,7 +31,7 @@ export interface LeaveApplicationRow {
   startDate: string;
   endDate: string;
   workingDays: number;
-  period: 'am' | 'pm' | 'whole_day';
+  period: "am" | "pm" | "whole_day";
   reason: string | null;
   status: string;
   attachmentPaths: string[] | null;
@@ -58,39 +58,42 @@ export interface LeaveCreditBalanceRow {
 // ---------------------------------------------------------------------------
 
 function toLeaveApplication(row: Record<string, unknown>): LeaveApplicationRow {
-  const code = (row['leave_type_code'] ?? '') as LeaveTypeCode;
+  const code = (row["leave_type_code"] ?? "") as LeaveTypeCode;
   return {
-    id: String(row['id'] ?? ''),
-    employeeId: String(row['employee_id'] ?? ''),
+    id: String(row["id"] ?? ""),
+    employeeId: String(row["employee_id"] ?? ""),
     leaveTypeCode: code,
     leaveTypeName: LEAVE_TYPES[code]?.name ?? String(code),
-    startDate: String(row['date_from'] ?? row['start_date'] ?? ''),
-    endDate: String(row['date_to'] ?? row['end_date'] ?? ''),
-    workingDays: Number(row['no_of_days'] ?? row['working_days'] ?? 0),
-    period: (row['period'] as 'am' | 'pm' | 'whole_day') ?? 'whole_day',
-    reason: typeof row['reason'] === 'string' ? row['reason'] : null,
-    status: String(row['status'] ?? 'pending'),
-    attachmentPaths: Array.isArray(row['attachment_paths'])
-      ? (row['attachment_paths'] as string[])
+    startDate: String(row["date_from"] ?? row["start_date"] ?? ""),
+    endDate: String(row["date_to"] ?? row["end_date"] ?? ""),
+    workingDays: Number(row["no_of_days"] ?? row["working_days"] ?? 0),
+    period: (row["period"] as "am" | "pm" | "whole_day") ?? "whole_day",
+    reason: typeof row["reason"] === "string" ? row["reason"] : null,
+    status: String(row["status"] ?? "pending"),
+    attachmentPaths: Array.isArray(row["attachment_paths"])
+      ? (row["attachment_paths"] as string[])
       : null,
-    isCommutation: Boolean(row['is_commutation'] ?? false),
-    currentApproverId: typeof row['approved_by'] === 'string' ? row['approved_by'] : null,
-    approverRemarks: typeof row['remarks'] === 'string' ? row['remarks'] : null,
-    createdAt: String(row['created_at'] ?? ''),
+    isCommutation: Boolean(row["is_commutation"] ?? false),
+    currentApproverId:
+      typeof row["approved_by"] === "string" ? row["approved_by"] : null,
+    approverRemarks: typeof row["remarks"] === "string" ? row["remarks"] : null,
+    createdAt: String(row["created_at"] ?? ""),
   };
 }
 
-function toLeaveCreditBalance(row: Record<string, unknown>): LeaveCreditBalanceRow {
+function toLeaveCreditBalance(
+  row: Record<string, unknown>,
+): LeaveCreditBalanceRow {
   return {
-    employeeId: String(row['employee_id'] ?? ''),
-    year: Number(row['year'] ?? new Date().getFullYear()),
-    vlBalance: Number(row['balance'] ?? row['vl_balance'] ?? 0),
-    slBalance: Number(row['sl_balance'] ?? 0),
-    vlEarned: Number(row['vl_earned'] ?? row['total_credits'] ?? 0),
-    slEarned: Number(row['sl_earned'] ?? 0),
-    vlCarryOver: Number(row['carry_over'] ?? row['vl_carry_over'] ?? 0),
-    slCarryOver: Number(row['sl_carry_over'] ?? 0),
-    vlForfeited: Number(row['vl_forfeited'] ?? 0),
+    employeeId: String(row["employee_id"] ?? ""),
+    year: Number(row["year"] ?? new Date().getFullYear()),
+    vlBalance: Number(row["balance"] ?? row["vl_balance"] ?? 0),
+    slBalance: Number(row["sl_balance"] ?? 0),
+    vlEarned: Number(row["vl_earned"] ?? row["total_credits"] ?? 0),
+    slEarned: Number(row["sl_earned"] ?? 0),
+    vlCarryOver: Number(row["carry_over"] ?? row["vl_carry_over"] ?? 0),
+    slCarryOver: Number(row["sl_carry_over"] ?? 0),
+    vlForfeited: Number(row["vl_forfeited"] ?? 0),
   };
 }
 
@@ -105,8 +108,9 @@ export async function getMyLeaveApplications(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('leave_applications')
-    .select(`
+    .from("leave_applications")
+    .select(
+      `
       id,
       employee_id,
       leave_type_id,
@@ -119,21 +123,25 @@ export async function getMyLeaveApplications(
       remarks,
       created_at,
       leave_types ( code, name )
-    `)
-    .eq('employee_id', employeeId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
+    `,
+    )
+    .eq("employee_id", employeeId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
 
   // Defensive: never throw on empty/error — return empty list so pages keep
   // rendering a usable shell for the user.
   if (error) {
-    console.error('[leave/queries] getMyLeaveApplications:', error.message);
+    console.error("[leave/queries] getMyLeaveApplications:", error.message);
     return [];
   }
 
   return (data ?? []).map((row) => {
-    const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
-    const code = (leaveTypeData?.code ?? 'VL') as LeaveTypeCode;
+    const leaveTypeData = row.leave_types as {
+      code?: string;
+      name?: string;
+    } | null;
+    const code = (leaveTypeData?.code ?? "VL") as LeaveTypeCode;
     return {
       id: String(row.id),
       employeeId: String(row.employee_id),
@@ -142,13 +150,14 @@ export async function getMyLeaveApplications(
       startDate: String(row.date_from),
       endDate: String(row.date_to),
       workingDays: Number(row.no_of_days),
-      period: 'whole_day',
-      reason: typeof row.reason === 'string' ? row.reason : null,
+      period: "whole_day",
+      reason: typeof row.reason === "string" ? row.reason : null,
       status: String(row.status),
       attachmentPaths: null,
       isCommutation: false,
-      currentApproverId: typeof row.approved_by === 'string' ? row.approved_by : null,
-      approverRemarks: typeof row.remarks === 'string' ? row.remarks : null,
+      currentApproverId:
+        typeof row.approved_by === "string" ? row.approved_by : null,
+      approverRemarks: typeof row.remarks === "string" ? row.remarks : null,
       createdAt: String(row.created_at),
     };
   });
@@ -211,7 +220,7 @@ export async function getPendingApprovals(
   const to = from + pageSize - 1;
 
   let pendingQuery = supabase
-    .from('leave_applications')
+    .from("leave_applications")
     .select(
       `
       id,
@@ -228,23 +237,23 @@ export async function getPendingApprovals(
       leave_types ( code, name ),
       employees ( first_name, last_name, employee_no )
     `,
-      { count: 'exact' },
+      { count: "exact" },
     )
-    .eq('status', 'pending')
-    .is('deleted_at', null);
+    .eq("status", "pending")
+    .is("deleted_at", null);
 
   if (options?.scopeEmployeeId) {
-    pendingQuery = pendingQuery.eq('employee_id', options.scopeEmployeeId);
+    pendingQuery = pendingQuery.eq("employee_id", options.scopeEmployeeId);
   }
 
   const { data, error, count } = await pendingQuery
-    .order('created_at', { ascending: true })
+    .order("created_at", { ascending: true })
     .range(from, to);
 
   // Defensive: on error we return an empty, structurally-valid payload so
   // approver UIs can still render a "no pending" empty state.
   if (error) {
-    console.error('[leave/queries] getPendingApprovals:', error.message);
+    console.error("[leave/queries] getPendingApprovals:", error.message);
     if (options?.paginated) {
       return { rows: [], total: 0, page, pageSize, totalPages: 1 };
     }
@@ -260,30 +269,33 @@ export async function getPendingApprovals(
 
   if (employeeIds.length > 0) {
     const { data: credits } = await supabase
-      .from('leave_credits')
-      .select('employee_id, balance, leave_types ( code )')
-      .in('employee_id', employeeIds)
-      .eq('year', year);
+      .from("leave_credits")
+      .select("employee_id, balance, leave_types ( code )")
+      .in("employee_id", employeeIds)
+      .eq("year", year);
 
     for (const c of credits ?? []) {
       const empId = String(c.employee_id);
-      const code = (c.leave_types as { code?: string } | null)?.code ?? '';
-      if (code !== 'VL' && code !== 'SL') continue;
+      const code = (c.leave_types as { code?: string } | null)?.code ?? "";
+      if (code !== "VL" && code !== "SL") continue;
       const existing = balanceMap.get(empId) ?? { VL: 0, SL: 0 };
-      if (code === 'VL') existing.VL = Number(c.balance ?? 0);
-      if (code === 'SL') existing.SL = Number(c.balance ?? 0);
+      if (code === "VL") existing.VL = Number(c.balance ?? 0);
+      if (code === "SL") existing.SL = Number(c.balance ?? 0);
       balanceMap.set(empId, existing);
     }
   }
 
   const enriched: PendingApprovalRow[] = rows.map((row) => {
-    const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
+    const leaveTypeData = row.leave_types as {
+      code?: string;
+      name?: string;
+    } | null;
     const empData = row.employees as {
       first_name?: string;
       last_name?: string;
       employee_no?: string;
     } | null;
-    const code = (leaveTypeData?.code ?? 'VL') as LeaveTypeCode;
+    const code = (leaveTypeData?.code ?? "VL") as LeaveTypeCode;
     const base = toLeaveApplication({
       ...row,
       leave_type_code: code,
@@ -294,8 +306,8 @@ export async function getPendingApprovals(
 
     const empId = String(row.employee_id);
     let currentBalance: number | null = null;
-    if (code === 'VL') currentBalance = balanceMap.get(empId)?.VL ?? 0;
-    else if (code === 'SL') currentBalance = balanceMap.get(empId)?.SL ?? 0;
+    if (code === "VL") currentBalance = balanceMap.get(empId)?.VL ?? 0;
+    else if (code === "SL") currentBalance = balanceMap.get(empId)?.SL ?? 0;
 
     // Credits are deducted at apply time — current balance already reflects
     // the deduction, so balanceAfterDeduction === currentBalance.
@@ -304,15 +316,15 @@ export async function getPendingApprovals(
     return {
       ...base,
       employeeFullName: empData
-        ? `${empData.last_name ?? ''}, ${empData.first_name ?? ''}`.trim()
-        : 'Unknown',
-      employeeNo: String(empData?.employee_no ?? ''),
+        ? `${empData.last_name ?? ""}, ${empData.first_name ?? ""}`.trim()
+        : "Unknown",
+      employeeNo: String(empData?.employee_no ?? ""),
       currentBalance,
       balanceAfterDeduction,
     };
   });
 
-  const total = typeof count === 'number' ? count : enriched.length;
+  const total = typeof count === "number" ? count : enriched.length;
 
   if (options?.paginated) {
     return {
@@ -348,8 +360,9 @@ export async function getLeaveApplicationDetail(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('leave_applications')
-    .select(`
+    .from("leave_applications")
+    .select(
+      `
       id,
       employee_id,
       leave_type_id,
@@ -363,13 +376,17 @@ export async function getLeaveApplicationDetail(
       created_at,
       leave_types ( code, name ),
       employees ( id, first_name, last_name, employee_no, office_id )
-    `)
-    .eq('id', leaveApplicationId)
+    `,
+    )
+    .eq("id", leaveApplicationId)
     .single();
 
   if (error) return null;
 
-  const leaveTypeData = data.leave_types as { code?: string; name?: string } | null;
+  const leaveTypeData = data.leave_types as {
+    code?: string;
+    name?: string;
+  } | null;
   const employeeData = data.employees as {
     id?: string;
     first_name?: string;
@@ -378,7 +395,7 @@ export async function getLeaveApplicationDetail(
     office_id?: string;
   } | null;
 
-  const code = (leaveTypeData?.code ?? 'VL') as LeaveTypeCode;
+  const code = (leaveTypeData?.code ?? "VL") as LeaveTypeCode;
   const base = toLeaveApplication({
     ...data,
     leave_type_code: code,
@@ -391,10 +408,13 @@ export async function getLeaveApplicationDetail(
     ...base,
     employee: {
       id: String(employeeData?.id ?? data.employee_id),
-      firstName: String(employeeData?.first_name ?? ''),
-      lastName: String(employeeData?.last_name ?? ''),
-      employeeNo: String(employeeData?.employee_no ?? ''),
-      officeId: typeof employeeData?.office_id === 'string' ? employeeData.office_id : null,
+      firstName: String(employeeData?.first_name ?? ""),
+      lastName: String(employeeData?.last_name ?? ""),
+      employeeNo: String(employeeData?.employee_no ?? ""),
+      officeId:
+        typeof employeeData?.office_id === "string"
+          ? employeeData.office_id
+          : null,
     },
   };
 }
@@ -420,8 +440,9 @@ export async function getLeaveCreditBalance(
   // Filter to known leave codes so any stale/unknown rows the DB might carry
   // don't leak into the balance summary.
   const { data, error } = await supabase
-    .from('leave_credits')
-    .select(`
+    .from("leave_credits")
+    .select(
+      `
       employee_id,
       year,
       balance,
@@ -429,13 +450,14 @@ export async function getLeaveCreditBalance(
       used_credits,
       carry_over,
       leave_types!inner ( code )
-    `)
-    .eq('employee_id', employeeId)
-    .eq('year', year)
-    .in('leave_types.code', KNOWN_LEAVE_CODES as string[]);
+    `,
+    )
+    .eq("employee_id", employeeId)
+    .eq("year", year)
+    .in("leave_types.code", KNOWN_LEAVE_CODES as string[]);
 
   if (error) {
-    console.error('[leave/queries] getLeaveCreditBalance:', error.message);
+    console.error("[leave/queries] getLeaveCreditBalance:", error.message);
     return {
       employeeId,
       year,
@@ -450,10 +472,10 @@ export async function getLeaveCreditBalance(
   }
 
   const vlRow = (data ?? []).find(
-    (r) => (r.leave_types as { code?: string } | null)?.code === 'VL',
+    (r) => (r.leave_types as { code?: string } | null)?.code === "VL",
   );
   const slRow = (data ?? []).find(
-    (r) => (r.leave_types as { code?: string } | null)?.code === 'SL',
+    (r) => (r.leave_types as { code?: string } | null)?.code === "SL",
   );
 
   // Zero-balance default — never return `null` just because the employee
@@ -499,20 +521,25 @@ export async function getAllEmployeeCreditSummaries(
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
-    .from('leave_credits')
-    .select(`
+    .from("leave_credits")
+    .select(
+      `
       employee_id,
       year,
       balance,
       leave_types!inner ( code ),
       employees!inner ( id, employee_no, first_name, last_name, office_id )
-    `)
-    .eq('year', year)
-    .in('leave_types.code', KNOWN_LEAVE_CODES as string[])
-    .is('employees.deleted_at', null);
+    `,
+    )
+    .eq("year", year)
+    .in("leave_types.code", KNOWN_LEAVE_CODES as string[])
+    .is("employees.deleted_at", null);
 
   if (error) {
-    console.error('[leave/queries] getAllEmployeeCreditSummaries:', error.message);
+    console.error(
+      "[leave/queries] getAllEmployeeCreditSummaries:",
+      error.message,
+    );
     return [];
   }
 
@@ -530,14 +557,16 @@ export async function getAllEmployeeCreditSummaries(
 
     const leaveTypeData = row.leave_types as { code?: string } | null;
     const empId = String(row.employee_id);
-    const code = leaveTypeData?.code ?? '';
+    const code = leaveTypeData?.code ?? "";
 
     if (!byEmployee.has(empId)) {
       byEmployee.set(empId, {
         employeeId: empId,
-        employeeNo: String(empData?.employee_no ?? ''),
-        fullName: `${empData?.last_name ?? ''}, ${empData?.first_name ?? ''}`.trim(),
-        officeId: typeof empData?.office_id === 'string' ? empData.office_id : null,
+        employeeNo: String(empData?.employee_no ?? ""),
+        fullName:
+          `${empData?.last_name ?? ""}, ${empData?.first_name ?? ""}`.trim(),
+        officeId:
+          typeof empData?.office_id === "string" ? empData.office_id : null,
         vlBalance: 0,
         slBalance: 0,
         year,
@@ -545,11 +574,13 @@ export async function getAllEmployeeCreditSummaries(
     }
 
     const summary = byEmployee.get(empId)!;
-    if (code === 'VL') summary.vlBalance = Number(row.balance);
-    if (code === 'SL') summary.slBalance = Number(row.balance);
+    if (code === "VL") summary.vlBalance = Number(row.balance);
+    if (code === "SL") summary.slBalance = Number(row.balance);
   }
 
-  return Array.from(byEmployee.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  return Array.from(byEmployee.values()).sort((a, b) =>
+    a.fullName.localeCompare(b.fullName),
+  );
 }
 
 /**
@@ -564,7 +595,7 @@ export async function getAllEmployeeCreditSummariesPaged(
 ): Promise<PaginatedEmployeeCreditSummaries> {
   const all = await getAllEmployeeCreditSummaries(year);
 
-  const search = (options?.search ?? '').trim().toLowerCase();
+  const search = (options?.search ?? "").trim().toLowerCase();
   const filtered = search
     ? all.filter(
         (r) =>
@@ -606,42 +637,54 @@ export async function getApprovedLeavesForCalendar(
   const supabase = await createServerClient();
 
   let query = supabase
-    .from('leave_applications')
-    .select(`
+    .from("leave_applications")
+    .select(
+      `
       employee_id,
       date_from,
       date_to,
       no_of_days,
       leave_types ( code, name ),
       employees ( first_name, last_name, office_id )
-    `)
-    .eq('status', 'approved')
-    .is('deleted_at', null)
-    .lte('date_from', endDate)
-    .gte('date_to', startDate);
+    `,
+    )
+    .eq("status", "approved")
+    .is("deleted_at", null)
+    .lte("date_from", endDate)
+    .gte("date_to", startDate);
 
   if (officeId) {
-    query = query.eq('employees.office_id', officeId);
+    query = query.eq("employees.office_id", officeId);
   }
   if (scopeEmployeeId) {
-    query = query.eq('employee_id', scopeEmployeeId);
+    query = query.eq("employee_id", scopeEmployeeId);
   }
 
-  const { data, error } = await query.order('date_from');
+  const { data, error } = await query.order("date_from");
 
   if (error) {
-    console.error('[leave/queries] getApprovedLeavesForCalendar:', error.message);
+    console.error(
+      "[leave/queries] getApprovedLeavesForCalendar:",
+      error.message,
+    );
     return [];
   }
 
   return (data ?? []).map((row) => {
-    const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
-    const empData = row.employees as { first_name?: string; last_name?: string } | null;
-    const code = (leaveTypeData?.code ?? 'VL') as LeaveTypeCode;
+    const leaveTypeData = row.leave_types as {
+      code?: string;
+      name?: string;
+    } | null;
+    const empData = row.employees as {
+      first_name?: string;
+      last_name?: string;
+    } | null;
+    const code = (leaveTypeData?.code ?? "VL") as LeaveTypeCode;
 
     return {
       employeeId: String(row.employee_id),
-      fullName: `${empData?.last_name ?? ''}, ${empData?.first_name ?? ''}`.trim(),
+      fullName:
+        `${empData?.last_name ?? ""}, ${empData?.first_name ?? ""}`.trim(),
       leaveTypeCode: code,
       leaveTypeName: leaveTypeData?.name ?? LEAVE_TYPES[code]?.name ?? code,
       startDate: String(row.date_from),
@@ -697,7 +740,7 @@ async function runLeaveApplicationsQuery(
   const to = from + pageSize - 1;
 
   let query = supabase
-    .from('leave_applications')
+    .from("leave_applications")
     .select(
       `
       id,
@@ -715,24 +758,24 @@ async function runLeaveApplicationsQuery(
       leave_types ( code, name ),
       employees ( first_name, last_name, employee_no )
     `,
-      withCount ? { count: 'exact' } : {},
+      withCount ? { count: "exact" } : {},
     )
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
     .range(from, to);
 
-  if (filters?.status) query = query.eq('status', filters.status);
+  if (filters?.status) query = query.eq("status", filters.status);
   if (filters?.scopeEmployeeId) {
-    query = query.eq('employee_id', filters.scopeEmployeeId);
+    query = query.eq("employee_id", filters.scopeEmployeeId);
   } else if (filters?.employeeId) {
-    query = query.eq('employee_id', filters.employeeId);
+    query = query.eq("employee_id", filters.employeeId);
   }
-  if (filters?.dateFrom) query = query.gte('date_from', filters.dateFrom);
-  if (filters?.dateTo) query = query.lte('date_to', filters.dateTo);
+  if (filters?.dateFrom) query = query.gte("date_from", filters.dateFrom);
+  if (filters?.dateTo) query = query.lte("date_to", filters.dateTo);
 
   const { data, error, count } = await query;
   if (error) {
-    console.error('[leave/queries] runLeaveApplicationsQuery:', error.message);
+    console.error("[leave/queries] runLeaveApplicationsQuery:", error.message);
     return { rows: [], total: 0, page, pageSize, totalPages: 1 };
   }
 
@@ -740,7 +783,9 @@ async function runLeaveApplicationsQuery(
   const approverIds = [
     ...new Set(
       (data ?? [])
-        .map((row) => (typeof row.approved_by === 'string' ? row.approved_by : null))
+        .map((row) =>
+          typeof row.approved_by === "string" ? row.approved_by : null,
+        )
         .filter((id): id is string => id !== null),
     ),
   ];
@@ -748,26 +793,32 @@ async function runLeaveApplicationsQuery(
   const approverMap = new Map<string, string>();
   if (approverIds.length > 0) {
     const { data: approvers } = await supabase
-      .from('system_users')
-      .select('id, employees ( first_name, last_name )')
-      .in('id', approverIds);
+      .from("system_users")
+      .select("id, employees ( first_name, last_name )")
+      .in("id", approverIds);
     for (const approver of approvers ?? []) {
-      const empData = approver.employees as { first_name?: string; last_name?: string } | null;
+      const empData = approver.employees as {
+        first_name?: string;
+        last_name?: string;
+      } | null;
       const name = empData
-        ? `${empData.last_name ?? ''}, ${empData.first_name ?? ''}`.trim()
+        ? `${empData.last_name ?? ""}, ${empData.first_name ?? ""}`.trim()
         : null;
       if (name) approverMap.set(String(approver.id), name);
     }
   }
 
   const rows: LeaveApplicationRowEnriched[] = (data ?? []).map((row) => {
-    const leaveTypeData = row.leave_types as { code?: string; name?: string } | null;
+    const leaveTypeData = row.leave_types as {
+      code?: string;
+      name?: string;
+    } | null;
     const empData = row.employees as {
       first_name?: string;
       last_name?: string;
       employee_no?: string;
     } | null;
-    const code = (leaveTypeData?.code ?? 'VL') as LeaveTypeCode;
+    const code = (leaveTypeData?.code ?? "VL") as LeaveTypeCode;
     const base = toLeaveApplication({
       ...row,
       leave_type_code: code,
@@ -779,18 +830,18 @@ async function runLeaveApplicationsQuery(
     return {
       ...base,
       employeeFullName: empData
-        ? `${empData.last_name ?? ''}, ${empData.first_name ?? ''}`.trim()
-        : 'Unknown',
-      employeeNo: String(empData?.employee_no ?? ''),
+        ? `${empData.last_name ?? ""}, ${empData.first_name ?? ""}`.trim()
+        : "Unknown",
+      employeeNo: String(empData?.employee_no ?? ""),
       approverName:
-        typeof row.approved_by === 'string'
+        typeof row.approved_by === "string"
           ? (approverMap.get(row.approved_by) ?? null)
           : null,
-      approvedAt: typeof row.approved_at === 'string' ? row.approved_at : null,
+      approvedAt: typeof row.approved_at === "string" ? row.approved_at : null,
     };
   });
 
-  const total = typeof count === 'number' ? count : rows.length;
+  const total = typeof count === "number" ? count : rows.length;
   return {
     rows,
     total,

@@ -13,9 +13,9 @@ import {
   View,
   StyleSheet,
   Font,
-} from '@react-pdf/renderer';
-import { LEAVE_TYPES } from '@/lib/constants/leave-types';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
+} from "@react-pdf/renderer";
+import { LEAVE_TYPES } from "@/lib/constants/leave-types";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,7 +29,7 @@ export interface LeaveForm6Props {
     startDate: string;
     endDate: string;
     workingDays: number;
-    period: 'am' | 'pm' | 'whole_day';
+    period: "am" | "pm" | "whole_day";
     reason: string | null;
     status: string;
     approverRemarks: string | null;
@@ -61,38 +61,39 @@ export interface LeaveForm6Props {
 // Styles
 // ---------------------------------------------------------------------------
 
-const SENATE_NAVY = '#0B2545';
-const SENATE_GOLD = '#C8A84B';
-const LIGHT_GRAY = '#f5f5f5';
-const BORDER_COLOR = '#d1d5db';
+// PCSO brand hex. Constants kept legacy-named (SENATE_*) so callers aren't disturbed.
+const SENATE_NAVY = "#1B4F9E";
+const SENATE_GOLD = "#FFCB05";
+const LIGHT_GRAY = "#f5f5f5";
+const BORDER_COLOR = "#d1d5db";
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: "Helvetica",
     fontSize: 8,
     padding: 30,
-    color: '#111827',
-    backgroundColor: '#ffffff',
+    color: "#111827",
+    backgroundColor: "#ffffff",
   },
   // Header
   header: {
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 8,
   },
   headerAgency: {
     fontSize: 7,
-    color: '#6b7280',
+    color: "#6b7280",
     marginBottom: 2,
   },
   headerTitle: {
     fontSize: 11,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     color: SENATE_NAVY,
     marginBottom: 2,
   },
   headerSubtitle: {
     fontSize: 7.5,
-    color: '#374151',
+    color: "#374151",
     marginBottom: 2,
   },
   formNumber: {
@@ -113,15 +114,15 @@ const styles = StyleSheet.create({
   // Sections
   sectionHeader: {
     backgroundColor: SENATE_NAVY,
-    color: '#FAF4E6',
-    fontFamily: 'Helvetica-Bold',
+    color: "#FAF4E6",
+    fontFamily: "Helvetica-Bold",
     fontSize: 7.5,
     padding: 3,
     marginBottom: 4,
   },
   // Rows
   row: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 3,
   },
   col: {
@@ -129,12 +130,12 @@ const styles = StyleSheet.create({
   },
   colLabel: {
     fontSize: 6.5,
-    color: '#6b7280',
+    color: "#6b7280",
     marginBottom: 1,
   },
   colValue: {
     fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     borderBottomWidth: 0.5,
     borderBottomColor: BORDER_COLOR,
     paddingBottom: 2,
@@ -147,13 +148,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   tableHeader: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: LIGHT_GRAY,
     borderBottomWidth: 0.5,
     borderBottomColor: BORDER_COLOR,
   },
   tableRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderBottomWidth: 0.3,
     borderBottomColor: BORDER_COLOR,
   },
@@ -165,24 +166,24 @@ const styles = StyleSheet.create({
     borderRightColor: BORDER_COLOR,
   },
   tableCellHeader: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     fontSize: 6.5,
-    color: '#374151',
+    color: "#374151",
   },
   // Checkbox
   checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 3,
   },
   checkbox: {
     width: 10,
     height: 10,
     borderWidth: 0.8,
-    borderColor: '#374151',
+    borderColor: "#374151",
     marginRight: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   checkboxChecked: {
     width: 6,
@@ -202,14 +203,14 @@ const styles = StyleSheet.create({
   },
   signatureLine: {
     borderBottomWidth: 0.8,
-    borderBottomColor: '#374151',
+    borderBottomColor: "#374151",
     marginBottom: 2,
     height: 20,
   },
   signatureLabel: {
     fontSize: 6.5,
-    color: '#6b7280',
-    textAlign: 'center',
+    color: "#6b7280",
+    textAlign: "center",
   },
   // Stamp area
   officialUse: {
@@ -221,9 +222,9 @@ const styles = StyleSheet.create({
   },
   officialUseTitle: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: "Helvetica-Bold",
     marginBottom: 4,
-    textDecoration: 'underline',
+    textDecoration: "underline",
   },
 });
 
@@ -232,20 +233,14 @@ const styles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 function formatDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  return new Date(isoDate).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 }
 
-function CheckboxItem({
-  label,
-  checked,
-}: {
-  label: string;
-  checked: boolean;
-}) {
+function CheckboxItem({ label, checked }: { label: string; checked: boolean }) {
   return (
     <View style={styles.checkboxRow}>
       <View style={styles.checkbox}>
@@ -263,26 +258,30 @@ function CheckboxItem({
 export function LeaveForm6({
   application,
   employee,
-  recommendingOfficialName = '___________________________',
-  approvingAuthorityName = '___________________________',
+  recommendingOfficialName = "___________________________",
+  approvingAuthorityName = "___________________________",
   credits,
 }: LeaveForm6Props) {
   const leaveType = LEAVE_TYPES[application.leaveTypeCode];
-  const fullName = `${employee.lastName}, ${employee.firstName}${employee.middleName ? ` ${employee.middleName}` : ''}`;
+  const fullName = `${employee.lastName}, ${employee.firstName}${employee.middleName ? ` ${employee.middleName}` : ""}`;
 
   return (
     <Document
       title={`CSC Form No. 6 — ${fullName}`}
-      author="Senate of the Philippines HRIS"
+      author="PCSO HRIS"
       subject="Application for Leave"
-      keywords="leave,CSC,Form 6,Senate HRIS"
+      keywords="leave,CSC,Form 6,PCSO HRIS"
     >
       <Page size="LETTER" style={styles.page}>
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <View style={styles.header}>
           <Text style={styles.formNumber}>Republic of the Philippines</Text>
-          <Text style={styles.headerTitle}>SENATE OF THE PHILIPPINES</Text>
-          <Text style={styles.headerSubtitle}>Human Resources Information System</Text>
+          <Text style={styles.headerTitle}>
+            PHILIPPINE CHARITY SWEEPSTAKES OFFICE
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            Human Resources Information System
+          </Text>
           <View style={styles.divider} />
           <Text style={styles.headerAgency}>CSC FORM No. 6 (Revised 2018)</Text>
           <Text style={styles.headerTitle}>APPLICATION FOR LEAVE</Text>
@@ -303,7 +302,9 @@ export function LeaveForm6({
         <View style={styles.row}>
           <View style={[styles.col, { marginRight: 8 }]}>
             <Text style={styles.colLabel}>3. DATE OF FILING</Text>
-            <Text style={styles.colValue}>{formatDate(application.createdAt)}</Text>
+            <Text style={styles.colValue}>
+              {formatDate(application.createdAt)}
+            </Text>
           </View>
           <View style={[styles.col, { marginRight: 8 }]}>
             <Text style={styles.colLabel}>4. POSITION</Text>
@@ -322,9 +323,11 @@ export function LeaveForm6({
         </Text>
 
         {/* Leave type checkboxes */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
+        <View
+          style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 6 }}
+        >
           {Object.values(LEAVE_TYPES).map((lt) => (
-            <View key={lt.code} style={{ width: '50%', marginBottom: 2 }}>
+            <View key={lt.code} style={{ width: "50%", marginBottom: 2 }}>
               <CheckboxItem
                 label={`${lt.code} — ${lt.name}`}
                 checked={application.leaveTypeCode === lt.code}
@@ -339,11 +342,13 @@ export function LeaveForm6({
         </Text>
         <View style={styles.table}>
           <View style={styles.tableHeader}>
-            {['DATE FROM', 'DATE TO', 'NO. OF WORKING DAYS', 'PERIOD'].map((h) => (
-              <View key={h} style={styles.tableCell}>
-                <Text style={styles.tableCellHeader}>{h}</Text>
-              </View>
-            ))}
+            {["DATE FROM", "DATE TO", "NO. OF WORKING DAYS", "PERIOD"].map(
+              (h) => (
+                <View key={h} style={styles.tableCell}>
+                  <Text style={styles.tableCellHeader}>{h}</Text>
+                </View>
+              ),
+            )}
           </View>
           <View style={styles.tableRow}>
             <View style={styles.tableCell}>
@@ -353,22 +358,24 @@ export function LeaveForm6({
               <Text>{formatDate(application.endDate)}</Text>
             </View>
             <View style={styles.tableCell}>
-              <Text style={{ fontFamily: 'Helvetica-Bold' }}>{application.workingDays}</Text>
+              <Text style={{ fontFamily: "Helvetica-Bold" }}>
+                {application.workingDays}
+              </Text>
             </View>
             <View style={styles.tableCell}>
               <Text>
-                {application.period === 'whole_day'
-                  ? 'Whole Day'
-                  : application.period === 'am'
-                    ? 'AM'
-                    : 'PM'}
+                {application.period === "whole_day"
+                  ? "Whole Day"
+                  : application.period === "am"
+                    ? "AM"
+                    : "PM"}
               </Text>
             </View>
           </View>
         </View>
 
         {/* Commutation */}
-        <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+        <View style={{ flexDirection: "row", marginBottom: 6 }}>
           <CheckboxItem
             label="In case of Vacation/Forced Leave — commutation requested"
             checked={false}
@@ -386,7 +393,7 @@ export function LeaveForm6({
             marginBottom: 6,
           }}
         >
-          <Text>{application.reason ?? '(No reason provided)'}</Text>
+          <Text>{application.reason ?? "(No reason provided)"}</Text>
         </View>
 
         {/* ── IV. Leave Credit Balance ────────────────────────────────────── */}
@@ -395,24 +402,30 @@ export function LeaveForm6({
             <Text style={styles.sectionHeader}>III. LEAVE CREDIT BALANCE</Text>
             <View style={styles.table}>
               <View style={styles.tableHeader}>
-                {['LEAVE TYPE', 'BALANCE (Days)', 'USED', 'REMAINING'].map((h) => (
-                  <View key={h} style={styles.tableCell}>
-                    <Text style={styles.tableCellHeader}>{h}</Text>
-                  </View>
-                ))}
+                {["LEAVE TYPE", "BALANCE (Days)", "USED", "REMAINING"].map(
+                  (h) => (
+                    <View key={h} style={styles.tableCell}>
+                      <Text style={styles.tableCellHeader}>{h}</Text>
+                    </View>
+                  ),
+                )}
               </View>
               {[
                 {
-                  type: 'Vacation Leave (VL)',
+                  type: "Vacation Leave (VL)",
                   balance: credits.vlBalance,
                   used:
-                    application.leaveTypeCode === 'VL' ? application.workingDays : 0,
+                    application.leaveTypeCode === "VL"
+                      ? application.workingDays
+                      : 0,
                 },
                 {
-                  type: 'Sick Leave (SL)',
+                  type: "Sick Leave (SL)",
                   balance: credits.slBalance,
                   used:
-                    application.leaveTypeCode === 'SL' ? application.workingDays : 0,
+                    application.leaveTypeCode === "SL"
+                      ? application.workingDays
+                      : 0,
                 },
               ].map(({ type, balance, used }) => (
                 <View key={type} style={styles.tableRow}>
@@ -426,7 +439,7 @@ export function LeaveForm6({
                     <Text>{used.toFixed(1)}</Text>
                   </View>
                   <View style={styles.tableCell}>
-                    <Text style={{ fontFamily: 'Helvetica-Bold' }}>
+                    <Text style={{ fontFamily: "Helvetica-Bold" }}>
                       {Math.max(0, balance - used).toFixed(3)}
                     </Text>
                   </View>
@@ -437,12 +450,15 @@ export function LeaveForm6({
         )}
 
         {/* ── V. Approval Section ─────────────────────────────────────────── */}
-        <Text style={styles.sectionHeader}>IV. CERTIFICATION OF LEAVE CREDITS</Text>
+        <Text style={styles.sectionHeader}>
+          IV. CERTIFICATION OF LEAVE CREDITS
+        </Text>
         <View style={styles.row}>
           <View style={[styles.col, { marginRight: 16 }]}>
             <Text style={[styles.colLabel, { marginBottom: 2 }]}>
-              I CERTIFY that the leave applied for is authorized under existing laws and CSC
-              rules and regulations, and that the employee has sufficient leave credits.
+              I CERTIFY that the leave applied for is authorized under existing
+              laws and CSC rules and regulations, and that the employee has
+              sufficient leave credits.
             </Text>
             <View style={styles.signatureBlock}>
               <View style={styles.signatureLine} />
@@ -460,14 +476,18 @@ export function LeaveForm6({
             </Text>
             <View style={styles.signatureBlock}>
               <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>{recommendingOfficialName}</Text>
+              <Text style={styles.signatureLabel}>
+                {recommendingOfficialName}
+              </Text>
               <Text style={[styles.signatureLabel, { marginTop: 1 }]}>
                 Recommending Official / Date
               </Text>
             </View>
             <View style={[styles.signatureBlock, { marginTop: 8 }]}>
               <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>{approvingAuthorityName}</Text>
+              <Text style={styles.signatureLabel}>
+                {approvingAuthorityName}
+              </Text>
               <Text style={[styles.signatureLabel, { marginTop: 1 }]}>
                 Approving Authority / Date
               </Text>
@@ -478,26 +498,32 @@ export function LeaveForm6({
         {/* ── VI. Applicant Signature ─────────────────────────────────────── */}
         <View style={styles.row}>
           <View style={[styles.col, { marginRight: 16 }]}>
-            <Text style={[styles.colLabel, { marginBottom: 2 }]}>APPLICANT SIGNATURE:</Text>
+            <Text style={[styles.colLabel, { marginBottom: 2 }]}>
+              APPLICANT SIGNATURE:
+            </Text>
             <View style={styles.signatureLine} />
-            <Text style={styles.signatureLabel}>Signature over Printed Name / Date</Text>
+            <Text style={styles.signatureLabel}>
+              Signature over Printed Name / Date
+            </Text>
           </View>
           <View style={styles.col}>
-            <Text style={[styles.colLabel, { marginBottom: 2 }]}>APPLICATION STATUS:</Text>
+            <Text style={[styles.colLabel, { marginBottom: 2 }]}>
+              APPLICATION STATUS:
+            </Text>
             <Text
               style={{
                 fontSize: 10,
-                fontFamily: 'Helvetica-Bold',
+                fontFamily: "Helvetica-Bold",
                 color:
-                  application.status === 'approved'
-                    ? '#059669'
-                    : application.status === 'disapproved'
-                      ? '#dc2626'
-                      : '#d97706',
+                  application.status === "approved"
+                    ? "#059669"
+                    : application.status === "disapproved"
+                      ? "#dc2626"
+                      : "#d97706",
                 marginTop: 4,
               }}
             >
-              {application.status.toUpperCase().replace(/_/g, ' ')}
+              {application.status.toUpperCase().replace(/_/g, " ")}
             </Text>
             {application.approverRemarks && (
               <Text style={[styles.colLabel, { marginTop: 2 }]}>
@@ -514,12 +540,12 @@ export function LeaveForm6({
             borderTopWidth: 0.5,
             borderTopColor: BORDER_COLOR,
             paddingTop: 4,
-            flexDirection: 'row',
-            justifyContent: 'space-between',
+            flexDirection: "row",
+            justifyContent: "space-between",
           }}
         >
           <Text style={styles.colLabel}>
-            Generated by Senate HRIS — {new Date().toLocaleDateString('en-PH')}
+            Generated by PCSO HRIS — {new Date().toLocaleDateString("en-PH")}
           </Text>
           <Text style={styles.colLabel}>
             Ref: {application.id.slice(0, 8).toUpperCase()}

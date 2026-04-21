@@ -1,19 +1,19 @@
 /**
  * Admin — Offices CRUD page
  *
- * Lists all Senate offices/committees/departments.
+ * Lists all PCSO offices, sectors, and branches.
  * Create, edit (inline dialog), and soft-delete.
  */
 
-import type { Metadata } from 'next';
-import { createServerClient } from '@/lib/supabase/server';
-import { PageHeader } from '@/components/layouts/page-header';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { requirePermission } from '@/lib/auth/guards';
-import { OfficesClient } from './_client';
+import type { Metadata } from "next";
+import { createServerClient } from "@/lib/supabase/server";
+import { PageHeader } from "@/components/layouts/page-header";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requirePermission } from "@/lib/auth/guards";
+import { OfficesClient } from "./_client";
 
 export const metadata: Metadata = {
-  title: 'Manage Offices',
+  title: "Manage Offices",
 };
 
 // ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
   const supabase = await createServerClient();
 
   const { data: offices, error } = await supabase
-    .from('offices')
+    .from("offices")
     .select(
       `
       id,
@@ -50,8 +50,8 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
       employees(first_name, last_name)
     `,
     )
-    .is('deleted_at', null)
-    .order('name');
+    .is("deleted_at", null)
+    .order("name");
 
   if (error) throw new Error(`Failed to fetch offices: ${error.message}`);
 
@@ -63,9 +63,9 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
 
   // Plantilla position counts
   const { data: posCounts } = await supabase
-    .from('plantilla_positions')
-    .select('office_id')
-    .is('deleted_at', null);
+    .from("plantilla_positions")
+    .select("office_id")
+    .is("deleted_at", null);
 
   const posMap = new Map<string, number>();
   for (const pos of posCounts ?? []) {
@@ -75,10 +75,10 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
 
   // Employee member counts
   const { data: empCounts } = await supabase
-    .from('employees')
-    .select('office_id')
-    .eq('status', 'active')
-    .is('deleted_at', null);
+    .from("employees")
+    .select("office_id")
+    .eq("status", "active")
+    .is("deleted_at", null);
 
   const empMap = new Map<string, number>();
   for (const emp of empCounts ?? []) {
@@ -87,14 +87,18 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
   }
 
   return allOffices.map((row) => {
-    const headEmp = Array.isArray(row.employees) ? row.employees[0] : row.employees;
+    const headEmp = Array.isArray(row.employees)
+      ? row.employees[0]
+      : row.employees;
     return {
       id: row.id as string,
       name: row.name as string,
       code: row.code as string,
       type: row.type as string,
       parentId: row.parent_id as string | null,
-      parentName: row.parent_id ? (parentNames.get(row.parent_id as string) ?? null) : null,
+      parentName: row.parent_id
+        ? (parentNames.get(row.parent_id as string) ?? null)
+        : null,
       headEmployeeName: headEmp
         ? `${(headEmp as { first_name: string }).first_name} ${(headEmp as { last_name: string }).last_name}`
         : null,
@@ -110,11 +114,11 @@ async function getEmployeeOptions(): Promise<
 > {
   const supabase = await createServerClient();
   const { data } = await supabase
-    .from('employees')
-    .select('id, first_name, last_name, position_title')
-    .eq('status', 'active')
-    .is('deleted_at', null)
-    .order('last_name');
+    .from("employees")
+    .select("id, first_name, last_name, position_title")
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .order("last_name");
 
   return (data ?? []).map((row) => ({
     id: row.id as string,
@@ -129,7 +133,7 @@ async function getEmployeeOptions(): Promise<
 // ---------------------------------------------------------------------------
 
 export default async function AdminOfficesPage() {
-  await requirePermission('admin', 'view');
+  await requirePermission("admin", "view");
 
   const [offices, employees] = await Promise.all([
     getOfficeList(),
@@ -140,18 +144,20 @@ export default async function AdminOfficesPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Offices"
-        description={`Manage Senate offices, committees, departments, and their hierarchy. ${offices.length.toLocaleString()} active.`}
+        description={`Manage PCSO offices, sectors, branches, and their hierarchy. ${offices.length.toLocaleString()} active.`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Admin', href: '/admin' },
-          { label: 'Offices' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Admin", href: "/admin" },
+          { label: "Offices" },
         ]}
       />
 
       <OfficesClient offices={offices} employees={employees} />
 
       {/* Realtime: re-renders when offices, plantilla, or employees change */}
-      <RealtimeBoundary tables={['offices', 'plantilla_positions', 'employees']} />
+      <RealtimeBoundary
+        tables={["offices", "plantilla_positions", "employees"]}
+      />
     </div>
   );
 }

@@ -1,8 +1,8 @@
-import type { DayType } from '@/lib/utils/attendance/types';
+import type { DayType } from "@/lib/utils/attendance/types";
 
 /**
  * Overtime premium multipliers per Labor Code and CSC rules
- * for the Senate of the Philippines.
+ * for the Philippine Charity Sweepstakes Office.
  *
  * References:
  * - Labor Code Art. 87 (ordinary OT = 1.25)
@@ -20,7 +20,9 @@ export interface OvertimeMultiplierConfig {
   overtimeMultiplier: number;
 }
 
-export const HOLIDAY_MULTIPLIERS: Readonly<Record<DayType, OvertimeMultiplierConfig>> = {
+export const HOLIDAY_MULTIPLIERS: Readonly<
+  Record<DayType, OvertimeMultiplierConfig>
+> = {
   ordinary: {
     hourlyMultiplier: 1.0,
     overtimeMultiplier: 1.25,

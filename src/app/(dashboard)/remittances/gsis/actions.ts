@@ -1,7 +1,7 @@
-'use server';
+"use server";
 
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
 import {
   gsisRemittanceBatches,
   gsisRemittanceLines,
@@ -10,12 +10,12 @@ import {
   employees,
   payrollPeriods,
   payrollRecords,
-} from '@/lib/db/schema';
-import { eq, and, isNull, desc, asc } from 'drizzle-orm';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
-import { withTx, withRetry, type Tx } from '@/lib/db/transaction';
-import { lockKey } from '@/lib/concurrency';
+} from "@/lib/db/schema";
+import { eq, and, isNull, desc, asc } from "drizzle-orm";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
+import { withTx, withRetry, type Tx } from "@/lib/db/transaction";
+import { lockKey } from "@/lib/concurrency";
 import {
   GenerateRemittanceListSchema,
   ExportForPortalSchema,
@@ -24,13 +24,17 @@ import {
   GsisRegistrationUpdateSchema,
   GsisLoanSchema,
   GsisLoanUpdateSchema,
-} from '@/lib/validations/gsis';
-import { parseMoney, roundMoney, roundHalfEven } from '@/lib/utils/payroll/rounding';
+} from "@/lib/validations/gsis";
+import {
+  parseMoney,
+  roundMoney,
+  roundHalfEven,
+} from "@/lib/utils/payroll/rounding";
 import {
   generateGsisExport,
   type GsisRemittanceExportRow,
   type GsisExportMeta,
-} from '@/lib/utils/remittances/gsis-export';
+} from "@/lib/utils/remittances/gsis-export";
 
 const REMITTANCE_LINE_INSERT_CHUNK = 200;
 
@@ -40,7 +44,9 @@ async function chunkInsertGsisLines(
 ): Promise<void> {
   if (rows.length === 0) return;
   for (let i = 0; i < rows.length; i += REMITTANCE_LINE_INSERT_CHUNK) {
-    await tx.insert(gsisRemittanceLines).values(rows.slice(i, i + REMITTANCE_LINE_INSERT_CHUNK));
+    await tx
+      .insert(gsisRemittanceLines)
+      .values(rows.slice(i, i + REMITTANCE_LINE_INSERT_CHUNK));
   }
 }
 
@@ -60,7 +66,7 @@ async function chunkInsertGsisLines(
  */
 export async function generateRemittanceList(input: unknown) {
   const parsed = GenerateRemittanceListSchema.parse(input);
-  const user = await requirePermission('remittances', 'create');
+  const user = await requirePermission("remittances", "create");
 
   const batch = await withRetry(() =>
     withTx(async (tx) => {
@@ -79,11 +85,11 @@ export async function generateRemittanceList(input: unknown) {
         )
         .limit(1);
 
-      if (!period) throw new Error('Payroll period not found.');
-      if (period.status !== 'approved' && period.status !== 'paid') {
+      if (!period) throw new Error("Payroll period not found.");
+      if (period.status !== "approved" && period.status !== "paid") {
         throw new Error(
           `Cannot generate GSIS remittance list for a period in "${period.status}" status. ` +
-            'Period must be approved or paid first.',
+            "Period must be approved or paid first.",
         );
       }
 
@@ -100,8 +106,8 @@ export async function generateRemittanceList(input: unknown) {
 
       if (existingBatch.length > 0) {
         throw new Error(
-          `A GSIS remittance batch already exists for this period (batch ID: ${existingBatch[0]?.id ?? 'unknown'}). ` +
-            'Delete the existing batch first before regenerating.',
+          `A GSIS remittance batch already exists for this period (batch ID: ${existingBatch[0]?.id ?? "unknown"}). ` +
+            "Delete the existing batch first before regenerating.",
         );
       }
 
@@ -129,22 +135,22 @@ export async function generateRemittanceList(input: unknown) {
         .orderBy(asc(employees.lastName), asc(employees.firstName));
 
       if (records.length === 0) {
-        throw new Error('No payroll records found for the selected period.');
+        throw new Error("No payroll records found for the selected period.");
       }
 
       const gsisRecords = records.filter(
-        (r) => r.emp.gsisNo != null && r.emp.gsisNo !== '',
+        (r) => r.emp.gsisNo != null && r.emp.gsisNo !== "",
       );
 
       if (gsisRecords.length === 0) {
         throw new Error(
-          'No employees with a GSIS number found in this period. ' +
-            'Ensure GSIS numbers are encoded before generating the remittance list.',
+          "No employees with a GSIS number found in this period. " +
+            "Ensure GSIS numbers are encoded before generating the remittance list.",
         );
       }
 
       const periodStart = new Date(period.periodStart);
-      const batchNo = `GSIS-${periodStart.getFullYear()}-${String(periodStart.getMonth() + 1).padStart(2, '0')}-${String(periodStart.getDate()).padStart(2, '0')}`;
+      const batchNo = `GSIS-${periodStart.getFullYear()}-${String(periodStart.getMonth() + 1).padStart(2, "0")}-${String(periodStart.getDate()).padStart(2, "0")}`;
 
       let totalPersonal = 0;
       let totalEmployer = 0;
@@ -163,8 +169,8 @@ export async function generateRemittanceList(input: unknown) {
 
         const mi = r.emp.middleName
           ? ` ${r.emp.middleName.charAt(0).toUpperCase()}.`
-          : '';
-        const suffix = r.emp.suffix ? ` ${r.emp.suffix}` : '';
+          : "";
+        const suffix = r.emp.suffix ? ` ${r.emp.suffix}` : "";
         const employeeName = `${r.emp.lastName.toUpperCase()}, ${r.emp.firstName}${mi}${suffix}`;
 
         return {
@@ -190,7 +196,7 @@ export async function generateRemittanceList(input: unknown) {
         .values({
           periodId: parsed.periodId,
           batchNo,
-          status: 'generated',
+          status: "generated",
           totalPersonalShare: roundMoney(totalPersonal),
           totalEmployerShare: roundMoney(totalEmployer),
           totalLifeInsurance: roundMoney(totalLifeInsurance),
@@ -200,10 +206,13 @@ export async function generateRemittanceList(input: unknown) {
         .returning();
 
       const batchRow = inserted[0];
-      if (!batchRow) throw new Error('Failed to insert GSIS remittance batch.');
+      if (!batchRow) throw new Error("Failed to insert GSIS remittance batch.");
 
       // Chunked insert so a 1000-employee batch doesn't send one giant query.
-      const linesWithBatchId = lineValues.map((l) => ({ ...l, batchId: batchRow.id }));
+      const linesWithBatchId = lineValues.map((l) => ({
+        ...l,
+        batchId: batchRow.id,
+      }));
       await chunkInsertGsisLines(tx, linesWithBatchId);
 
       return {
@@ -217,8 +226,8 @@ export async function generateRemittanceList(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'create',
-    table: 'gsis_remittance_batches',
+    action: "create",
+    table: "gsis_remittance_batches",
     recordId: batch.batch.id,
     newValues: {
       batchNo: batch.batchNo,
@@ -228,7 +237,7 @@ export async function generateRemittanceList(input: unknown) {
     },
   });
 
-  revalidatePath('/remittances/gsis');
+  revalidatePath("/remittances/gsis");
   return batch.batch;
 }
 
@@ -241,7 +250,7 @@ export async function generateRemittanceList(input: unknown) {
  */
 export async function exportForPortal(input: unknown) {
   const parsed = ExportForPortalSchema.parse(input);
-  await requirePermission('remittances', 'export');
+  await requirePermission("remittances", "export");
 
   // Fetch batch
   const [batch] = await db
@@ -255,7 +264,7 @@ export async function exportForPortal(input: unknown) {
     )
     .limit(1);
 
-  if (!batch) throw new Error('GSIS remittance batch not found.');
+  if (!batch) throw new Error("GSIS remittance batch not found.");
 
   // Fetch period info for metadata
   const [period] = await db
@@ -264,7 +273,7 @@ export async function exportForPortal(input: unknown) {
     .where(eq(payrollPeriods.id, batch.periodId))
     .limit(1);
 
-  if (!period) throw new Error('Associated payroll period not found.');
+  if (!period) throw new Error("Associated payroll period not found.");
 
   // Fetch lines
   const lines = await db
@@ -274,7 +283,7 @@ export async function exportForPortal(input: unknown) {
     .orderBy(asc(gsisRemittanceLines.employeeName));
 
   if (lines.length === 0) {
-    throw new Error('No remittance lines found for this batch.');
+    throw new Error("No remittance lines found for this batch.");
   }
 
   const rows: GsisRemittanceExportRow[] = lines.map((l) => ({
@@ -289,18 +298,22 @@ export async function exportForPortal(input: unknown) {
   }));
 
   const meta: GsisExportMeta = {
-    agencyName: 'Senate of the Philippines',
-    agencyCode: 'SENATE',
+    agencyName: "Philippine Charity Sweepstakes Office",
+    agencyCode: "PCSO",
     periodLabel: period.name,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
     batchNo: batch.batchNo,
   };
 
-  const { data, mimeType, filename } = generateGsisExport(rows, meta, parsed.format);
+  const { data, mimeType, filename } = generateGsisExport(
+    rows,
+    meta,
+    parsed.format,
+  );
 
   // Encode as base64 for transport over server action boundary
-  const base64 = Buffer.from(data).toString('base64');
+  const base64 = Buffer.from(data).toString("base64");
 
   return { base64, mimeType, filename, batchNo: batch.batchNo };
 }
@@ -313,7 +326,7 @@ export async function exportForPortal(input: unknown) {
  */
 export async function markSubmitted(input: unknown) {
   const parsed = MarkSubmittedSchema.parse(input);
-  const user = await requirePermission('remittances', 'process');
+  const user = await requirePermission("remittances", "process");
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -330,11 +343,11 @@ export async function markSubmitted(input: unknown) {
         )
         .limit(1);
 
-      if (!batch) throw new Error('GSIS remittance batch not found.');
-      if (batch.status === 'submitted' || batch.status === 'accepted') {
+      if (!batch) throw new Error("GSIS remittance batch not found.");
+      if (batch.status === "submitted" || batch.status === "accepted") {
         throw new Error(`Batch is already in "${batch.status}" status.`);
       }
-      if (batch.status !== 'generated') {
+      if (batch.status !== "generated") {
         throw new Error(
           `Batch must be in "generated" status to mark as submitted. Current: ${batch.status}`,
         );
@@ -344,7 +357,7 @@ export async function markSubmitted(input: unknown) {
       const updatedRows = await tx
         .update(gsisRemittanceBatches)
         .set({
-          status: 'submitted',
+          status: "submitted",
           portalReferenceNo: parsed.portalReferenceNo,
           submittedAt: now,
           submittedBy: user.id,
@@ -355,7 +368,7 @@ export async function markSubmitted(input: unknown) {
         .returning();
 
       const updated = updatedRows[0];
-      if (!updated) throw new Error('Failed to update GSIS batch status.');
+      if (!updated) throw new Error("Failed to update GSIS batch status.");
 
       return { updated, submittedAt: now };
     }),
@@ -363,18 +376,18 @@ export async function markSubmitted(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'edit',
-    table: 'gsis_remittance_batches',
+    action: "edit",
+    table: "gsis_remittance_batches",
     recordId: parsed.batchId,
-    oldValues: { status: 'generated' },
+    oldValues: { status: "generated" },
     newValues: {
-      status: 'submitted',
+      status: "submitted",
       portalReferenceNo: parsed.portalReferenceNo,
       submittedAt: result.submittedAt,
     },
   });
 
-  revalidatePath('/remittances/gsis');
+  revalidatePath("/remittances/gsis");
   revalidatePath(`/remittances/gsis/${parsed.batchId}`);
   return result.updated;
 }
@@ -383,7 +396,7 @@ export async function markSubmitted(input: unknown) {
 
 export async function createGsisRegistration(input: unknown) {
   const parsed = GsisRegistrationSchema.parse(input);
-  const user = await requirePermission('employees', 'edit');
+  const user = await requirePermission("employees", "edit");
 
   const row = await withTx(async (tx) => {
     const [existing] = await tx
@@ -399,7 +412,7 @@ export async function createGsisRegistration(input: unknown) {
 
     if (existing) {
       throw new Error(
-        'A GSIS registration record already exists for this employee. Use update instead.',
+        "A GSIS registration record already exists for this employee. Use update instead.",
       );
     }
 
@@ -418,7 +431,7 @@ export async function createGsisRegistration(input: unknown) {
       .returning();
 
     const regRow = regRows[0];
-    if (!regRow) throw new Error('Failed to create GSIS registration.');
+    if (!regRow) throw new Error("Failed to create GSIS registration.");
 
     // Sync GSIS number back to employees table for payroll use. Done in the
     // same tx so registration + employee sync are atomic.
@@ -432,8 +445,8 @@ export async function createGsisRegistration(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'create',
-    table: 'gsis_registrations',
+    action: "create",
+    table: "gsis_registrations",
     recordId: row.id,
     newValues: row as unknown as Record<string, unknown>,
   });
@@ -444,28 +457,33 @@ export async function createGsisRegistration(input: unknown) {
 
 export async function updateGsisRegistration(input: unknown) {
   const parsed = GsisRegistrationUpdateSchema.parse(input);
-  const user = await requirePermission('employees', 'edit');
+  const user = await requirePermission("employees", "edit");
 
   const result = await withTx(async (tx) => {
     const [existing] = await tx
       .select()
       .from(gsisRegistrations)
       .where(
-        and(eq(gsisRegistrations.id, parsed.id), isNull(gsisRegistrations.deletedAt)),
+        and(
+          eq(gsisRegistrations.id, parsed.id),
+          isNull(gsisRegistrations.deletedAt),
+        ),
       )
       .limit(1);
 
-    if (!existing) throw new Error('GSIS registration record not found.');
+    if (!existing) throw new Error("GSIS registration record not found.");
 
     const updateData: Partial<typeof gsisRegistrations.$inferInsert> = {
       updatedAt: new Date(),
     };
     if (parsed.gsisNo !== undefined) updateData.gsisNo = parsed.gsisNo;
     if (parsed.status !== undefined) updateData.status = parsed.status;
-    if (parsed.registeredDate !== undefined) updateData.registeredDate = parsed.registeredDate;
+    if (parsed.registeredDate !== undefined)
+      updateData.registeredDate = parsed.registeredDate;
     if (parsed.governmentServiceStartDate !== undefined)
       updateData.governmentServiceStartDate = parsed.governmentServiceStartDate;
-    if (parsed.isCompulsory !== undefined) updateData.isCompulsory = parsed.isCompulsory;
+    if (parsed.isCompulsory !== undefined)
+      updateData.isCompulsory = parsed.isCompulsory;
     if (parsed.enrolledInRetirementFund !== undefined)
       updateData.enrolledInRetirementFund = parsed.enrolledInRetirementFund;
     if (parsed.notes !== undefined) updateData.notes = parsed.notes;
@@ -476,7 +494,7 @@ export async function updateGsisRegistration(input: unknown) {
       .where(eq(gsisRegistrations.id, parsed.id))
       .returning();
 
-    if (!updated) throw new Error('Failed to update GSIS registration.');
+    if (!updated) throw new Error("Failed to update GSIS registration.");
 
     // Sync GSIS number to employees table if changed — same tx.
     if (parsed.gsisNo && parsed.employeeId) {
@@ -491,8 +509,8 @@ export async function updateGsisRegistration(input: unknown) {
 
   void auditLog({
     userId: user.id,
-    action: 'edit',
-    table: 'gsis_registrations',
+    action: "edit",
+    table: "gsis_registrations",
     recordId: parsed.id,
     oldValues: result.existing as unknown as Record<string, unknown>,
     newValues: result.updated as unknown as Record<string, unknown>,
@@ -506,7 +524,7 @@ export async function updateGsisRegistration(input: unknown) {
 
 export async function createGsisLoan(input: unknown) {
   const parsed = GsisLoanSchema.parse(input);
-  const user = await requirePermission('employees', 'edit');
+  const user = await requirePermission("employees", "edit");
 
   const loanRows = await db
     .insert(gsisLoans)
@@ -524,12 +542,12 @@ export async function createGsisLoan(input: unknown) {
     .returning();
 
   const row = loanRows[0];
-  if (!row) throw new Error('Failed to create GSIS loan.');
+  if (!row) throw new Error("Failed to create GSIS loan.");
 
   await auditLog({
     userId: user.id,
-    action: 'create',
-    table: 'gsis_loans',
+    action: "create",
+    table: "gsis_loans",
     recordId: row.id,
     newValues: row as unknown as Record<string, unknown>,
   });
@@ -540,7 +558,7 @@ export async function createGsisLoan(input: unknown) {
 
 export async function updateGsisLoan(input: unknown) {
   const parsed = GsisLoanUpdateSchema.parse(input);
-  const user = await requirePermission('employees', 'edit');
+  const user = await requirePermission("employees", "edit");
 
   const [existing] = await db
     .select()
@@ -548,7 +566,7 @@ export async function updateGsisLoan(input: unknown) {
     .where(and(eq(gsisLoans.id, parsed.id), isNull(gsisLoans.deletedAt)))
     .limit(1);
 
-  if (!existing) throw new Error('GSIS loan record not found.');
+  if (!existing) throw new Error("GSIS loan record not found.");
 
   const updateData: Partial<typeof gsisLoans.$inferInsert> = {
     updatedAt: new Date(),
@@ -559,7 +577,8 @@ export async function updateGsisLoan(input: unknown) {
     updateData.monthlyAmortization = parsed.monthlyAmortization;
   if (parsed.isActive !== undefined) updateData.isActive = parsed.isActive;
   if (parsed.notes !== undefined) updateData.notes = parsed.notes;
-  if (parsed.maturityDate !== undefined) updateData.maturityDate = parsed.maturityDate;
+  if (parsed.maturityDate !== undefined)
+    updateData.maturityDate = parsed.maturityDate;
 
   const [updated] = await db
     .update(gsisLoans)
@@ -569,8 +588,8 @@ export async function updateGsisLoan(input: unknown) {
 
   await auditLog({
     userId: user.id,
-    action: 'edit',
-    table: 'gsis_loans',
+    action: "edit",
+    table: "gsis_loans",
     recordId: parsed.id,
     oldValues: existing as unknown as Record<string, unknown>,
     newValues: updated as unknown as Record<string, unknown>,
@@ -587,7 +606,7 @@ export async function getGsisBatches(params: {
   perPage?: number;
   status?: string;
 }) {
-  await requirePermission('remittances', 'view');
+  await requirePermission("remittances", "view");
 
   const page = params.page ?? 1;
   const perPage = params.perPage ?? 20;
@@ -605,13 +624,16 @@ export async function getGsisBatches(params: {
 }
 
 export async function getGsisBatchDetail(batchId: string) {
-  await requirePermission('remittances', 'view');
+  await requirePermission("remittances", "view");
 
   const [batch] = await db
     .select()
     .from(gsisRemittanceBatches)
     .where(
-      and(eq(gsisRemittanceBatches.id, batchId), isNull(gsisRemittanceBatches.deletedAt)),
+      and(
+        eq(gsisRemittanceBatches.id, batchId),
+        isNull(gsisRemittanceBatches.deletedAt),
+      ),
     )
     .limit(1);
 
@@ -633,7 +655,7 @@ export async function getGsisBatchDetail(batchId: string) {
 }
 
 export async function getEmployeeGsisDetail(employeeId: string) {
-  await requirePermission('employees', 'view');
+  await requirePermission("employees", "view");
 
   const [registration] = await db
     .select()

@@ -1,5 +1,5 @@
 /**
- * Leave eligibility engine — Senate HRIS Phase 08
+ * Leave eligibility engine — PCSO HRIS Phase 08
  *
  * Determines which CSC leave types an employee may apply for based on:
  *  - Gender (male / female)
@@ -17,29 +17,29 @@ import {
   type LeaveTypeDefinition,
   FEMALE_ONLY_LEAVE_TYPES,
   MALE_ONLY_LEAVE_TYPES,
-} from '@/lib/constants/leave-types';
+} from "@/lib/constants/leave-types";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type Gender = 'male' | 'female';
+export type Gender = "male" | "female";
 
 export type CivilStatus =
-  | 'single'
-  | 'married'
-  | 'widowed'
-  | 'legally_separated'
-  | 'annulled'
-  | 'live_in';
+  | "single"
+  | "married"
+  | "widowed"
+  | "legally_separated"
+  | "annulled"
+  | "live_in";
 
 export type AppointmentType =
-  | 'permanent'
-  | 'temporary'
-  | 'coterminous'
-  | 'casual'
-  | 'job_order'
-  | 'contract_of_service';
+  | "permanent"
+  | "temporary"
+  | "coterminous"
+  | "casual"
+  | "job_order"
+  | "contract_of_service";
 
 export interface EmployeeLeaveProfile {
   /** Employee's gender. */
@@ -85,156 +85,184 @@ export interface LeaveEligibilityResult {
 
 /** JO and COS employees are ineligible for most statutory leave benefits. */
 function isRegularAppointment(appointmentType: AppointmentType): boolean {
-  return appointmentType !== 'job_order' && appointmentType !== 'contract_of_service';
+  return (
+    appointmentType !== "job_order" && appointmentType !== "contract_of_service"
+  );
 }
 
 /** Determine if the civil status qualifies as "married" for PL eligibility. */
 function isMarried(civilStatus: CivilStatus): boolean {
-  return civilStatus === 'married';
+  return civilStatus === "married";
 }
 
 // ---------------------------------------------------------------------------
 // Eligibility checkers per leave type
 // ---------------------------------------------------------------------------
 
-type EligibilityChecker = (
-  profile: EmployeeLeaveProfile,
-) => { eligible: boolean; reason: string | null };
-
-const ELIGIBILITY_CHECKERS: Partial<Record<LeaveTypeCode, EligibilityChecker>> = {
-  VL: (profile) => {
-    if (!isRegularAppointment(profile.appointmentType)) {
-      return { eligible: false, reason: 'JO/COS employees are not entitled to Vacation Leave.' };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  SL: (profile) => {
-    if (!isRegularAppointment(profile.appointmentType)) {
-      return { eligible: false, reason: 'JO/COS employees are not entitled to Sick Leave.' };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  FL: (profile) => {
-    if (!isRegularAppointment(profile.appointmentType)) {
-      return { eligible: false, reason: 'JO/COS employees are not entitled to Forced Leave.' };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  SPL: (profile) => {
-    if (!isRegularAppointment(profile.appointmentType)) {
-      return {
-        eligible: false,
-        reason: 'JO/COS employees are not entitled to Special Privilege Leave.',
-      };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  ML: (profile) => {
-    if (profile.gender !== 'female') {
-      return { eligible: false, reason: 'Maternity Leave is available to female employees only.' };
-    }
-    // RA 11210 applies regardless of civil status and appointment type (even JO/COS)
-    return { eligible: true, reason: null };
-  },
-
-  PL: (profile) => {
-    if (profile.gender !== 'male') {
-      return { eligible: false, reason: 'Paternity Leave is available to male employees only.' };
-    }
-    if (!isMarried(profile.civilStatus)) {
-      return {
-        eligible: false,
-        reason: 'Paternity Leave requires the employee to be legally married.',
-      };
-    }
-    const count = profile.deliveryCount ?? 0;
-    if (count >= 4) {
-      return {
-        eligible: false,
-        reason:
-          'Paternity Leave is limited to the first four (4) deliveries. ' +
-          `Employee has already availed for ${count} deliveries.`,
-      };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  SOLO: (profile) => {
-    if (!profile.hasSoloParentId) {
-      return {
-        eligible: false,
-        reason:
-          'Solo Parent Leave requires a valid Solo Parent ID issued by DSWD. ' +
-          'Please update your profile with your Solo Parent ID details.',
-      };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  SLW: (profile) => {
-    if (profile.gender !== 'female') {
-      return {
-        eligible: false,
-        reason: 'Special Leave for Women (RA 9710) is available to female employees only.',
-      };
-    }
-    // RA 9710 requires at least 6 months of service (0.5 years)
-    if (profile.yearsInService < 0.5) {
-      return {
-        eligible: false,
-        reason:
-          'Special Leave for Women requires at least six (6) months of continuous service. ' +
-          `Employee has ${(profile.yearsInService * 12).toFixed(1)} months of service.`,
-      };
-    }
-    if (!profile.hasGynecologicalCondition) {
-      return {
-        eligible: false,
-        reason:
-          'Special Leave for Women requires a medical certificate from a licensed physician ' +
-          'certifying a gynecological disorder requiring surgery.',
-      };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  REHAB: (profile) => {
-    if (!isRegularAppointment(profile.appointmentType)) {
-      return {
-        eligible: false,
-        reason: 'JO/COS employees are not entitled to Rehabilitation Leave.',
-      };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  STUDY: (profile) => {
-    if (!isRegularAppointment(profile.appointmentType)) {
-      return { eligible: false, reason: 'JO/COS employees are not entitled to Study Leave.' };
-    }
-    const minYears = LEAVE_TYPES.STUDY.minYearsInService;
-    if (profile.yearsInService < minYears) {
-      return {
-        eligible: false,
-        reason:
-          `Study Leave requires at least ${minYears} years of continuous service. ` +
-          `Employee has ${profile.yearsInService.toFixed(1)} years.`,
-      };
-    }
-    return { eligible: true, reason: null };
-  },
-
-  TERMINAL: (profile) => {
-    if (!isRegularAppointment(profile.appointmentType)) {
-      return { eligible: false, reason: 'JO/COS employees are not entitled to Terminal Leave.' };
-    }
-    return { eligible: true, reason: null };
-  },
+type EligibilityChecker = (profile: EmployeeLeaveProfile) => {
+  eligible: boolean;
+  reason: string | null;
 };
+
+const ELIGIBILITY_CHECKERS: Partial<Record<LeaveTypeCode, EligibilityChecker>> =
+  {
+    VL: (profile) => {
+      if (!isRegularAppointment(profile.appointmentType)) {
+        return {
+          eligible: false,
+          reason: "JO/COS employees are not entitled to Vacation Leave.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    SL: (profile) => {
+      if (!isRegularAppointment(profile.appointmentType)) {
+        return {
+          eligible: false,
+          reason: "JO/COS employees are not entitled to Sick Leave.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    FL: (profile) => {
+      if (!isRegularAppointment(profile.appointmentType)) {
+        return {
+          eligible: false,
+          reason: "JO/COS employees are not entitled to Forced Leave.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    SPL: (profile) => {
+      if (!isRegularAppointment(profile.appointmentType)) {
+        return {
+          eligible: false,
+          reason:
+            "JO/COS employees are not entitled to Special Privilege Leave.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    ML: (profile) => {
+      if (profile.gender !== "female") {
+        return {
+          eligible: false,
+          reason: "Maternity Leave is available to female employees only.",
+        };
+      }
+      // RA 11210 applies regardless of civil status and appointment type (even JO/COS)
+      return { eligible: true, reason: null };
+    },
+
+    PL: (profile) => {
+      if (profile.gender !== "male") {
+        return {
+          eligible: false,
+          reason: "Paternity Leave is available to male employees only.",
+        };
+      }
+      if (!isMarried(profile.civilStatus)) {
+        return {
+          eligible: false,
+          reason:
+            "Paternity Leave requires the employee to be legally married.",
+        };
+      }
+      const count = profile.deliveryCount ?? 0;
+      if (count >= 4) {
+        return {
+          eligible: false,
+          reason:
+            "Paternity Leave is limited to the first four (4) deliveries. " +
+            `Employee has already availed for ${count} deliveries.`,
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    SOLO: (profile) => {
+      if (!profile.hasSoloParentId) {
+        return {
+          eligible: false,
+          reason:
+            "Solo Parent Leave requires a valid Solo Parent ID issued by DSWD. " +
+            "Please update your profile with your Solo Parent ID details.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    SLW: (profile) => {
+      if (profile.gender !== "female") {
+        return {
+          eligible: false,
+          reason:
+            "Special Leave for Women (RA 9710) is available to female employees only.",
+        };
+      }
+      // RA 9710 requires at least 6 months of service (0.5 years)
+      if (profile.yearsInService < 0.5) {
+        return {
+          eligible: false,
+          reason:
+            "Special Leave for Women requires at least six (6) months of continuous service. " +
+            `Employee has ${(profile.yearsInService * 12).toFixed(1)} months of service.`,
+        };
+      }
+      if (!profile.hasGynecologicalCondition) {
+        return {
+          eligible: false,
+          reason:
+            "Special Leave for Women requires a medical certificate from a licensed physician " +
+            "certifying a gynecological disorder requiring surgery.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    REHAB: (profile) => {
+      if (!isRegularAppointment(profile.appointmentType)) {
+        return {
+          eligible: false,
+          reason: "JO/COS employees are not entitled to Rehabilitation Leave.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    STUDY: (profile) => {
+      if (!isRegularAppointment(profile.appointmentType)) {
+        return {
+          eligible: false,
+          reason: "JO/COS employees are not entitled to Study Leave.",
+        };
+      }
+      const minYears = LEAVE_TYPES.STUDY.minYearsInService;
+      if (profile.yearsInService < minYears) {
+        return {
+          eligible: false,
+          reason:
+            `Study Leave requires at least ${minYears} years of continuous service. ` +
+            `Employee has ${profile.yearsInService.toFixed(1)} years.`,
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+
+    TERMINAL: (profile) => {
+      if (!isRegularAppointment(profile.appointmentType)) {
+        return {
+          eligible: false,
+          reason: "JO/COS employees are not entitled to Terminal Leave.",
+        };
+      }
+      return { eligible: true, reason: null };
+    },
+  };
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -266,22 +294,22 @@ export function checkLeaveEligibility(
   } else {
     // Generic checks from the definition
     if (
-      definition.genderEligibility !== 'any' &&
+      definition.genderEligibility !== "any" &&
       definition.genderEligibility !== profile.gender
     ) {
       isEligible = false;
       ineligibilityReason = `This leave type is available to ${definition.genderEligibility} employees only.`;
     } else if (
-      definition.civilStatusEligibility !== 'any' &&
-      definition.civilStatusEligibility === 'married' &&
+      definition.civilStatusEligibility !== "any" &&
+      definition.civilStatusEligibility === "married" &&
       !isMarried(profile.civilStatus)
     ) {
       isEligible = false;
-      ineligibilityReason = 'This leave type requires the employee to be legally married.';
+      ineligibilityReason =
+        "This leave type requires the employee to be legally married.";
     } else if (profile.yearsInService < definition.minYearsInService) {
       isEligible = false;
-      ineligibilityReason =
-        `This leave type requires at least ${definition.minYearsInService} year(s) of service.`;
+      ineligibilityReason = `This leave type requires at least ${definition.minYearsInService} year(s) of service.`;
     }
   }
 

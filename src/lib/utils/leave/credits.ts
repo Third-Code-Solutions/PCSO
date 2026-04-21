@@ -1,5 +1,5 @@
 /**
- * Leave credit computation engine — Senate HRIS Phase 08
+ * Leave credit computation engine — PCSO HRIS Phase 08
  *
  * Implements CSC Omnibus Rules on Leave accrual, carry-over, and monetization
  * for Vacation Leave (VL) and Sick Leave (SL).
@@ -14,8 +14,11 @@
  *  - Monetization: allowed up to a specified cap (see monetize()).
  */
 
-import { MONTHLY_ACCRUAL_RATE, VL_CARRY_OVER_MAX } from '@/lib/constants/leave-types';
-import { roundHalfEven } from '@/lib/utils/payroll/rounding';
+import {
+  MONTHLY_ACCRUAL_RATE,
+  VL_CARRY_OVER_MAX,
+} from "@/lib/constants/leave-types";
+import { roundHalfEven } from "@/lib/utils/payroll/rounding";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -182,14 +185,24 @@ export function applyCarryOverCap(priorBalance: LeaveBalance): {
  */
 export function computeAnnualAccrual(input: AccrualInput): AccrualResult {
   const year = input.year ?? new Date().getFullYear();
-  const priorYearBalance: LeaveBalance = input.priorYearBalance ?? { vl: 0, sl: 0 };
+  const priorYearBalance: LeaveBalance = input.priorYearBalance ?? {
+    vl: 0,
+    sl: 0,
+  };
 
   const accrualMonths = computeAccrualMonths(input.hireDate, year);
 
-  const vlEarned = roundHalfEven(accrualMonths * (MONTHLY_ACCRUAL_RATE.VL ?? 1.25), 4);
-  const slEarned = roundHalfEven(accrualMonths * (MONTHLY_ACCRUAL_RATE.SL ?? 1.25), 4);
+  const vlEarned = roundHalfEven(
+    accrualMonths * (MONTHLY_ACCRUAL_RATE.VL ?? 1.25),
+    4,
+  );
+  const slEarned = roundHalfEven(
+    accrualMonths * (MONTHLY_ACCRUAL_RATE.SL ?? 1.25),
+    4,
+  );
 
-  const { vlCarryOver, slCarryOver, vlForfeited } = applyCarryOverCap(priorYearBalance);
+  const { vlCarryOver, slCarryOver, vlForfeited } =
+    applyCarryOverCap(priorYearBalance);
 
   const vlTotal = roundHalfEven(vlEarned + vlCarryOver, 4);
   const slTotal = roundHalfEven(slEarned + slCarryOver, 4);
@@ -268,14 +281,16 @@ export function accrueMonthlyCredits(
  */
 export function deductLeaveCredits(
   balance: LeaveBalance,
-  leaveType: 'VL' | 'SL',
+  leaveType: "VL" | "SL",
   days: number,
 ): LeaveBalance {
   if (days < 0) {
-    throw new RangeError(`deductLeaveCredits: days must be non-negative, got ${days}`);
+    throw new RangeError(
+      `deductLeaveCredits: days must be non-negative, got ${days}`,
+    );
   }
 
-  if (leaveType === 'VL') {
+  if (leaveType === "VL") {
     if (days > balance.vl) {
       throw new RangeError(
         `Insufficient VL balance: requested ${days} days, available ${balance.vl} days`,
@@ -302,14 +317,16 @@ export function deductLeaveCredits(
  */
 export function restoreLeaveCredits(
   balance: LeaveBalance,
-  leaveType: 'VL' | 'SL',
+  leaveType: "VL" | "SL",
   days: number,
 ): LeaveBalance {
   if (days < 0) {
-    throw new RangeError(`restoreLeaveCredits: days must be non-negative, got ${days}`);
+    throw new RangeError(
+      `restoreLeaveCredits: days must be non-negative, got ${days}`,
+    );
   }
 
-  if (leaveType === 'VL') {
+  if (leaveType === "VL") {
     return { ...balance, vl: roundHalfEven(balance.vl + days, 4) };
   }
   return { ...balance, sl: roundHalfEven(balance.sl + days, 4) };
@@ -358,10 +375,16 @@ export function monetizeLeave(input: MonetizationInput): MonetizationResult {
     slDaysMonetized = 0;
   }
 
-  const totalValue = roundHalfEven((vlDaysMonetized + slDaysMonetized) * dailyRate, 2);
+  const totalValue = roundHalfEven(
+    (vlDaysMonetized + slDaysMonetized) * dailyRate,
+    2,
+  );
   const remainingVL = roundHalfEven(vlBalance - vlDaysMonetized, 4);
   // In separation mode slDaysMonetized = slBalance * 0.5, so remaining = slBalance * 0.5
-  const remainingSL = roundHalfEven(slBalance - (isSeparation ? slDaysMonetized : 0), 4);
+  const remainingSL = roundHalfEven(
+    slBalance - (isSeparation ? slDaysMonetized : 0),
+    4,
+  );
 
   return {
     vlDaysMonetized,
