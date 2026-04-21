@@ -49,7 +49,7 @@ const ROLE_ALIASES: Readonly<Record<Role, readonly Role[]>> = {
   viewer: ["viewer", "executive", "auditor"],
 };
 
-function effectiveRolesOf(role: Role): readonly Role[] {
+export function effectiveRolesOf(role: Role): readonly Role[] {
   return ROLE_ALIASES[role] ?? [role];
 }
 

@@ -25,6 +25,7 @@ import {
   type Resource,
   type Action,
   hasPermission,
+  effectiveRolesOf,
 } from "@/lib/auth/permissions";
 import {
   Tooltip,
@@ -545,7 +546,12 @@ interface AppSidebarProps {
 function canSeeItem(item: NavGate, role: Role | undefined): boolean {
   if (!role) return false;
   if (!item.roles) return false;
-  return item.roles.includes(role);
+  // Expand the user's role through the alias map so the new seven PCSO
+  // dashboards (supervisor / executive / auditor) inherit visibility from
+  // their legacy equivalents (leave_approver / viewer) without editing
+  // every `roles: [...]` array on every nav leaf.
+  const effective = effectiveRolesOf(role);
+  return effective.some((r) => item.roles!.includes(r));
 }
 
 function matchesGate(
