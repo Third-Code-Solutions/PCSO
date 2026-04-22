@@ -4,7 +4,9 @@ import {
   ApplicantTable,
   type ApplicantRow,
 } from "@/components/recruitment/applicant-table";
+import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import { listApplications } from "@/lib/actions/rpm/applicants";
+import { requireAuth } from "@/lib/auth/guards";
 import { unwrap } from "@/components/recruitment/_result";
 
 export const metadata: Metadata = {
@@ -29,6 +31,8 @@ interface ApplicationListRow {
 export default async function ApplicantsListPage({
   searchParams,
 }: ApplicantsListPageProps) {
+  await requireAuth();
+
   const sp = await searchParams;
   const statusParam = Array.isArray(sp.status) ? sp.status[0] : sp.status;
 
@@ -70,6 +74,7 @@ export default async function ApplicantsListPage({
           { label: "Applicants" },
         ]}
       />
+      <ActionStatusBanner status={statusParam} entityLabel="Application" />
       <ApplicantTable rows={applicantRows} total={total} />
     </div>
   );

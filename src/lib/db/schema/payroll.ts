@@ -279,6 +279,12 @@ export const loanDeductionScheduleEnum = pgEnum("loan_deduction_schedule", [
   "monthly",
 ]);
 
+export const loanStatusEnum = pgEnum("loan_status", [
+  "active",
+  "paid_off",
+  "cancelled",
+]);
+
 export const loanLedger = pgTable(
   "loan_ledger",
   {
@@ -301,6 +307,7 @@ export const loanLedger = pgTable(
       precision: 12,
       scale: 2,
     }).notNull(),
+    status: loanStatusEnum("status").notNull().default("active"),
     remarks: text("remarks"),
 
     ...timestamps,
@@ -309,6 +316,7 @@ export const loanLedger = pgTable(
   (t) => [
     index("loan_ledger_employee_id_idx").on(t.employeeId),
     index("loan_ledger_loan_type_idx").on(t.loanType),
+    index("loan_ledger_status_idx").on(t.status),
   ],
 );
 
@@ -337,6 +345,36 @@ export const bankFileConfigs = pgTable(
     ...softDelete,
   },
   (t) => [index("bank_file_configs_bank_name_idx").on(t.bankName)],
+);
+
+// ─── Bank Hash Files (PAY-010) ─────────────────────────────────────────────────
+
+export const bankHashFiles = pgTable(
+  "bank_hash_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    payrollRunId: uuid("payroll_run_id")
+      .notNull()
+      .references(() => payrollPeriods.id),
+    bankName: varchar("bank_name", { length: 100 }).notNull(),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    recordCount: integer("record_count").notNull(),
+    totalAmount: numeric("total_amount", {
+      precision: 14,
+      scale: 2,
+    }).notNull(),
+    generatedById: uuid("generated_by_id")
+      .notNull()
+      .references(() => employees.id),
+    generatedAt: varchar("generated_at", { length: 50 }).notNull(),
+
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    index("bank_hash_files_payroll_run_id_idx").on(t.payrollRunId),
+    index("bank_hash_files_bank_name_idx").on(t.bankName),
+  ],
 );
 
 // ─── Relations ────────────────────────────────────────────────────────────────
@@ -411,6 +449,10 @@ export type NewLoanLedger = typeof loanLedger.$inferInsert;
 export type LoanType = (typeof loanTypeEnum.enumValues)[number];
 export type LoanDeductionSchedule =
   (typeof loanDeductionScheduleEnum.enumValues)[number];
+export type LoanStatus = (typeof loanStatusEnum.enumValues)[number];
 
 export type BankFileConfig = typeof bankFileConfigs.$inferSelect;
 export type NewBankFileConfig = typeof bankFileConfigs.$inferInsert;
+
+export type BankHashFile = typeof bankHashFiles.$inferSelect;
+export type NewBankHashFile = typeof bankHashFiles.$inferInsert;

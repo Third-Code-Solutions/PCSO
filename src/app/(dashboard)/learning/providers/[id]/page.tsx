@@ -56,6 +56,12 @@ export default async function ProviderDetailPage({ params }: PageProps) {
             contactEmail: provider.contactEmail,
             contactNumber: provider.contactNumber,
             address: provider.address ?? null,
+            trainers: provider.trainers as unknown as Array<{
+              name: string;
+              qualifications?: string;
+              expertise?: string[];
+            }>,
+            programsOffered: provider.programsOffered as unknown as string[],
           }}
         />
       </div>

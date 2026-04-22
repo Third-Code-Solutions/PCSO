@@ -56,7 +56,7 @@ export async function getMandatoryComplianceReport(filters?: {
   let employeeQuery = db
     .select({
       id: employees.id,
-      employeeNumber: employees.employeeNumber,
+      employeeNo: employees.employeeNo,
       firstName: employees.firstName,
       lastName: employees.lastName,
       officeId: employees.officeId,
@@ -117,7 +117,7 @@ export async function getMandatoryComplianceReport(filters?: {
       records.push({
         employeeId: employee.id,
         employeeName: `${employee.lastName}, ${employee.firstName}`,
-        employeeNumber: employee.employeeNumber,
+        employeeNo: employee.employeeNo,
         officeId: employee.officeId,
         programId: program.id,
         programTitle: program.title,
@@ -320,5 +320,62 @@ export async function getTrainingExpenseSummary(cycleYear?: number) {
     totalParticipants,
     totalExpense,
     byType,
+  };
+}
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+
+/**
+ * Export training expense data as CSV (compatible with Excel).
+ * Returns a simple CSV format with headers.
+ */
+export async function exportTrainingExpenseToCSV(filters?: {
+  cycleYear?: number;
+  format?: "csv";
+}): Promise<{
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
+}> {
+  const year = filters?.cycleYear || new Date().getFullYear();
+  const records = await getTrainingExpenseReport({ cycleYear: year });
+
+  // Build CSV content
+  const headers = [
+    "Program Title",
+    "L&D Type",
+    "Total Runs",
+    "Total Participants",
+    "Total Expense (PHP)",
+  ];
+
+  const rows = records.map((r) => [
+    `"${r.programTitle.replace(/"/g, '""')}"`, // Escape quotes
+    r.lndType.replace(/_/g, " "),
+    r.totalRuns.toString(),
+    r.totalParticipants.toString(),
+    r.totalExpense.toFixed(2),
+  ]);
+
+  // Add summary row
+  const summary = await getTrainingExpenseSummary(year);
+  rows.push([
+    '"TOTAL"',
+    "",
+    summary.totalRuns.toString(),
+    summary.totalParticipants.toString(),
+    summary.totalExpense.toFixed(2),
+  ]);
+
+  const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join(
+    "\n",
+  );
+
+  const bytes = new TextEncoder().encode(csvContent);
+
+  return {
+    filename: `training-expense-report-${year}.csv`,
+    contentType: "text/csv",
+    bytes,
   };
 }

@@ -129,6 +129,80 @@ export function ProviderForm({ initial, mode }: ProviderFormProps) {
         />
       </div>
 
+      <div>
+        <Label htmlFor="trainers">Trainers / Resource Persons</Label>
+        <Textarea
+          id="trainers"
+          rows={4}
+          placeholder="Enter trainers in format: Name | Qualifications | Expertise1, Expertise2 (one per line)"
+          {...register("trainers", {
+            setValueAs: (v) => {
+              if (typeof v !== "string" || v.trim() === "") return [];
+              return v
+                .split("\n")
+                .filter((line) => line.trim())
+                .map((line) => {
+                  const parts = line.split("|").map((p) => p.trim());
+                  return {
+                    name: parts[0] || "",
+                    qualifications: parts[1] || "",
+                    expertise: parts[2]
+                      ? parts[2].split(",").map((e) => e.trim())
+                      : [],
+                  };
+                });
+            },
+          })}
+          defaultValue={
+            initial?.trainers
+              ? (
+                  initial.trainers as Array<{
+                    name: string;
+                    qualifications?: string;
+                    expertise?: string[];
+                  }>
+                )
+                  .map(
+                    (t) =>
+                      `${t.name} | ${t.qualifications || ""} | ${(t.expertise || []).join(", ")}`,
+                  )
+                  .join("\n")
+              : ""
+          }
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Format: Name | Qualifications | Expertise1, Expertise2 (one trainer
+          per line)
+        </p>
+      </div>
+
+      <div>
+        <Label htmlFor="programsOffered">Programs Offered (UUIDs)</Label>
+        <Textarea
+          id="programsOffered"
+          rows={3}
+          placeholder="Enter program UUIDs, one per line (use catalog page to find IDs)"
+          {...register("programsOffered", {
+            setValueAs: (v) => {
+              if (typeof v !== "string" || v.trim() === "") return [];
+              return v
+                .split("\n")
+                .map((line) => line.trim())
+                .filter((line) => line);
+            },
+          })}
+          defaultValue={
+            initial?.programsOffered
+              ? (initial.programsOffered as string[]).join("\n")
+              : ""
+          }
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Enter training program UUIDs that this provider can deliver. One per
+          line.
+        </p>
+      </div>
+
       {serverError && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {serverError}

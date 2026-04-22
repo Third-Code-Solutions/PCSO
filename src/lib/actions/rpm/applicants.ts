@@ -62,6 +62,9 @@ interface ApplicationRow {
   matchScore: string | null;
   submittedAt: Date | null;
   createdAt: Date;
+  applicantFirstName: string | null;
+  applicantLastName: string | null;
+  vacancyTitle: string;
 }
 
 interface ApplicationDetail extends ApplicationRow {
@@ -136,7 +139,7 @@ export async function listApplications(
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const rows = (await db
+    const rows = await db
       .select({
         id: applications.id,
         applicantId: applications.applicantId,
@@ -145,12 +148,19 @@ export async function listApplications(
         matchScore: applications.matchScore,
         submittedAt: applications.submittedAt,
         createdAt: applications.createdAt,
+        applicantFirstName: applicants.firstName,
+        applicantLastName: applicants.lastName,
+        vacancyTitle: sql<string>`coalesce(${vacancies.itemNumber}, '')`.as(
+          "vacancy_title",
+        ),
       })
       .from(applications)
+      .innerJoin(applicants, eq(applicants.id, applications.applicantId))
+      .innerJoin(vacancies, eq(vacancies.id, applications.vacancyId))
       .where(whereClause)
       .orderBy(desc(applications.createdAt))
       .limit(perPage)
-      .offset(offset)) as ApplicationRow[];
+      .offset(offset);
 
     const [countRow] = await db
       .select({ count: sql<number>`count(*)::int` })

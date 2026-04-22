@@ -1,18 +1,17 @@
 /**
- * /performance/dpcr — Division Performance Commitment and Review
- *
- * Division-level performance ratings (PMM-003).
- * Same structure as OPCRF but scoped to divisions within PCSO.
+ * /performance/dpcr — DPCR list (Division Performance Commitment Review)
+ * PMM-003: Division-level performance instrument
  */
 
 import Link from "next/link";
-import { requirePermission } from "@/lib/auth/guards";
+import { requireAuth } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
-import { RatingBadge } from "@/components/performance/rating-badge";
-import { getDpcrRatings } from "../queries";
-import type { AdjectivalRating } from "@/lib/constants/performance";
-import { ChevronRightIcon } from "lucide-react";
+import { db } from "@/lib/db";
+import { dpcrForms, performanceCycles } from "@/lib/db/schema/performance";
+import { eq, desc, and, isNull } from "drizzle-orm";
+import { ChevronRightIcon, FolderOpenIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -30,16 +29,67 @@ const STATUS_BADGE: Record<
   disapproved: "destructive",
 };
 
-export default async function DpcrPage() {
-  await requirePermission("performance", "view");
+interface Props {
+  searchParams: Promise<{
+    cycle?: string;
+    status?: string;
+  }>;
+}
 
-  const ratings = await getDpcrRatings();
+export default async function DpcrListPage({ searchParams }: Props) {
+  const user = await requireAuth();
+  const canEdit = hasPermission(user.role, "performance", "edit");
+
+  const params = await searchParams;
+  const cycleFilter = params.cycle || undefined;
+  const statusFilter = params.status || undefined;
+
+  // Get all cycles for filter dropdown
+  const cycles = await db
+    .select({
+      id: performanceCycles.id,
+      year: performanceCycles.year,
+      semester: performanceCycles.semester,
+      status: performanceCycles.status,
+    })
+    .from(performanceCycles)
+    .where(isNull(performanceCycles.deletedAt))
+    .orderBy(desc(performanceCycles.year), desc(performanceCycles.semester));
+
+  // Build DPCR query
+  const conditions = [isNull(dpcrForms.deletedAt)];
+  if (cycleFilter) {
+    conditions.push(eq(dpcrForms.performanceCycleId, cycleFilter));
+  }
+  if (statusFilter) {
+    conditions.push(eq(dpcrForms.status, statusFilter));
+  }
+
+  const dpcrs = await db
+    .select({
+      id: dpcrForms.id,
+      divisionName: dpcrForms.divisionName,
+      phase: dpcrForms.phase,
+      numericalRating: dpcrForms.numericalRating,
+      adjectivalRating: dpcrForms.adjectivalRating,
+      status: dpcrForms.status,
+      submittedAt: dpcrForms.submittedAt,
+      cycleYear: performanceCycles.year,
+      cycleSemester: performanceCycles.semester,
+    })
+    .from(dpcrForms)
+    .leftJoin(
+      performanceCycles,
+      eq(dpcrForms.performanceCycleId, performanceCycles.id),
+    )
+    .where(and(...conditions))
+    .orderBy(desc(dpcrForms.createdAt));
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6">
+    <main className="mx-auto max-w-7xl px-4 py-6">
       <PageHeader
-        title="DPCR"
-        description="Division Performance Commitment and Review — division-level ratings per PRD PMM-003."
+        title="DPCR — Division Performance"
+        description="Division Performance Commitment Review forms per cycle."
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Performance", href: "/performance" },
@@ -47,73 +97,120 @@ export default async function DpcrPage() {
         ]}
       />
 
-      {ratings.length === 0 ? (
-        <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-muted-foreground">
-          <p className="text-sm">No DPCR records yet.</p>
-          <p className="text-xs">
-            DPCR ratings are created per division per performance cycle.
-          </p>
+      <div className="mb-4 flex items-center justify-between">
+        <form
+          method="GET"
+          className="flex items-center gap-2 text-sm"
+          action="/performance/dpcr"
+        >
+          <select
+            name="cycle"
+            defaultValue={cycleFilter ?? "all"}
+            className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            <option value="all">All cycles</option>
+            {cycles.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.year}-S{c.semester}
+              </option>
+            ))}
+          </select>
+          <select
+            name="status"
+            defaultValue={statusFilter ?? "all"}
+            className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            <option value="all">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="submitted">Submitted</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="approved">Approved</option>
+            <option value="disapproved">Disapproved</option>
+          </select>
+          <button
+            type="submit"
+            className="rounded-md bg-pcso-navy px-3 py-1.5 text-xs font-medium text-pcso-cream hover:bg-pcso-navy-light transition-colors"
+          >
+            Filter
+          </button>
+        </form>
+
+        {canEdit && (
+          <Link
+            href="/performance/dpcr/new"
+            className="inline-flex items-center gap-1.5 rounded-md bg-pcso-navy px-3 py-1.5 text-xs font-medium text-pcso-cream hover:bg-pcso-navy-light transition-colors"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            New DPCR
+          </Link>
+        )}
+      </div>
+
+      {dpcrs.length === 0 ? (
+        <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed">
+          <FolderOpenIcon className="h-10 w-10 text-muted-foreground/40" />
+          <div className="text-center">
+            <p className="text-sm font-medium text-muted-foreground">
+              No DPCR forms found
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground/70">
+              {canEdit
+                ? "Create a new DPCR form to get started."
+                : "No forms match the selected filters."}
+            </p>
+          </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/40">
               <tr>
-                {["Division", "Period", "Rating", "Status", ""].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    {h}
-                  </th>
-                ))}
+                {["Division", "Cycle", "Phase", "Rating", "Status", ""].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      {h}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody className="divide-y">
-              {ratings.map((r) => (
-                <tr
-                  key={r.id}
-                  className="group hover:bg-muted/20 transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-foreground">
-                      {r.divisionName ?? "Unknown Division"}
-                    </div>
-                    {r.scannedDocUrl && (
-                      <a
-                        href={r.scannedDocUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        View scanned document
-                      </a>
-                    )}
+              {dpcrs.map((d) => (
+                <tr key={d.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-3 font-medium text-foreground">
+                    {d.divisionName}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {r.periodLabel}
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {d.cycleYear}-S{d.cycleSemester}
                   </td>
                   <td className="px-4 py-3">
-                    {r.status === "approved" && r.numericalRating ? (
-                      <RatingBadge
-                        adjectival={r.adjectivalRating as AdjectivalRating}
-                        numerical={parseFloat(r.numericalRating)}
-                        size="sm"
-                      />
+                    <Badge variant="muted" className="text-xs">
+                      {d.phase.charAt(0).toUpperCase() + d.phase.slice(1)}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {d.numericalRating && d.adjectivalRating ? (
+                      <span className="font-medium text-foreground">
+                        {parseFloat(d.numericalRating).toFixed(3)} —{" "}
+                        {d.adjectivalRating.replace("_", " ").toUpperCase()}
+                      </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground italic">
-                        Not yet rated
+                      <span className="text-muted-foreground italic">
+                        Not rated
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant={STATUS_BADGE[r.status] ?? "muted"}>
-                      {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
+                    <Badge variant={STATUS_BADGE[d.status] ?? "muted"}>
+                      {d.status.charAt(0).toUpperCase() + d.status.slice(1)}
                     </Badge>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Link
-                      href={`/performance/dpcr/${r.id}`}
+                      href={`/performance/dpcr/${d.id}`}
                       className="inline-flex items-center gap-1 text-xs text-pcso-navy hover:underline"
                     >
                       View <ChevronRightIcon className="h-3 w-3" />

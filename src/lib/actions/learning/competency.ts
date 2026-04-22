@@ -60,7 +60,7 @@ export async function recordCompetencyAssessment(
     .insert(competencyAssessments)
     .values({
       ...validated,
-      score: validated.score.toFixed(2),
+      score: validated.score,
       assessorEmployeeId: validated.assessorEmployeeId || null,
     })
     .returning();

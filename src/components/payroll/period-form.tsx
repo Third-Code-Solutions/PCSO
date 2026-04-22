@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import * as React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Form,
   FormControl,
@@ -13,33 +13,40 @@ import {
   FormLabel,
   FormMessage,
   FormDescription,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { CreatePeriodSchema, type CreatePeriodInput } from '@/lib/validations/payroll';
-import { createPeriod } from '@/app/(dashboard)/payroll/actions';
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  CreatePeriodSchema,
+  type CreatePeriodInput,
+} from "@/lib/validations/payroll";
+import { createPeriod } from "@/app/(dashboard)/payroll/actions";
 
-export function PeriodForm() {
+interface PeriodFormProps {
+  defaultScope?: CreatePeriodInput["scope"];
+}
+
+export function PeriodForm({ defaultScope = "regular" }: PeriodFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = React.useTransition();
 
   const form = useForm<CreatePeriodInput>({
     resolver: zodResolver(CreatePeriodSchema),
     defaultValues: {
-      name: '',
-      periodStart: '',
-      periodEnd: '',
-      payDate: '',
-      scope: 'regular',
-      notes: '',
+      name: "",
+      periodStart: "",
+      periodEnd: "",
+      payDate: "",
+      scope: defaultScope,
+      notes: "",
     },
   });
 
@@ -50,7 +57,8 @@ export function PeriodForm() {
         toast.success(`Payroll period "${period.name}" created.`);
         router.push(`/payroll/${period.id}`);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to create period.';
+        const message =
+          err instanceof Error ? err.message : "Failed to create period.";
         toast.error(message);
       }
     });
@@ -66,7 +74,10 @@ export function PeriodForm() {
             <FormItem>
               <FormLabel>Period Name</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., July 1-15, 2025 (1st Half)" {...field} />
+                <Input
+                  placeholder="e.g., July 1-15, 2025 (1st Half)"
+                  {...field}
+                />
               </FormControl>
               <FormDescription>
                 A descriptive name for this payroll period.
@@ -115,7 +126,9 @@ export function PeriodForm() {
               <FormControl>
                 <Input type="date" {...field} />
               </FormControl>
-              <FormDescription>The date funds will be disbursed.</FormDescription>
+              <FormDescription>
+                The date funds will be disbursed.
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
@@ -135,15 +148,32 @@ export function PeriodForm() {
                 </FormControl>
                 <SelectContent>
                   <SelectItem value="regular">
-                    Regular Employees (Permanent / Temporary / Casual / Coterminous)
+                    Regular Employees (Permanent / Temporary / Casual /
+                    Coterminous)
                   </SelectItem>
                   <SelectItem value="jo_cos">
                     JO / COS (Job Order / Contract of Service)
                   </SelectItem>
+                  <SelectItem value="rata">
+                    RATA (Representation and Transportation Allowance)
+                  </SelectItem>
+                  <SelectItem value="cash_advance">Cash Advance</SelectItem>
+                  <SelectItem value="benefits_bonuses">
+                    Benefits and Bonuses (Mid-Year, Year-End, Cash Gift, PBB)
+                  </SelectItem>
+                  <SelectItem value="salary_differential">
+                    Salary Differential (Retroactive Pay)
+                  </SelectItem>
+                  <SelectItem value="special">
+                    Special Payroll (Custom Title)
+                  </SelectItem>
+                  <SelectItem value="magna_carta">
+                    Magna Carta Benefits (RA 9710 Women / RA 7277 PWD)
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <FormDescription>
-                Regular and JO/COS employees are processed separately.
+                Select the payroll type for this period.
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -182,7 +212,7 @@ export function PeriodForm() {
             disabled={isPending}
             className="bg-[#0B2545] text-white hover:bg-[#13315C]"
           >
-            {isPending ? 'Creating...' : 'Create Period'}
+            {isPending ? "Creating..." : "Create Period"}
           </Button>
         </div>
       </form>

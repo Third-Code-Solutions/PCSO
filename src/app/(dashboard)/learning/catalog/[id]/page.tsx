@@ -61,6 +61,15 @@ export default async function ProgramDetailPage({ params }: PageProps) {
             budgetPhp: program.budgetPhp ?? null,
             participantCount: program.participantCount ?? null,
             durationDays: program.durationDays ?? null,
+            requirementsChecklist:
+              program.requirementsChecklist as unknown as Array<{
+                label: string;
+                required: boolean;
+              }>,
+            learningObjectives: program.learningObjectives as unknown as Array<{
+              statement: string;
+              bloomsLevel?: string;
+            }>,
           }}
         />
       </div>

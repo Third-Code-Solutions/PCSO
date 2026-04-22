@@ -67,4 +67,5 @@ export {
   getComplianceSummary,
   getTrainingExpenseReport,
   getTrainingExpenseSummary,
+  exportTrainingExpenseToCSV,
 } from "./compliance";

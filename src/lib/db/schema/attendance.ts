@@ -196,9 +196,110 @@ export const dtrPeriodsRelations = relations(dtrPeriods, ({ one }) => ({
   }),
 }));
 
+// ─── Biometric Import Tables (TAM-004, TAM-005) ──────────────────────────────
+
+export const biometricImportStatusEnum = pgEnum("biometric_import_status", [
+  "processing",
+  "completed",
+  "failed",
+]);
+
+/**
+ * Biometric Imports — TAM-004
+ * Tracks bulk biometric CSV/Excel imports with match statistics.
+ */
+export const biometricImports = pgTable(
+  "biometric_imports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    importDate: date("import_date").notNull().defaultNow(),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    recordCount: integer("record_count").notNull().default(0),
+    matchedCount: integer("matched_count").notNull().default(0),
+    unmatchedCount: integer("unmatched_count").notNull().default(0),
+    importedById: uuid("imported_by_id")
+      .notNull()
+      .references(() => employees.id),
+    status: biometricImportStatusEnum("status").notNull().default("processing"),
+    errorLog: text("error_log"),
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    index("biometric_imports_date_idx").on(t.importDate),
+    index("biometric_imports_imported_by_idx").on(t.importedById),
+    index("biometric_imports_status_idx").on(t.status),
+  ],
+);
+
+export const biometricRecordTypeEnum = pgEnum("biometric_record_type", [
+  "in",
+  "out",
+]);
+
+/**
+ * Biometric Raw Records — TAM-005
+ * Stores raw biometric device data before matching to employees.
+ */
+export const biometricRawRecords = pgTable(
+  "biometric_raw_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    importId: uuid("import_id")
+      .notNull()
+      .references(() => biometricImports.id),
+    badgeId: varchar("badge_id", { length: 50 }).notNull(),
+    timestamp: varchar("timestamp", { length: 100 }).notNull(), // Store as string first, parse later
+    recordType: biometricRecordTypeEnum("record_type").notNull(),
+    matched: boolean("matched").notNull().default(false),
+    employeeId: uuid("employee_id").references(() => employees.id),
+    matchedAt: varchar("matched_at", { length: 100 }), // Converted timestamp
+    ...timestamps,
+  },
+  (t) => [
+    index("biometric_raw_records_import_idx").on(t.importId),
+    index("biometric_raw_records_badge_idx").on(t.badgeId),
+    index("biometric_raw_records_employee_idx").on(t.employeeId),
+    index("biometric_raw_records_matched_idx").on(t.matched),
+  ],
+);
+
+// ─── Relations ────────────────────────────────────────────────────────────────
+
+export const biometricImportsRelations = relations(
+  biometricImports,
+  ({ one, many }) => ({
+    importedBy: one(employees, {
+      fields: [biometricImports.importedById],
+      references: [employees.id],
+    }),
+    rawRecords: many(biometricRawRecords),
+  }),
+);
+
+export const biometricRawRecordsRelations = relations(
+  biometricRawRecords,
+  ({ one }) => ({
+    import: one(biometricImports, {
+      fields: [biometricRawRecords.importId],
+      references: [biometricImports.id],
+    }),
+    employee: one(employees, {
+      fields: [biometricRawRecords.employeeId],
+      references: [employees.id],
+    }),
+  }),
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type AttendanceLog = typeof attendanceLogs.$inferSelect;
 export type NewAttendanceLog = typeof attendanceLogs.$inferInsert;
 export type DtrPeriod = typeof dtrPeriods.$inferSelect;
 export type NewDtrPeriod = typeof dtrPeriods.$inferInsert;
+export type WorkSchedule = typeof workSchedules.$inferSelect;
+export type NewWorkSchedule = typeof workSchedules.$inferInsert;
+export type BiometricImport = typeof biometricImports.$inferSelect;
+export type NewBiometricImport = typeof biometricImports.$inferInsert;
+export type BiometricRawRecord = typeof biometricRawRecords.$inferSelect;
+export type NewBiometricRawRecord = typeof biometricRawRecords.$inferInsert;

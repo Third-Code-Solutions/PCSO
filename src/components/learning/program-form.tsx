@@ -262,6 +262,63 @@ export function ProgramForm({ initial, mode }: ProgramFormProps) {
         )}
       </div>
 
+      <div>
+        <Label htmlFor="requirementsChecklist">Requirements Checklist</Label>
+        <Textarea
+          id="requirementsChecklist"
+          rows={3}
+          placeholder="Enter requirements, one per line"
+          {...register("requirementsChecklist", {
+            setValueAs: (v) => {
+              if (typeof v !== "string" || v.trim() === "") return [];
+              return v
+                .split("\n")
+                .filter((line) => line.trim())
+                .map((line) => ({ label: line.trim(), required: true }));
+            },
+          })}
+          defaultValue={
+            initial?.requirementsChecklist
+              ? (initial.requirementsChecklist as Array<{ label: string }>)
+                  .map((r) => r.label)
+                  .join("\n")
+              : ""
+          }
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          One requirement per line. All items marked as required.
+        </p>
+      </div>
+
+      <div>
+        <Label htmlFor="learningObjectives">Learning Objectives</Label>
+        <Textarea
+          id="learningObjectives"
+          rows={4}
+          placeholder="Enter learning objectives, one per line"
+          {...register("learningObjectives", {
+            setValueAs: (v) => {
+              if (typeof v !== "string" || v.trim() === "") return [];
+              return v
+                .split("\n")
+                .filter((line) => line.trim())
+                .map((line) => ({ statement: line.trim() }));
+            },
+          })}
+          defaultValue={
+            initial?.learningObjectives
+              ? (initial.learningObjectives as Array<{ statement: string }>)
+                  .map((o) => o.statement)
+                  .join("\n")
+              : ""
+          }
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          One objective per line. Use action verbs (e.g., analyze, evaluate,
+          create).
+        </p>
+      </div>
+
       {serverError && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {serverError}

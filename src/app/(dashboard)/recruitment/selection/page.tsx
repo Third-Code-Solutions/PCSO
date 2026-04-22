@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { PipelineStageBadge } from "@/components/recruitment/pipeline-stage-badge";
 import { listActiveVacancies } from "@/lib/actions/rpm/mrf";
+import { requireAuth } from "@/lib/auth/guards";
 import { unwrap } from "@/components/recruitment/_result";
 
 export const metadata: Metadata = {
@@ -26,6 +27,8 @@ interface VacancyRow {
 }
 
 export default async function SelectionIndexPage() {
+  await requireAuth();
+
   const result = await listActiveVacancies().catch(() => null);
 
   const data = unwrap<{ rows?: VacancyRow[] } | VacancyRow[]>(result);

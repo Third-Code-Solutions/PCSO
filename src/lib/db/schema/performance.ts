@@ -217,6 +217,151 @@ export const stepIncrementsRelations = relations(stepIncrements, ({ one }) => ({
   }),
 }));
 
+// ─── DPCR / BPCR / PBB Tables (PMM Gaps - Phase 6) ───────────────────────────
+
+export const performancePhaseEnum = pgEnum("performance_phase", [
+  "planning",
+  "monitoring",
+  "review",
+]);
+
+/**
+ * DPCR (Division Performance Commitment Review) — PMM-003
+ * Division-level performance ratings
+ */
+export const dpcrForms = pgTable(
+  "dpcr_forms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    performanceCycleId: uuid("performance_cycle_id")
+      .notNull()
+      .references(() => performanceCycles.id),
+    officeId: uuid("office_id"),
+    divisionName: varchar("division_name", { length: 200 }).notNull(),
+    phase: performancePhaseEnum("phase").notNull().default("planning"),
+    numericalRating: numeric("numerical_rating", { precision: 4, scale: 3 }),
+    adjectivalRating: adjectivalRatingEnum("adjectival_rating"),
+    status: performanceRatingStatusEnum("status").notNull().default("draft"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    scannedDocUrl: varchar("scanned_doc_url", { length: 500 }),
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    uniqueIndex("dpcr_forms_cycle_division_idx").on(
+      t.performanceCycleId,
+      t.divisionName,
+    ),
+    index("dpcr_forms_cycle_idx").on(t.performanceCycleId),
+    index("dpcr_forms_status_idx").on(t.status),
+  ],
+);
+
+/**
+ * BPCR (Branch Performance Commitment Review) — PMM-004
+ * Branch-level performance ratings for NCL, STBR, Visayas, Mindanao
+ */
+export const bpcrForms = pgTable(
+  "bpcr_forms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    performanceCycleId: uuid("performance_cycle_id")
+      .notNull()
+      .references(() => performanceCycles.id),
+    branchId: uuid("branch_id"),
+    branchName: varchar("branch_name", { length: 200 }).notNull(),
+    phase: performancePhaseEnum("phase").notNull().default("planning"),
+    numericalRating: numeric("numerical_rating", { precision: 4, scale: 3 }),
+    adjectivalRating: adjectivalRatingEnum("adjectival_rating"),
+    status: performanceRatingStatusEnum("status").notNull().default("draft"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    scannedDocUrl: varchar("scanned_doc_url", { length: 500 }),
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    uniqueIndex("bpcr_forms_cycle_branch_idx").on(
+      t.performanceCycleId,
+      t.branchName,
+    ),
+    index("bpcr_forms_cycle_idx").on(t.performanceCycleId),
+    index("bpcr_forms_status_idx").on(t.status),
+  ],
+);
+
+/**
+ * PBB Qualified Lists — PMM-007
+ * Tracks employees who pass all 4 gates for PBB qualification
+ */
+export const pbbQualifiedLists = pgTable(
+  "pbb_qualified_lists",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    performanceCycleId: uuid("performance_cycle_id")
+      .notNull()
+      .references(() => performanceCycles.id),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    /** Gate 1: IPCRF rating ≥ 2.500 (Satisfactory) */
+    ratingGate: numeric("rating_gate", { precision: 4, scale: 3 }),
+    /** Gate 2: No pending administrative case */
+    adminGate: numeric("admin_gate", { precision: 1, scale: 0 }).notNull(),
+    /** Gate 3: No AWOL in rating period */
+    attendanceGate: numeric("attendance_gate", {
+      precision: 1,
+      scale: 0,
+    }).notNull(),
+    /** Gate 4: SALN filed within prescribed period */
+    salnGate: numeric("saln_gate", { precision: 1, scale: 0 }).notNull(),
+    /** All 4 gates passed */
+    qualified: numeric("qualified", { precision: 1, scale: 0 }).notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    uniqueIndex("pbb_qualified_lists_cycle_employee_idx").on(
+      t.performanceCycleId,
+      t.employeeId,
+    ),
+    index("pbb_qualified_lists_cycle_idx").on(t.performanceCycleId),
+    index("pbb_qualified_lists_qualified_idx").on(t.qualified),
+  ],
+);
+
+// ─── DPCR / BPCR / PBB Relations ──────────────────────────────────────────────
+
+export const dpcrFormsRelations = relations(dpcrForms, ({ one }) => ({
+  cycle: one(performanceCycles, {
+    fields: [dpcrForms.performanceCycleId],
+    references: [performanceCycles.id],
+  }),
+}));
+
+export const bpcrFormsRelations = relations(bpcrForms, ({ one }) => ({
+  cycle: one(performanceCycles, {
+    fields: [bpcrForms.performanceCycleId],
+    references: [performanceCycles.id],
+  }),
+}));
+
+export const pbbQualifiedListsRelations = relations(
+  pbbQualifiedLists,
+  ({ one }) => ({
+    cycle: one(performanceCycles, {
+      fields: [pbbQualifiedLists.performanceCycleId],
+      references: [performanceCycles.id],
+    }),
+    employee: one(employees, {
+      fields: [pbbQualifiedLists.employeeId],
+      references: [employees.id],
+    }),
+  }),
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type PerformancePeriod = typeof performancePeriods.$inferSelect;
@@ -227,3 +372,9 @@ export type PerformanceRating = typeof performanceRatings.$inferSelect;
 export type NewPerformanceRating = typeof performanceRatings.$inferInsert;
 export type StepIncrement = typeof stepIncrements.$inferSelect;
 export type NewStepIncrement = typeof stepIncrements.$inferInsert;
+export type DpcrForm = typeof dpcrForms.$inferSelect;
+export type NewDpcrForm = typeof dpcrForms.$inferInsert;
+export type BpcrForm = typeof bpcrForms.$inferSelect;
+export type NewBpcrForm = typeof bpcrForms.$inferInsert;
+export type PbbQualifiedList = typeof pbbQualifiedLists.$inferSelect;
+export type NewPbbQualifiedList = typeof pbbQualifiedLists.$inferInsert;

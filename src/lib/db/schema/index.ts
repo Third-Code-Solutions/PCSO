@@ -20,6 +20,7 @@ export * from "./plantilla";
 export * from "./appointments";
 export * from "./attendance";
 export * from "./leave";
+export * from "./leave-gaps";
 export * from "./performance";
 export * from "./saln";
 
@@ -73,3 +74,6 @@ export * from "./announcements";
 
 // Portal Requests (depends on employees, offices, attendance.workSchedules)
 export * from "./portal-requests";
+
+// Employee Documents / 201 File (depends on employees, fm-extensions)
+export * from "./employee-documents";

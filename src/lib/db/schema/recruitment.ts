@@ -31,6 +31,7 @@ import {
   date,
   timestamp,
   jsonb,
+  boolean,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -517,6 +518,159 @@ export const rpmStatusHistoryRelations = relations(
   }),
 );
 
+// ─── Appointment Enums ──────────────────────────────────────────────────────
+
+export const appointmentStatusEnum = pgEnum("appointment_status", [
+  "draft",
+  "pending_documents",
+  "ready_for_provisioning",
+  "provisioned",
+  "cancelled",
+]);
+
+export const appointmentDocumentTypeEnum = pgEnum("appointment_document_type", [
+  "csc_appointment",
+  "position_description",
+  "oath_of_office",
+  "assumption_to_duty",
+  "ataf",
+]);
+
+// ─── appointments ────────────────────────────────────────────────────────────
+
+export const appointments = pgTable(
+  "appointments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // APT-YYYY-NNNNNN — assigned at creation
+    appointmentNumber: varchar("appointment_number", { length: 40 })
+      .notNull()
+      .unique(),
+    applicationId: uuid("application_id")
+      .notNull()
+      .references(() => applications.id),
+    vacancyId: uuid("vacancy_id")
+      .notNull()
+      .references(() => vacancies.id),
+    positionId: uuid("position_id")
+      .notNull()
+      .references(() => plantillaPositions.id),
+    officeId: uuid("office_id")
+      .notNull()
+      .references(() => offices.id),
+    itemNumber: varchar("item_number", { length: 20 }).notNull(),
+    appointmentDate: date("appointment_date").notNull(),
+    effectiveDate: date("effective_date").notNull(),
+    salaryGrade: smallint("salary_grade").notNull(),
+    stepIncrement: smallint("step_increment").notNull().default(1),
+    monthlySalary: numeric("monthly_salary", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    appointmentType: varchar("appointment_type", { length: 30 })
+      .notNull()
+      .default("permanent"),
+    status: appointmentStatusEnum("status").notNull().default("draft"),
+    // Generated document URLs stored as JSONB { csc_appointment, position_description, oath_of_office, assumption_to_duty, ataf }
+    generatedDocuments: jsonb("generated_documents"),
+    provisioned: boolean("provisioned").notNull().default(false),
+    provisionedAt: timestamp("provisioned_at", { withTimezone: true }),
+    // Nullable FK — set after provisioning completes
+    provisionedEmployeeId: uuid("provisioned_employee_id").references(
+      () => employees.id,
+    ),
+    preparedByEmployeeId: uuid("prepared_by_employee_id")
+      .notNull()
+      .references(() => employees.id),
+    approvedByEmployeeId: uuid("approved_by_employee_id").references(
+      () => employees.id,
+    ),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    cancellationReason: text("cancellation_reason"),
+    notes: text("notes"),
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    index("appointments_status_idx").on(t.status),
+    index("appointments_vacancy_idx").on(t.vacancyId),
+    index("appointments_application_idx").on(t.applicationId),
+  ],
+);
+
+// ─── appointmentDocuments ────────────────────────────────────────────────────
+
+export const appointmentDocuments = pgTable("appointment_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appointmentId: uuid("appointment_id")
+    .notNull()
+    .references(() => appointments.id),
+  docType: appointmentDocumentTypeEnum("doc_type").notNull(),
+  fileName: varchar("file_name", { length: 200 }).notNull(),
+  fileUrl: varchar("file_url", { length: 500 }).notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  generatedByEmployeeId: uuid("generated_by_employee_id")
+    .notNull()
+    .references(() => employees.id),
+  ...timestamps,
+});
+
+// ─── Relations ───────────────────────────────────────────────────────────────
+
+export const appointmentsRelations = relations(
+  appointments,
+  ({ one, many }) => ({
+    application: one(applications, {
+      fields: [appointments.applicationId],
+      references: [applications.id],
+    }),
+    vacancy: one(vacancies, {
+      fields: [appointments.vacancyId],
+      references: [vacancies.id],
+    }),
+    position: one(plantillaPositions, {
+      fields: [appointments.positionId],
+      references: [plantillaPositions.id],
+    }),
+    office: one(offices, {
+      fields: [appointments.officeId],
+      references: [offices.id],
+    }),
+    preparedBy: one(employees, {
+      fields: [appointments.preparedByEmployeeId],
+      references: [employees.id],
+      relationName: "appointmentPreparedBy",
+    }),
+    approvedBy: one(employees, {
+      fields: [appointments.approvedByEmployeeId],
+      references: [employees.id],
+      relationName: "appointmentApprovedBy",
+    }),
+    provisionedEmployee: one(employees, {
+      fields: [appointments.provisionedEmployeeId],
+      references: [employees.id],
+      relationName: "appointmentProvisionedEmployee",
+    }),
+    documents: many(appointmentDocuments),
+  }),
+);
+
+export const appointmentDocumentsRelations = relations(
+  appointmentDocuments,
+  ({ one }) => ({
+    appointment: one(appointments, {
+      fields: [appointmentDocuments.appointmentId],
+      references: [appointments.id],
+    }),
+    generatedBy: one(employees, {
+      fields: [appointmentDocuments.generatedByEmployeeId],
+      references: [employees.id],
+    }),
+  }),
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type Mrf = typeof mrfs.$inferSelect;
@@ -545,3 +699,9 @@ export type NewAssessmentScore = typeof assessmentScores.$inferInsert;
 
 export type RpmStatusHistoryEntry = typeof rpmStatusHistory.$inferSelect;
 export type NewRpmStatusHistoryEntry = typeof rpmStatusHistory.$inferInsert;
+
+export type Appointment = typeof appointments.$inferSelect;
+export type NewAppointment = typeof appointments.$inferInsert;
+
+export type AppointmentDocument = typeof appointmentDocuments.$inferSelect;
+export type NewAppointmentDocument = typeof appointmentDocuments.$inferInsert;

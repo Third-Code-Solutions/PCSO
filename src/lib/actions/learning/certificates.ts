@@ -19,12 +19,13 @@ const GenerateCertificateSchema = z.object({
 
 // ─── Helper: Generate Serial Number ──────────────────────────────────────────
 
+import {
+  generateSerialNumber,
+  DOCUMENT_TYPES,
+} from "@/lib/db/serial-sequence-helpers";
+
 async function generateCertificateNumber(): Promise<string> {
-  // TODO: Integrate with Agent 09 serial_sequences table for CT-YYYY-NNNNNN
-  // For now, use timestamp-based generation
-  const year = new Date().getFullYear();
-  const timestamp = Date.now().toString().slice(-6);
-  return `CT-${year}-${timestamp}`;
+  return await generateSerialNumber(DOCUMENT_TYPES.TRAINING_CERT);
 }
 
 // ─── Helper: Generate QR JWT Token ───────────────────────────────────────────
