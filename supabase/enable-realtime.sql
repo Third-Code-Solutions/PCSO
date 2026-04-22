@@ -22,7 +22,8 @@ DECLARE
     'system_users',
     'holidays',
     'offices',
-    'appointments'
+    'appointments',
+    'overtime_requests'
   ];
 BEGIN
   FOREACH t IN ARRAY tables

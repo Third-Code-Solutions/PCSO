@@ -172,3 +172,9 @@ export type {
 // Employee Documents / 201 File (depends on employees, fm-extensions)
 // documentUploadStatusEnum is exported from here (canonical source)
 export * from "./employee-documents";
+
+// Admin Disciplinary Cases (depends on employees)
+export * from "./admin-cases";
+
+// Overtime Requests (depends on employees)
+export * from "./overtime";

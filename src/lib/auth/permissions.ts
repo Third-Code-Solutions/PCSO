@@ -393,44 +393,80 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "hr_admin",
     "payroll_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/payroll": ["super_admin", "payroll_admin"],
 
   // ── Remittances ───────────────────────────────────────────────────────────
-  "/remittances": ["super_admin", "payroll_admin", "viewer"],
+  "/remittances": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
 
   // ── Plantilla ─────────────────────────────────────────────────────────────
-  "/plantilla": ["super_admin", "hr_admin", "viewer"],
+  "/plantilla": ["super_admin", "hr_admin", "viewer", "executive", "auditor"],
 
   // ── SALN ──────────────────────────────────────────────────────────────────
   "/saln/admin": ["super_admin"],
-  "/saln": ["super_admin", "employee_self_service"],
+  "/saln": ["super_admin", "employee_self_service", "auditor"],
 
   // ── Performance ───────────────────────────────────────────────────────────
   "/performance/cycles": ["super_admin", "hr_admin"],
   "/performance/opcrf": ["super_admin", "hr_admin"],
   "/performance/step-increments": ["super_admin", "hr_admin"],
   "/performance/analytics": ["super_admin", "hr_admin"],
+  "/performance/dpcr": [
+    "super_admin",
+    "hr_admin",
+    "hr_staff",
+    "leave_approver",
+    "supervisor",
+    "employee_self_service",
+  ],
+  "/performance/bpcr": [
+    "super_admin",
+    "hr_admin",
+    "hr_staff",
+    "leave_approver",
+    "supervisor",
+    "employee_self_service",
+  ],
   "/performance/ipcrf": [
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/performance": [
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
 
   // ── Leave ─────────────────────────────────────────────────────────────────
-  "/leave/approvals": ["super_admin", "hr_admin", "leave_approver"],
-  "/leave/approve": ["super_admin", "hr_admin", "leave_approver"],
+  "/leave/approvals": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "supervisor",
+  ],
+  "/leave/approve": ["super_admin", "hr_admin", "leave_approver", "supervisor"],
   // Employee-facing applications list: employees see ONLY their own via
   // `selfOnly` enforcement in queries. Route-level access stays open to
   // authenticated leave-relevant roles.
@@ -438,6 +474,7 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "employee_self_service",
   ],
   "/leave/credits/admin": ["super_admin", "hr_admin"],
@@ -445,7 +482,10 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/leave/apply": ["super_admin", "hr_admin", "employee_self_service"],
@@ -453,14 +493,20 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/leave": [
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
 
@@ -472,33 +518,54 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "hr_admin",
     "payroll_admin",
     "viewer",
+    "executive",
+    "auditor",
+  ],
+  "/attendance/clock": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "supervisor",
+    "employee_self_service",
   ],
   "/attendance/overtime/new": [
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/attendance/overtime": [
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/attendance/dtr": [
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/attendance": [
     "super_admin",
     "hr_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
 
@@ -509,11 +576,28 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "hr_admin",
     "payroll_admin",
     "viewer",
+    "executive",
+    "auditor",
+    "employee_self_service",
+  ],
+
+  // ── Learning & Development ────────────────────────────────────────────────
+  "/learning/certificates": [
+    "super_admin",
+    "hr_admin",
+    "hr_staff",
     "employee_self_service",
   ],
 
   // ── Reports ───────────────────────────────────────────────────────────────
-  "/reports": ["super_admin", "hr_admin", "payroll_admin", "viewer"],
+  "/reports": [
+    "super_admin",
+    "hr_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
 } as const;
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
