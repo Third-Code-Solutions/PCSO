@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { requirePermission } from "@/lib/auth/guards";
+import { PageHeader } from "@/components/layouts/page-header";
 import { db } from "@/lib/db";
 import { employees, gsisRegistrations } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
@@ -239,15 +240,16 @@ export default async function RetirementEligibilityPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-pcso-navy">
-          Retirement Eligibility Tracker
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Monitors employee retirement thresholds under RA 8291 (GSIS Act of
-          1997).
-        </p>
-      </div>
+      <PageHeader
+        title="Retirement Eligibility Tracker"
+        description="Monitors employee retirement thresholds under RA 8291 (GSIS Act of 1997). Optional: age 60 + 15 years service. Compulsory: age 65."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Remittances", href: "/remittances" },
+          { label: "GSIS", href: "/remittances/gsis" },
+          { label: "Retirement Tracker" },
+        ]}
+      />
 
       <Suspense
         fallback={

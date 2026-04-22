@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { generateRemittanceList } from "../actions";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layouts/page-header";
 
 // ─── Metadata exported separately since this is a client component ────────────
 // Metadata for client components is handled in the parent layout.
@@ -48,16 +49,11 @@ export default function NewGsisBatchPage() {
   return (
     <div className="mx-auto max-w-xl space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-pcso-navy">
-          Generate GSIS Batch
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Select an approved payroll period to generate the GSIS remittance
-          list. The system will aggregate all payroll records and compute the
-          required GSIS contributions per employee.
-        </p>
-      </div>
+      <PageHeader
+        title="Generate GSIS Batch"
+        description="Select an approved payroll period to generate the GSIS remittance list. The system will aggregate all payroll records and compute the required GSIS contributions per employee."
+        backHref="/remittances/gsis"
+      />
 
       {/* Form */}
       <form

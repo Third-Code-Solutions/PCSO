@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/layouts/page-header";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requirePermission } from "@/lib/auth/guards";
 import { getPagibigBatches } from "./actions";
 
 export const metadata: Metadata = {
@@ -27,6 +28,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default async function PagibigPage() {
+  await requirePermission("remittances", "view");
   const batches = await getPagibigBatches({ page: 1, perPage: 25 });
 
   return (
@@ -34,7 +36,12 @@ export default async function PagibigPage() {
       <RealtimeBoundary tables={["remittance_batches"]} />
       <PageHeader
         title="Pag-IBIG Remittance"
-        description="Virtual Pag-IBIG portal CSV export · Employee & employer contribution tracking"
+        description="Virtual Pag-IBIG portal CSV export · Employee & employer contribution tracking. Max contribution: ₱100/month each (2% of salary up to ₱5,000 MSC)."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Remittances", href: "/remittances" },
+          { label: "Pag-IBIG" },
+        ]}
         actions={
           <Link
             href="/remittances/pagibig/new"
