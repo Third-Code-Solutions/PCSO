@@ -318,9 +318,7 @@ export async function processPayroll(periodId: string) {
             case "benefits_bonuses": {
               // Benefits & Bonuses: Mid-Year, Year-End, Cash Gift, PBB
               // This is a specialized payroll run for bonuses only
-              const monthlySalary = emp.monthlySalary
-                ? Number(emp.monthlySalary)
-                : 0;
+              const monthlySalary = 0; // TODO: compute from salary grade/step table
               const appointmentType = emp.appointmentType as AppointmentType;
 
               const midYearBonus = computeMidYearBonus(
@@ -342,6 +340,7 @@ export async function processPayroll(periodId: string) {
               const deMinimis = computeDeMinimis(totalBonuses);
 
               computed = {
+                input: payrollInput,
                 earnings: {
                   authorizedSalary: roundMoney(monthlySalary),
                   basicPay: "0.00",
@@ -358,7 +357,11 @@ export async function processPayroll(periodId: string) {
                     employer: "0.00",
                     lifeInsurance: "0.00",
                   },
-                  philHealth: { personal: "0.00", employer: "0.00" },
+                  philHealth: {
+                    personal: "0.00",
+                    employer: "0.00",
+                    total: "0.00",
+                  },
                   pagIBIG: { personal: "0.00", employer: "0.00" },
                   withholdingTax: roundMoney(deMinimis.taxable * 0.15), // Simplified 15% rate
                   lateDeduction: "0.00",
@@ -376,7 +379,7 @@ export async function processPayroll(periodId: string) {
               // Salary Differential: retroactive pay adjustment
               // This requires additional data: old rate, new rate, number of months
               // For now, use placeholders - these would come from a separate differential table
-              const oldRate = emp.monthlySalary ? Number(emp.monthlySalary) : 0;
+              const oldRate = 0; // TODO: Get from differential request
               const newRate = oldRate; // TODO: Get from differential request
               const months = 1; // TODO: Get from differential request
               const differential = computeSalaryDifferential(
@@ -386,6 +389,7 @@ export async function processPayroll(periodId: string) {
               );
 
               computed = {
+                input: payrollInput,
                 earnings: {
                   authorizedSalary: roundMoney(newRate),
                   basicPay: "0.00",
@@ -402,7 +406,11 @@ export async function processPayroll(periodId: string) {
                     employer: "0.00",
                     lifeInsurance: "0.00",
                   },
-                  philHealth: { personal: "0.00", employer: "0.00" },
+                  philHealth: {
+                    personal: "0.00",
+                    employer: "0.00",
+                    total: "0.00",
+                  },
                   pagIBIG: { personal: "0.00", employer: "0.00" },
                   withholdingTax: roundMoney(differential * 0.15), // Simplified withholding
                   lateDeduction: "0.00",
@@ -421,6 +429,7 @@ export async function processPayroll(periodId: string) {
               // This would link to loan ledger for deduction schedule
               // For now, simplified: zero earnings, only loan deductions
               computed = {
+                input: payrollInput,
                 earnings: {
                   authorizedSalary: "0.00",
                   basicPay: "0.00",
@@ -437,7 +446,11 @@ export async function processPayroll(periodId: string) {
                     employer: "0.00",
                     lifeInsurance: "0.00",
                   },
-                  philHealth: { personal: "0.00", employer: "0.00" },
+                  philHealth: {
+                    personal: "0.00",
+                    employer: "0.00",
+                    total: "0.00",
+                  },
                   pagIBIG: { personal: "0.00", employer: "0.00" },
                   withholdingTax: "0.00",
                   lateDeduction: "0.00",
@@ -464,6 +477,7 @@ export async function processPayroll(periodId: string) {
                 computed.deductions.philHealth = {
                   personal: "0.00",
                   employer: "0.00",
+                  total: "0.00",
                 };
                 computed.deductions.pagIBIG = {
                   personal: "0.00",

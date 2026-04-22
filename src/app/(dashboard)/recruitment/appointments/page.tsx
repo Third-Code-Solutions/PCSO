@@ -60,7 +60,11 @@ export default async function AppointmentsListPage({
       />
       <ActionStatusBanner status={statusRaw} entityLabel="Appointment" />
       <div className="mt-6">
-        <AppointmentsTable rows={rows} />
+        <AppointmentsTable
+          rows={
+            rows as unknown as Parameters<typeof AppointmentsTable>[0]["rows"]
+          }
+        />
       </div>
     </main>
   );

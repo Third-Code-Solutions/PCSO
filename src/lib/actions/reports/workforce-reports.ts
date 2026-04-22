@@ -208,16 +208,19 @@ export async function getRetirementEligibilityReport(
       // Check if currently eligible
       if (ageYears >= 65) {
         eligibilityType = "compulsory";
-        eligibilityDate = compulsoryRetirementDate.toISOString().split("T")[0];
+        eligibilityDate =
+          compulsoryRetirementDate.toISOString().split("T")[0] ?? "";
         monthsUntilEligible = 0;
       } else if (ageYears >= 60 && serviceYears >= 15) {
         eligibilityType = "optional";
-        eligibilityDate = optionalRetirementDate.toISOString().split("T")[0];
+        eligibilityDate =
+          optionalRetirementDate.toISOString().split("T")[0] ?? "";
         monthsUntilEligible = 0;
       } else if (compulsoryRetirementDate <= lookAheadDate) {
         // Will reach compulsory within look-ahead window
         eligibilityType = "compulsory";
-        eligibilityDate = compulsoryRetirementDate.toISOString().split("T")[0];
+        eligibilityDate =
+          compulsoryRetirementDate.toISOString().split("T")[0] ?? "";
         monthsUntilEligible = Math.ceil(
           (compulsoryRetirementDate.getTime() - today.getTime()) /
             (1000 * 60 * 60 * 24 * 30),
@@ -225,7 +228,8 @@ export async function getRetirementEligibilityReport(
       } else if (optionalRetirementDate <= lookAheadDate) {
         // Will reach optional within look-ahead window
         eligibilityType = "optional";
-        eligibilityDate = optionalRetirementDate.toISOString().split("T")[0];
+        eligibilityDate =
+          optionalRetirementDate.toISOString().split("T")[0] ?? "";
         monthsUntilEligible = Math.ceil(
           (optionalRetirementDate.getTime() - today.getTime()) /
             (1000 * 60 * 60 * 24 * 30),
@@ -465,7 +469,7 @@ export async function getClearanceReport(
         // For now, default to pending for separated employees
         clearanceStatus = "pending";
         // In production, this would be the actual separation date from a movements table
-        dateOfSeparation = new Date().toISOString().split("T")[0];
+        dateOfSeparation = new Date().toISOString().split("T")[0] ?? null;
       }
 
       return {

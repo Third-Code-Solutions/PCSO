@@ -227,7 +227,7 @@ export default async function PbbQualificationPage() {
                     !emp.gates.gate2_noAdminCase && "2",
                     !emp.gates.gate3_noAwol && "3",
                     !emp.gates.gate4_salnFiled && "4",
-                  ].filter(Boolean);
+                  ].filter((g): g is string => typeof g === "string");
 
                   return (
                     <tr key={emp.employeeId} className="hover:bg-muted/20">

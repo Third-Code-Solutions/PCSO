@@ -131,49 +131,55 @@ export type ReleasePeriodInput = z.infer<typeof ReleasePeriodSchema>;
 
 // ─── Loan Ledger (PAY-009) ────────────────────────────────────────────────────
 
-export const CreateLoanSchema = z
-  .object({
-    employeeId: z.string().uuid("Invalid employee ID"),
-    loanType: z.enum([
-      "gsis_personal",
-      "gsis_policy",
-      "gsis_emergency",
-      "gsis_multi_purpose",
-      "pagibig_multi_purpose",
-      "pcso_in_house",
-    ]),
-    principal: z
-      .string()
-      .regex(/^\d+(\.\d{1,2})?$/, "Must be a valid amount")
-      .refine(
-        (val) => parseFloat(val) > 0,
-        "Principal must be greater than zero",
-      ),
-    startDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a date (YYYY-MM-DD)"),
-    endDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a date (YYYY-MM-DD)"),
-    deductionSchedule: z.enum(["semi_monthly", "monthly"]),
-    deductionAmount: z
-      .string()
-      .regex(/^\d+(\.\d{1,2})?$/, "Must be a valid amount")
-      .refine(
-        (val) => parseFloat(val) > 0,
-        "Deduction amount must be greater than zero",
-      ),
-    remarks: z.string().max(1000).optional(),
-  })
-  .refine((d) => d.startDate <= d.endDate, {
+const LoanBaseSchema = z.object({
+  employeeId: z.string().uuid("Invalid employee ID"),
+  loanType: z.enum([
+    "gsis_personal",
+    "gsis_policy",
+    "gsis_emergency",
+    "gsis_multi_purpose",
+    "pagibig_multi_purpose",
+    "pcso_in_house",
+  ]),
+  principal: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Must be a valid amount")
+    .refine(
+      (val) => parseFloat(val) > 0,
+      "Principal must be greater than zero",
+    ),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a date (YYYY-MM-DD)"),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a date (YYYY-MM-DD)"),
+  deductionSchedule: z.enum(["semi_monthly", "monthly"]),
+  deductionAmount: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Must be a valid amount")
+    .refine(
+      (val) => parseFloat(val) > 0,
+      "Deduction amount must be greater than zero",
+    ),
+  remarks: z.string().max(1000).optional(),
+});
+
+export const CreateLoanSchema = LoanBaseSchema.refine(
+  (d) => d.startDate <= d.endDate,
+  {
     message: "Start date must be on or before end date",
     path: ["endDate"],
-  });
+  },
+);
 
 export type CreateLoanInput = z.infer<typeof CreateLoanSchema>;
 
-export const UpdateLoanSchema = CreateLoanSchema.extend({
+export const UpdateLoanSchema = LoanBaseSchema.extend({
   id: z.string().uuid("Invalid loan ID"),
+}).refine((d) => d.startDate <= d.endDate, {
+  message: "Start date must be on or before end date",
+  path: ["endDate"],
 });
 
 export type UpdateLoanInput = z.infer<typeof UpdateLoanSchema>;

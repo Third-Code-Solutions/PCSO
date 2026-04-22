@@ -45,7 +45,7 @@ export default async function UsersPage() {
   const authUser = await requireAuth();
 
   // Super admin only
-  if (!hasPermission(authUser.role, "system", "write")) {
+  if (!hasPermission(authUser.role, "admin", "edit")) {
     redirect("/dashboard");
   }
 

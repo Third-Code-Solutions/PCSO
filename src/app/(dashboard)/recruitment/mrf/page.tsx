@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { desc, isNull } from "drizzle-orm";
+import { desc, isNull, eq } from "drizzle-orm";
 import { PlusIcon } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
@@ -50,8 +50,8 @@ async function listMrfs(): Promise<MrfRow[]> {
       createdAt: mrfs.createdAt,
     })
     .from(mrfs)
-    .leftJoin(plantillaPositions, mrfs.positionId)
-    .leftJoin(offices, mrfs.officeId)
+    .leftJoin(plantillaPositions, eq(plantillaPositions.id, mrfs.positionId))
+    .leftJoin(offices, eq(offices.id, mrfs.officeId))
     .where(isNull(mrfs.deletedAt))
     .orderBy(desc(mrfs.createdAt))
     .limit(200);

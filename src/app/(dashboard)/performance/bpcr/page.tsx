@@ -64,7 +64,17 @@ export default async function BpcrListPage({ searchParams }: Props) {
     conditions.push(eq(bpcrForms.performanceCycleId, cycleFilter));
   }
   if (statusFilter) {
-    conditions.push(eq(bpcrForms.status, statusFilter));
+    conditions.push(
+      eq(
+        bpcrForms.status,
+        statusFilter as
+          | "draft"
+          | "submitted"
+          | "reviewed"
+          | "approved"
+          | "disapproved",
+      ),
+    );
   }
 
   const bpcrs = await db

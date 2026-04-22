@@ -63,7 +63,7 @@ export function GenerateCertificateForm({
 
         if (result.success) {
           router.push(
-            `/learning/certificates?success=Certificate generated successfully&certificate=${result.data.certificateNumber}`,
+            `/learning/certificates?success=Certificate generated successfully&certificate=${result.data?.certificateNumber}`,
           );
         } else {
           router.push(

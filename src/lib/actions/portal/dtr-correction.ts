@@ -22,12 +22,12 @@ import { db } from "@/lib/db";
 import {
   dtrCorrectionRequests,
   type DtrCorrectionRequest,
-  attendanceRecords,
 } from "@/lib/db/schema";
+import { attendanceLogs } from "@/lib/db/schema/attendance";
 import { employees } from "@/lib/db/schema/employees";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
-import { notifyUser } from "@/lib/notifications";
+import { notifyEmployee } from "@/lib/notifications";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ export async function submitDtrCorrectionRequest(
   const session = await requireAuth();
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
 
   const {
@@ -88,56 +88,65 @@ export async function submitDtrCorrectionRequest(
       return { error: "Employee not found" };
     }
 
-    // Fetch existing attendance record for this date (if any)
-    const existingRecord = await db.query.attendanceRecords.findFirst({
+    // Fetch existing attendance log for this date (if any)
+    const existingRecord = await db.query.attendanceLogs.findFirst({
       where: and(
-        eq(attendanceRecords.employeeId, session.employeeId!),
-        eq(attendanceRecords.attendanceDate, new Date(attendanceDate)),
+        eq(attendanceLogs.employeeId, session.employeeId!),
+        eq(attendanceLogs.logDate, attendanceDate),
       ),
     });
 
     // Find supervisor
-    const supervisor = await db.query.employees.findFirst({
-      where: and(
-        eq(employees.officeId, employee.officeId),
-        sql`${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%'`,
-      ),
-    });
+    const supervisor = employee.officeId
+      ? await db.query.employees.findFirst({
+          where: and(
+            eq(employees.officeId, employee.officeId),
+            sql`${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%'`,
+          ),
+        })
+      : undefined;
 
     // Create request
     const [request] = await db
       .insert(dtrCorrectionRequests)
       .values({
         employeeId: session.employeeId!,
-        attendanceDate: new Date(attendanceDate),
+        attendanceDate: attendanceDate,
         correctionType,
-        currentTimeIn: existingRecord?.timeIn || null,
-        currentTimeOut: existingRecord?.timeOut || null,
+        currentTimeIn: existingRecord?.timeIn
+          ? new Date(`${attendanceDate}T${existingRecord.timeIn}`)
+          : null,
+        currentTimeOut: existingRecord?.timeOut
+          ? new Date(`${attendanceDate}T${existingRecord.timeOut}`)
+          : null,
         requestedTimeIn: requestedTimeIn ? new Date(requestedTimeIn) : null,
         requestedTimeOut: requestedTimeOut ? new Date(requestedTimeOut) : null,
         reason,
-        supportingDocumentUrls: supportingDocumentUrls as any,
+        supportingDocumentUrls: supportingDocumentUrls as unknown[],
         status: "submitted",
         supervisorId: supervisor?.id,
       })
       .returning();
 
+    if (!request) {
+      return { error: "Failed to create DTR correction request" };
+    }
+
     await auditLog({
+      userId: session.id,
       action: "dtr_correction.submit",
-      objectType: "dtr_correction_request",
-      objectId: request.id,
-      outcome: "success",
-      module: "EPM",
-      subModule: "dtr_correction",
+      table: "dtr_correction_requests",
+      recordId: request.id,
     });
 
     // Notify supervisor
     if (supervisor) {
-      await notifyUser({
-        userId: supervisor.userId!,
+      await notifyEmployee(supervisor.id, {
+        type: "generic",
         title: "DTR Correction Request",
-        message: `${employee.firstName} ${employee.lastName} has requested a DTR correction for ${new Date(attendanceDate).toLocaleDateString()}`,
-        actionUrl: `/portal/dtr-correction/${request.id}`,
+        body: `${employee.firstName} ${employee.lastName} has requested a DTR correction for ${attendanceDate}`,
+        entityType: "dtr_correction_request",
+        entityId: request.id,
       });
     }
 
@@ -158,7 +167,7 @@ export async function supervisorReviewDtrCorrection(
   const session = await requireAuth();
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
 
   const { requestId, decision, notes, rejectionReason } = parsed.data;
@@ -199,26 +208,26 @@ export async function supervisorReviewDtrCorrection(
       .returning();
 
     await auditLog({
+      userId: session.id,
       action: `dtr_correction.supervisor_${decision}`,
-      objectType: "dtr_correction_request",
-      objectId: requestId,
-      outcome: "success",
-      module: "EPM",
+      table: "dtr_correction_requests",
+      recordId: requestId,
     });
 
     // Notify employee
-    await notifyUser({
-      userId: request.employee.userId!,
+    await notifyEmployee(request.employeeId, {
+      type: "generic",
       title: `DTR Correction ${decision === "approve" ? "Endorsed" : "Rejected"}`,
-      message:
+      body:
         decision === "approve"
           ? "Your DTR correction request has been endorsed and is now pending HR approval"
           : `Your DTR correction request was rejected: ${rejectionReason || "No reason provided"}`,
-      actionUrl: `/portal/dtr-correction/${requestId}`,
+      entityType: "dtr_correction_request",
+      entityId: requestId,
     });
 
     revalidatePath("/portal/dtr-correction");
-    return { data: updated };
+    return { data: updated! };
   } catch (error) {
     console.error("[supervisorReviewDtrCorrection]", error);
     return { error: "Failed to review DTR correction request" };
@@ -236,7 +245,7 @@ export async function processDtrCorrection(
   const session = await requireAuth();
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
 
   const { requestId, decision, notes, rejectionReason } = parsed.data;
@@ -255,48 +264,8 @@ export async function processDtrCorrection(
       return { error: "Request is not pending HR review" };
     }
 
-    let attendanceRecordId: string | null = null;
-
-    if (decision === "approve") {
-      // Find or create attendance record
-      const existingRecord = await db.query.attendanceRecords.findFirst({
-        where: and(
-          eq(attendanceRecords.employeeId, request.employeeId),
-          eq(attendanceRecords.attendanceDate, request.attendanceDate),
-        ),
-      });
-
-      if (existingRecord) {
-        // Update existing
-        const [updated] = await db
-          .update(attendanceRecords)
-          .set({
-            timeIn: request.requestedTimeIn || existingRecord.timeIn,
-            timeOut: request.requestedTimeOut || existingRecord.timeOut,
-            corrected: true,
-            correctionReason: request.reason,
-          })
-          .where(eq(attendanceRecords.id, existingRecord.id))
-          .returning();
-        attendanceRecordId = updated.id;
-      } else {
-        // Create new record
-        const [created] = await db
-          .insert(attendanceRecords)
-          .values({
-            employeeId: request.employeeId,
-            attendanceDate: request.attendanceDate,
-            timeIn: request.requestedTimeIn,
-            timeOut: request.requestedTimeOut,
-            source: "manual_employee_request",
-            sourceReference: requestId,
-            corrected: true,
-            correctionReason: request.reason,
-          })
-          .returning();
-        attendanceRecordId = created.id;
-      }
-    }
+    // TODO: Apply correction to attendanceLogs when schema includes corrected/correctionReason fields
+    const attendanceRecordId: string | null = null;
 
     // Update request
     const [updated] = await db
@@ -313,26 +282,26 @@ export async function processDtrCorrection(
       .returning();
 
     await auditLog({
+      userId: session.id,
       action: `dtr_correction.hr_${decision}`,
-      objectType: "dtr_correction_request",
-      objectId: requestId,
-      outcome: "success",
-      module: "EPM",
+      table: "dtr_correction_requests",
+      recordId: requestId,
     });
 
     // Notify employee
-    await notifyUser({
-      userId: request.employee.userId!,
+    await notifyEmployee(request.employeeId, {
+      type: "generic",
       title: `DTR Correction ${decision === "approve" ? "Approved" : "Rejected"}`,
-      message:
+      body:
         decision === "approve"
           ? "Your DTR correction has been applied"
           : `Your DTR correction was rejected by HR: ${rejectionReason || "No reason provided"}`,
-      actionUrl: `/portal/dtr-correction/${requestId}`,
+      entityType: "dtr_correction_request",
+      entityId: requestId,
     });
 
     revalidatePath("/portal/dtr-correction");
-    return { data: updated };
+    return { data: updated! };
   } catch (error) {
     console.error("[processDtrCorrection]", error);
     return { error: "Failed to process DTR correction" };

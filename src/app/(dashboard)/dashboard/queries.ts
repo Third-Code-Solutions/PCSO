@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+import { db } from "@/lib/db";
 import {
   employees,
   plantillaPositions,
@@ -15,9 +15,20 @@ import {
   dtrPeriods,
   attendanceLogs,
   salnSubmissions,
-} from '@/lib/db/schema';
-import { eq, and, isNull, count, sql, desc, gte, lte, inArray, notInArray } from 'drizzle-orm';
-import { createServerClient } from '@/lib/supabase/server';
+} from "@/lib/db/schema";
+import {
+  eq,
+  and,
+  isNull,
+  count,
+  sql,
+  desc,
+  gte,
+  lte,
+  inArray,
+  notInArray,
+} from "drizzle-orm";
+import { createServerClient } from "@/lib/supabase/server";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,8 +60,8 @@ export interface UpcomingCutoffRow {
   name: string;
   periodEnd: string;
   payDate: string;
-  status: 'draft' | 'processing';
-  scope: 'regular' | 'jo_cos';
+  status: "draft" | "processing";
+  scope: "regular" | "jo_cos";
 }
 
 export interface PersonalKpis {
@@ -85,7 +96,7 @@ export async function getKpiCounts(): Promise<KpiCounts> {
     db
       .select({ c: count() })
       .from(employees)
-      .where(and(eq(employees.status, 'active'), isNull(employees.deletedAt))),
+      .where(and(eq(employees.status, "active"), isNull(employees.deletedAt))),
 
     // Permanent / temporary / coterminous / casual (non-JO/COS)
     db
@@ -93,13 +104,13 @@ export async function getKpiCounts(): Promise<KpiCounts> {
       .from(employees)
       .where(
         and(
-          eq(employees.status, 'active'),
+          eq(employees.status, "active"),
           isNull(employees.deletedAt),
           inArray(employees.appointmentType, [
-            'permanent',
-            'temporary',
-            'coterminous',
-            'casual',
+            "permanent",
+            "temporary",
+            "coterminous",
+            "casual",
           ]),
         ),
       ),
@@ -110,9 +121,12 @@ export async function getKpiCounts(): Promise<KpiCounts> {
       .from(employees)
       .where(
         and(
-          eq(employees.status, 'active'),
+          eq(employees.status, "active"),
           isNull(employees.deletedAt),
-          inArray(employees.appointmentType, ['job_order', 'contract_of_service']),
+          inArray(employees.appointmentType, [
+            "job_order",
+            "contract_of_service",
+          ]),
         ),
       ),
 
@@ -121,14 +135,17 @@ export async function getKpiCounts(): Promise<KpiCounts> {
       .select({ c: count() })
       .from(plantillaPositions)
       .where(
-        and(eq(plantillaPositions.isFilled, false), isNull(plantillaPositions.deletedAt)),
+        and(
+          eq(plantillaPositions.isFilled, false),
+          isNull(plantillaPositions.deletedAt),
+        ),
       ),
 
     // Pending leave applications
     db
       .select({ c: count() })
       .from(leaveApplications)
-      .where(eq(leaveApplications.status, 'pending')),
+      .where(eq(leaveApplications.status, "pending")),
 
     // Next payroll period with status draft or processing, ordered by period_end asc
     db
@@ -140,7 +157,7 @@ export async function getKpiCounts(): Promise<KpiCounts> {
       .from(payrollPeriods)
       .where(
         and(
-          inArray(payrollPeriods.status, ['draft', 'processing']),
+          inArray(payrollPeriods.status, ["draft", "processing"]),
           isNull(payrollPeriods.deletedAt),
         ),
       )
@@ -207,7 +224,7 @@ export async function getTotalRemittancesDueThisMonth(): Promise<string> {
       .from(remittanceBatches)
       .where(
         and(
-          inArray(remittanceBatches.status, ['draft', 'generated']),
+          inArray(remittanceBatches.status, ["draft", "generated"]),
           lte(remittanceBatches.periodStart, monthEnd),
           gte(remittanceBatches.periodEnd, monthStart),
         ),
@@ -219,11 +236,11 @@ export async function getTotalRemittancesDueThisMonth(): Promise<string> {
         total: sql<string>`COALESCE(SUM(${gsisRemittanceBatches.totalRemittance}), '0')`,
       })
       .from(gsisRemittanceBatches)
-      .where(inArray(gsisRemittanceBatches.status, ['draft', 'generated'])),
+      .where(inArray(gsisRemittanceBatches.status, ["draft", "generated"])),
   ]);
 
-  const remittanceTotal = Number(remittanceResult[0]?.total ?? '0');
-  const gsisTotal = Number(gsisResult[0]?.total ?? '0');
+  const remittanceTotal = Number(remittanceResult[0]?.total ?? "0");
+  const gsisTotal = Number(gsisResult[0]?.total ?? "0");
   const combined = remittanceTotal + gsisTotal;
 
   return combined.toFixed(2);
@@ -233,7 +250,9 @@ export async function getTotalRemittancesDueThisMonth(): Promise<string> {
  * Returns the last `limit` audit log entries joined with system_users for
  * a human-readable performer name.
  */
-export async function getRecentActivity(limit = 10): Promise<RecentActivityRow[]> {
+export async function getRecentActivity(
+  limit = 10,
+): Promise<RecentActivityRow[]> {
   const rows = await db
     .select({
       id: auditLogs.id,
@@ -253,7 +272,7 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivityRow[]
     action: row.action,
     tableName: row.tableName,
     recordId: row.recordId ?? null,
-    performedBy: row.userEmail ?? 'System',
+    performedBy: row.userEmail ?? "System",
     performedAt: row.createdAt.toISOString(),
   }));
 }
@@ -262,67 +281,70 @@ export async function getRecentActivity(limit = 10): Promise<RecentActivityRow[]
  * Personal KPIs for self-service employees. Scoped to a single employee UUID.
  * Returns zeros when the employee has no records — safe to render.
  */
-export async function getPersonalKpis(employeeId: string): Promise<PersonalKpis> {
+export async function getPersonalKpis(
+  employeeId: string,
+): Promise<PersonalKpis> {
   const currentYear = new Date().getFullYear();
 
-  const [balanceRows, pendingRows, approvedRows, nextPeriodRows] = await Promise.all([
-    // Sum of VL + SL balance for the current year. Gracefully falls back to 0.
-    db
-      .select({
-        total: sql<string>`COALESCE(SUM(${leaveCredits.balance}), '0')`,
-      })
-      .from(leaveCredits)
-      .leftJoin(leaveTypes, eq(leaveCredits.leaveTypeId, leaveTypes.id))
-      .where(
-        and(
-          eq(leaveCredits.employeeId, employeeId),
-          eq(leaveCredits.year, currentYear),
-          inArray(leaveTypes.code, ['VL', 'SL']),
+  const [balanceRows, pendingRows, approvedRows, nextPeriodRows] =
+    await Promise.all([
+      // Sum of VL + SL balance for the current year. Gracefully falls back to 0.
+      db
+        .select({
+          total: sql<string>`COALESCE(SUM(${leaveCredits.balance}), '0')`,
+        })
+        .from(leaveCredits)
+        .leftJoin(leaveTypes, eq(leaveCredits.leaveTypeId, leaveTypes.id))
+        .where(
+          and(
+            eq(leaveCredits.employeeId, employeeId),
+            eq(leaveCredits.year, currentYear),
+            inArray(leaveTypes.code, ["VL", "SL"]),
+          ),
         ),
-      ),
 
-    // Pending applications
-    db
-      .select({ c: count() })
-      .from(leaveApplications)
-      .where(
-        and(
-          eq(leaveApplications.employeeId, employeeId),
-          eq(leaveApplications.status, 'pending'),
+      // Pending applications
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .where(
+          and(
+            eq(leaveApplications.employeeId, employeeId),
+            eq(leaveApplications.status, "pending"),
+          ),
         ),
-      ),
 
-    // Approved applications this year
-    db
-      .select({ c: count() })
-      .from(leaveApplications)
-      .where(
-        and(
-          eq(leaveApplications.employeeId, employeeId),
-          eq(leaveApplications.status, 'approved'),
-          gte(leaveApplications.dateFrom, `${currentYear}-01-01`),
-          lte(leaveApplications.dateFrom, `${currentYear}-12-31`),
+      // Approved applications this year
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .where(
+          and(
+            eq(leaveApplications.employeeId, employeeId),
+            eq(leaveApplications.status, "approved"),
+            gte(leaveApplications.dateFrom, `${currentYear}-01-01`),
+            lte(leaveApplications.dateFrom, `${currentYear}-12-31`),
+          ),
         ),
-      ),
 
-    // Next payroll cutoff (org-wide; scoped-filtering not available at employee grain)
-    db
-      .select({
-        name: payrollPeriods.name,
-        periodEnd: payrollPeriods.periodEnd,
-      })
-      .from(payrollPeriods)
-      .where(
-        and(
-          inArray(payrollPeriods.status, ['draft', 'processing']),
-          isNull(payrollPeriods.deletedAt),
-        ),
-      )
-      .orderBy(payrollPeriods.periodEnd)
-      .limit(1),
-  ]);
+      // Next payroll cutoff (org-wide; scoped-filtering not available at employee grain)
+      db
+        .select({
+          name: payrollPeriods.name,
+          periodEnd: payrollPeriods.periodEnd,
+        })
+        .from(payrollPeriods)
+        .where(
+          and(
+            inArray(payrollPeriods.status, ["draft", "processing"]),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
+        .orderBy(payrollPeriods.periodEnd)
+        .limit(1),
+    ]);
 
-  const leaveBalanceDays = Number(balanceRows[0]?.total ?? '0');
+  const leaveBalanceDays = Number(balanceRows[0]?.total ?? "0");
   const pendingLeaveApplications = Number(pendingRows[0]?.c ?? 0);
   const approvedLeaveApplications = Number(approvedRows[0]?.c ?? 0);
 
@@ -365,7 +387,7 @@ export async function getUpcomingCutoffs(): Promise<UpcomingCutoffRow[]> {
     .from(payrollPeriods)
     .where(
       and(
-        inArray(payrollPeriods.status, ['draft', 'processing']),
+        inArray(payrollPeriods.status, ["draft", "processing"]),
         isNull(payrollPeriods.deletedAt),
       ),
     )
@@ -377,8 +399,8 @@ export async function getUpcomingCutoffs(): Promise<UpcomingCutoffRow[]> {
     name: row.name,
     periodEnd: row.periodEnd,
     payDate: row.payDate,
-    status: row.status as 'draft' | 'processing',
-    scope: row.scope as 'regular' | 'jo_cos',
+    status: row.status as "draft" | "processing",
+    scope: row.scope as "regular" | "jo_cos",
   }));
 }
 
@@ -412,7 +434,7 @@ export interface EmployeeKpis {
   slBalance: number;
   latestPayslipPeriodName: string | null;
   latestPayslipPeriodId: string | null;
-  dtrTodayStatus: 'present' | 'incomplete' | 'absent';
+  dtrTodayStatus: "present" | "incomplete" | "absent";
   salnDeadline: string | null;
   nextHolidayName: string | null;
   nextHolidayDate: string | null;
@@ -428,9 +450,9 @@ export async function getPendingOvertimeCount(): Promise<number> {
   try {
     const supabase = await createServerClient();
     const { count: c } = await supabase
-      .from('overtime_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending');
+      .from("overtime_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
     return c ?? 0;
   } catch {
     return 0;
@@ -444,14 +466,16 @@ export async function getPendingDtrApprovalsCount(): Promise<number> {
   const [row] = await db
     .select({ c: count() })
     .from(dtrPeriods)
-    .where(eq(dtrPeriods.status, 'submitted'));
+    .where(eq(dtrPeriods.status, "submitted"));
   return Number(row?.c ?? 0);
 }
 
 /**
  * Count of holidays occurring in the next 90 days.
  */
-export async function getUpcomingHolidaysCount(daysAhead = 90): Promise<number> {
+export async function getUpcomingHolidaysCount(
+  daysAhead = 90,
+): Promise<number> {
   const today = new Date().toISOString().slice(0, 10);
   const horizon = new Date(Date.now() + daysAhead * 86_400_000)
     .toISOString()
@@ -495,7 +519,7 @@ export async function getSalnNonFilersCount(year?: number): Promise<number> {
   const [activeRow] = await db
     .select({ c: count() })
     .from(employees)
-    .where(and(eq(employees.status, 'active'), isNull(employees.deletedAt)));
+    .where(and(eq(employees.status, "active"), isNull(employees.deletedAt)));
 
   const activeCount = Number(activeRow?.c ?? 0);
 
@@ -505,7 +529,7 @@ export async function getSalnNonFilersCount(year?: number): Promise<number> {
     .where(
       and(
         eq(salnSubmissions.year, targetYear),
-        inArray(salnSubmissions.status, ['submitted', 'received', 'verified']),
+        inArray(salnSubmissions.status, ["submitted", "received", "verified"]),
       ),
     );
 
@@ -516,21 +540,27 @@ export async function getSalnNonFilersCount(year?: number): Promise<number> {
  * System-wide KPIs for super_admin / hr_admin.
  */
 export async function getAdminDashboardKpis(): Promise<AdminKpis> {
-  const [totalEmpRow, pendingLeaveRow, pendingOt, pendingDtr, upcomingHol, salnNon] =
-    await Promise.all([
-      db
-        .select({ c: count() })
-        .from(employees)
-        .where(and(eq(employees.status, 'active'), isNull(employees.deletedAt))),
-      db
-        .select({ c: count() })
-        .from(leaveApplications)
-        .where(eq(leaveApplications.status, 'pending')),
-      getPendingOvertimeCount(),
-      getPendingDtrApprovalsCount(),
-      getUpcomingHolidaysCount(),
-      getSalnNonFilersCount(),
-    ]);
+  const [
+    totalEmpRow,
+    pendingLeaveRow,
+    pendingOt,
+    pendingDtr,
+    upcomingHol,
+    salnNon,
+  ] = await Promise.all([
+    db
+      .select({ c: count() })
+      .from(employees)
+      .where(and(eq(employees.status, "active"), isNull(employees.deletedAt))),
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
+      .where(eq(leaveApplications.status, "pending")),
+    getPendingOvertimeCount(),
+    getPendingDtrApprovalsCount(),
+    getUpcomingHolidaysCount(),
+    getSalnNonFilersCount(),
+  ]);
 
   return {
     totalEmployees: Number(totalEmpRow[0]?.c ?? 0),
@@ -546,30 +576,33 @@ export async function getAdminDashboardKpis(): Promise<AdminKpis> {
  * Payroll admin dashboard KPIs.
  */
 export async function getPayrollAdminKpis(): Promise<PayrollAdminKpis> {
-  const [activePeriodRows, totalEmpRow, remittancesActiveRow] = await Promise.all([
-    db
-      .select({
-        id: payrollPeriods.id,
-        name: payrollPeriods.name,
-      })
-      .from(payrollPeriods)
-      .where(
-        and(
-          inArray(payrollPeriods.status, ['draft', 'processing']),
-          isNull(payrollPeriods.deletedAt),
+  const [activePeriodRows, totalEmpRow, remittancesActiveRow] =
+    await Promise.all([
+      db
+        .select({
+          id: payrollPeriods.id,
+          name: payrollPeriods.name,
+        })
+        .from(payrollPeriods)
+        .where(
+          and(
+            inArray(payrollPeriods.status, ["draft", "processing"]),
+            isNull(payrollPeriods.deletedAt),
+          ),
+        )
+        .orderBy(payrollPeriods.periodEnd)
+        .limit(1),
+      db
+        .select({ c: count() })
+        .from(employees)
+        .where(
+          and(eq(employees.status, "active"), isNull(employees.deletedAt)),
         ),
-      )
-      .orderBy(payrollPeriods.periodEnd)
-      .limit(1),
-    db
-      .select({ c: count() })
-      .from(employees)
-      .where(and(eq(employees.status, 'active'), isNull(employees.deletedAt))),
-    db
-      .select({ c: count() })
-      .from(remittanceBatches)
-      .where(inArray(remittanceBatches.status, ['draft', 'generated'])),
-  ]);
+      db
+        .select({ c: count() })
+        .from(remittanceBatches)
+        .where(inArray(remittanceBatches.status, ["draft", "generated"])),
+    ]);
 
   const activePeriod = activePeriodRows[0] ?? null;
   let pendingPayrollEntries = 0;
@@ -581,7 +614,7 @@ export async function getPayrollAdminKpis(): Promise<PayrollAdminKpis> {
       .where(
         and(
           eq(payrollRecords.periodId, activePeriod.id),
-          notInArray(payrollRecords.status, ['paid']),
+          notInArray(payrollRecords.status, ["paid"]),
         ),
       );
     pendingPayrollEntries = Number(entries?.c ?? 0);
@@ -612,13 +645,13 @@ export async function getLeaveApproverKpis(
     db
       .select({ c: count() })
       .from(leaveApplications)
-      .where(eq(leaveApplications.status, 'pending')),
+      .where(eq(leaveApplications.status, "pending")),
     db
       .select({ c: count() })
       .from(leaveApplications)
       .where(
         and(
-          eq(leaveApplications.status, 'approved'),
+          eq(leaveApplications.status, "approved"),
           gte(leaveApplications.approvedAt, new Date(`${today}T00:00:00Z`)),
         ),
       ),
@@ -627,7 +660,7 @@ export async function getLeaveApproverKpis(
       .from(leaveApplications)
       .where(
         and(
-          eq(leaveApplications.status, 'approved'),
+          eq(leaveApplications.status, "approved"),
           lte(leaveApplications.dateFrom, today),
           gte(leaveApplications.dateTo, today),
         ),
@@ -638,6 +671,123 @@ export async function getLeaveApproverKpis(
     pendingMyApprovals: Number(pendingRow[0]?.c ?? 0),
     approvedLeavesToday: Number(approvedTodayRow[0]?.c ?? 0),
     teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+  };
+}
+
+// ─── Supervisor / Executive / Auditor KPI types ──────────────────────────────
+
+export interface SupervisorKpis {
+  pendingTeamLeaves: number;
+  teamOnLeaveToday: number;
+  pendingOtApprovals: number;
+  upcomingHolidays: number;
+}
+
+export interface ExecutiveKpis {
+  totalEmployees: number;
+  vacantPositions: number;
+  salnNonFilers: number;
+  upcomingHolidays: number;
+}
+
+export interface AuditorKpis {
+  salnNonFilers: number;
+  auditEntriesLast7Days: number;
+  pendingLeaves: number;
+  upcomingHolidays: number;
+}
+
+/**
+ * Supervisor / manager dashboard KPIs.
+ * Scoped at org-wide level until per-unit routing is implemented.
+ */
+export async function getSupervisorKpis(
+  _supervisorUserId: string,
+): Promise<SupervisorKpis> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [pendingRow, onLeaveTodayRow, pendingOt, upcomingHol] =
+    await Promise.all([
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .where(eq(leaveApplications.status, "pending")),
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .where(
+          and(
+            eq(leaveApplications.status, "approved"),
+            lte(leaveApplications.dateFrom, today),
+            gte(leaveApplications.dateTo, today),
+          ),
+        ),
+      getPendingOvertimeCount(),
+      getUpcomingHolidaysCount(),
+    ]);
+
+  return {
+    pendingTeamLeaves: Number(pendingRow[0]?.c ?? 0),
+    teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+    pendingOtApprovals: pendingOt,
+    upcomingHolidays: upcomingHol,
+  };
+}
+
+/**
+ * Executive / leadership dashboard KPIs. Read-only aggregates.
+ */
+export async function getExecutiveKpis(): Promise<ExecutiveKpis> {
+  const [totalEmpRow, vacantRow, upcomingHol, salnNon] = await Promise.all([
+    db
+      .select({ c: count() })
+      .from(employees)
+      .where(and(eq(employees.status, "active"), isNull(employees.deletedAt))),
+    db
+      .select({ c: count() })
+      .from(plantillaPositions)
+      .where(
+        and(
+          eq(plantillaPositions.isFilled, false),
+          isNull(plantillaPositions.deletedAt),
+        ),
+      ),
+    getUpcomingHolidaysCount(),
+    getSalnNonFilersCount(),
+  ]);
+
+  return {
+    totalEmployees: Number(totalEmpRow[0]?.c ?? 0),
+    vacantPositions: Number(vacantRow[0]?.c ?? 0),
+    salnNonFilers: salnNon,
+    upcomingHolidays: upcomingHol,
+  };
+}
+
+/**
+ * Compliance / audit dashboard KPIs. Read-only aggregates.
+ */
+export async function getAuditorKpis(): Promise<AuditorKpis> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+
+  const [auditRow, salnNon, pendingLeaveRow, upcomingHol] = await Promise.all([
+    db
+      .select({ c: count() })
+      .from(auditLogs)
+      .where(gte(auditLogs.createdAt, sevenDaysAgo)),
+    getSalnNonFilersCount(),
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
+      .where(eq(leaveApplications.status, "pending")),
+    getUpcomingHolidaysCount(),
+  ]);
+
+  return {
+    salnNonFilers: salnNon,
+    auditEntriesLast7Days: Number(auditRow[0]?.c ?? 0),
+    pendingLeaves: Number(pendingLeaveRow[0]?.c ?? 0),
+    upcomingHolidays: upcomingHol,
   };
 }
 
@@ -662,7 +812,7 @@ export async function getEmployeeDashboardKpis(
         and(
           eq(leaveCredits.employeeId, employeeId),
           eq(leaveCredits.year, currentYear),
-          inArray(leaveTypes.code, ['VL', 'SL']),
+          inArray(leaveTypes.code, ["VL", "SL"]),
         ),
       ),
     db
@@ -676,7 +826,7 @@ export async function getEmployeeDashboardKpis(
       .where(
         and(
           eq(payrollRecords.employeeId, employeeId),
-          eq(payrollRecords.status, 'paid'),
+          eq(payrollRecords.status, "paid"),
         ),
       )
       .orderBy(desc(payrollPeriods.periodEnd))
@@ -700,16 +850,16 @@ export async function getEmployeeDashboardKpis(
   let vlBalance = 0;
   let slBalance = 0;
   for (const row of creditRows) {
-    if (row.code === 'VL') vlBalance = Number(row.balance ?? 0);
-    if (row.code === 'SL') slBalance = Number(row.balance ?? 0);
+    if (row.code === "VL") vlBalance = Number(row.balance ?? 0);
+    if (row.code === "SL") slBalance = Number(row.balance ?? 0);
   }
 
   const latestPayslip = latestPayrollRows[0] ?? null;
   const log = todayLog[0] ?? null;
 
-  let dtrTodayStatus: 'present' | 'incomplete' | 'absent' = 'absent';
-  if (log?.timeIn && log?.timeOut) dtrTodayStatus = 'present';
-  else if (log?.timeIn || log?.timeOut) dtrTodayStatus = 'incomplete';
+  let dtrTodayStatus: "present" | "incomplete" | "absent" = "absent";
+  if (log?.timeIn && log?.timeOut) dtrTodayStatus = "present";
+  else if (log?.timeIn || log?.timeOut) dtrTodayStatus = "incomplete";
 
   // Annual SALN filing deadline: April 30 each year (RA 6713).
   const now = new Date();

@@ -16,7 +16,7 @@
  * Notifications: N-001 through N-007 handled by leave/attendance modules.
  */
 
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
@@ -276,7 +276,7 @@ export async function getEmployee(input: unknown): Promise<Result<Employee>> {
     const [employee] = await db
       .select()
       .from(employees)
-      .where(and(eq(employees.id, parsed.id), eq(employees.deletedAt, null)))
+      .where(and(eq(employees.id, parsed.id), isNull(employees.deletedAt)))
       .limit(1);
 
     if (!employee) {
@@ -315,7 +315,7 @@ export async function searchEmployees(
     await requirePermission("employees", "view");
     const parsed = searchEmployeesSchema.parse(input);
 
-    const conditions = [eq(employees.deletedAt, null)];
+    const conditions = [isNull(employees.deletedAt)];
 
     if (parsed.query) {
       conditions.push(
@@ -337,10 +337,11 @@ export async function searchEmployees(
 
     const where = and(...conditions);
 
-    const [{ count: totalCount }] = await db
+    const countResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(employees)
       .where(where);
+    const totalCount = countResult[0]?.count ?? 0;
 
     const results = await db
       .select({

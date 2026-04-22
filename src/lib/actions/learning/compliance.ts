@@ -15,8 +15,8 @@ import { z } from "zod";
 interface MandatoryComplianceRecord {
   employeeId: string;
   employeeName: string;
-  employeeNumber: string;
-  officeId: string;
+  employeeNo: string;
+  officeId: string | null;
   programId: string;
   programTitle: string;
   isCompliant: boolean;
@@ -53,7 +53,7 @@ export async function getMandatoryComplianceReport(filters?: {
   }
 
   // Get all active employees
-  let employeeQuery = db
+  const activeEmployees = await db
     .select({
       id: employees.id,
       employeeNo: employees.employeeNo,
@@ -62,15 +62,14 @@ export async function getMandatoryComplianceReport(filters?: {
       officeId: employees.officeId,
     })
     .from(employees)
-    .where(eq(employees.status, "active"));
-
-  if (filters?.officeId) {
-    employeeQuery = employeeQuery.where(
-      eq(employees.officeId, filters.officeId),
+    .where(
+      filters?.officeId
+        ? and(
+            eq(employees.status, "active"),
+            eq(employees.officeId, filters.officeId),
+          )
+        : eq(employees.status, "active"),
     );
-  }
-
-  const activeEmployees = await employeeQuery;
 
   // Get all completed training participants for mandatory programs this year
   const completedParticipants = await db
@@ -117,7 +116,7 @@ export async function getMandatoryComplianceReport(filters?: {
       records.push({
         employeeId: employee.id,
         employeeName: `${employee.lastName}, ${employee.firstName}`,
-        employeeNo: employee.employeeNo,
+        employeeNo: employee.employeeNo ?? "",
         officeId: employee.officeId,
         programId: program.id,
         programTitle: program.title,
@@ -272,11 +271,11 @@ export async function getTrainingExpenseReport(filters?: {
       return {
         programId: p.id,
         programTitle: p.title,
-        lndType: p.lndType,
+        lndType: p.lndType as string,
         totalRuns: stats.totalRuns,
         totalParticipants: stats.totalParticipants,
         totalExpense: stats.totalExpense,
-      };
+      } satisfies TrainingExpenseRecord;
     })
     .filter((r): r is TrainingExpenseRecord => r !== null)
     .sort((a, b) => b.totalExpense - a.totalExpense);
@@ -304,9 +303,9 @@ export async function getTrainingExpenseSummary(cycleYear?: number) {
           expense: 0,
         };
       }
-      acc[r.lndType].runs += r.totalRuns;
-      acc[r.lndType].participants += r.totalParticipants;
-      acc[r.lndType].expense += r.totalExpense;
+      acc[r.lndType]!.runs += r.totalRuns;
+      acc[r.lndType]!.participants += r.totalParticipants;
+      acc[r.lndType]!.expense += r.totalExpense;
       return acc;
     },
     {} as Record<

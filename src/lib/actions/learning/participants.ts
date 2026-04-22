@@ -51,7 +51,7 @@ export async function addParticipant(
     .returning();
 
   // Update actual headcount by counting current participants
-  const [{ count }] = await db
+  const headcountResult = await db
     .select({ count: sql<number>`cast(count(*) as integer)` })
     .from(trainingParticipants)
     .where(eq(trainingParticipants.runId, validated.runId));
@@ -59,7 +59,7 @@ export async function addParticipant(
   await db
     .update(trainingRuns)
     .set({
-      actualHeadcount: count,
+      actualHeadcount: headcountResult[0]?.count ?? 0,
     })
     .where(eq(trainingRuns.id, validated.runId));
 
@@ -127,8 +127,8 @@ export async function confirmAttendance(
       .update(trainingAttendance)
       .set({
         attendanceStatus: validated.attendanceStatus,
-        timeIn: validated.timeIn || null,
-        timeOut: validated.timeOut || null,
+        timeIn: validated.timeIn ? new Date(validated.timeIn) : null,
+        timeOut: validated.timeOut ? new Date(validated.timeOut) : null,
       })
       .where(eq(trainingAttendance.id, existing.id))
       .returning();
@@ -143,8 +143,8 @@ export async function confirmAttendance(
       participantId: validated.participantId,
       sessionDate: validated.sessionDate,
       attendanceStatus: validated.attendanceStatus,
-      timeIn: validated.timeIn || null,
-      timeOut: validated.timeOut || null,
+      timeIn: validated.timeIn ? new Date(validated.timeIn) : null,
+      timeOut: validated.timeOut ? new Date(validated.timeOut) : null,
     })
     .returning();
 

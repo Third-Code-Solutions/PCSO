@@ -104,9 +104,9 @@ async function seedOffices(): Promise<Record<string, string>> {
         .insert(schema.offices)
         .values({ name: o.name, code: o.code, type: o.type })
         .returning({ id: schema.offices.id });
-      idMap[o.code] = row.id;
+      idMap[o.code] = row!.id;
     } else {
-      idMap[o.code] = existing[0].id;
+      idMap[o.code] = existing[0]!.id;
     }
   }
 
@@ -647,7 +647,7 @@ async function seedEmployees(
       .limit(1);
 
     if (existing.length > 0) {
-      idMap[e.employeeNo] = existing[0].id;
+      idMap[e.employeeNo] = existing[0]!.id;
       continue;
     }
 
@@ -682,7 +682,7 @@ async function seedEmployees(
       })
       .returning({ id: schema.employees.id });
 
-    idMap[e.employeeNo] = row.id;
+    idMap[e.employeeNo] = row!.id;
   }
 
   log("employees", employeeData.length);
@@ -803,9 +803,11 @@ async function seedPlantilla(
       positionTitle: p.positionTitle,
       salaryGrade: p.salaryGrade,
       authorizedSalary: p.authorizedSalary,
-      officeId: officeIds[p.officeCode],
+      officeId: officeIds[p.officeCode]!,
       isFilled: p.isFilled,
-      employeeId: p.employeeNo ? employeeIds[p.employeeNo] : undefined,
+      employeeId: p.employeeNo
+        ? (employeeIds[p.employeeNo] ?? undefined)
+        : undefined,
     });
   }
 
@@ -861,7 +863,7 @@ async function seedAppointments(
   ];
 
   for (const a of appointmentData) {
-    const empId = employeeIds[a.employeeNo];
+    const empId = employeeIds[a.employeeNo]!;
 
     // Check by employeeId + effectivityDate
     const existing = await db
@@ -886,7 +888,7 @@ async function seedAppointments(
       salaryGrade: a.salaryGrade,
       step: a.step,
       monthlySalary: a.monthlySalary,
-      officeId: officeIds[a.officeCode],
+      officeId: officeIds[a.officeCode]!,
       status: a.status,
       remarks: a.remarks,
     });
@@ -1000,9 +1002,10 @@ async function seedAttendanceLogs(
   let count = 0;
   for (const empNo of targetEmployeeNos) {
     const empId = employeeIds[empNo];
+    if (!empId) continue;
     for (let di = 0; di < days.length; di++) {
-      const logDate = days[di];
-      const pattern = patterns[di % patterns.length];
+      const logDate = days[di]!;
+      const pattern = patterns[di % patterns.length]!;
 
       const existing = await db
         .select({ id: schema.attendanceLogs.id })
@@ -1070,6 +1073,7 @@ async function seedDtrPeriods(
   let count = 0;
   for (const empNo of targetEmpNos) {
     const empId = employeeIds[empNo];
+    if (!empId) continue;
     for (const p of periods) {
       const existing = await db
         .select({ id: schema.dtrPeriods.id })
@@ -1128,8 +1132,8 @@ async function seedLeaveCredits(
     return;
   }
 
-  const vlId = vl[0].id;
-  const slId = sl[0].id;
+  const vlId = vl[0]!.id;
+  const slId = sl[0]!.id;
 
   const targetEmpNos = [
     "EMP-2026-00001",
@@ -1157,6 +1161,7 @@ async function seedLeaveCredits(
   let count = 0;
   for (const empNo of targetEmpNos) {
     const empId = employeeIds[empNo];
+    if (!empId) continue;
     for (const c of credits) {
       const existing = await db
         .select({ id: schema.leaveCredits.id })
@@ -1211,8 +1216,8 @@ async function seedLeaveApplications(
     return;
   }
 
-  const vlId = vl[0].id;
-  const slId = sl[0].id;
+  const vlId = vl[0]!.id;
+  const slId = sl[0]!.id;
   const approverEmpId = employeeIds["EMP-2026-00001"];
 
   const apps = [
@@ -1281,6 +1286,7 @@ async function seedLeaveApplications(
   let count = 0;
   for (const a of apps) {
     const empId = employeeIds[a.employeeNo];
+    if (!empId) continue;
 
     const existing = await db
       .select({ id: schema.leaveApplications.id })
@@ -1341,7 +1347,7 @@ async function seedPayroll(employeeIds: Record<string, string>): Promise<void> {
     .limit(1);
 
   if (existingPeriod.length > 0) {
-    periodId = existingPeriod[0].id;
+    periodId = existingPeriod[0]!.id;
   } else {
     const [p] = await db
       .insert(schema.payrollPeriods)
@@ -1355,7 +1361,7 @@ async function seedPayroll(employeeIds: Record<string, string>): Promise<void> {
         notes: "Demo payroll period — current semi-monthly 1-15.",
       })
       .returning({ id: schema.payrollPeriods.id });
-    periodId = p.id;
+    periodId = p!.id;
   }
 
   log("payroll_periods", 1);
@@ -1501,6 +1507,7 @@ async function seedPayroll(employeeIds: Record<string, string>): Promise<void> {
   let count = 0;
   for (const r of payRecords) {
     const empId = employeeIds[r.employeeNo];
+    if (!empId) continue;
 
     const existing = await db
       .select({ id: schema.payrollRecords.id })
@@ -1601,13 +1608,13 @@ async function seedPerformance(
 
     let pid: string;
     if (existing.length > 0) {
-      pid = existing[0].id;
+      pid = existing[0]!.id;
     } else {
       const [row] = await db
         .insert(schema.performancePeriods)
         .values(p)
         .returning({ id: schema.performancePeriods.id });
-      pid = row.id;
+      pid = row!.id;
     }
     periodIds[p.semester] = pid;
   }
@@ -1615,7 +1622,7 @@ async function seedPerformance(
   log("performance_periods", periods.length);
 
   // 4 ratings for semester 1
-  const raterEmpId = employeeIds["EMP-2026-00001"];
+  const raterEmpId = employeeIds["EMP-2026-00001"]!;
 
   const ratings = [
     {
@@ -1656,6 +1663,7 @@ async function seedPerformance(
   for (const r of ratings) {
     const empId = employeeIds[r.employeeNo];
     const periodId = periodIds[r.semester];
+    if (!empId || !periodId) continue;
 
     const existing = await db
       .select({ id: schema.performanceRatings.id })
@@ -1694,6 +1702,7 @@ async function seedStepIncrements(
 ): Promise<void> {
   const empId = employeeIds["EMP-2026-00002"];
   const approverId = employeeIds["EMP-2026-00001"];
+  if (!empId) return;
 
   const existing = await db
     .select({ id: schema.stepIncrements.id })
@@ -1791,6 +1800,7 @@ async function seedSaln(employeeIds: Record<string, string>): Promise<void> {
   let count = 0;
   for (const s of submissions) {
     const empId = employeeIds[s.employeeNo];
+    if (!empId) continue;
 
     const existing = await db
       .select({ id: schema.salnSubmissions.id })

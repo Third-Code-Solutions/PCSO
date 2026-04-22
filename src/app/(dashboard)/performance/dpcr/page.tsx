@@ -62,7 +62,17 @@ export default async function DpcrListPage({ searchParams }: Props) {
     conditions.push(eq(dpcrForms.performanceCycleId, cycleFilter));
   }
   if (statusFilter) {
-    conditions.push(eq(dpcrForms.status, statusFilter));
+    conditions.push(
+      eq(
+        dpcrForms.status,
+        statusFilter as
+          | "draft"
+          | "submitted"
+          | "reviewed"
+          | "approved"
+          | "disapproved",
+      ),
+    );
   }
 
   const dpcrs = await db

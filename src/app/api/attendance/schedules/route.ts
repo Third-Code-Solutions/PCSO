@@ -127,7 +127,7 @@ export async function DELETE(req: NextRequest) {
 
     await db
       .update(workSchedules)
-      .set({ deletedAt: new Date().toISOString() })
+      .set({ deletedAt: new Date() })
       .where(eq(workSchedules.id, id));
 
     return NextResponse.json({ success: true });

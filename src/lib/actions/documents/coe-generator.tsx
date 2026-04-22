@@ -188,7 +188,7 @@ export async function generateCOE(
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.agencyName}>{org.agencyName}</Text>
-            <Text style={styles.agencyAddress}>{org.address}</Text>
+            <Text style={styles.agencyAddress}>{org.agencyAddress}</Text>
             <Text style={styles.agencyAddress}>
               {org.contactEmail} | {org.contactPhone}
             </Text>

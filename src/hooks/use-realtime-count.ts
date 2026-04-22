@@ -14,7 +14,7 @@
  *     `router.refresh()` every 30s until realtime recovers.
  *   - Returns a `connectionState` value for optional UI indication.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 
@@ -100,7 +100,7 @@ export function useRealtimeRefresh(
       if (pollInterval) return;
       setConnectionState("polling-fallback");
       pollInterval = setInterval(() => {
-        routerRef.current.refresh();
+        startTransition(() => routerRef.current.refresh());
       }, POLLING_INTERVAL_MS);
     };
     const armFallbackTimer = () => {
@@ -130,7 +130,7 @@ export function useRealtimeRefresh(
           // supabase-js narrows this string literal; the runtime accepts it.
           "postgres_changes" as never,
           { event: "*", schema: "public", table } as never,
-          () => routerRef.current.refresh(),
+          () => startTransition(() => routerRef.current.refresh()),
         );
       }
 
@@ -143,7 +143,7 @@ export function useRealtimeRefresh(
           stopPolling();
           setConnectionState("connected");
           // Recover any missed changes during the outage.
-          routerRef.current.refresh();
+          startTransition(() => routerRef.current.refresh());
           return;
         }
         if (

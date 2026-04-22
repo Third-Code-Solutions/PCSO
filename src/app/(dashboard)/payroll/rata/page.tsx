@@ -7,7 +7,7 @@ import { PeriodStatusBadge } from "@/components/payroll/period-status-badge";
 import { requirePermission } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { payrollPeriods } from "@/lib/db/schema";
-import { eq, isNull, desc } from "drizzle-orm";
+import { eq, isNull, desc, and } from "drizzle-orm";
 import type { PayrollPeriod } from "@/lib/db/schema";
 
 export const metadata = { title: "RATA Payroll" };
@@ -73,15 +73,18 @@ export default async function RataPayrollPage() {
   const periods = await db
     .select()
     .from(payrollPeriods)
-    .where(eq(payrollPeriods.scope, "rata"))
-    .where(isNull(payrollPeriods.deletedAt))
+    .where(
+      and(eq(payrollPeriods.scope, "rata"), isNull(payrollPeriods.deletedAt)),
+    )
     .orderBy(desc(payrollPeriods.createdAt))
     .limit(20);
 
   const activePeriods = periods.filter(
-    (p) => p.status === "processing" || p.status === "approved",
+    (p: PayrollPeriod) => p.status === "processing" || p.status === "approved",
   );
-  const draftPeriods = periods.filter((p) => p.status === "draft");
+  const draftPeriods = periods.filter(
+    (p: PayrollPeriod) => p.status === "draft",
+  );
 
   return (
     <main className="space-y-8">
@@ -117,7 +120,7 @@ export default async function RataPayrollPage() {
             In Progress
           </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {activePeriods.map((period) => (
+            {activePeriods.map((period: PayrollPeriod) => (
               <PeriodCard key={period.id} period={period} />
             ))}
           </div>
@@ -134,7 +137,7 @@ export default async function RataPayrollPage() {
             Drafts
           </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {draftPeriods.map((period) => (
+            {draftPeriods.map((period: PayrollPeriod) => (
               <PeriodCard key={period.id} period={period} />
             ))}
           </div>

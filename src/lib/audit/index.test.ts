@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 /**
  * Unit tests for the audit log helper.
  *
@@ -75,7 +76,7 @@ describe("diffValues", () => {
     const next = { meta: { a: 1, b: 3 } };
     const result = diffValues(old, next);
     expect(result).toHaveLength(1);
-    expect(result[0].field).toBe("meta");
+    expect(result[0]?.field).toBe("meta");
   });
 
   it("returns empty array for two empty objects", () => {

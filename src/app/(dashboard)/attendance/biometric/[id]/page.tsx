@@ -128,7 +128,7 @@ export default async function BiometricImportDetailPage({ params }: PageProps) {
             <dt className="text-xs font-medium text-gray-500">Imported By</dt>
             <dd className="mt-1 text-sm text-gray-700">
               {importRecord.importedBy
-                ? `${importRecord.importedBy.firstName} ${importRecord.importedBy.lastName} (${importRecord.importedBy.employeeNumber})`
+                ? `${importRecord.importedBy.firstName} ${importRecord.importedBy.lastName} (${importRecord.importedBy.employeeNo})`
                 : "—"}
             </dd>
           </div>
@@ -190,7 +190,7 @@ export default async function BiometricImportDetailPage({ params }: PageProps) {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
                       {record.employee
-                        ? `${record.employee.firstName} ${record.employee.lastName} (${record.employee.employeeNumber})`
+                        ? `${record.employee.firstName} ${record.employee.lastName} (${record.employee.employeeNo})`
                         : "—"}
                     </td>
                     <td className="px-4 py-3 text-sm font-mono text-gray-700">

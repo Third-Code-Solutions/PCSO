@@ -20,7 +20,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 export async function updateOrgProfile(formData: FormData) {
   const user = await requireAuth();
 
-  if (!hasPermission(user.role, "system", "write")) {
+  if (!hasPermission(user.role, "admin", "edit")) {
     throw new Error("Unauthorized: Super admin access required");
   }
 
@@ -79,7 +79,7 @@ export async function updateUserRole(
 ) {
   const user = await requireAuth();
 
-  if (!hasPermission(user.role, "system", "write")) {
+  if (!hasPermission(user.role, "admin", "edit")) {
     throw new Error("Unauthorized: Super admin access required");
   }
 
@@ -106,7 +106,7 @@ export async function updateProfile(employeeId: string, formData: FormData) {
   // Can only update own profile unless super admin
   if (
     user.employeeId !== employeeId &&
-    !hasPermission(user.role, "system", "write")
+    !hasPermission(user.role, "admin", "edit")
   ) {
     throw new Error("Unauthorized: Can only update own profile");
   }

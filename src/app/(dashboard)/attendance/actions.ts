@@ -323,15 +323,15 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
     table: "attendance_logs",
     recordId: row.id,
     oldValues: oldRow
-      ? {
+      ? ({
           timeIn: oldRow.timeIn,
           timeOut: oldRow.timeOut,
           source: oldRow.source,
           lateMinutes: oldRow.lateMinutes,
           undertimeMinutes: oldRow.undertimeMinutes,
           overtimeMinutes: oldRow.overtimeMinutes,
-        }
-      : null,
+        } as Record<string, unknown>)
+      : undefined,
     newValues: {
       employeeId: parsed.employeeId,
       logDate: parsed.date,

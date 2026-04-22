@@ -28,7 +28,7 @@ interface PageProps {
 export default async function GenerateCertificatePage({
   searchParams,
 }: PageProps) {
-  const user = await requirePermission("learning", "write");
+  const user = await requirePermission("learning", "create");
   const params = await searchParams;
 
   // Get completed participants without certificates
@@ -68,7 +68,10 @@ export default async function GenerateCertificatePage({
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
-      <ActionStatusBanner searchParams={params} />
+      <ActionStatusBanner
+        status={typeof params.status === "string" ? params.status : undefined}
+        entityLabel="Certificate"
+      />
 
       <PageHeader
         title="Generate Certificates"

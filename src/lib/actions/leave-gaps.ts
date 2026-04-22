@@ -149,7 +149,7 @@ export async function adjustLeaveCredits(
       },
     });
 
-    return { creditId, previousBalance, newBalance };
+    return { leaveCreditId: creditId, previousBalance, newBalance };
   });
 
   revalidatePath("/leave/credits");
@@ -357,7 +357,7 @@ interface AdvancedLeaveReportFilters {
   officeId?: string;
   leaveTypeCode?: string;
   status?: string;
-  sex?: "M" | "F";
+  sex?: string;
 }
 
 export interface AdvancedLeaveReportResult {
@@ -388,7 +388,7 @@ export interface AdvancedLeaveReportResult {
 export async function getAdvancedLeaveReports(
   filters: AdvancedLeaveReportFilters,
 ): Promise<AdvancedLeaveReportResult> {
-  await requirePermission("leave", "read");
+  await requirePermission("leave", "view");
 
   // This is a placeholder implementation
   // Real implementation would use complex SQL joins

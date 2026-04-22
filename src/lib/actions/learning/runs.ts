@@ -82,6 +82,8 @@ export async function scheduleTraining(input: z.infer<typeof CreateRunSchema>) {
     .insert(trainingRuns)
     .values({
       ...validated,
+      scheduledStart: new Date(validated.scheduledStart),
+      scheduledEnd: new Date(validated.scheduledEnd),
       runNumber,
       totalBudget,
       status: "draft",
@@ -122,10 +124,17 @@ export async function updateTrainingRun(
     }
   }
 
+  const { scheduledStart: _ss, scheduledEnd: _se, ...restUpdates } = updates;
   const [run] = await db
     .update(trainingRuns)
     .set({
-      ...updates,
+      ...restUpdates,
+      ...(updates.scheduledStart
+        ? { scheduledStart: new Date(updates.scheduledStart) }
+        : {}),
+      ...(updates.scheduledEnd
+        ? { scheduledEnd: new Date(updates.scheduledEnd) }
+        : {}),
       ...(totalBudget ? { totalBudget } : {}),
     })
     .where(eq(trainingRuns.id, id))

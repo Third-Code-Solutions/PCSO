@@ -1,5 +1,5 @@
-import * as React from 'react';
-import Link from 'next/link';
+import * as React from "react";
+import Link from "next/link";
 import {
   Users,
   CalendarCheck,
@@ -15,14 +15,19 @@ import {
   Receipt,
   ClipboardList,
   PartyPopper,
-} from 'lucide-react';
-import { KpiCard } from '@/components/dashboard/kpi-card';
+  Building2,
+  ShieldCheck,
+} from "lucide-react";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import type {
   AdminKpis,
   PayrollAdminKpis,
   LeaveApproverKpis,
   EmployeeKpis,
-} from './queries';
+  SupervisorKpis,
+  ExecutiveKpis,
+  AuditorKpis,
+} from "./queries";
 
 // ─── Admin KPI grid (super_admin / hr_admin) ─────────────────────────────────
 
@@ -60,11 +65,11 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
             trend={
               data.pendingLeaves > 0
                 ? {
-                    direction: 'up',
+                    direction: "up",
                     label: `${data.pendingLeaves} for review`,
                     upIsPositive: false,
                   }
-                : { direction: 'neutral', label: 'Queue clear' }
+                : { direction: "neutral", label: "Queue clear" }
             }
           />
         </Link>
@@ -82,11 +87,11 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
             trend={
               data.pendingOvertimes > 0
                 ? {
-                    direction: 'up',
-                    label: 'Needs review',
+                    direction: "up",
+                    label: "Needs review",
                     upIsPositive: false,
                   }
-                : { direction: 'neutral', label: 'No pending OT' }
+                : { direction: "neutral", label: "No pending OT" }
             }
           />
         </Link>
@@ -117,11 +122,11 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
             trend={
               data.salnNonFilers > 0
                 ? {
-                    direction: 'up',
-                    label: 'Action required',
+                    direction: "up",
+                    label: "Action required",
                     upIsPositive: false,
                   }
-                : { direction: 'neutral', label: 'All compliant' }
+                : { direction: "neutral", label: "All compliant" }
             }
           />
         </Link>
@@ -152,7 +157,7 @@ interface PayrollAdminDashboardProps {
 export function PayrollAdminDashboard({ data }: PayrollAdminDashboardProps) {
   const activePeriodHref = data.activePayrollPeriodId
     ? `/payroll/${data.activePayrollPeriodId}`
-    : '/payroll';
+    : "/payroll";
 
   return (
     <section aria-label="Payroll KPIs">
@@ -163,11 +168,11 @@ export function PayrollAdminDashboard({ data }: PayrollAdminDashboardProps) {
         >
           <KpiCard
             title="Active Payroll Period"
-            value={data.activePayrollPeriodName ?? 'None'}
+            value={data.activePayrollPeriodName ?? "None"}
             detail={
               data.activePayrollPeriodId
-                ? 'Click to open the current period'
-                : 'No open periods'
+                ? "Click to open the current period"
+                : "No open periods"
             }
             icon={Wallet}
             iconColorClass="bg-emerald-50 text-emerald-600"
@@ -187,11 +192,11 @@ export function PayrollAdminDashboard({ data }: PayrollAdminDashboardProps) {
             trend={
               data.pendingPayrollEntries > 0
                 ? {
-                    direction: 'up',
-                    label: 'Awaiting processing',
+                    direction: "up",
+                    label: "Awaiting processing",
                     upIsPositive: false,
                   }
-                : { direction: 'neutral', label: 'Period complete' }
+                : { direction: "neutral", label: "Period complete" }
             }
           />
         </Link>
@@ -249,11 +254,11 @@ export function LeaveApproverDashboard({ data }: LeaveApproverDashboardProps) {
             trend={
               data.pendingMyApprovals > 0
                 ? {
-                    direction: 'up',
-                    label: 'Review now',
+                    direction: "up",
+                    label: "Review now",
                     upIsPositive: false,
                   }
-                : { direction: 'neutral', label: 'Queue clear' }
+                : { direction: "neutral", label: "Queue clear" }
             }
           />
         </Link>
@@ -298,21 +303,21 @@ export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
   const totalBalance = data.vlBalance + data.slBalance;
   const payslipHref = data.latestPayslipPeriodId
     ? `/payroll/payslips`
-    : '/payroll/payslips';
+    : "/payroll/payslips";
 
   const dtrLabel =
-    data.dtrTodayStatus === 'present'
-      ? 'Present'
-      : data.dtrTodayStatus === 'incomplete'
-        ? 'Incomplete'
-        : 'Not logged';
+    data.dtrTodayStatus === "present"
+      ? "Present"
+      : data.dtrTodayStatus === "incomplete"
+        ? "Incomplete"
+        : "Not logged";
 
   const dtrColor =
-    data.dtrTodayStatus === 'present'
-      ? 'bg-emerald-50 text-emerald-600'
-      : data.dtrTodayStatus === 'incomplete'
-        ? 'bg-amber-50 text-amber-600'
-        : 'bg-rose-50 text-rose-600';
+    data.dtrTodayStatus === "present"
+      ? "bg-emerald-50 text-emerald-600"
+      : data.dtrTodayStatus === "incomplete"
+        ? "bg-amber-50 text-amber-600"
+        : "bg-rose-50 text-rose-600";
 
   return (
     <section aria-label="My dashboard">
@@ -336,11 +341,11 @@ export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
         >
           <KpiCard
             title="Latest Payslip"
-            value={data.latestPayslipPeriodName ?? 'None'}
+            value={data.latestPayslipPeriodName ?? "None"}
             detail={
               data.latestPayslipPeriodName
-                ? 'Click to view payslips'
-                : 'No paid payslips yet'
+                ? "Click to view payslips"
+                : "No paid payslips yet"
             }
             icon={Receipt}
             iconColorClass="bg-blue-50 text-blue-600"
@@ -366,7 +371,7 @@ export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
         >
           <KpiCard
             title="SALN Deadline"
-            value={data.salnDeadline ?? '—'}
+            value={data.salnDeadline ?? "—"}
             detail="Annual filing (RA 6713)"
             icon={FileWarning}
             iconColorClass="bg-rose-50 text-rose-600"
@@ -379,10 +384,249 @@ export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
         >
           <KpiCard
             title="Next Holiday"
-            value={data.nextHolidayName ?? 'None'}
-            detail={data.nextHolidayDate ?? 'No upcoming holidays'}
+            value={data.nextHolidayName ?? "None"}
+            detail={data.nextHolidayDate ?? "No upcoming holidays"}
             icon={PartyPopper}
             iconColorClass="bg-indigo-50 text-indigo-600"
+          />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+// ─── Supervisor / Manager KPI grid ───────────────────────────────────────────
+
+interface SupervisorDashboardProps {
+  data: SupervisorKpis;
+}
+
+export function SupervisorDashboard({ data }: SupervisorDashboardProps) {
+  return (
+    <section aria-label="Team KPIs">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Link
+          href="/leave/approvals"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Pending Leave Requests"
+            value={data.pendingTeamLeaves}
+            detail="Team applications awaiting approval"
+            icon={CalendarCheck}
+            iconColorClass="bg-purple-50 text-purple-600"
+            trend={
+              data.pendingTeamLeaves > 0
+                ? { direction: "up", label: "Review now", upIsPositive: false }
+                : { direction: "neutral", label: "Queue clear" }
+            }
+          />
+        </Link>
+
+        <Link
+          href="/leave/calendar"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Team on Leave Today"
+            value={data.teamOnLeaveToday}
+            detail="Approved leaves active today"
+            icon={Palmtree}
+            iconColorClass="bg-blue-50 text-blue-600"
+          />
+        </Link>
+
+        <Link
+          href="/attendance/overtime"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Pending OT Approvals"
+            value={data.pendingOtApprovals}
+            detail="Overtime requests awaiting action"
+            icon={Clock}
+            iconColorClass="bg-amber-50 text-amber-600"
+            trend={
+              data.pendingOtApprovals > 0
+                ? {
+                    direction: "up",
+                    label: "Needs review",
+                    upIsPositive: false,
+                  }
+                : { direction: "neutral", label: "No pending OT" }
+            }
+          />
+        </Link>
+
+        <Link
+          href="/leave/calendar"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Upcoming Holidays"
+            value={data.upcomingHolidays}
+            detail="Next 90 days"
+            icon={CalendarDays}
+            iconColorClass="bg-indigo-50 text-indigo-600"
+          />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+// ─── Executive / Leadership KPI grid (read-only) ─────────────────────────────
+
+interface ExecutiveDashboardProps {
+  data: ExecutiveKpis;
+}
+
+export function ExecutiveDashboard({ data }: ExecutiveDashboardProps) {
+  return (
+    <section aria-label="Leadership KPIs">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Link
+          href="/employees"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Total Active Employees"
+            value={data.totalEmployees}
+            detail="Org-wide headcount"
+            icon={Users}
+            iconColorClass="bg-blue-50 text-blue-600"
+          />
+        </Link>
+
+        <Link
+          href="/plantilla/vacancies"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Vacant Positions"
+            value={data.vacantPositions}
+            detail="Unfilled plantilla items"
+            icon={Building2}
+            iconColorClass="bg-amber-50 text-amber-600"
+            trend={
+              data.vacantPositions > 0
+                ? {
+                    direction: "up",
+                    label: "Recruitment needed",
+                    upIsPositive: false,
+                  }
+                : { direction: "neutral", label: "Fully staffed" }
+            }
+          />
+        </Link>
+
+        <Link
+          href="/saln/admin"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="SALN Non-Filers"
+            value={data.salnNonFilers}
+            detail="Employees without filed SALN"
+            icon={FileWarning}
+            iconColorClass="bg-rose-50 text-rose-600"
+            trend={
+              data.salnNonFilers > 0
+                ? {
+                    direction: "up",
+                    label: "Action required",
+                    upIsPositive: false,
+                  }
+                : { direction: "neutral", label: "All compliant" }
+            }
+          />
+        </Link>
+
+        <Link
+          href="/leave/calendar"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Upcoming Holidays"
+            value={data.upcomingHolidays}
+            detail="Next 90 days"
+            icon={CalendarDays}
+            iconColorClass="bg-indigo-50 text-indigo-600"
+          />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+// ─── Compliance / Audit KPI grid (read-only) ─────────────────────────────────
+
+interface AuditorDashboardProps {
+  data: AuditorKpis;
+}
+
+export function AuditorDashboard({ data }: AuditorDashboardProps) {
+  return (
+    <section aria-label="Compliance KPIs">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Link
+          href="/saln/admin"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="SALN Non-Filers"
+            value={data.salnNonFilers}
+            detail="Employees without filed SALN"
+            icon={FileWarning}
+            iconColorClass="bg-rose-50 text-rose-600"
+            trend={
+              data.salnNonFilers > 0
+                ? {
+                    direction: "up",
+                    label: "Non-compliant",
+                    upIsPositive: false,
+                  }
+                : { direction: "neutral", label: "All compliant" }
+            }
+          />
+        </Link>
+
+        <Link
+          href="/admin/audit-logs"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Audit Entries (7 Days)"
+            value={data.auditEntriesLast7Days}
+            detail="System actions logged this week"
+            icon={ShieldCheck}
+            iconColorClass="bg-indigo-50 text-indigo-600"
+          />
+        </Link>
+
+        <Link
+          href="/leave/applications"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Pending Leave Applications"
+            value={data.pendingLeaves}
+            detail="Org-wide queue"
+            icon={CalendarCheck}
+            iconColorClass="bg-purple-50 text-purple-600"
+          />
+        </Link>
+
+        <Link
+          href="/leave/calendar"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Upcoming Holidays"
+            value={data.upcomingHolidays}
+            detail="Next 90 days"
+            icon={CalendarDays}
+            iconColorClass="bg-emerald-50 text-emerald-600"
           />
         </Link>
       </div>

@@ -11,7 +11,7 @@ import { Plus } from "lucide-react";
 export const metadata = { title: "Loan Ledger" };
 
 export default async function LoansPage() {
-  await requirePermission("payroll", "read");
+  await requirePermission("payroll", "view");
 
   // Fetch all loans with employee details
   const loans = await db
@@ -46,14 +46,15 @@ export default async function LoansPage() {
           { label: "Payroll", href: "/payroll" },
           { label: "Loan Ledger" },
         ]}
-      >
-        <Link href="/payroll/loans/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Loan
-          </Button>
-        </Link>
-      </PageHeader>
+        actions={
+          <Link href="/payroll/loans/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Loan
+            </Button>
+          </Link>
+        }
+      />
 
       <div className="rounded-xl border border-border bg-card shadow-sm">
         <LoanTable loans={loans} />

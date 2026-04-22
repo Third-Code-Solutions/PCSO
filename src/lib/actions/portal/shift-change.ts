@@ -29,7 +29,7 @@ import {
 import { employees } from "@/lib/db/schema/employees";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
-import { notifyUser } from "@/lib/notifications";
+import { notifyEmployee } from "@/lib/notifications";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -67,29 +67,36 @@ export async function submitShiftChangeRequest(
   const session = await requireAuth();
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
 
   const { requestedScheduleId, effectiveDate, reason, supportingDocumentUrls } =
     parsed.data;
 
   try {
-    // Fetch employee and current schedule
+    // Fetch employee
     const employee = await db.query.employees.findFirst({
       where: eq(employees.id, session.employeeId!),
-      with: {
-        scheduleAssignments: {
-          limit: 1,
-          orderBy: desc(employeeSchedules.effectiveFrom),
-        },
-      },
     });
 
-    if (!employee || !employee.scheduleAssignments?.[0]) {
-      return { error: "Employee or current schedule not found" };
+    if (!employee) {
+      return { error: "Employee not found" };
     }
 
-    const currentScheduleId = employee.scheduleAssignments[0].scheduleId;
+    // Fetch current schedule assignment
+    const currentAssignment = await db.query.employeeSchedules.findFirst({
+      where: and(
+        eq(employeeSchedules.employeeId, session.employeeId!),
+        sql`${employeeSchedules.effectiveTo} IS NULL`,
+      ),
+      orderBy: desc(employeeSchedules.effectiveFrom),
+    });
+
+    if (!currentAssignment) {
+      return { error: "Current schedule not found" };
+    }
+
+    const currentScheduleId = currentAssignment.scheduleId;
 
     // Verify requested schedule exists
     const requestedSchedule = await db.query.workSchedules.findFirst({
@@ -101,12 +108,14 @@ export async function submitShiftChangeRequest(
     }
 
     // Find supervisor (department head)
-    const supervisor = await db.query.employees.findFirst({
-      where: and(
-        eq(employees.officeId, employee.officeId),
-        sql`${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%'`,
-      ),
-    });
+    const supervisor = employee.officeId
+      ? await db.query.employees.findFirst({
+          where: and(
+            eq(employees.officeId, employee.officeId),
+            sql`${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%'`,
+          ),
+        })
+      : undefined;
 
     // Create request
     const [request] = await db
@@ -115,7 +124,7 @@ export async function submitShiftChangeRequest(
         employeeId: session.employeeId!,
         currentScheduleId,
         requestedScheduleId,
-        effectiveDate: new Date(effectiveDate),
+        effectiveDate: effectiveDate,
         reason,
         supportingDocumentUrls: supportingDocumentUrls as any,
         status: "submitted",
@@ -123,22 +132,25 @@ export async function submitShiftChangeRequest(
       })
       .returning();
 
+    if (!request) {
+      return { error: "Failed to create shift change request" };
+    }
+
     await auditLog({
+      userId: session.id,
       action: "shift_change.submit",
-      objectType: "shift_change_request",
-      objectId: request.id,
-      outcome: "success",
-      module: "EPM",
-      subModule: "shift_change",
+      table: "shift_change_requests",
+      recordId: request.id,
     });
 
     // Notify supervisor
     if (supervisor) {
-      await notifyUser({
-        userId: supervisor.userId!,
+      await notifyEmployee(supervisor.id, {
+        type: "generic",
         title: "Shift Change Request",
-        message: `${employee.firstName} ${employee.lastName} has requested a schedule change`,
-        actionUrl: `/portal/shift-change/${request.id}`,
+        body: `${employee.firstName} ${employee.lastName} has requested a schedule change`,
+        entityType: "shift_change_request",
+        entityId: request.id,
       });
     }
 
@@ -160,7 +172,7 @@ export async function supervisorReviewShiftChange(
   const session = await requireAuth();
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
 
   const { requestId, decision, notes, rejectionReason } = parsed.data;
@@ -202,26 +214,26 @@ export async function supervisorReviewShiftChange(
       .returning();
 
     await auditLog({
+      userId: session.id,
       action: `shift_change.supervisor_${decision}`,
-      objectType: "shift_change_request",
-      objectId: requestId,
-      outcome: "success",
-      module: "EPM",
+      table: "shift_change_requests",
+      recordId: requestId,
     });
 
     // Notify employee
-    await notifyUser({
-      userId: request.employee.userId!,
+    await notifyEmployee(request.employeeId, {
+      type: "generic",
       title: `Shift Change ${decision === "approve" ? "Endorsed" : "Rejected"}`,
-      message:
+      body:
         decision === "approve"
           ? "Your shift change request has been endorsed by your supervisor and is now pending HR approval"
           : `Your shift change request was rejected: ${rejectionReason || "No reason provided"}`,
-      actionUrl: `/portal/shift-change/${requestId}`,
+      entityType: "shift_change_request",
+      entityId: requestId,
     });
 
     revalidatePath("/portal/shift-change");
-    return { data: updated };
+    return { data: updated! };
   } catch (error) {
     console.error("[supervisorReviewShiftChange]", error);
     return { error: "Failed to review shift change request" };
@@ -239,7 +251,7 @@ export async function processShiftChange(
   const session = await requireAuth();
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
 
   const { requestId, decision, notes, rejectionReason } = parsed.data;
@@ -260,10 +272,10 @@ export async function processShiftChange(
     }
 
     if (decision === "approve") {
-      // End current schedule assignment
+      // End current schedule assignment (effectiveTo is a date string column)
       await db
         .update(employeeSchedules)
-        .set({ effectiveTo: new Date(request.effectiveDate) })
+        .set({ effectiveTo: request.effectiveDate })
         .where(
           and(
             eq(employeeSchedules.employeeId, request.employeeId),
@@ -275,7 +287,7 @@ export async function processShiftChange(
       await db.insert(employeeSchedules).values({
         employeeId: request.employeeId,
         scheduleId: request.requestedScheduleId,
-        effectiveFrom: new Date(request.effectiveDate),
+        effectiveFrom: request.effectiveDate,
         effectiveTo: null,
       });
     }
@@ -295,26 +307,26 @@ export async function processShiftChange(
       .returning();
 
     await auditLog({
+      userId: session.id,
       action: `shift_change.hr_${decision}`,
-      objectType: "shift_change_request",
-      objectId: requestId,
-      outcome: "success",
-      module: "EPM",
+      table: "shift_change_requests",
+      recordId: requestId,
     });
 
     // Notify employee
-    await notifyUser({
-      userId: request.employee.userId!,
+    await notifyEmployee(request.employeeId, {
+      type: "generic",
       title: `Shift Change ${decision === "approve" ? "Approved" : "Rejected"}`,
-      message:
+      body:
         decision === "approve"
-          ? `Your shift change request has been approved and will be effective on ${request.effectiveDate.toLocaleDateString()}`
+          ? `Your shift change request has been approved and will be effective on ${request.effectiveDate}`
           : `Your shift change request was rejected by HR: ${rejectionReason || "No reason provided"}`,
-      actionUrl: `/portal/shift-change/${requestId}`,
+      entityType: "shift_change_request",
+      entityId: requestId,
     });
 
     revalidatePath("/portal/shift-change");
-    return { data: updated };
+    return { data: updated! };
   } catch (error) {
     console.error("[processShiftChange]", error);
     return { error: "Failed to process shift change request" };

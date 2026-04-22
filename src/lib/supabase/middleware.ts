@@ -1,5 +1,5 @@
-import { createServerClient } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
 
 /**
  * Refreshes the Supabase session inside Next.js middleware.
@@ -24,7 +24,13 @@ export async function refreshSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(
+          cookiesToSet: {
+            name: string;
+            value: string;
+            options?: Record<string, unknown>;
+          }[],
+        ) {
           // Update both the outgoing request and the response so that
           // server components downstream see the refreshed cookies.
           cookiesToSet.forEach(({ name, value }) => {
@@ -32,7 +38,11 @@ export async function refreshSession(request: NextRequest) {
           });
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
+            response.cookies.set(
+              name,
+              value,
+              options as Parameters<typeof response.cookies.set>[2],
+            );
           });
         },
       },

@@ -12,7 +12,7 @@
 
 import { db } from "@/lib/db";
 import { employees, leaveCredits, leaveTypes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { notifyEmployee, notifyRoles } from "@/lib/notifications";
 
 interface LWOPNotificationInput {
@@ -70,11 +70,10 @@ export async function notifyLWOP(input: LWOPNotificationInput): Promise<void> {
       } of Leave Without Pay (LWOP) from ${periodStart} to ${periodEnd} due to ${reasonText}. This will be reflected in your next payroll with salary deduction.`,
       actionUrl: "/leave/credits",
       entityType: "leave_applications",
-      entityId: null,
     });
 
     // Notify payroll section for salary deduction processing
-    await notifyRoles(["hr_admin", "payroll_master"], {
+    await notifyRoles(["hr_admin", "payroll_admin"], {
       type: "generic",
       title: "LWOP for Payroll Deduction",
       body: `${employeeName} (${employee.employeeNo}) has ${lwopDays} day${
@@ -82,7 +81,6 @@ export async function notifyLWOP(input: LWOPNotificationInput): Promise<void> {
       } of LWOP from ${periodStart} to ${periodEnd} (${reasonText}). Please process salary deduction in the next payroll.`,
       actionUrl: "/leave/approvals",
       entityType: "leave_applications",
-      entityId: null,
     });
 
     console.log(
@@ -140,11 +138,10 @@ export async function notifyNoFiledLeave(
       }. Please file your leave applications immediately to avoid LWOP salary deduction.`,
       actionUrl: "/leave/apply",
       entityType: "leave_applications",
-      entityId: null,
     });
 
     // Notify HR and payroll
-    await notifyRoles(["hr_admin", "payroll_master"], {
+    await notifyRoles(["hr_admin", "payroll_admin"], {
       type: "generic",
       title: "No Filed Leave (NFL) Alert",
       body: `${employeeName} (${employee.employeeNo}) has ${absenceDates.length} day${
@@ -154,7 +151,6 @@ export async function notifyNoFiledLeave(
       }. Review for LWOP processing.`,
       actionUrl: "/leave/approvals",
       entityType: "leave_applications",
-      entityId: null,
     });
 
     console.log(
@@ -206,9 +202,11 @@ export async function checkAndNotifyInsufficientCredits(
       .select({ balance: leaveCredits.balance })
       .from(leaveCredits)
       .where(
-        eq(leaveCredits.employeeId, employeeId),
-        eq(leaveCredits.leaveTypeId, vlType.id),
-        eq(leaveCredits.year, currentYear),
+        and(
+          eq(leaveCredits.employeeId, employeeId),
+          eq(leaveCredits.leaveTypeId, vlType.id),
+          eq(leaveCredits.year, currentYear),
+        ),
       )
       .limit(1);
 
@@ -216,9 +214,11 @@ export async function checkAndNotifyInsufficientCredits(
       .select({ balance: leaveCredits.balance })
       .from(leaveCredits)
       .where(
-        eq(leaveCredits.employeeId, employeeId),
-        eq(leaveCredits.leaveTypeId, slType.id),
-        eq(leaveCredits.year, currentYear),
+        and(
+          eq(leaveCredits.employeeId, employeeId),
+          eq(leaveCredits.leaveTypeId, slType.id),
+          eq(leaveCredits.year, currentYear),
+        ),
       )
       .limit(1);
 
@@ -240,7 +240,6 @@ export async function checkAndNotifyInsufficientCredits(
         } will result in LWOP.`,
         actionUrl: "/leave/credits",
         entityType: "leave_credits",
-        entityId: null,
       });
     }
   } catch (err) {

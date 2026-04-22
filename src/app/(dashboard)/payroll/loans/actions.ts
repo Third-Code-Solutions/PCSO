@@ -162,7 +162,7 @@ export async function deleteLoan(input: unknown) {
 // ─── Get Loans by Employee ────────────────────────────────────────────────────
 
 export async function getLoansByEmployee(employeeId: string) {
-  await requirePermission("payroll", "read");
+  await requirePermission("payroll", "view");
 
   const loans = await db
     .select()

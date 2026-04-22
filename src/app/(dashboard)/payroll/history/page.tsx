@@ -1,7 +1,7 @@
-import Link from 'next/link';
-import { Clock, ChevronRight } from 'lucide-react';
-import { PageHeader } from '@/components/layouts/page-header';
-import { PeriodStatusBadge } from '@/components/payroll/period-status-badge';
+import Link from "next/link";
+import { Clock, ChevronRight } from "lucide-react";
+import { PageHeader } from "@/components/layouts/page-header";
+import { PeriodStatusBadge } from "@/components/payroll/period-status-badge";
 import {
   Table,
   TableBody,
@@ -9,40 +9,45 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { requirePermission } from '@/lib/auth/guards';
-import { getPayrollPeriods } from '../queries';
+} from "@/components/ui/table";
+import { requirePermission } from "@/lib/auth/guards";
+import { getPayrollPeriods } from "../queries";
 
 function formatDate(d: string): string {
-  return new Date(d).toLocaleDateString('en-PH', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+  return new Date(d).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
 }
 
 function formatPeso(value: string | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return "—";
   const num = parseFloat(value);
-  return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export const metadata = { title: 'Payroll History' };
+export const metadata = { title: "Payroll History" };
 
 export default async function PayrollHistoryPage() {
-  await requirePermission('payroll', 'view');
+  await requirePermission("payroll", "view");
 
   const periods = await getPayrollPeriods({ limit: 100 });
 
   // Group by year
-  const byYear = periods.reduce<Record<number, typeof periods>>((acc, period) => {
-    const year = new Date(period.periodStart).getFullYear();
-    if (!acc[year]) acc[year] = [];
-    acc[year].push(period);
-    return acc;
-  }, {});
+  const byYear = periods.reduce<Record<number, typeof periods>>(
+    (acc, period) => {
+      const year = new Date(period.periodStart).getFullYear();
+      if (!acc[year]) acc[year] = [];
+      acc[year].push(period);
+      return acc;
+    },
+    {},
+  );
 
-  const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+  const years = Object.keys(byYear)
+    .map(Number)
+    .sort((a, b) => b - a);
 
   return (
     <main className="space-y-8">
@@ -50,9 +55,9 @@ export default async function PayrollHistoryPage() {
         title="Payroll History"
         description="Complete history of all payroll periods."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Payroll', href: '/payroll' },
-          { label: 'History' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Payroll", href: "/payroll" },
+          { label: "History" },
         ]}
       />
 
@@ -87,7 +92,7 @@ export default async function PayrollHistoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {byYear[year].map((period) => (
+                  {(byYear[year] ?? []).map((period) => (
                     <TableRow key={period.id} className="group">
                       <TableCell>
                         <Link
@@ -98,15 +103,16 @@ export default async function PayrollHistoryPage() {
                         </Link>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(period.periodStart)} – {formatDate(period.periodEnd)}
+                        {formatDate(period.periodStart)} –{" "}
+                        {formatDate(period.periodEnd)}
                       </TableCell>
                       <TableCell>
                         <span className="text-sm capitalize">
-                          {period.scope === 'jo_cos' ? 'JO/COS' : 'Regular'}
+                          {period.scope === "jo_cos" ? "JO/COS" : "Regular"}
                         </span>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {period.employeeCount ?? '—'}
+                        {period.employeeCount ?? "—"}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm font-semibold">
                         {formatPeso(period.totalNetPay)}

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * DTR Browser — client-side shell.
@@ -10,14 +10,17 @@
  * - Realtime refresh when attendance_logs change
  */
 
-import { useState, useTransition, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { format } from 'date-fns';
-import { toast } from 'sonner';
-import { useRealtimeRefresh } from '@/hooks/use-realtime-count';
-import { exportDtrPdf, submitDtr } from './actions';
-import type { AttendanceLogRow, EmployeeSummary } from '@/app/(dashboard)/attendance/queries';
-import { DtrTable } from '@/components/attendance/dtr-table';
+import { useState, useTransition, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { format } from "date-fns";
+import { toast } from "sonner";
+import { useRealtimeRefresh } from "@/hooks/use-realtime-count";
+import { exportDtrPdf, submitDtr } from "./actions";
+import type {
+  AttendanceLogRow,
+  EmployeeSummary,
+} from "@/app/(dashboard)/attendance/queries";
+import { DtrTable } from "@/components/attendance/dtr-table";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,8 +51,18 @@ export interface DtrClientProps {
 // ---------------------------------------------------------------------------
 
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 function buildSearchParams(params: Record<string, string>): string {
@@ -67,19 +80,36 @@ function SummaryCards({ logs }: { logs: AttendanceLogRow[] }) {
   const totalUndertime = logs.reduce((s, l) => s + l.undertimeMinutes, 0);
 
   const cards = [
-    { label: 'Days Present', value: present, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-    { label: 'Days Absent', value: absent, color: 'text-red-700', bg: 'bg-red-50 border-red-200' },
-    { label: 'Late (min)', value: totalLate, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
-    { label: 'Undertime (min)', value: totalUndertime, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-200' },
+    {
+      label: "Days Present",
+      value: present,
+      color: "text-emerald-700",
+      bg: "bg-emerald-50 border-emerald-200",
+    },
+    {
+      label: "Days Absent",
+      value: absent,
+      color: "text-red-700",
+      bg: "bg-red-50 border-red-200",
+    },
+    {
+      label: "Late (min)",
+      value: totalLate,
+      color: "text-amber-700",
+      bg: "bg-amber-50 border-amber-200",
+    },
+    {
+      label: "Undertime (min)",
+      value: totalUndertime,
+      color: "text-orange-700",
+      bg: "bg-orange-50 border-orange-200",
+    },
   ];
 
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
       {cards.map(({ label, value, color, bg }) => (
-        <div
-          key={label}
-          className={`rounded-xl border p-4 ${bg}`}
-        >
+        <div key={label} className={`rounded-xl border p-4 ${bg}`}>
           <div className={`text-2xl font-bold ${color}`}>{value}</div>
           <div className="mt-0.5 text-xs text-gray-600">{label}</div>
         </div>
@@ -103,11 +133,12 @@ export function DtrClient({
   minYear,
   minMonth,
 }: DtrClientProps) {
-  // Realtime refresh: re-query when attendance_logs or dtr_periods change.
-  // Filtering by employeeId is not supported by the shared hook; the refresh
-  // is a no-op for changes unrelated to the viewed employee since the page
-  // re-queries under the caller's auth on each refresh.
-  useRealtimeRefresh(['attendance_logs', 'dtr_periods'] as const);
+  // Stable reference — prevents the effect from re-running on every render.
+  const realtimeTables = useMemo(
+    () => ["attendance_logs", "dtr_periods"] as const,
+    [],
+  );
+  useRealtimeRefresh(realtimeTables);
 
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -127,7 +158,10 @@ export function DtrClient({
   );
 
   const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const [newYear, newMonth] = e.target.value.split('-').map(Number) as [number, number];
+    const [newYear, newMonth] = e.target.value.split("-").map(Number) as [
+      number,
+      number,
+    ];
     navigate({
       year: String(newYear),
       month: String(newMonth),
@@ -155,7 +189,7 @@ export function DtrClient({
     for (let i = 36; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       monthOptions.push({
-        label: format(d, 'MMMM yyyy'),
+        label: format(d, "MMMM yyyy"),
         value: `${d.getFullYear()}-${d.getMonth() + 1}`,
       });
     }
@@ -164,8 +198,14 @@ export function DtrClient({
     const now = new Date();
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     monthOptions.push(
-      { label: format(prev, 'MMMM yyyy'), value: `${prev.getFullYear()}-${prev.getMonth() + 1}` },
-      { label: format(now, 'MMMM yyyy'), value: `${now.getFullYear()}-${now.getMonth() + 1}` },
+      {
+        label: format(prev, "MMMM yyyy"),
+        value: `${prev.getFullYear()}-${prev.getMonth() + 1}`,
+      },
+      {
+        label: format(now, "MMMM yyyy"),
+        value: `${now.getFullYear()}-${now.getMonth() + 1}`,
+      },
     );
   }
 
@@ -184,13 +224,15 @@ export function DtrClient({
       });
 
       // Decode base64 → Blob → object URL → click
-      const bytes = Uint8Array.from(atob(result.base64), (c) => c.charCodeAt(0));
-      const mime = result.filename.endsWith('.pdf')
-        ? 'application/pdf'
-        : 'text/csv;charset=utf-8';
+      const bytes = Uint8Array.from(atob(result.base64), (c) =>
+        c.charCodeAt(0),
+      );
+      const mime = result.filename.endsWith(".pdf")
+        ? "application/pdf"
+        : "text/csv;charset=utf-8";
       const blob = new Blob([bytes], { type: mime });
       const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
+      const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = result.filename;
       document.body.appendChild(anchor);
@@ -198,7 +240,9 @@ export function DtrClient({
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      setExportError(err instanceof Error ? err.message : 'Export failed. Please try again.');
+      setExportError(
+        err instanceof Error ? err.message : "Export failed. Please try again.",
+      );
     } finally {
       setIsExporting(false);
     }
@@ -218,7 +262,7 @@ export function DtrClient({
       router.refresh();
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : 'Failed to submit DTR.';
+        err instanceof Error ? err.message : "Failed to submit DTR.";
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -242,7 +286,7 @@ export function DtrClient({
             </label>
             <select
               id="dtr-employee-select"
-              value={selectedEmployeeId ?? ''}
+              value={selectedEmployeeId ?? ""}
               onChange={handleEmployeeChange}
               disabled={isPending || isExporting}
               className="rounded-lg border border-[#0B2545]/20 bg-white px-3 py-2 text-sm text-[#0B2545] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C8A84B] disabled:opacity-60"
@@ -298,7 +342,7 @@ export function DtrClient({
                 Submitting…
               </>
             ) : (
-              'Submit DTR'
+              "Submit DTR"
             )}
           </button>
         )}
@@ -308,7 +352,9 @@ export function DtrClient({
           <button
             type="button"
             onClick={() => void handleExport()}
-            disabled={isExporting || isPending || !selectedEmployeeId || isSubmitting}
+            disabled={
+              isExporting || isPending || !selectedEmployeeId || isSubmitting
+            }
             className="flex items-center gap-2 rounded-lg border border-[#C8A84B] bg-[#C8A84B] px-4 py-2 text-sm font-semibold text-[#0B2545] shadow-sm transition-colors hover:bg-[#E0C77A] disabled:cursor-not-allowed disabled:opacity-50"
             aria-busy={isExporting}
           >
@@ -321,7 +367,7 @@ export function DtrClient({
                 Generating…
               </>
             ) : (
-              'Export CSC Form 48 (CSV)'
+              "Export CSC Form 48 (CSV)"
             )}
           </button>
         )}

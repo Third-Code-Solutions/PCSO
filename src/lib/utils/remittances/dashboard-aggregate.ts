@@ -7,16 +7,13 @@
  * Used exclusively in server components / server actions.
  */
 
-import { db } from '@/lib/db';
-import {
-  remittanceBatches,
-  gsisRemittanceBatches,
-} from '@/lib/db/schema';
-import { eq, and, gte, lte, isNull, desc, count, sql } from 'drizzle-orm';
+import { db } from "@/lib/db";
+import { remittanceBatches, gsisRemittanceBatches } from "@/lib/db/schema";
+import { eq, and, gte, lte, isNull, desc, count, sql } from "drizzle-orm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AgencyKey = 'gsis' | 'philhealth' | 'pagibig' | 'bir';
+export type AgencyKey = "gsis" | "philhealth" | "pagibig" | "bir";
 
 export interface AgencySummary {
   agency: AgencyKey;
@@ -76,11 +73,11 @@ function nextDeadline(
   // Deadline is in the following month (for contributions from previous month)
   const deadlineDate = new Date(year, month + 1, day);
 
-  const iso = deadlineDate.toISOString().split('T')[0];
-  const label = deadlineDate.toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  const iso = deadlineDate.toISOString().split("T")[0] ?? "";
+  const label = deadlineDate.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 
   return { iso, label };
@@ -91,8 +88,8 @@ function nextDeadline(
 function monthBounds(date: Date = new Date()): { start: string; end: string } {
   const year = date.getFullYear();
   const month = date.getMonth();
-  const start = new Date(year, month, 1).toISOString().split('T')[0];
-  const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+  const start = new Date(year, month, 1).toISOString().split("T")[0] ?? "";
+  const end = new Date(year, month + 1, 0).toISOString().split("T")[0] ?? "";
   return { start, end };
 }
 
@@ -109,17 +106,19 @@ export async function fetchDashboardAggregate(): Promise<DashboardAggregate> {
   const { start: monthStart, end: monthEnd } = monthBounds(now);
 
   // ── Generic agencies (PhilHealth, Pag-IBIG, BIR) ─────────────────────────
-  const genericAgencies: Array<Exclude<AgencyKey, 'gsis'>> = [
-    'philhealth',
-    'pagibig',
-    'bir',
+  const genericAgencies: Array<Exclude<AgencyKey, "gsis">> = [
+    "philhealth",
+    "pagibig",
+    "bir",
   ];
 
   const summaries: AgencySummary[] = [];
 
   for (const agency of genericAgencies) {
     const dueRows = await db
-      .select({ total: sql<string>`COALESCE(SUM(${remittanceBatches.totalAmount}), '0')` })
+      .select({
+        total: sql<string>`COALESCE(SUM(${remittanceBatches.totalAmount}), '0')`,
+      })
       .from(remittanceBatches)
       .where(
         and(
@@ -135,7 +134,7 @@ export async function fetchDashboardAggregate(): Promise<DashboardAggregate> {
       .where(
         and(
           eq(remittanceBatches.type, agency),
-          eq(remittanceBatches.status, 'submitted'),
+          eq(remittanceBatches.status, "submitted"),
           gte(remittanceBatches.periodStart, monthStart),
           lte(remittanceBatches.periodEnd, monthEnd),
         ),
@@ -147,7 +146,7 @@ export async function fetchDashboardAggregate(): Promise<DashboardAggregate> {
       .where(
         and(
           eq(remittanceBatches.type, agency),
-          eq(remittanceBatches.status, 'generated'),
+          eq(remittanceBatches.status, "generated"),
         ),
       );
 
@@ -155,7 +154,7 @@ export async function fetchDashboardAggregate(): Promise<DashboardAggregate> {
 
     summaries.push({
       agency,
-      dueThisMonth: dueRows[0]?.total ?? '0.00',
+      dueThisMonth: dueRows[0]?.total ?? "0.00",
       submittedThisMonth: Number(submittedCountRows[0]?.cnt ?? 0),
       outstanding: Number(outstandingCountRows[0]?.cnt ?? 0),
       nextDeadline: deadline.iso,
@@ -182,7 +181,7 @@ export async function fetchDashboardAggregate(): Promise<DashboardAggregate> {
     .from(gsisRemittanceBatches)
     .where(
       and(
-        eq(gsisRemittanceBatches.status, 'submitted'),
+        eq(gsisRemittanceBatches.status, "submitted"),
         isNull(gsisRemittanceBatches.deletedAt),
         gte(gsisRemittanceBatches.createdAt, new Date(monthStart)),
         lte(gsisRemittanceBatches.createdAt, new Date(`${monthEnd}T23:59:59Z`)),
@@ -194,16 +193,16 @@ export async function fetchDashboardAggregate(): Promise<DashboardAggregate> {
     .from(gsisRemittanceBatches)
     .where(
       and(
-        eq(gsisRemittanceBatches.status, 'generated'),
+        eq(gsisRemittanceBatches.status, "generated"),
         isNull(gsisRemittanceBatches.deletedAt),
       ),
     );
 
-  const gsisDeadline = nextDeadline('gsis', now);
+  const gsisDeadline = nextDeadline("gsis", now);
 
   summaries.unshift({
-    agency: 'gsis',
-    dueThisMonth: gsisDueRows[0]?.total ?? '0.00',
+    agency: "gsis",
+    dueThisMonth: gsisDueRows[0]?.total ?? "0.00",
     submittedThisMonth: Number(gsisSubmittedRows[0]?.cnt ?? 0),
     outstanding: Number(gsisOutstandingRows[0]?.cnt ?? 0),
     nextDeadline: gsisDeadline.iso,

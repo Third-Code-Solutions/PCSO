@@ -26,11 +26,11 @@ export default async function ProvisionPage({ params }: PageProps) {
 
   const appointment = await getAppointment(id);
 
-  if (!appointment.success || !appointment.data) {
+  if (!appointment) {
     redirect("/recruitment/appointments");
   }
 
-  const apt = appointment.data;
+  const apt = appointment;
 
   // If already provisioned, redirect to detail page
   if (apt.provisioned) {
@@ -60,7 +60,13 @@ export default async function ProvisionPage({ params }: PageProps) {
       />
 
       <div className="mt-6">
-        <AppointmentProvisionWizard appointment={apt} />
+        <AppointmentProvisionWizard
+          appointment={
+            apt as unknown as Parameters<
+              typeof AppointmentProvisionWizard
+            >[0]["appointment"]
+          }
+        />
       </div>
     </main>
   );

@@ -60,7 +60,7 @@ export async function recordCompetencyAssessment(
     .insert(competencyAssessments)
     .values({
       ...validated,
-      score: validated.score,
+      score: validated.score.toFixed(2),
       assessorEmployeeId: validated.assessorEmployeeId || null,
     })
     .returning();
@@ -157,7 +157,6 @@ export async function runTrainingNeedsAnalysis(
     const suggestedProgram = await db.query.trainingPrograms.findFirst({
       where: (t, { and, isNull }) =>
         and(isNull(t.deletedAt), eq(t.mandatoryFlag, false)),
-      limit: 1,
     });
 
     const [inserted] = await db

@@ -194,6 +194,9 @@ export async function getApplicationDetail(
         applicantEmail: applicants.email,
         applicantFirstName: applicants.firstName,
         applicantLastName: applicants.lastName,
+        vacancyTitle: sql<string>`coalesce(${vacancies.itemNumber}, '')`.as(
+          "vacancy_title",
+        ),
         vacancyItemNumber: vacancies.itemNumber,
         vacancyCscForm9Number: vacancies.cscForm9Number,
       })
@@ -216,6 +219,9 @@ export async function getApplicationDetail(
         matchScore: row.matchScore,
         submittedAt: row.submittedAt,
         createdAt: row.createdAt,
+        applicantFirstName: row.applicantFirstName,
+        applicantLastName: row.applicantLastName,
+        vacancyTitle: row.vacancyTitle,
         applicant: {
           id: row.applicantId,
           email: row.applicantEmail,

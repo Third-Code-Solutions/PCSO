@@ -243,7 +243,7 @@ export async function generateBankHashFile(input: unknown) {
   // Header row (if enabled)
   if (config.hasHeader) {
     const headerCols = Object.keys(columnMapping).sort(
-      (a, b) => columnMapping[a] - columnMapping[b],
+      (a, b) => (columnMapping[a] ?? 0) - (columnMapping[b] ?? 0),
     );
     rows.push(headerCols);
   }

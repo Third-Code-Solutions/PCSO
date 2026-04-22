@@ -26,9 +26,7 @@ import type {
 
 interface ExamSchedulerFormProps {
   vacancyId: string;
-  createAssessmentAction: (
-    input: CreateAssessmentInput,
-  ) => Promise<{
+  createAssessmentAction: (input: CreateAssessmentInput) => Promise<{
     ok: boolean;
     error?: string;
     data?: { assessmentId: string };
@@ -87,7 +85,10 @@ export function ExamSchedulerForm({
     value: string | number,
   ) => {
     const updated = [...dimensions];
-    updated[index] = { ...updated[index], [field]: value };
+    updated[index] = {
+      ...updated[index],
+      [field]: value,
+    } as AssessmentDimensionInput;
     setDimensions(updated);
   };
 

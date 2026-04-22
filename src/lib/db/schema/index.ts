@@ -58,7 +58,70 @@ export * from "./fm-extensions";
 export * from "./serial-sequences";
 
 // Recruitment module (depends on employees, offices, fm-extensions)
-export * from "./recruitment";
+// Note: excludes 'appointments', 'appointmentsRelations', 'Appointment', 'NewAppointment',
+// and 'appointmentStatusEnum' to avoid clash with ./appointments barrel export.
+export {
+  mrfStatusEnum,
+  vacancyStatusEnum,
+  applicantStatusEnum,
+  applicationStatusEnum,
+  pipelineStageEnum,
+  applicationDocTypeEnum,
+  assessmentDimensionEnum,
+  mrfs,
+  mrfApprovals,
+  vacancies,
+  applicants,
+  applications,
+  applicationDocuments,
+  assessments,
+  assessmentScores,
+  rpmStatusHistory,
+  mrfsRelations,
+  mrfApprovalsRelations,
+  vacanciesRelations,
+  applicantsRelations,
+  applicationsRelations,
+  applicationDocumentsRelations,
+  assessmentsRelations,
+  assessmentScoresRelations,
+  rpmStatusHistoryRelations,
+  appointmentDocuments,
+  appointmentDocumentsRelations,
+  appointmentDocumentTypeEnum,
+} from "./recruitment";
+export type {
+  Mrf,
+  NewMrf,
+  MrfApproval,
+  NewMrfApproval,
+  Applicant,
+  NewApplicant,
+  Application,
+  NewApplication,
+  ApplicationDocument,
+  NewApplicationDocument,
+  Assessment,
+  NewAssessment,
+  AssessmentScore,
+  NewAssessmentScore,
+  RpmStatusHistoryEntry,
+  NewRpmStatusHistoryEntry,
+  Vacancy,
+  NewVacancy,
+  AppointmentDocument,
+  NewAppointmentDocument,
+} from "./recruitment";
+// Re-export recruitment appointments under distinct names to avoid clash
+export {
+  appointments as recruitmentAppointments,
+  appointmentsRelations as recruitmentAppointmentsRelations,
+  appointmentStatusEnum as recruitmentAppointmentStatusEnum,
+} from "./recruitment";
+export type {
+  Appointment as RecruitmentAppointment,
+  NewAppointment as NewRecruitmentAppointment,
+} from "./recruitment";
 
 // Learning & Development module (depends on employees, offices, fm-extensions)
 export * from "./learning";
@@ -73,7 +136,39 @@ export * from "./document-requests";
 export * from "./announcements";
 
 // Portal Requests (depends on employees, offices, attendance.workSchedules)
-export * from "./portal-requests";
+// Note: excludes 'documentUploadStatusEnum' to avoid clash with employee-documents
+export {
+  requestStatusEnum,
+  movementTypeEnum,
+  idReplacementReasonEnum,
+  shiftChangeRequests,
+  dtrCorrectionRequests,
+  documentUploads,
+  pdsUpdateRequests,
+  idRequests,
+  personnelMovementRequests,
+  shiftChangeRequestsRelations,
+  dtrCorrectionRequestsRelations,
+  documentUploadsRelations,
+  pdsUpdateRequestsRelations,
+  idRequestsRelations,
+  personnelMovementRequestsRelations,
+} from "./portal-requests";
+export type {
+  ShiftChangeRequest,
+  NewShiftChangeRequest,
+  DtrCorrectionRequest,
+  NewDtrCorrectionRequest,
+  DocumentUpload,
+  NewDocumentUpload,
+  PdsUpdateRequest,
+  NewPdsUpdateRequest,
+  IdRequest,
+  NewIdRequest,
+  PersonnelMovementRequest,
+  NewPersonnelMovementRequest,
+} from "./portal-requests";
 
 // Employee Documents / 201 File (depends on employees, fm-extensions)
+// documentUploadStatusEnum is exported from here (canonical source)
 export * from "./employee-documents";

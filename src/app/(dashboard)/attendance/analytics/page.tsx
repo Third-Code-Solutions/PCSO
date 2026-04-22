@@ -129,7 +129,7 @@ export default async function AttendanceAnalyticsPage({
       employeeStats.set(key, {
         employeeId: log.employeeId,
         employeeName: `${log.employee.firstName} ${log.employee.lastName}`,
-        employeeNumber: log.employee.employeeNumber,
+        employeeNumber: log.employee.employeeNo,
         daysPresent: 1,
         lateInstances: log.isLate ? 1 : 0,
         totalLateMinutes: log.lateMinutes,

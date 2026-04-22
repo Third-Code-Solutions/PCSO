@@ -52,7 +52,12 @@ export default async function LearningReportsPage({ searchParams }: PageProps) {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-      <ActionStatusBanner searchParams={params} />
+      <ActionStatusBanner
+        status={
+          typeof params["status"] === "string" ? params["status"] : undefined
+        }
+        entityLabel="Report"
+      />
 
       <PageHeader
         title="Training Reports"
@@ -62,22 +67,23 @@ export default async function LearningReportsPage({ searchParams }: PageProps) {
           { label: "Learning", href: "/learning" },
           { label: "Reports" },
         ]}
-      >
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-pcso-navy text-pcso-navy hover:bg-pcso-navy hover:text-pcso-cream"
-          asChild
-        >
-          <a
-            href={`/api/learning/reports/export?year=${year}&format=csv`}
-            download
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-pcso-navy text-pcso-navy hover:bg-pcso-navy hover:text-pcso-cream"
+            asChild
           >
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
-          </a>
-        </Button>
-      </PageHeader>
+            <a
+              href={`/api/learning/reports/export?year=${year}&format=csv`}
+              download
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
+            </a>
+          </Button>
+        }
+      />
 
       {/* Year Filter Pills */}
       <div className="mt-6 flex items-center gap-2 text-sm">

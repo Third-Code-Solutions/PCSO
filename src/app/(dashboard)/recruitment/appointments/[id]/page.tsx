@@ -59,12 +59,30 @@ export default async function AppointmentDetailPage({ params }: PageProps) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
-          <AppointmentDetailsCard appointment={appointment} />
-          <AppointmentDocumentsCard appointment={appointment} />
+          <AppointmentDetailsCard
+            appointment={
+              appointment as unknown as Parameters<
+                typeof AppointmentDetailsCard
+              >[0]["appointment"]
+            }
+          />
+          <AppointmentDocumentsCard
+            appointment={
+              appointment as unknown as Parameters<
+                typeof AppointmentDocumentsCard
+              >[0]["appointment"]
+            }
+          />
         </div>
 
         <div className="space-y-6">
-          <AppointmentProvisionCard appointment={appointment} />
+          <AppointmentProvisionCard
+            appointment={
+              appointment as unknown as Parameters<
+                typeof AppointmentProvisionCard
+              >[0]["appointment"]
+            }
+          />
         </div>
       </div>
     </main>

@@ -11,7 +11,7 @@ import { Plus } from "lucide-react";
 export const metadata = { title: "Bank File Configurations" };
 
 export default async function BankConfigsPage() {
-  await requirePermission("payroll", "read");
+  await requirePermission("payroll", "view");
 
   // Fetch all bank configurations
   const configs = await db
@@ -30,17 +30,23 @@ export default async function BankConfigsPage() {
           { label: "Payroll", href: "/payroll" },
           { label: "Bank Configs" },
         ]}
-      >
-        <Link href="/payroll/bank-configs/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Configuration
-          </Button>
-        </Link>
-      </PageHeader>
+        actions={
+          <Link href="/payroll/bank-configs/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Configuration
+            </Button>
+          </Link>
+        }
+      />
 
       <div className="rounded-xl border border-border bg-card shadow-sm">
-        <BankConfigTable configs={configs} />
+        <BankConfigTable
+          configs={configs.map((c) => ({
+            ...c,
+            columnMapping: c.columnMapping as Record<string, unknown>,
+          }))}
+        />
       </div>
     </main>
   );

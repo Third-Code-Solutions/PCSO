@@ -9,12 +9,18 @@ import {
   PayrollAdminDashboard,
   LeaveApproverDashboard,
   EmployeeDashboard,
+  SupervisorDashboard,
+  ExecutiveDashboard,
+  AuditorDashboard,
 } from "./_client";
 import {
   getAdminDashboardKpis,
   getPayrollAdminKpis,
   getLeaveApproverKpis,
   getEmployeeDashboardKpis,
+  getSupervisorKpis,
+  getExecutiveKpis,
+  getAuditorKpis,
 } from "./queries";
 import type { Role } from "@/lib/auth/permissions";
 
@@ -43,6 +49,23 @@ const PAYROLL_REALTIME_TABLES = [
 ] as const;
 
 const LEAVE_APPROVER_REALTIME_TABLES = ["leave_applications"] as const;
+
+const SUPERVISOR_REALTIME_TABLES = [
+  "leave_applications",
+  "overtime_requests",
+] as const;
+
+const EXECUTIVE_REALTIME_TABLES = [
+  "employees",
+  "plantilla_positions",
+  "saln_submissions",
+] as const;
+
+const AUDIT_REALTIME_TABLES = [
+  "audit_logs",
+  "saln_submissions",
+  "leave_applications",
+] as const;
 
 const PERSONAL_REALTIME_TABLES = [
   "leave_applications",
@@ -73,6 +96,21 @@ async function LeaveApproverKpisSection({ userId }: { userId: string }) {
 async function EmployeeKpisSection({ employeeId }: { employeeId: string }) {
   const data = await getEmployeeDashboardKpis(employeeId);
   return <EmployeeDashboard data={data} />;
+}
+
+async function SupervisorKpisSection({ userId }: { userId: string }) {
+  const data = await getSupervisorKpis(userId);
+  return <SupervisorDashboard data={data} />;
+}
+
+async function ExecutiveKpisSection() {
+  const data = await getExecutiveKpis();
+  return <ExecutiveDashboard data={data} />;
+}
+
+async function AuditorKpisSection() {
+  const data = await getAuditorKpis();
+  return <AuditorDashboard data={data} />;
 }
 
 // ─── Role dispatch ───────────────────────────────────────────────────────────
@@ -127,6 +165,43 @@ function buildRoleConfig(
         ),
       };
 
+    case "supervisor":
+      return {
+        title: "Team Dashboard",
+        description:
+          "Your team's leave queue, overtime requests, and availability",
+        tables: SUPERVISOR_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <SupervisorKpisSection userId={userId} />
+          </Suspense>
+        ),
+      };
+
+    case "executive":
+      return {
+        title: "Leadership Dashboard",
+        description: "Org-wide workforce analytics and compliance overview",
+        tables: EXECUTIVE_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <ExecutiveKpisSection />
+          </Suspense>
+        ),
+      };
+
+    case "auditor":
+      return {
+        title: "Compliance & Audit Dashboard",
+        description: "SALN compliance, audit trail, and workforce status",
+        tables: AUDIT_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <AuditorKpisSection />
+          </Suspense>
+        ),
+      };
+
     case "employee_self_service":
       if (employeeId) {
         return {
@@ -141,8 +216,17 @@ function buildRoleConfig(
           ),
         };
       }
-    // intentional fall-through for self-service without linked employee
-    // falls through
+      return {
+        title: "Dashboard",
+        description: "PCSO HRIS overview",
+        tables: ADMIN_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <AdminKpisSection />
+          </Suspense>
+        ),
+      };
+
     case "viewer":
     default:
       return {

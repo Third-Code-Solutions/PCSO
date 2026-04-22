@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 interface VacancyRow {
   id: string;
   title: string | null;
-  itemNumber: string;
+  itemNumber: string | null;
   status: string;
   applicationDeadline: Date | null;
   officeName: string | null;
@@ -115,7 +115,7 @@ export default async function VacanciesListPage({ searchParams }: PageProps) {
                         href={`/recruitment/vacancies/${row.id}`}
                         className="font-mono text-sm font-medium hover:underline"
                       >
-                        {row.itemNumber}
+                        {row.itemNumber ?? "—"}
                       </Link>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">

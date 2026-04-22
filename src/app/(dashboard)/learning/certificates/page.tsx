@@ -104,7 +104,12 @@ export default async function CertificatesListPage({
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
-      <ActionStatusBanner searchParams={params} />
+      <ActionStatusBanner
+        status={
+          typeof params["status"] === "string" ? params["status"] : undefined
+        }
+        entityLabel="Certificate"
+      />
 
       <PageHeader
         title="Training Certificates"
@@ -114,16 +119,17 @@ export default async function CertificatesListPage({
           { label: "Learning", href: "/learning" },
           { label: "Certificates" },
         ]}
-      >
-        <RoleGate allowedRoles={["hr_admin", "hr_staff"]}>
-          <Link href="/learning/certificates/generate">
-            <Button className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream">
-              <Award className="mr-2 h-4 w-4" />
-              Generate Certificates
-            </Button>
-          </Link>
-        </RoleGate>
-      </PageHeader>
+        actions={
+          <RoleGate role={user.role} roles={["super_admin", "hr_admin"]}>
+            <Link href="/learning/certificates/generate">
+              <Button className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream">
+                <Award className="mr-2 h-4 w-4" />
+                Generate Certificates
+              </Button>
+            </Link>
+          </RoleGate>
+        }
+      />
 
       {/* Stats Cards */}
       <section className="mt-6 grid gap-4 sm:grid-cols-3">

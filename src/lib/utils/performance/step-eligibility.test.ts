@@ -65,7 +65,7 @@ describe("three consecutive VS or better rule", () => {
     expect(result.triggerRule).toBe("three_consecutive_vs");
     expect(result.qualifyingPeriods).toHaveLength(3);
     // Should be the most recent 3
-    expect(result.qualifyingPeriods[2].numericalRating).toBe(3.8);
+    expect(result.qualifyingPeriods[2]!.numericalRating).toBe(3.8);
   });
 
   it("is NOT eligible with only 2 consecutive VS", () => {
@@ -194,8 +194,8 @@ describe("edge cases", () => {
     const result = checkStepEligibility(ratings, null);
     expect(result.eligible).toBe(true);
     expect(result.qualifyingPeriods).toHaveLength(3);
-    expect(result.qualifyingPeriods[0].periodLabel).toBe("2024-1");
-    expect(result.qualifyingPeriods[2].periodLabel).toBe("2025-1");
+    expect(result.qualifyingPeriods[0]!.periodLabel).toBe("2024-1");
+    expect(result.qualifyingPeriods[2]!.periodLabel).toBe("2025-1");
   });
 });
 
@@ -218,10 +218,10 @@ describe("checkBatchEligibility", () => {
 
     const results = checkBatchEligibility(input);
     expect(results).toHaveLength(2);
-    expect(results[0].employeeId).toBe("emp-1");
-    expect(results[0].eligibility.eligible).toBe(true);
-    expect(results[1].employeeId).toBe("emp-2");
-    expect(results[1].eligibility.eligible).toBe(false);
+    expect(results[0]!.employeeId).toBe("emp-1");
+    expect(results[0]!.eligibility.eligible).toBe(true);
+    expect(results[1]!.employeeId).toBe("emp-2");
+    expect(results[1]!.eligibility.eligible).toBe(false);
   });
 });
 

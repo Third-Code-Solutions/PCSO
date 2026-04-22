@@ -16,7 +16,7 @@
  * Writing to Supabase Storage is the responsibility of the caller (server action).
  */
 
-import { roundHalfEven } from '@/lib/utils/payroll/rounding';
+import { roundHalfEven } from "@/lib/utils/payroll/rounding";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,21 +44,23 @@ export interface GsisExportMeta {
   batchNo: string;
 }
 
-export type GsisExportFormat = 'csv' | 'xlsx';
+export type GsisExportFormat = "csv" | "xlsx";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMoney(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
+  const num = typeof value === "string" ? parseFloat(value) : value;
   if (!Number.isFinite(num)) {
-    throw new RangeError(`formatMoney: cannot format "${value}" as a monetary amount`);
+    throw new RangeError(
+      `formatMoney: cannot format "${value}" as a monetary amount`,
+    );
   }
   return roundHalfEven(num, 2).toFixed(2);
 }
 
 /** Escapes a string for CSV: wraps in double quotes if it contains comma, quote, or newline */
 function csvEscape(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
@@ -79,7 +81,9 @@ export function buildGsisCsv(
   const lines: string[] = [];
 
   // Agency/period header block (informational — GSIS portal ignores lines before data)
-  lines.push(`# Agency: ${csvEscape(meta.agencyName)} (${csvEscape(meta.agencyCode)})`);
+  lines.push(
+    `# Agency: ${csvEscape(meta.agencyName)} (${csvEscape(meta.agencyCode)})`,
+  );
   lines.push(`# Period: ${csvEscape(meta.periodLabel)}`);
   lines.push(`# Batch: ${csvEscape(meta.batchNo)}`);
   lines.push(`# Generated: ${new Date().toISOString()}`);
@@ -87,17 +91,17 @@ export function buildGsisCsv(
   // Column header row
   lines.push(
     [
-      'EMPLOYEE NO',
-      'GSIS NO',
-      'NAME',
-      'MONTHLY SALARY CREDIT',
-      'PERSONAL SHARE',
-      'EMPLOYER SHARE',
-      'LIFE INSURANCE',
-      'TOTAL',
+      "EMPLOYEE NO",
+      "GSIS NO",
+      "NAME",
+      "MONTHLY SALARY CREDIT",
+      "PERSONAL SHARE",
+      "EMPLOYER SHARE",
+      "LIFE INSURANCE",
+      "TOTAL",
     ]
       .map(csvEscape)
-      .join(','),
+      .join(","),
   );
 
   // Data rows
@@ -127,27 +131,27 @@ export function buildGsisCsv(
         formatMoney(employer),
         formatMoney(lifeIns),
         formatMoney(total),
-      ].join(','),
+      ].join(","),
     );
   }
 
   // Totals footer
   lines.push(
     [
-      'TOTAL',
-      '',
-      '',
-      '',
+      "TOTAL",
+      "",
+      "",
+      "",
       formatMoney(sumPersonal),
       formatMoney(sumEmployer),
       formatMoney(sumLifeInsurance),
       formatMoney(sumTotal),
     ]
       .map(csvEscape)
-      .join(','),
+      .join(","),
   );
 
-  return lines.join('\r\n');
+  return lines.join("\r\n");
 }
 
 // ─── XLSX Generation ──────────────────────────────────────────────────────────
@@ -196,32 +200,34 @@ export function buildGsisXlsx(
 
   // Numeric cell builder
   function nCell(col: string, row: number, value: string | number): string {
-    const num = typeof value === 'string' ? parseFloat(value) : value;
+    const num = typeof value === "string" ? parseFloat(value) : value;
     const formatted = roundHalfEven(num, 2).toFixed(2);
     return `<c r="${col}${row}" s="1"><v>${formatted}</v></c>`;
   }
 
-  const COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
+  const COLUMNS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
   const HEADERS = [
-    'EMPLOYEE NO',
-    'GSIS NO',
-    'NAME',
-    'MONTHLY SALARY CREDIT',
-    'PERSONAL SHARE',
-    'EMPLOYER SHARE',
-    'LIFE INSURANCE',
-    'TOTAL',
+    "EMPLOYEE NO",
+    "GSIS NO",
+    "NAME",
+    "MONTHLY SALARY CREDIT",
+    "PERSONAL SHARE",
+    "EMPLOYER SHARE",
+    "LIFE INSURANCE",
+    "TOTAL",
   ];
 
   const xmlRows: string[] = [];
 
   // Row 1: Meta info
   xmlRows.push(
-    `<row r="1">${sCell('A', 1, `Agency: ${meta.agencyName} (${meta.agencyCode}) | Period: ${meta.periodLabel} | Batch: ${meta.batchNo}`)}</row>`,
+    `<row r="1">${sCell("A", 1, `Agency: ${meta.agencyName} (${meta.agencyCode}) | Period: ${meta.periodLabel} | Batch: ${meta.batchNo}`)}</row>`,
   );
 
   // Row 2: Headers
-  const headerCells = HEADERS.map((h, i) => sCell(COLUMNS[i], 2, h)).join('');
+  const headerCells = HEADERS.map((h, i) =>
+    sCell(COLUMNS[i] ?? "A", 2, h),
+  ).join("");
   xmlRows.push(`<row r="2">${headerCells}</row>`);
 
   let sumPersonal = 0;
@@ -243,15 +249,15 @@ export function buildGsisXlsx(
     sumTotal += total;
 
     const cells = [
-      sCell('A', r, row.employeeNo),
-      sCell('B', r, row.gsisNo),
-      sCell('C', r, row.employeeName),
-      nCell('D', r, row.monthlySalaryCredit),
-      nCell('E', r, personal),
-      nCell('F', r, employer),
-      nCell('G', r, lifeIns),
-      nCell('H', r, total),
-    ].join('');
+      sCell("A", r, row.employeeNo),
+      sCell("B", r, row.gsisNo),
+      sCell("C", r, row.employeeName),
+      nCell("D", r, row.monthlySalaryCredit),
+      nCell("E", r, personal),
+      nCell("F", r, employer),
+      nCell("G", r, lifeIns),
+      nCell("H", r, total),
+    ].join("");
 
     xmlRows.push(`<row r="${r}">${cells}</row>`);
   });
@@ -259,25 +265,25 @@ export function buildGsisXlsx(
   // Totals row
   const totalsRow = rows.length + 3;
   const totalsCells = [
-    sCell('A', totalsRow, 'TOTAL'),
-    nCell('E', totalsRow, sumPersonal),
-    nCell('F', totalsRow, sumEmployer),
-    nCell('G', totalsRow, sumLifeInsurance),
-    nCell('H', totalsRow, sumTotal),
-  ].join('');
+    sCell("A", totalsRow, "TOTAL"),
+    nCell("E", totalsRow, sumPersonal),
+    nCell("F", totalsRow, sumEmployer),
+    nCell("G", totalsRow, sumLifeInsurance),
+    nCell("H", totalsRow, sumTotal),
+  ].join("");
   xmlRows.push(`<row r="${totalsRow}">${totalsCells}</row>`);
 
   // Build shared strings XML
   const sharedStringsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">
-${sharedStrings.map((s) => `<si><t>${xmlEscape(s)}</t></si>`).join('\n')}
+${sharedStrings.map((s) => `<si><t>${xmlEscape(s)}</t></si>`).join("\n")}
 </sst>`;
 
   // Build worksheet XML
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <sheetData>
-${xmlRows.join('\n')}
+${xmlRows.join("\n")}
 </sheetData>
 </worksheet>`;
 
@@ -330,13 +336,13 @@ ${xmlRows.join('\n')}
 
   // Pack files into ZIP structure
   return buildZip([
-    { path: '[Content_Types].xml', content: contentTypesXml },
-    { path: '_rels/.rels', content: rootRelsXml },
-    { path: 'xl/workbook.xml', content: workbookXml },
-    { path: 'xl/_rels/workbook.xml.rels', content: workbookRelsXml },
-    { path: 'xl/worksheets/sheet1.xml', content: sheetXml },
-    { path: 'xl/sharedStrings.xml', content: sharedStringsXml },
-    { path: 'xl/styles.xml', content: stylesXml },
+    { path: "[Content_Types].xml", content: contentTypesXml },
+    { path: "_rels/.rels", content: rootRelsXml },
+    { path: "xl/workbook.xml", content: workbookXml },
+    { path: "xl/_rels/workbook.xml.rels", content: workbookRelsXml },
+    { path: "xl/worksheets/sheet1.xml", content: sheetXml },
+    { path: "xl/sharedStrings.xml", content: sharedStringsXml },
+    { path: "xl/styles.xml", content: stylesXml },
   ]);
 }
 
@@ -365,16 +371,16 @@ function buildZip(entries: ZipEntry[]): Uint8Array {
     const localHeader = new Uint8Array(30 + nameBytes.length);
     const view = new DataView(localHeader.buffer);
     view.setUint32(0, 0x04034b50, true); // signature
-    view.setUint16(4, 20, true);         // version needed
-    view.setUint16(6, 0, true);          // flags
-    view.setUint16(8, 0, true);          // compression (store)
-    view.setUint16(10, 0, true);         // mod time
-    view.setUint16(12, 0, true);         // mod date
-    view.setUint32(14, crc, true);       // CRC-32
-    view.setUint32(18, size, true);      // compressed size
-    view.setUint32(22, size, true);      // uncompressed size
+    view.setUint16(4, 20, true); // version needed
+    view.setUint16(6, 0, true); // flags
+    view.setUint16(8, 0, true); // compression (store)
+    view.setUint16(10, 0, true); // mod time
+    view.setUint16(12, 0, true); // mod date
+    view.setUint32(14, crc, true); // CRC-32
+    view.setUint32(18, size, true); // compressed size
+    view.setUint32(22, size, true); // uncompressed size
     view.setUint16(26, nameBytes.length, true);
-    view.setUint16(28, 0, true);         // extra field length
+    view.setUint16(28, 0, true); // extra field length
     localHeader.set(nameBytes, 30);
 
     localHeaders.push(localHeader);
@@ -384,22 +390,22 @@ function buildZip(entries: ZipEntry[]): Uint8Array {
     const centralDir = new Uint8Array(46 + nameBytes.length);
     const cView = new DataView(centralDir.buffer);
     cView.setUint32(0, 0x02014b50, true); // signature
-    cView.setUint16(4, 20, true);          // version made by
-    cView.setUint16(6, 20, true);          // version needed
-    cView.setUint16(8, 0, true);           // flags
-    cView.setUint16(10, 0, true);          // compression
-    cView.setUint16(12, 0, true);          // mod time
-    cView.setUint16(14, 0, true);          // mod date
-    cView.setUint32(16, crc, true);        // CRC-32
-    cView.setUint32(20, size, true);       // compressed size
-    cView.setUint32(24, size, true);       // uncompressed size
+    cView.setUint16(4, 20, true); // version made by
+    cView.setUint16(6, 20, true); // version needed
+    cView.setUint16(8, 0, true); // flags
+    cView.setUint16(10, 0, true); // compression
+    cView.setUint16(12, 0, true); // mod time
+    cView.setUint16(14, 0, true); // mod date
+    cView.setUint32(16, crc, true); // CRC-32
+    cView.setUint32(20, size, true); // compressed size
+    cView.setUint32(24, size, true); // uncompressed size
     cView.setUint16(28, nameBytes.length, true);
-    cView.setUint16(30, 0, true);          // extra field
-    cView.setUint16(32, 0, true);          // comment
-    cView.setUint16(34, 0, true);          // disk number start
-    cView.setUint16(36, 0, true);          // internal attributes
-    cView.setUint32(38, 0, true);          // external attributes
-    cView.setUint32(42, offset, true);     // offset of local header
+    cView.setUint16(30, 0, true); // extra field
+    cView.setUint16(32, 0, true); // comment
+    cView.setUint16(34, 0, true); // disk number start
+    cView.setUint16(36, 0, true); // internal attributes
+    cView.setUint32(38, 0, true); // external attributes
+    cView.setUint32(42, offset, true); // offset of local header
     centralDir.set(nameBytes, 46);
 
     centralDirs.push(centralDir);
@@ -410,13 +416,13 @@ function buildZip(entries: ZipEntry[]): Uint8Array {
   const eocd = new Uint8Array(22);
   const eocdView = new DataView(eocd.buffer);
   eocdView.setUint32(0, 0x06054b50, true); // EOCD signature
-  eocdView.setUint16(4, 0, true);           // disk number
-  eocdView.setUint16(6, 0, true);           // start disk
+  eocdView.setUint16(4, 0, true); // disk number
+  eocdView.setUint16(6, 0, true); // start disk
   eocdView.setUint16(8, entries.length, true);
   eocdView.setUint16(10, entries.length, true);
   eocdView.setUint32(12, centralDirSize, true);
-  eocdView.setUint32(16, offset, true);     // offset of central dir
-  eocdView.setUint16(20, 0, true);          // comment length
+  eocdView.setUint32(16, offset, true); // offset of central dir
+  eocdView.setUint16(20, 0, true); // comment length
 
   const allParts = [...localHeaders, ...centralDirs, eocd];
   const totalSize = allParts.reduce((sum, b) => sum + b.length, 0);
@@ -446,7 +452,7 @@ const CRC_TABLE = (() => {
 function crc32(data: Uint8Array): number {
   let crc = 0xffffffff;
   for (let i = 0; i < data.length; i++) {
-    crc = CRC_TABLE[(crc ^ data[i]) & 0xff] ^ (crc >>> 8);
+    crc = (CRC_TABLE[(crc ^ (data[i] ?? 0)) & 0xff] ?? 0) ^ (crc >>> 8);
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
@@ -455,11 +461,11 @@ function crc32(data: Uint8Array): number {
 
 function xmlEscape(value: string): string {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 // ─── Dispatch helper ─────────────────────────────────────────────────────────
@@ -473,22 +479,23 @@ export function generateGsisExport(
   meta: GsisExportMeta,
   format: GsisExportFormat,
 ): { data: Uint8Array; mimeType: string; filename: string } {
-  const safeBatchNo = meta.batchNo.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const safePeriod = meta.periodLabel.replace(/[^a-zA-Z0-9-_]/g, '_');
+  const safeBatchNo = meta.batchNo.replace(/[^a-zA-Z0-9-_]/g, "_");
+  const safePeriod = meta.periodLabel.replace(/[^a-zA-Z0-9-_]/g, "_");
 
-  if (format === 'csv') {
+  if (format === "csv") {
     const csv = buildGsisCsv(rows, meta);
     const encoder = new TextEncoder();
     return {
       data: encoder.encode(csv),
-      mimeType: 'text/csv; charset=UTF-8',
+      mimeType: "text/csv; charset=UTF-8",
       filename: `GSIS_Remittance_${safePeriod}_${safeBatchNo}.csv`,
     };
   }
 
   return {
     data: buildGsisXlsx(rows, meta),
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     filename: `GSIS_Remittance_${safePeriod}_${safeBatchNo}.xlsx`,
   };
 }

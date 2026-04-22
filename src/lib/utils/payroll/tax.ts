@@ -16,8 +16,8 @@
  * Annual brackets = monthly brackets × 12.
  */
 
-import { roundHalfEven } from './rounding';
-import type { TaxComputationDetail } from './types';
+import { roundHalfEven } from "./rounding";
+import type { TaxComputationDetail } from "./types";
 
 // ---------------------------------------------------------------------------
 // Tax bracket definitions
@@ -39,12 +39,12 @@ interface TaxBracket {
  * All peso amounts from RR 2-2023.
  */
 export const MONTHLY_TAX_BRACKETS: readonly TaxBracket[] = [
-  { floor: 0,       ceiling: 20_833,   baseAmount: 0,          rate: 0    },
-  { floor: 20_833,  ceiling: 33_332,   baseAmount: 0,          rate: 0.15 },
-  { floor: 33_332,  ceiling: 66_666,   baseAmount: 1_875,      rate: 0.20 },
-  { floor: 66_666,  ceiling: 166_666,  baseAmount: 8_541.80,   rate: 0.25 },
-  { floor: 166_666, ceiling: 666_666,  baseAmount: 33_541.80,  rate: 0.30 },
-  { floor: 666_666, ceiling: Infinity, baseAmount: 183_541.80, rate: 0.35 },
+  { floor: 0, ceiling: 20_833, baseAmount: 0, rate: 0 },
+  { floor: 20_833, ceiling: 33_332, baseAmount: 0, rate: 0.15 },
+  { floor: 33_332, ceiling: 66_666, baseAmount: 1_875, rate: 0.2 },
+  { floor: 66_666, ceiling: 166_666, baseAmount: 8_541.8, rate: 0.25 },
+  { floor: 166_666, ceiling: 666_666, baseAmount: 33_541.8, rate: 0.3 },
+  { floor: 666_666, ceiling: Infinity, baseAmount: 183_541.8, rate: 0.35 },
 ] as const;
 
 /**
@@ -52,12 +52,12 @@ export const MONTHLY_TAX_BRACKETS: readonly TaxBracket[] = [
  * BIR withholds on each semi-monthly payroll run.
  */
 export const SEMI_MONTHLY_TAX_BRACKETS: readonly TaxBracket[] = [
-  { floor: 0,        ceiling: 10_416.50,  baseAmount: 0,          rate: 0    },
-  { floor: 10_416.50, ceiling: 16_666,    baseAmount: 0,          rate: 0.15 },
-  { floor: 16_666,   ceiling: 33_333,     baseAmount: 937.50,     rate: 0.20 },
-  { floor: 33_333,   ceiling: 83_333,     baseAmount: 4_270.90,   rate: 0.25 },
-  { floor: 83_333,   ceiling: 333_333,    baseAmount: 16_770.90,  rate: 0.30 },
-  { floor: 333_333,  ceiling: Infinity,   baseAmount: 91_770.90,  rate: 0.35 },
+  { floor: 0, ceiling: 10_416.5, baseAmount: 0, rate: 0 },
+  { floor: 10_416.5, ceiling: 16_666, baseAmount: 0, rate: 0.15 },
+  { floor: 16_666, ceiling: 33_333, baseAmount: 937.5, rate: 0.2 },
+  { floor: 33_333, ceiling: 83_333, baseAmount: 4_270.9, rate: 0.25 },
+  { floor: 83_333, ceiling: 333_333, baseAmount: 16_770.9, rate: 0.3 },
+  { floor: 333_333, ceiling: Infinity, baseAmount: 91_770.9, rate: 0.35 },
 ] as const;
 
 /**
@@ -65,12 +65,12 @@ export const SEMI_MONTHLY_TAX_BRACKETS: readonly TaxBracket[] = [
  * Used for annualized computation (alphalist, year-end adjustment).
  */
 export const ANNUAL_TAX_BRACKETS: readonly TaxBracket[] = [
-  { floor: 0,           ceiling: 250_000,    baseAmount: 0,            rate: 0    },
-  { floor: 250_000,     ceiling: 400_000,    baseAmount: 0,            rate: 0.15 },
-  { floor: 400_000,     ceiling: 800_000,    baseAmount: 22_500,       rate: 0.20 },
-  { floor: 800_000,     ceiling: 2_000_000,  baseAmount: 102_500,      rate: 0.25 },
-  { floor: 2_000_000,   ceiling: 8_000_000,  baseAmount: 402_500,      rate: 0.30 },
-  { floor: 8_000_000,   ceiling: Infinity,   baseAmount: 2_202_500,    rate: 0.35 },
+  { floor: 0, ceiling: 250_000, baseAmount: 0, rate: 0 },
+  { floor: 250_000, ceiling: 400_000, baseAmount: 0, rate: 0.15 },
+  { floor: 400_000, ceiling: 800_000, baseAmount: 22_500, rate: 0.2 },
+  { floor: 800_000, ceiling: 2_000_000, baseAmount: 102_500, rate: 0.25 },
+  { floor: 2_000_000, ceiling: 8_000_000, baseAmount: 402_500, rate: 0.3 },
+  { floor: 8_000_000, ceiling: Infinity, baseAmount: 2_202_500, rate: 0.35 },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -102,12 +102,9 @@ function computeTaxFromBrackets(
 
   if (!bracket) {
     // Taxable income exceeds all brackets — use the last bracket
-    const last = brackets[brackets.length - 1];
+    const last = brackets[brackets.length - 1]!;
     const excess = taxableIncome - last.floor;
-    const tax = roundHalfEven(
-      last.baseAmount + excess * last.rate,
-      2,
-    );
+    const tax = roundHalfEven(last.baseAmount + excess * last.rate, 2);
     return {
       tax,
       detail: {
@@ -122,10 +119,7 @@ function computeTaxFromBrackets(
   }
 
   const excess = taxableIncome - bracket.floor;
-  const tax = roundHalfEven(
-    bracket.baseAmount + excess * bracket.rate,
-    2,
-  );
+  const tax = roundHalfEven(bracket.baseAmount + excess * bracket.rate, 2);
 
   return {
     tax,
@@ -187,10 +181,10 @@ export function computeTaxableIncome(
  */
 export function computeWithholdingTax(
   taxableIncome: number,
-  periodType: 'semi-monthly' | 'monthly' = 'semi-monthly',
+  periodType: "semi-monthly" | "monthly" = "semi-monthly",
 ): number {
   const brackets =
-    periodType === 'semi-monthly'
+    periodType === "semi-monthly"
       ? SEMI_MONTHLY_TAX_BRACKETS
       : MONTHLY_TAX_BRACKETS;
   return computeTaxFromBrackets(taxableIncome, brackets).tax;
@@ -205,10 +199,10 @@ export function computeWithholdingTax(
  */
 export function computeWithholdingTaxWithDetail(
   taxableIncome: number,
-  periodType: 'semi-monthly' | 'monthly' = 'semi-monthly',
+  periodType: "semi-monthly" | "monthly" = "semi-monthly",
 ): { tax: number; detail: TaxComputationDetail } {
   const brackets =
-    periodType === 'semi-monthly'
+    periodType === "semi-monthly"
       ? SEMI_MONTHLY_TAX_BRACKETS
       : MONTHLY_TAX_BRACKETS;
   return computeTaxFromBrackets(taxableIncome, brackets);
@@ -228,9 +222,7 @@ export function computeWithholdingTaxWithDetail(
  * @param monthlyTaxableIncome - Monthly taxable income (average)
  * @returns Annualized tax (full year amount, NOT monthly)
  */
-export function computeAnnualizedTax(
-  monthlyTaxableIncome: number,
-): number {
+export function computeAnnualizedTax(monthlyTaxableIncome: number): number {
   if (monthlyTaxableIncome < 0) {
     throw new RangeError(
       `computeAnnualizedTax: monthlyTaxableIncome must be >= 0, got ${monthlyTaxableIncome}`,

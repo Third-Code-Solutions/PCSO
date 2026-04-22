@@ -49,7 +49,10 @@ export async function createDpcr(
 
   const parsed = dpcrSchema.safeParse(data);
   if (!parsed.success) {
-    return { success: false, error: parsed.error.errors[0].message };
+    return {
+      success: false,
+      error: parsed.error.errors[0]?.message ?? "Validation failed",
+    };
   }
 
   try {
@@ -68,7 +71,7 @@ export async function createDpcr(
       .returning({ id: dpcrForms.id });
 
     revalidatePath("/performance/dpcr");
-    return { success: true, id: dpcr.id };
+    return { success: true, id: dpcr?.id };
   } catch (error) {
     console.error("[createDpcr]", error);
     return { success: false, error: "Failed to create DPCR form" };
@@ -159,7 +162,10 @@ export async function createBpcr(
 
   const parsed = bpcrSchema.safeParse(data);
   if (!parsed.success) {
-    return { success: false, error: parsed.error.errors[0].message };
+    return {
+      success: false,
+      error: parsed.error.errors[0]?.message ?? "Validation failed",
+    };
   }
 
   try {
@@ -178,7 +184,7 @@ export async function createBpcr(
       .returning({ id: bpcrForms.id });
 
     revalidatePath("/performance/bpcr");
-    return { success: true, id: bpcr.id };
+    return { success: true, id: bpcr?.id };
   } catch (error) {
     console.error("[createBpcr]", error);
     return { success: false, error: "Failed to create BPCR form" };
@@ -347,7 +353,7 @@ export async function checkForcedRanking(
   officeId?: string,
 ): Promise<ForcedRankingResult> {
   const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "read")) {
+  if (!hasPermission(user.role, "performance", "view")) {
     return { success: false, error: "Permission denied" };
   }
 

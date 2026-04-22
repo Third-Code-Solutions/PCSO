@@ -41,12 +41,14 @@ const SubmitDocumentRequestSchema = z.object({
 
 const AcceptRequestSchema = z.object({
   requestId: z.string().uuid(),
-  assignedToId: z.string().uuid(),
+  assignedToId: z.string().uuid().optional(),
 });
 
 const ProcessRequestSchema = z.object({
   requestId: z.string().uuid(),
   includeSalary: z.boolean().optional(), // For COE with remunerations
+  documentType: z.string().optional(),
+  employeeId: z.string().uuid().optional(),
 });
 
 const PutOnHoldSchema = z.object({
@@ -79,6 +81,7 @@ type ActionResult = {
   success: boolean;
   message?: string;
   error?: string;
+  serialNumber?: string;
 };
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -289,6 +292,7 @@ export async function processDocumentRequest(
     return {
       success: true,
       message: `Document generated successfully. Serial: ${result.serialNumber}`,
+      serialNumber: result.serialNumber,
     };
   } catch (error) {
     console.error("Process document request error:", error);
@@ -569,14 +573,14 @@ export async function getDocumentRequests(filters?: {
     });
 
     // Get total count
-    const [{ count }] = await db
+    const countResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(documentRequests)
       .where(whereClause);
 
     return {
       data: requests as DocumentRequestWithEmployee[],
-      total: count,
+      total: countResult[0]?.count ?? 0,
     };
   } catch (error) {
     console.error("Get document requests error:", error);
@@ -587,7 +591,11 @@ export async function getDocumentRequests(filters?: {
 /**
  * Get a single document request by ID
  */
-export async function getDocumentRequestById(requestId: string) {
+export async function getDocumentRequestById(requestId: string): Promise<{
+  success: boolean;
+  data?: DocumentRequestWithEmployee;
+  error?: string;
+}> {
   try {
     const request = await db.query.documentRequests.findFirst({
       where: eq(documentRequests.id, requestId),
@@ -614,9 +622,16 @@ export async function getDocumentRequestById(requestId: string) {
       },
     });
 
-    return request as DocumentRequestWithEmployee | undefined;
+    if (!request) {
+      return { success: false, error: "Request not found" };
+    }
+
+    return { success: true, data: request as DocumentRequestWithEmployee };
   } catch (error) {
     console.error("Get document request by ID error:", error);
-    throw error;
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch request",
+    };
   }
 }

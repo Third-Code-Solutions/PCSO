@@ -68,7 +68,13 @@ export default async function ProgramDetailPage({ params }: PageProps) {
               }>,
             learningObjectives: program.learningObjectives as unknown as Array<{
               statement: string;
-              bloomsLevel?: string;
+              bloomsLevel?:
+                | "remember"
+                | "understand"
+                | "apply"
+                | "analyze"
+                | "evaluate"
+                | "create";
             }>,
           }}
         />

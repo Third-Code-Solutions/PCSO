@@ -17,7 +17,7 @@
  * Notifications: N-018, N-019, N-020 handled by document request module.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
@@ -31,7 +31,7 @@ import {
 } from "@/lib/db/schema";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
-import { notifyUser } from "@/lib/notifications";
+import { createNotification, notifyEmployee } from "@/lib/notifications";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -148,7 +148,8 @@ export async function uploadEmployeeDocument(
         documentTypeCode: parsed.documentTypeCode,
         fileName: parsed.fileName,
         fileUrl: parsed.fileUrl,
-        fileSizeBytes: parsed.fileSizeBytes ?? null,
+        fileSizeBytes:
+          parsed.fileSizeBytes != null ? String(parsed.fileSizeBytes) : null,
         uploadedById: user.employeeId!,
         status: "staging",
         remarks: parsed.remarks ?? null,
@@ -282,7 +283,7 @@ export async function listEmployeeDocuments(
 
     const conditions = [
       eq(employeeDocuments.employeeId, parsed.employeeId),
-      eq(employeeDocuments.deletedAt, null),
+      isNull(employeeDocuments.deletedAt),
     ];
 
     if (parsed.status) {
@@ -378,7 +379,8 @@ export async function createDocumentRequest(
     });
 
     // Notify HR staff of new request (N-018)
-    await notifyUser(user.id, {
+    await createNotification({
+      userId: user.id,
       type: "generic",
       title: "Document request received",
       body: `Your request for ${parsed.documentType} has been received.`,
@@ -456,7 +458,7 @@ export async function updateDocumentRequestStatus(
         notifBody = "Your requested document is ready for download.";
       }
 
-      await notifyUser(updated.employeeId, {
+      await notifyEmployee(updated.employeeId, {
         type: "generic",
         title: "Document request update",
         body: notifBody,

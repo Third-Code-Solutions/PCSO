@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { requirePermission } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { payrollPeriods } from "@/lib/db/schema";
-import { eq, isNull, desc } from "drizzle-orm";
+import { eq, isNull, desc, and } from "drizzle-orm";
 import { PeriodStatusBadge } from "@/components/payroll/period-status-badge";
 
 export const metadata = { title: "Cash Advance Payroll" };
@@ -16,8 +16,12 @@ export default async function CashAdvancePayrollPage() {
   const periods = await db
     .select()
     .from(payrollPeriods)
-    .where(eq(payrollPeriods.scope, "cash_advance"))
-    .where(isNull(payrollPeriods.deletedAt))
+    .where(
+      and(
+        eq(payrollPeriods.scope, "cash_advance"),
+        isNull(payrollPeriods.deletedAt),
+      ),
+    )
     .orderBy(desc(payrollPeriods.createdAt))
     .limit(20);
 

@@ -4,7 +4,7 @@ import { payrollPeriods, payrollRecords } from "@/lib/db/schema";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
-import { format } from "date-fns";
+import { format as dateFnsFormat } from "date-fns";
 
 /**
  * GET /api/payroll/journal-entries?periodId={uuid}&format={json|csv}
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const periodId = searchParams.get("periodId");
-    const format = searchParams.get("format") || "json";
+    const outputFormat = searchParams.get("format") || "json";
 
     if (!periodId) {
       return NextResponse.json(
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!["json", "csv"].includes(format)) {
+    if (!["json", "csv"].includes(outputFormat)) {
       return NextResponse.json(
         { error: "Invalid format. Use json or csv." },
         { status: 400 },
@@ -116,42 +116,42 @@ export async function GET(request: NextRequest) {
         type: "Debit",
         amount: totalGrossPay.toFixed(2),
         reference: period.name,
-        date: format(new Date(period.payDate), "yyyy-MM-dd"),
+        date: dateFnsFormat(new Date(period.payDate), "yyyy-MM-dd"),
       },
       {
         account: "Due to BIR",
         type: "Credit",
         amount: totalWithholdingTax.toFixed(2),
         reference: period.name,
-        date: format(new Date(period.payDate), "yyyy-MM-dd"),
+        date: dateFnsFormat(new Date(period.payDate), "yyyy-MM-dd"),
       },
       {
         account: "Due to GSIS",
         type: "Credit",
         amount: totalGSIS.toFixed(2),
         reference: period.name,
-        date: format(new Date(period.payDate), "yyyy-MM-dd"),
+        date: dateFnsFormat(new Date(period.payDate), "yyyy-MM-dd"),
       },
       {
         account: "Due to PhilHealth",
         type: "Credit",
         amount: totalPhilHealth.toFixed(2),
         reference: period.name,
-        date: format(new Date(period.payDate), "yyyy-MM-dd"),
+        date: dateFnsFormat(new Date(period.payDate), "yyyy-MM-dd"),
       },
       {
         account: "Due to Pag-IBIG",
         type: "Credit",
         amount: totalPagIBIG.toFixed(2),
         reference: period.name,
-        date: format(new Date(period.payDate), "yyyy-MM-dd"),
+        date: dateFnsFormat(new Date(period.payDate), "yyyy-MM-dd"),
       },
       {
         account: "Cash",
         type: "Credit",
         amount: totalNetPay.toFixed(2),
         reference: period.name,
-        date: format(new Date(period.payDate), "yyyy-MM-dd"),
+        date: dateFnsFormat(new Date(period.payDate), "yyyy-MM-dd"),
       },
     ];
 
@@ -163,14 +163,14 @@ export async function GET(request: NextRequest) {
       recordId: periodId,
       newValues: {
         target: "journal_entries",
-        format,
+        format: outputFormat,
         totalGrossPay: totalGrossPay.toFixed(2),
         totalNetPay: totalNetPay.toFixed(2),
       },
     });
 
     // Return JSON or CSV based on format
-    if (format === "csv") {
+    if (outputFormat === "csv") {
       const csvHeader = "Account,Type,Amount,Reference,Date";
       const csvRows = journalEntries.map(
         (entry) =>

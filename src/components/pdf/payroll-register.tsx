@@ -228,9 +228,7 @@ export function PayrollRegisterDocument({
             <Text style={[styles.td, styles.colEmpNo]}>
               {r.employee.employeeNo}
             </Text>
-            <Text style={[styles.td, styles.colPos]} numberOfLines={2}>
-              {r.positionTitle}
-            </Text>
+            <Text style={[styles.td, styles.colPos]}>{r.positionTitle}</Text>
             <Text style={[styles.td, styles.colSG]}>
               {r.salaryGrade}-{r.step}
             </Text>

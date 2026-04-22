@@ -24,7 +24,7 @@ export default async function OrgProfilePage() {
   const user = await requireAuth();
 
   // Super admin only
-  if (!hasPermission(user.role, "system", "write")) {
+  if (!hasPermission(user.role, "admin", "edit")) {
     redirect("/dashboard");
   }
 

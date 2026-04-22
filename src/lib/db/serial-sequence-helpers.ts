@@ -75,13 +75,14 @@ export async function getNextSequence(
     `,
   );
 
-  if (!result.rows || result.rows.length === 0) {
+  const rows = Array.from(result);
+  if (rows.length === 0) {
     throw new Error(
       `Failed to generate sequence for ${documentType}-${targetYear}`,
     );
   }
 
-  return result.rows[0].last_sequence;
+  return rows[0]!.last_sequence;
 }
 
 /**
@@ -171,5 +172,5 @@ export async function getCurrentSequence(
     )
     .limit(1);
 
-  return result.length > 0 ? result[0].lastSequence : 0;
+  return result.length > 0 ? (result[0]?.lastSequence ?? 0) : 0;
 }

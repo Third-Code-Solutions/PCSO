@@ -170,7 +170,7 @@ function findConsecutiveStreak(
 
   while (streakEnd >= requiredCount - 1) {
     // If the current (newest) record qualifies, extend streak backwards
-    if (!predicate(ratings[streakEnd].adjectivalRating)) {
+    if (!predicate(ratings[streakEnd]!.adjectivalRating)) {
       streakEnd--;
       continue;
     }
@@ -179,7 +179,7 @@ function findConsecutiveStreak(
     let streakStart = streakEnd;
     while (
       streakStart > 0 &&
-      predicate(ratings[streakStart - 1].adjectivalRating)
+      predicate(ratings[streakStart - 1]!.adjectivalRating)
     ) {
       streakStart--;
     }
