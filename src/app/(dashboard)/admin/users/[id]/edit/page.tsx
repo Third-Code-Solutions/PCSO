@@ -14,9 +14,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { updateUser } from "../../actions";
+import {
+  updateUser,
+  getUserForEdit,
+  searchEmployeesForPicker,
+} from "../../actions";
 import { SYSTEM_ROLE_VALUES } from "@/lib/validations/admin";
-import { createBrowserClient } from "@/lib/supabase/client";
+import { Search, X } from "lucide-react";
 
 const ROLE_LABELS: Record<(typeof SYSTEM_ROLE_VALUES)[number], string> = {
   super_admin: "Super Admin",
@@ -26,6 +30,12 @@ const ROLE_LABELS: Record<(typeof SYSTEM_ROLE_VALUES)[number], string> = {
   viewer: "Viewer",
   employee_self_service: "Employee (Self-Service)",
 };
+
+interface EmployeeOption {
+  id: string;
+  name: string;
+  employeeNo: string;
+}
 
 export default function EditUserPage() {
   const router = useRouter();
@@ -37,41 +47,95 @@ export default function EditUserPage() {
   );
   const [officeId, setOfficeId] = React.useState("");
 
-  // Load current user values so the form is pre-populated.
+  // Employee picker state
+  const [employeeId, setEmployeeId] = React.useState<string | null>(null);
+  const [employeeDisplay, setEmployeeDisplay] = React.useState(""); // "Name — EmpNo"
+  const [empSearch, setEmpSearch] = React.useState("");
+  const [empResults, setEmpResults] = React.useState<EmployeeOption[]>([]);
+  const [empSearching, setEmpSearching] = React.useState(false);
+  const [empDropdownOpen, setEmpDropdownOpen] = React.useState(false);
+  const empRef = React.useRef<HTMLDivElement>(null);
+
+  // Load current user values via server action (bypasses RLS)
   React.useEffect(() => {
-    const supabase = createBrowserClient();
     void (async () => {
       try {
-        const { data, error } = await supabase
-          .from("system_users")
-          .select("role, office_id")
-          .eq("id", id)
-          .single();
-
-        if (error || !data) {
-          toast.error("Could not load user details.");
-          return;
-        }
+        const data = await getUserForEdit(id);
         setRole(
           (data.role as (typeof SYSTEM_ROLE_VALUES)[number]) ??
             "employee_self_service",
         );
-        setOfficeId((data.office_id as string | null) ?? "");
+        setOfficeId(data.officeId ?? "");
+        setEmployeeId(data.employeeId);
+        if (data.employeeName) {
+          setEmployeeDisplay(
+            data.employeeNo
+              ? `${data.employeeName} — ${data.employeeNo}`
+              : data.employeeName,
+          );
+        }
+      } catch {
+        toast.error("Could not load user details.");
       } finally {
         setLoading(false);
       }
     })();
   }, [id]);
 
+  // Employee live search with debounce
+  React.useEffect(() => {
+    if (empSearch.trim().length < 2) {
+      setEmpResults([]);
+      return;
+    }
+    setEmpSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const results = await searchEmployeesForPicker(empSearch);
+        setEmpResults(results);
+        setEmpDropdownOpen(results.length > 0);
+      } finally {
+        setEmpSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [empSearch]);
+
+  // Close dropdown on outside click
+  React.useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (empRef.current && !empRef.current.contains(e.target as Node)) {
+        setEmpDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function selectEmployee(emp: EmployeeOption) {
+    setEmployeeId(emp.id);
+    setEmployeeDisplay(`${emp.name} — ${emp.employeeNo}`);
+    setEmpSearch("");
+    setEmpResults([]);
+    setEmpDropdownOpen(false);
+  }
+
+  function clearEmployee() {
+    setEmployeeId(null);
+    setEmployeeDisplay("");
+    setEmpSearch("");
+    setEmpResults([]);
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPending(true);
-
     try {
       await updateUser({
         id,
         role,
         officeId: officeId.trim() !== "" ? officeId.trim() : null,
+        employeeId: employeeId ?? null,
       });
       toast.success("User updated successfully");
       router.push(`/admin/users/${id}`);
@@ -97,7 +161,7 @@ export default function EditUserPage() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Edit User"
-        description="Update role and office scope assignment."
+        description="Update role, office scope, and linked employee."
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Admin", href: "/admin" },
@@ -107,6 +171,7 @@ export default function EditUserPage() {
       />
 
       <form onSubmit={handleSubmit} className="max-w-lg space-y-6">
+        {/* Role */}
         <div className="space-y-2">
           <Label htmlFor="role">Role</Label>
           <Select
@@ -129,6 +194,7 @@ export default function EditUserPage() {
           </Select>
         </div>
 
+        {/* Office scope */}
         <div className="space-y-2">
           <Label htmlFor="officeId">Office scope (optional)</Label>
           <Input
@@ -140,6 +206,69 @@ export default function EditUserPage() {
           />
           <p className="text-xs text-muted-foreground">
             Leave blank to grant org-wide access (subject to role permissions).
+          </p>
+        </div>
+
+        {/* Employee link */}
+        <div className="space-y-2">
+          <Label>Linked employee (optional)</Label>
+
+          {employeeId && employeeDisplay ? (
+            <div className="flex items-center gap-2 rounded-md border border-input bg-muted px-3 py-2 text-sm">
+              <span className="flex-1">{employeeDisplay}</span>
+              <button
+                type="button"
+                onClick={clearEmployee}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Remove employee link"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="relative" ref={empRef}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name or employee number…"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  onFocus={() =>
+                    empResults.length > 0 && setEmpDropdownOpen(true)
+                  }
+                  className="pl-9"
+                />
+                {empSearching && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    Searching…
+                  </span>
+                )}
+              </div>
+
+              {empDropdownOpen && empResults.length > 0 && (
+                <ul className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-md">
+                  {empResults.map((emp) => (
+                    <li key={emp.id}>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                        onClick={() => selectEmployee(emp)}
+                      >
+                        <span className="font-medium">{emp.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {emp.employeeNo}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Links this system account to an employee record for profile,
+            payslip, and self-service access.
           </p>
         </div>
 

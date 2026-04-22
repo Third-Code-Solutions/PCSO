@@ -333,6 +333,79 @@ export async function deleteUser(userId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// getUserForEdit
+// Returns the current role, officeId, and employeeId for the edit form.
+// Uses supabaseAdmin to bypass RLS.
+// ---------------------------------------------------------------------------
+export async function getUserForEdit(userId: string): Promise<{
+  role: string;
+  officeId: string | null;
+  employeeId: string | null;
+  employeeName: string | null;
+  employeeNo: string | null;
+}> {
+  await requirePermission("admin", "view");
+
+  const { data, error } = await supabaseAdmin
+    .from("system_users")
+    .select(
+      "role, office_id, employee_id, employees(first_name, last_name, employee_no)",
+    )
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) throw new Error("User not found");
+
+  const empRaw = data.employees as unknown;
+  const emp =
+    empRaw && !Array.isArray(empRaw)
+      ? (empRaw as {
+          first_name: string;
+          last_name: string;
+          employee_no: string;
+        })
+      : null;
+
+  return {
+    role: data.role as string,
+    officeId: (data.office_id as string | null) ?? null,
+    employeeId: (data.employee_id as string | null) ?? null,
+    employeeName: emp ? `${emp.first_name} ${emp.last_name}` : null,
+    employeeNo: emp?.employee_no ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// searchEmployeesForPicker
+// Returns up to 10 employees matching a search term (name or employee number).
+// Used by the employee combobox in the edit user form.
+// ---------------------------------------------------------------------------
+export async function searchEmployeesForPicker(
+  term: string,
+): Promise<{ id: string; name: string; employeeNo: string }[]> {
+  await requirePermission("admin", "view");
+
+  const needle = `%${term.trim()}%`;
+
+  const { data, error } = await supabaseAdmin
+    .from("employees")
+    .select("id, first_name, last_name, employee_no")
+    .or(
+      `first_name.ilike.${needle},last_name.ilike.${needle},employee_no.ilike.${needle}`,
+    )
+    .eq("is_deleted", false)
+    .limit(10);
+
+  if (error) return [];
+
+  return (data ?? []).map((e) => ({
+    id: e.id as string,
+    name: `${e.first_name} ${e.last_name}`,
+    employeeNo: e.employee_no as string,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // sendPasswordReset
 // Triggers Supabase's built-in password reset email flow.
 // ---------------------------------------------------------------------------
