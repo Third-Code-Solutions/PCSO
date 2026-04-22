@@ -15,19 +15,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run ESLint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Run TypeScript type check
-        run: npm run type-check
+        run: pnpm run type-check
 
   test:
     name: Unit Tests
@@ -36,19 +40,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run unit tests
-        run: npm run test
+        run: pnpm run test
         env:
-          # Unit tests use mocks; no real DB connection required.
-          # Stub values satisfy any env-var guards at module init time.
           NEXT_PUBLIC_SUPABASE_URL: https://test.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
           SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
@@ -60,24 +66,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Next.js application
-        run: npm run build
+        run: pnpm run build
         env:
-          # Dummy values satisfy build-time env-var validation.
-          # Real secrets are injected by Vercel at deploy time.
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
           SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
           RESEND_API_KEY: placeholder-resend-key
           SENTRY_DSN: https://placeholder@o0.ingest.sentry.io/0
-          # Skip Sentry source map upload during CI build
           SENTRY_AUTH_TOKEN: placeholder
           NEXT_TELEMETRY_DISABLED: 1
