@@ -1,9 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth/guards";
+import { PageHeader } from "@/components/layouts/page-header";
 import { db } from "@/lib/db";
 import { gsisRemittanceBatches } from "@/lib/db/schema";
-import { eq, and, isNull, count, gte, sql } from "drizzle-orm";
+import { eq, and, isNull, count, gte } from "drizzle-orm";
 import { getGsisBatches } from "./actions";
 import { GsisBatchTable } from "@/components/remittances/gsis-batch-table";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
@@ -109,29 +110,31 @@ export default async function GsisRemittancePage() {
       <RealtimeBoundary tables={["gsis_remittance_batches"]} />
 
       {/* Page header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-pcso-navy">GSIS Remittance</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Generate, export, and track GSIS remittance batches per payroll
-            period.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/remittances/gsis/retirement"
-            className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
-          >
-            Retirement Tracker
-          </Link>
-          <Link
-            href="/remittances/gsis/new"
-            className="rounded-lg bg-pcso-navy px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-pcso-navy-light"
-          >
-            Generate Batch
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="GSIS Remittance"
+        description="Generate, export, and track GSIS contribution batches per payroll period. Employee share: 9% · Employer share: 12%."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Remittances", href: "/remittances" },
+          { label: "GSIS" },
+        ]}
+        actions={
+          <div className="flex items-center gap-3">
+            <Link
+              href="/remittances/gsis/retirement"
+              className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
+            >
+              Retirement Tracker
+            </Link>
+            <Link
+              href="/remittances/gsis/new"
+              className="rounded-lg bg-pcso-navy px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-pcso-navy-light"
+            >
+              Generate Batch
+            </Link>
+          </div>
+        }
+      />
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

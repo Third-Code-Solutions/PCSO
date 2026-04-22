@@ -22,6 +22,13 @@ import {
   ChevronDown,
   ChevronRight,
   Megaphone,
+  Banknote,
+  CreditCard,
+  PiggyBank,
+  ArrowUpDown,
+  Scale,
+  Landmark,
+  Coins,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import {
@@ -354,6 +361,46 @@ const NAV_ITEMS: NavItem[] = [
         roles: ["super_admin", "payroll_admin"],
       },
       {
+        label: "Benefits & Bonuses",
+        href: "/payroll/benefits",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
+        label: "Cash Advance",
+        href: "/payroll/cash-advance",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
+        label: "Salary Differential",
+        href: "/payroll/differential",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
+        label: "Loan Ledger",
+        href: "/payroll/loans",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
+        label: "RATA Payroll",
+        href: "/payroll/rata",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
+        label: "Special Payroll",
+        href: "/payroll/special",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
+        label: "Magna Carta",
+        href: "/payroll/magna-carta",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
+        label: "Bank Configs",
+        href: "/payroll/bank-configs",
+        roles: ["super_admin", "payroll_admin"],
+      },
+      {
         label: "My Payslips",
         href: "/payroll/payslips",
         roles: ["super_admin", "employee_self_service"],
@@ -369,9 +416,19 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["super_admin", "payroll_admin", "viewer"],
     children: [
       {
+        label: "Overview",
+        href: "/remittances",
+        roles: ["super_admin", "payroll_admin", "viewer"],
+      },
+      {
         label: "GSIS",
         href: "/remittances/gsis",
         roles: ["super_admin", "payroll_admin", "viewer"],
+      },
+      {
+        label: "GSIS Retirement",
+        href: "/remittances/gsis/retirement",
+        roles: ["super_admin", "payroll_admin"],
       },
       {
         label: "PhilHealth",

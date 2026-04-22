@@ -1,25 +1,24 @@
-import Link from 'next/link';
-import { Plus, Users } from 'lucide-react';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { PeriodStatusBadge } from '@/components/payroll/period-status-badge';
-import { requirePermission } from '@/lib/auth/guards';
-import { getPayrollPeriods } from '../queries';
-import type { PayrollPeriod } from '@/lib/db/schema';
+import Link from "next/link";
+import { Plus, Users } from "lucide-react";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { PeriodStatusBadge } from "@/components/payroll/period-status-badge";
+import { requirePermission } from "@/lib/auth/guards";
+import { getPayrollPeriods } from "../queries";
+import type { PayrollPeriod } from "@/lib/db/schema";
 
 function formatDate(d: string): string {
-  return new Date(d).toLocaleDateString('en-PH', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+  return new Date(d).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
 }
 
 function formatPeso(value: string | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return "—";
   const num = parseFloat(value);
-  return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function JoCosCard({ period }: { period: PayrollPeriod }) {
@@ -48,7 +47,7 @@ function JoCosCard({ period }: { period: PayrollPeriod }) {
           <div className="rounded-lg bg-muted/40 p-2">
             <p className="text-xs text-muted-foreground">Contractors</p>
             <p className="mt-0.5 text-sm font-semibold text-[#0B2545]">
-              {period.employeeCount ?? '—'}
+              {period.employeeCount ?? "—"}
             </p>
           </div>
           <div className="rounded-lg bg-muted/40 p-2">
@@ -63,10 +62,12 @@ function JoCosCard({ period }: { period: PayrollPeriod }) {
   );
 }
 
-export default async function JoCosPayrollPage() {
-  await requirePermission('payroll', 'view');
+export const metadata = { title: "JO / COS Payroll Runs" };
 
-  const periods = await getPayrollPeriods({ scope: 'jo_cos', limit: 50 });
+export default async function JoCosPayrollPage() {
+  await requirePermission("payroll", "view");
+
+  const periods = await getPayrollPeriods({ scope: "jo_cos", limit: 50 });
 
   return (
     <main className="space-y-6">
@@ -74,13 +75,17 @@ export default async function JoCosPayrollPage() {
         title="JO / COS Payroll Runs"
         description="Payroll periods for Job Order and Contract of Service employees. These are processed separately — no mandatory government deductions apply."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Payroll', href: '/payroll' },
-          { label: 'JO/COS Runs' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Payroll", href: "/payroll" },
+          { label: "JO/COS Runs" },
         ]}
         actions={
-          <Button size="sm" asChild className="bg-[#0B2545] text-white hover:bg-[#13315C]">
-            <Link href="/payroll/new">
+          <Button
+            size="sm"
+            asChild
+            className="bg-[#0B2545] text-white hover:bg-[#13315C]"
+          >
+            <Link href="/payroll/new?type=jo_cos">
               <Plus className="mr-2 h-4 w-4" />
               New JO/COS Period
             </Link>
@@ -95,8 +100,12 @@ export default async function JoCosPayrollPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Create a new period with scope set to "JO/COS" to get started.
           </p>
-          <Button size="sm" asChild className="mt-6 bg-[#0B2545] text-white hover:bg-[#13315C]">
-            <Link href="/payroll/new">
+          <Button
+            size="sm"
+            asChild
+            className="mt-6 bg-[#0B2545] text-white hover:bg-[#13315C]"
+          >
+            <Link href="/payroll/new?type=jo_cos">
               <Plus className="mr-2 h-4 w-4" />
               Create JO/COS Period
             </Link>
@@ -107,9 +116,9 @@ export default async function JoCosPayrollPage() {
           {/* Key difference callout */}
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
             <p className="text-sm text-blue-800">
-              <strong>JO/COS rules:</strong> Basic pay only. No GSIS, PhilHealth, Pag-IBIG,
-              RATA, longevity pay, or PERA. Withholding tax applies to amounts above the
-              TRAIN Law exemption threshold.
+              <strong>JO/COS rules:</strong> Basic pay only. No GSIS,
+              PhilHealth, Pag-IBIG, RATA, longevity pay, or PERA. Withholding
+              tax applies to amounts above the TRAIN Law exemption threshold.
             </p>
           </div>
 

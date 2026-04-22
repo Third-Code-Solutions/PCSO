@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/layouts/page-header";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requirePermission } from "@/lib/auth/guards";
 import { getPhilHealthBatches } from "./actions";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default async function PhilHealthPage() {
+  await requirePermission("remittances", "view");
   const batches = await getPhilHealthBatches({ page: 1, perPage: 25 });
 
   return (
@@ -35,7 +37,12 @@ export default async function PhilHealthPage() {
       <RealtimeBoundary tables={["remittance_batches"]} />
       <PageHeader
         title="PhilHealth Remittance"
-        description="RF-1 form generation · EPRS CSV export · Contribution tracking"
+        description="RF-1 form generation · EPRS CSV export · Contribution tracking. Premium rate: 5% (2.5% EE + 2.5% ER). Salary ceiling: ₱100,000/month."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Remittances", href: "/remittances" },
+          { label: "PhilHealth" },
+        ]}
         actions={
           <Link
             href="/remittances/philhealth/new"
