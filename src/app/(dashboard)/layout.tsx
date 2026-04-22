@@ -38,6 +38,7 @@ export default function DashboardLayout({
   const displayName = auth.user?.email?.split("@")[0] ?? "User";
   const displayEmail = auth.user?.email ?? "";
   const role = auth.user?.role ?? "employee_self_service";
+  const employeeId = auth.user?.employeeId ?? null;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -46,6 +47,7 @@ export default function DashboardLayout({
         mobileOpen={mobileOpen}
         onClose={() => setMobileOpen(false)}
         role={role}
+        employeeId={employeeId}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">
