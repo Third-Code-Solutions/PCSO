@@ -217,17 +217,29 @@ function buildRoleConfig(
         };
       }
       return {
-        title: "Dashboard",
-        description: "PCSO HRIS overview",
-        tables: ADMIN_REALTIME_TABLES,
+        title: "My Dashboard",
+        description: "PCSO HRIS — Employee Self-Service",
+        tables: [],
         body: (
-          <Suspense fallback={<KpiGridSkeleton />}>
-            <AdminKpisSection />
-          </Suspense>
+          <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+            Your account is not yet linked to an employee record. Contact HR to
+            complete your profile setup.
+          </div>
         ),
       };
 
     case "viewer":
+      return {
+        title: "Dashboard",
+        description: "PCSO HRIS overview",
+        tables: AUDIT_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <AuditorKpisSection />
+          </Suspense>
+        ),
+      };
+
     default:
       return {
         title: "Dashboard",

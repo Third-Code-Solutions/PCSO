@@ -11,7 +11,7 @@
  */
 
 import { useState, useTransition, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-count";
@@ -133,14 +133,21 @@ export function DtrClient({
   minYear,
   minMonth,
 }: DtrClientProps) {
-  // Stable reference — prevents the effect from re-running on every render.
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Only subscribe to realtime updates when we are actually on the DTR page.
+  // Passing an empty array disables the hook, preventing router.refresh() from
+  // firing after the user navigates away (the channel teardown is async and
+  // events can arrive in the brief window before the channel is fully removed).
   const realtimeTables = useMemo(
-    () => ["attendance_logs", "dtr_periods"] as const,
-    [],
+    () =>
+      pathname.startsWith("/attendance/dtr")
+        ? (["attendance_logs", "dtr_periods"] as const)
+        : ([] as const),
+    [pathname],
   );
   useRealtimeRefresh(realtimeTables);
-
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -259,7 +266,9 @@ export function DtrClient({
         year,
       });
       toast.success(`DTR submitted for ${monthLabel}.`);
-      router.refresh();
+      if (pathname.startsWith("/attendance/dtr")) {
+        router.refresh();
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to submit DTR.";

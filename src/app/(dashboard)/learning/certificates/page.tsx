@@ -5,7 +5,7 @@
  * Allows HR Admin to generate certificates for completed participants.
  */
 
-import { desc, eq, isNull, and } from "drizzle-orm";
+import { desc, eq, isNull, and, count } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/guards";
 import { PageHeader } from "@/components/layouts/page-header";
 import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
@@ -69,7 +69,7 @@ export default async function CertificatesListPage({
   // Get stats for header
   const stats = await db
     .select({
-      totalCertificates: db.$count(trainingCertificates.id),
+      totalCertificates: count(trainingCertificates.id),
     })
     .from(trainingCertificates)
     .then((r) => r[0]);

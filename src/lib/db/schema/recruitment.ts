@@ -592,9 +592,9 @@ export const appointments = pgTable(
     ...softDelete,
   },
   (t) => [
-    index("appointments_status_idx").on(t.status),
-    index("appointments_vacancy_idx").on(t.vacancyId),
-    index("appointments_application_idx").on(t.applicationId),
+    index("rpm_appointments_status_idx").on(t.status),
+    index("rpm_appointments_vacancy_idx").on(t.vacancyId),
+    index("rpm_appointments_application_idx").on(t.applicationId),
   ],
 );
 

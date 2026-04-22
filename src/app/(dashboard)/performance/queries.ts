@@ -6,6 +6,9 @@
  */
 
 import { createServerClient } from "@/lib/supabase/server";
+import { db } from "@/lib/db";
+import { adminCases, attendanceLogs, salnSubmissions } from "@/lib/db/schema";
+import { and, eq, inArray, isNull, gte, lte } from "drizzle-orm";
 import type { AdjectivalRating } from "@/lib/constants/performance";
 import { RATING_BANDS } from "@/lib/constants/performance";
 import {
@@ -1438,10 +1441,64 @@ export async function getPbbQualificationList(): Promise<PbbListResult> {
       `Failed to fetch IPCRF ratings for PBB: ${ratingsError.message}`,
     );
 
-  // For each employee, check 4 gates
-  // Note: Gate 2 (admin_cases), Gate 3 (attendance_records AWOL), Gate 4 (saln_submissions)
-  // are TODO placeholders here — these tables may not exist yet in the schema.
-  // We'll return mock gates for now.
+  // Batch-fetch gate 2/3/4 data for all employees to avoid N+1 queries
+  const employeeIds = (ratingsData ?? [])
+    .map((r) => String(r.employee_id))
+    .filter(Boolean);
+
+  const currentYear = new Date().getFullYear();
+  const yearStart = `${currentYear}-01-01`;
+  const yearEnd = `${currentYear}-12-31`;
+
+  const [adminCaseRows, awolRows, salnRows] =
+    employeeIds.length > 0
+      ? await Promise.all([
+          // Gate 2: employees with a pending admin case
+          db
+            .select({ employeeId: adminCases.employeeId })
+            .from(adminCases)
+            .where(
+              and(
+                inArray(adminCases.employeeId, employeeIds),
+                eq(adminCases.status, "pending"),
+              ),
+            ),
+          // Gate 3: AWOL — attendance log with no time-in in current calendar year
+          db
+            .select({ employeeId: attendanceLogs.employeeId })
+            .from(attendanceLogs)
+            .where(
+              and(
+                inArray(attendanceLogs.employeeId, employeeIds),
+                isNull(attendanceLogs.timeIn),
+                gte(attendanceLogs.logDate, yearStart),
+                lte(attendanceLogs.logDate, yearEnd),
+              ),
+            ),
+          // Gate 4: SALN filed (submitted/received/verified) this calendar year
+          db
+            .select({ employeeId: salnSubmissions.employeeId })
+            .from(salnSubmissions)
+            .where(
+              and(
+                inArray(salnSubmissions.employeeId, employeeIds),
+                eq(salnSubmissions.year, currentYear),
+                inArray(salnSubmissions.status, [
+                  "submitted",
+                  "received",
+                  "verified",
+                ]),
+              ),
+            ),
+        ])
+      : [[], [], []];
+
+  const employeesWithPendingCase = new Set(
+    adminCaseRows.map((r) => r.employeeId),
+  );
+  const employeesWithAwol = new Set(awolRows.map((r) => r.employeeId));
+  const employeesWithSaln = new Set(salnRows.map((r) => r.employeeId));
+
   const results: PbbQualificationResult[] = [];
 
   for (const r of ratingsData ?? []) {
@@ -1453,10 +1510,9 @@ export async function getPbbQualificationList(): Promise<PbbListResult> {
     const empName = `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim();
     const ipcrfRating = parseFloat(String(r.numerical_rating ?? "0"));
 
-    // TODO: Replace these with actual queries to admin_cases, attendance_records, saln_submissions
-    const hasPendingAdminCase = false; // Placeholder
-    const hadAwol = false; // Placeholder
-    const salnFiled = true; // Placeholder
+    const hasPendingAdminCase = employeesWithPendingCase.has(empId);
+    const hadAwol = employeesWithAwol.has(empId);
+    const salnFiled = employeesWithSaln.has(empId);
 
     const gates: PbbQualificationGates = {
       gate1_rating: ipcrfRating >= 2.5,
