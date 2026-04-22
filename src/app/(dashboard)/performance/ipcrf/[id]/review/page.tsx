@@ -4,13 +4,14 @@
  * Supervisor fills in per-KRA ratings. System computes weighted final rating.
  */
 
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { IpcrfForm } from '@/components/performance/ipcrf-form';
-import { saveIpcrfReview, submitIpcrfReview } from '../../../actions';
-import type { IpcrfFormData } from '@/components/performance/ipcrf-form';
+import * as React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { IpcrfForm } from "@/components/performance/ipcrf-form";
+import { saveIpcrfReview, submitIpcrfReview } from "../../../actions";
+import type { IpcrfFormData } from "@/components/performance/ipcrf-form";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -33,7 +34,9 @@ export default function IpcrfReviewPage({ params }: Props) {
   }
 
   async function handleSave(data: IpcrfFormData) {
-    const krasWithRatings = data.kras.filter((k) => typeof k.rating === 'number');
+    const krasWithRatings = data.kras.filter(
+      (k) => typeof k.rating === "number",
+    );
     if (krasWithRatings.length === 0) return;
 
     await saveIpcrfReview({
@@ -53,7 +56,9 @@ export default function IpcrfReviewPage({ params }: Props) {
   }
 
   async function handleSubmit(data: IpcrfFormData) {
-    const krasWithRatings = data.kras.filter((k) => typeof k.rating === 'number');
+    const krasWithRatings = data.kras.filter(
+      (k) => typeof k.rating === "number",
+    );
 
     await submitIpcrfReview({
       performanceRatingId: ratingId!,
@@ -77,17 +82,35 @@ export default function IpcrfReviewPage({ params }: Props) {
     <main className="mx-auto max-w-4xl px-4 py-6">
       <div className="mb-6">
         <nav className="mb-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-          <a href="/performance" className="hover:text-foreground transition-colors">Performance</a>
+          <Link
+            href="/performance"
+            className="hover:text-foreground transition-colors"
+          >
+            Performance
+          </Link>
           <span>/</span>
-          <a href="/performance/ipcrf" className="hover:text-foreground transition-colors">My IPCRF</a>
+          <Link
+            href="/performance/ipcrf"
+            className="hover:text-foreground transition-colors"
+          >
+            My IPCRF
+          </Link>
           <span>/</span>
-          <a href={`/performance/ipcrf/${ratingId}`} className="hover:text-foreground transition-colors">Detail</a>
+          <Link
+            href={`/performance/ipcrf/${ratingId}`}
+            className="hover:text-foreground transition-colors"
+          >
+            Detail
+          </Link>
           <span>/</span>
           <span className="text-foreground font-medium">Review</span>
         </nav>
-        <h1 className="text-2xl font-semibold text-foreground">Performance Review</h1>
+        <h1 className="text-2xl font-semibold text-foreground">
+          Performance Review
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Phase 3 — Rate each KRA (1.000–5.000). The system computes the weighted final rating automatically.
+          Phase 3 — Rate each KRA (1.000–5.000). The system computes the
+          weighted final rating automatically.
         </p>
       </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { generateRemittanceList } from "../actions";
@@ -87,9 +88,9 @@ export default function NewGsisBatchPage() {
             <p className="text-xs text-zinc-400">
               The period must be in &quot;Approved&quot; or &quot;Paid&quot;
               status. Navigate to{" "}
-              <a href="/payroll" className="underline">
+              <Link href="/payroll" className="underline">
                 Payroll
-              </a>{" "}
+              </Link>{" "}
               to copy the period ID.
             </p>
           </div>

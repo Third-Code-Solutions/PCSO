@@ -6,6 +6,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layouts/page-header";
 import { generatePhilHealthBatch } from "../actions";
@@ -118,12 +119,12 @@ export default function PhilHealthNewPage() {
             >
               {loading ? "Generating…" : "Generate Batch"}
             </button>
-            <a
+            <Link
               href="/remittances/philhealth"
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-50"
             >
               Cancel
-            </a>
+            </Link>
           </div>
         </form>
       </div>

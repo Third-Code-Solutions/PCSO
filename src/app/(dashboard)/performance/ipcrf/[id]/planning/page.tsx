@@ -4,13 +4,14 @@
  * Employees define their KRAs, weights, and targets for the semester.
  */
 
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { IpcrfForm } from '@/components/performance/ipcrf-form';
-import { saveIpcrfPlanning, submitIpcrfPlanning } from '../../../actions';
-import type { IpcrfFormData } from '@/components/performance/ipcrf-form';
+import * as React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { IpcrfForm } from "@/components/performance/ipcrf-form";
+import { saveIpcrfPlanning, submitIpcrfPlanning } from "../../../actions";
+import type { IpcrfFormData } from "@/components/performance/ipcrf-form";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -65,17 +66,35 @@ export default function IpcrfPlanningPage({ params }: Props) {
     <main className="mx-auto max-w-4xl px-4 py-6">
       <div className="mb-6">
         <nav className="mb-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-          <a href="/performance" className="hover:text-foreground transition-colors">Performance</a>
+          <Link
+            href="/performance"
+            className="hover:text-foreground transition-colors"
+          >
+            Performance
+          </Link>
           <span>/</span>
-          <a href="/performance/ipcrf" className="hover:text-foreground transition-colors">My IPCRF</a>
+          <Link
+            href="/performance/ipcrf"
+            className="hover:text-foreground transition-colors"
+          >
+            My IPCRF
+          </Link>
           <span>/</span>
-          <a href={`/performance/ipcrf/${ratingId}`} className="hover:text-foreground transition-colors">Detail</a>
+          <Link
+            href={`/performance/ipcrf/${ratingId}`}
+            className="hover:text-foreground transition-colors"
+          >
+            Detail
+          </Link>
           <span>/</span>
           <span className="text-foreground font-medium">Planning</span>
         </nav>
-        <h1 className="text-2xl font-semibold text-foreground">Performance Planning</h1>
+        <h1 className="text-2xl font-semibold text-foreground">
+          Performance Planning
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Phase 1 — Define your Key Result Areas, weights, and performance targets for this semester.
+          Phase 1 — Define your Key Result Areas, weights, and performance
+          targets for this semester.
         </p>
       </div>
 

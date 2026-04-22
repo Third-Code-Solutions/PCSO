@@ -17,23 +17,25 @@
  * Run:
  *   npx tsx scripts/test-notifications-concurrent.ts
  */
-import { config } from 'dotenv';
-import postgres from 'postgres';
-import { randomUUID } from 'node:crypto';
+import { config } from "dotenv";
+import postgres from "postgres";
+import { randomUUID } from "node:crypto";
 
-config({ path: '.env.local' });
-config({ path: '.env' });
+config({ path: ".env.local" });
+config({ path: ".env" });
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
-  console.error('DATABASE_URL is not set. Populate .env.local and retry.');
+  console.error("DATABASE_URL is not set. Populate .env.local and retry.");
   process.exit(1);
 }
 
-const isTransactionPooler = DATABASE_URL.includes(':6543');
+const isTransactionPooler = DATABASE_URL.includes(":6543");
 const sql = postgres(DATABASE_URL, {
   max: 5,
-  ssl: DATABASE_URL.includes('supabase.co') ? { rejectUnauthorized: false } : false,
+  ssl: DATABASE_URL.includes("supabase.co")
+    ? { rejectUnauthorized: false }
+    : false,
   prepare: !isTransactionPooler,
 });
 
@@ -42,12 +44,12 @@ const SEED_TOTAL = 20;
 async function seed(userId: string): Promise<void> {
   const rows = Array.from({ length: SEED_TOTAL }, (_, i) => ({
     user_id: userId,
-    type: 'generic',
+    type: "generic",
     title: `Test notification ${i + 1}`,
     read_at: i % 2 === 0 ? new Date() : null,
   }));
   await sql`
-    INSERT INTO public.notifications ${sql(rows, 'user_id', 'type', 'title', 'read_at')}
+    INSERT INTO public.notifications ${sql(rows, "user_id", "type", "title", "read_at")}
   `;
 }
 
@@ -55,7 +57,7 @@ async function countFor(userId: string): Promise<number> {
   const rows = await sql<
     { c: number }[]
   >`SELECT count(*)::int as c FROM public.notifications WHERE user_id = ${userId}`;
-  return rows[0].c;
+  return rows[0]!.c;
 }
 
 async function clearRead(userId: string): Promise<number> {
@@ -82,7 +84,9 @@ async function main() {
 
   await seed(userId);
   const initial = await countFor(userId);
-  console.log(`[test] seeded ${initial} notifications (expected ${SEED_TOTAL})`);
+  console.log(
+    `[test] seeded ${initial} notifications (expected ${SEED_TOTAL})`,
+  );
 
   // Pass 1 — fully populated inbox, concurrent clearRead + clearAll.
   const [r1, r2] = await Promise.all([clearRead(userId), clearAll(userId)]);
@@ -122,14 +126,18 @@ async function main() {
     r6 === 0 &&
     r7 + r8 === SEED_TOTAL;
 
-  console.log('');
-  console.log(ok ? '[test] PASS — concurrent clears are safe & idempotent' : '[test] FAIL');
+  console.log("");
+  console.log(
+    ok
+      ? "[test] PASS — concurrent clears are safe & idempotent"
+      : "[test] FAIL",
+  );
   await sql.end();
   process.exit(ok ? 0 : 1);
 }
 
 main().catch(async (err) => {
-  console.error('[test] threw:', err);
+  console.error("[test] threw:", err);
   try {
     await sql.end();
   } catch {

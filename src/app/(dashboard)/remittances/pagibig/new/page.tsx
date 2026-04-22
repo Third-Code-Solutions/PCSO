@@ -5,6 +5,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layouts/page-header";
 import { generatePagibigBatch } from "../actions";
@@ -100,12 +101,12 @@ export default function PagibigNewPage() {
             >
               {loading ? "Generating…" : "Generate Batch"}
             </button>
-            <a
+            <Link
               href="/remittances/pagibig"
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
             >
               Cancel
-            </a>
+            </Link>
           </div>
         </form>
       </div>
