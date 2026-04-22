@@ -632,15 +632,63 @@ export async function getPayrollAdminKpis(): Promise<PayrollAdminKpis> {
 /**
  * Leave-approver dashboard KPIs.
  *
- * `approverUserId` is the system_users.id of the current approver. At the DB
- * level we don't have per-approver queue routing yet, so this returns the
- * overall pending queue — callers still use role-gated access.
+ * `approverUserId` is the system_users.id of the current approver.
+ * When `officeId` is provided, counts are scoped to employees in that office.
+ * Falls back to org-wide counts when `officeId` is null/undefined.
  */
 export async function getLeaveApproverKpis(
   _approverUserId: string,
+  officeId?: string | null,
 ): Promise<LeaveApproverKpis> {
   const today = new Date().toISOString().slice(0, 10);
 
+  if (officeId) {
+    // Scoped to the approver's unit: join leaveApplications → employees and
+    // filter on employees.officeId.
+    const [pendingRow, approvedTodayRow, onLeaveTodayRow] = await Promise.all([
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
+        .where(
+          and(
+            eq(leaveApplications.status, "pending"),
+            eq(employees.officeId, officeId),
+          ),
+        ),
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
+        .where(
+          and(
+            eq(leaveApplications.status, "approved"),
+            gte(leaveApplications.approvedAt, new Date(`${today}T00:00:00Z`)),
+            eq(employees.officeId, officeId),
+          ),
+        ),
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
+        .where(
+          and(
+            eq(leaveApplications.status, "approved"),
+            lte(leaveApplications.dateFrom, today),
+            gte(leaveApplications.dateTo, today),
+            eq(employees.officeId, officeId),
+          ),
+        ),
+    ]);
+
+    return {
+      pendingMyApprovals: Number(pendingRow[0]?.c ?? 0),
+      approvedLeavesToday: Number(approvedTodayRow[0]?.c ?? 0),
+      teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+    };
+  }
+
+  // Graceful fallback: org-wide counts when no officeId is provided.
   const [pendingRow, approvedTodayRow, onLeaveTodayRow] = await Promise.all([
     db
       .select({ c: count() })
@@ -698,14 +746,100 @@ export interface AuditorKpis {
 }
 
 /**
+ * Returns the count of pending overtime requests, optionally scoped to a set
+ * of employee IDs (for supervisor unit-scoping).
+ * Falls back to org-wide when `employeeIds` is null/undefined.
+ */
+async function getPendingOvertimeCountScoped(
+  employeeIds?: string[] | null,
+): Promise<number> {
+  try {
+    const supabase = await createServerClient();
+    let query = supabase
+      .from("overtime_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
+
+    if (employeeIds && employeeIds.length > 0) {
+      query = query.in("employee_id", employeeIds);
+    } else if (employeeIds && employeeIds.length === 0) {
+      // Office exists but has no employees — return 0 immediately.
+      return 0;
+    }
+
+    const { count: c } = await query;
+    return c ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Supervisor / manager dashboard KPIs.
- * Scoped at org-wide level until per-unit routing is implemented.
+ * When `officeId` is provided, counts are scoped to employees in that office.
+ * Falls back to org-wide counts when `officeId` is null/undefined.
  */
 export async function getSupervisorKpis(
   _supervisorUserId: string,
+  officeId?: string | null,
 ): Promise<SupervisorKpis> {
   const today = new Date().toISOString().slice(0, 10);
 
+  if (officeId) {
+    // Resolve employee IDs in the office first, then use them for all scoped
+    // sub-queries (including the Supabase OT query that lacks a Drizzle schema).
+    const unitEmployeeRows = await db
+      .select({ id: employees.id })
+      .from(employees)
+      .where(
+        and(
+          eq(employees.officeId, officeId),
+          eq(employees.status, "active"),
+          isNull(employees.deletedAt),
+        ),
+      );
+
+    const unitEmployeeIds = unitEmployeeRows.map((r) => r.id);
+
+    const [pendingRow, onLeaveTodayRow, pendingOt, upcomingHol] =
+      await Promise.all([
+        unitEmployeeIds.length > 0
+          ? db
+              .select({ c: count() })
+              .from(leaveApplications)
+              .where(
+                and(
+                  eq(leaveApplications.status, "pending"),
+                  inArray(leaveApplications.employeeId, unitEmployeeIds),
+                ),
+              )
+          : Promise.resolve([{ c: 0 }]),
+        unitEmployeeIds.length > 0
+          ? db
+              .select({ c: count() })
+              .from(leaveApplications)
+              .where(
+                and(
+                  eq(leaveApplications.status, "approved"),
+                  lte(leaveApplications.dateFrom, today),
+                  gte(leaveApplications.dateTo, today),
+                  inArray(leaveApplications.employeeId, unitEmployeeIds),
+                ),
+              )
+          : Promise.resolve([{ c: 0 }]),
+        getPendingOvertimeCountScoped(unitEmployeeIds),
+        getUpcomingHolidaysCount(),
+      ]);
+
+    return {
+      pendingTeamLeaves: Number(pendingRow[0]?.c ?? 0),
+      teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+      pendingOtApprovals: pendingOt,
+      upcomingHolidays: upcomingHol,
+    };
+  }
+
+  // Graceful fallback: org-wide counts when no officeId is provided.
   const [pendingRow, onLeaveTodayRow, pendingOt, upcomingHol] =
     await Promise.all([
       db

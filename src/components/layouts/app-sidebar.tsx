@@ -215,7 +215,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Overtime Approvals",
         href: "/attendance/overtime",
-        roles: ["super_admin", "hr_admin"],
+        roles: ["super_admin", "hr_admin", "leave_approver"],
       },
       {
         label: "Import Biometric",
@@ -618,6 +618,14 @@ const NAV_ITEMS: NavItem[] = [
         label: "Reports",
         href: "/learning/reports",
         roles: ["super_admin", "hr_admin", "viewer"],
+      },
+      // Self-service: LDM-014 — employees view scheduled trainings,
+      // confirm attendance, and download certificates via portal.
+      {
+        label: "My Training",
+        href: "/portal/training",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
       },
     ],
   },

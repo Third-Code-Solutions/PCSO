@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PipelineStageBadge } from "@/components/recruitment/pipeline-stage-badge";
+import { requireAuth } from "@/lib/auth/guards";
 import { listMrfs } from "@/lib/actions/rpm/mrf";
 import { listApplications } from "@/lib/actions/rpm/applicants";
 import { listActiveVacancies } from "@/lib/actions/rpm/mrf";
@@ -61,7 +62,18 @@ function StageCard({ label, count, icon, href, tone }: StageCardProps) {
   );
 }
 
+// Roles that may create a new MRF (mirrors mrf/new/page.tsx gate).
+const MRF_CREATE_ROLES: ReadonlyArray<string> = [
+  "super_admin",
+  "hr_admin",
+  "leave_approver",
+  "supervisor",
+];
+
 export default async function RecruitmentOverviewPage() {
+  const user = await requireAuth();
+  const canCreateMrf = MRF_CREATE_ROLES.includes(user.role);
+
   const [mrfResult, vacanciesResult, applicationsResult, appointmentsResult] =
     await Promise.all([
       (listMrfs as unknown as () => Promise<unknown>)().catch(() => null),
@@ -143,12 +155,14 @@ export default async function RecruitmentOverviewPage() {
           { label: "Recruitment" },
         ]}
         actions={
-          <Button size="sm" asChild>
-            <Link href="/recruitment/mrf/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New MRF
-            </Link>
-          </Button>
+          canCreateMrf ? (
+            <Button size="sm" asChild>
+              <Link href="/recruitment/mrf/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New MRF
+              </Link>
+            </Button>
+          ) : null
         }
       />
 

@@ -14,7 +14,15 @@ export const metadata: Metadata = {
   title: "New MRF",
 };
 
-const ALLOWED_ROLES: ReadonlyArray<Role> = ["super_admin", "hr_admin"];
+// Per PRD §11: Supervisor (Dept Head) may create MRFs for their own unit.
+// `leave_approver` is the legacy DB value for the `supervisor` role and is
+// expanded via `effectiveRolesOf()` at permission-check time.
+const ALLOWED_ROLES: ReadonlyArray<Role> = [
+  "super_admin",
+  "hr_admin",
+  "leave_approver",
+  "supervisor",
+];
 
 export default async function NewMrfPage() {
   const user = await requireAuth();

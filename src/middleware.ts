@@ -201,7 +201,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<RouteRule> = [
   // ── Recruitment & Promotion (RPM) ─────────────────────────────────────────
   {
     prefix: "/recruitment/mrf/new",
-    permission: { resource: "employees", action: "create" },
+    permission: { resource: "employees", action: "view" },
   },
   {
     prefix: "/recruitment/appointments/new",

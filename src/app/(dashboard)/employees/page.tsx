@@ -6,8 +6,13 @@ import { EmployeeFilters } from "@/components/employees/employee-filters";
 import { EmployeeListTable } from "@/components/employees/employee-list-table";
 import { EmployeeListSkeleton } from "@/components/employees/employee-list-skeleton";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requireAuth } from "@/lib/auth/guards";
+import { RoleGate } from "@/components/role-gate";
 import { getEmployees, getOfficesForSelect } from "./queries";
 import { EmployeeListParamsSchema } from "@/lib/validations/employees";
+import type { Role } from "@/lib/auth/permissions";
+
+const WRITE_ROLES: ReadonlyArray<Role> = ["super_admin", "hr_admin"];
 
 export const metadata = {
   title: "Employees",
@@ -19,6 +24,7 @@ interface PageProps {
 }
 
 export default async function EmployeesPage({ searchParams }: PageProps) {
+  const user = await requireAuth();
   const rawParams = await searchParams;
 
   // Flatten string arrays to first value for each key
@@ -28,21 +34,41 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
 
   const params = EmployeeListParamsSchema.parse(flatParams);
 
+  // Unit-scoped roles (supervisor / leave_approver) are restricted to their
+  // own office. Inject the user's officeId as the default filter unless the
+  // URL already carries an explicit officeId (supervisors can still drill into
+  // their own unit sub-views if the filter UI passes one, but the server will
+  // enforce the scope gate below).
+  const isUnitScoped =
+    (user.role === "supervisor" || user.role === "leave_approver") &&
+    user.officeId !== null;
+
+  // For unit-scoped roles, always enforce the user's own office — ignore any
+  // officeId the URL may carry to prevent scope-override attempts.
+  // The `isUnitScoped` guard above already ensures user.officeId is non-null
+  // when true; the non-null assertion makes that explicit to TypeScript.
+  const effectiveOfficeId: string | undefined = isUnitScoped
+    ? (user.officeId as string)
+    : (params.officeId ?? undefined);
+
+  const scopedParams = { ...params, officeId: effectiveOfficeId };
+
   // Build export QS from validated filter params only — avoids leaking
   // unknown keys and keeps the server-side CSV query identical to what the
   // user sees on-screen.
   const exportParams = new URLSearchParams();
-  if (params.search) exportParams.set("search", params.search);
-  if (params.appointmentType)
-    exportParams.set("appointmentType", params.appointmentType);
-  if (params.officeId) exportParams.set("officeId", params.officeId);
-  if (params.status) exportParams.set("status", params.status);
-  if (params.salaryGrade)
-    exportParams.set("salaryGrade", String(params.salaryGrade));
+  if (scopedParams.search) exportParams.set("search", scopedParams.search);
+  if (scopedParams.appointmentType)
+    exportParams.set("appointmentType", scopedParams.appointmentType);
+  if (scopedParams.officeId)
+    exportParams.set("officeId", scopedParams.officeId);
+  if (scopedParams.status) exportParams.set("status", scopedParams.status);
+  if (scopedParams.salaryGrade)
+    exportParams.set("salaryGrade", String(scopedParams.salaryGrade));
   const exportQS = exportParams.toString();
 
   const [listResult, offices] = await Promise.all([
-    getEmployees(params),
+    getEmployees(scopedParams),
     getOfficesForSelect(),
   ]);
 
@@ -56,6 +82,11 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
         <div>
           <h1 className="font-serif text-2xl font-bold text-pcso-navy">
             Employees
+            {isUnitScoped && (
+              <span className="ml-2 text-base font-normal text-muted-foreground">
+                — Your Unit
+              </span>
+            )}
           </h1>
           <p className="text-sm text-muted-foreground">
             {listResult.total.toLocaleString()} record
@@ -63,29 +94,33 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2" asChild>
-            <a
-              href={
-                exportQS
-                  ? `/api/employees/export?${exportQS}`
-                  : "/api/employees/export"
-              }
-              download
+          <RoleGate role={user.role} roles={WRITE_ROLES} fallback={null}>
+            <Button variant="outline" size="sm" className="gap-2" asChild>
+              <a
+                href={
+                  exportQS
+                    ? `/api/employees/export?${exportQS}`
+                    : "/api/employees/export"
+                }
+                download
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </a>
+            </Button>
+          </RoleGate>
+          <RoleGate role={user.role} roles={WRITE_ROLES} fallback={null}>
+            <Button
+              asChild
+              size="sm"
+              className="gap-2 bg-pcso-navy text-white hover:bg-pcso-navy-light"
             >
-              <Download className="h-4 w-4" />
-              Export CSV
-            </a>
-          </Button>
-          <Button
-            asChild
-            size="sm"
-            className="gap-2 bg-pcso-navy text-white hover:bg-pcso-navy-light"
-          >
-            <Link href="/employees/new">
-              <UserPlus className="h-4 w-4" />
-              Add Employee
-            </Link>
-          </Button>
+              <Link href="/employees/new">
+                <UserPlus className="h-4 w-4" />
+                Add Employee
+              </Link>
+            </Button>
+          </RoleGate>
         </div>
       </header>
 
