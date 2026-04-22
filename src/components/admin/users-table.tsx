@@ -2,7 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MoreHorizontal, ShieldCheck, ShieldOff, KeyRound } from "lucide-react";
+import {
+  MoreHorizontal,
+  ShieldCheck,
+  ShieldOff,
+  KeyRound,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,12 +18,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { DataTable } from "@/components/tables/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   activateUser,
   deactivateUser,
   sendPasswordReset,
+  deleteUser,
 } from "@/app/(dashboard)/admin/users/actions";
 import { toast } from "sonner";
 
@@ -56,6 +73,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 function RowActions({ row }: { row: UserRow }) {
   const [pending, setPending] = React.useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
 
   async function handleToggleActive() {
     setPending(true);
@@ -92,49 +110,98 @@ function RowActions({ row }: { row: UserRow }) {
     }
   }
 
+  async function handleDelete() {
+    setPending(true);
+    try {
+      await deleteUser(row.id);
+      toast.success("Account permanently deleted", { description: row.email });
+    } catch (err) {
+      toast.error("Error", {
+        description:
+          err instanceof Error ? err.message : "Failed to delete account.",
+      });
+    } finally {
+      setPending(false);
+      setDeleteDialogOpen(false);
+    }
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled={pending}
-          aria-label="Open user actions"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link href={`/admin/users/${row.id}`}>View details</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href={`/admin/users/${row.id}/edit`}>Edit role / office</Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handlePasswordReset}>
-          <KeyRound className="mr-2 h-4 w-4" />
-          Send password reset
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={handleToggleActive}
-          className={row.isActive ? "text-destructive" : "text-green-600"}
-        >
-          {row.isActive ? (
-            <>
-              <ShieldOff className="mr-2 h-4 w-4" />
-              Deactivate
-            </>
-          ) : (
-            <>
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              Activate
-            </>
-          )}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={pending}
+            aria-label="Open user actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild>
+            <Link href={`/admin/users/${row.id}`}>View details</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href={`/admin/users/${row.id}/edit`}>Edit role / office</Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={handlePasswordReset}>
+            <KeyRound className="mr-2 h-4 w-4" />
+            Send password reset
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={handleToggleActive}
+            className={row.isActive ? "text-destructive" : "text-green-600"}
+          >
+            {row.isActive ? (
+              <>
+                <ShieldOff className="mr-2 h-4 w-4" />
+                Deactivate
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Activate
+              </>
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => setDeleteDialogOpen(true)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete permanently
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete account permanently?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete{" "}
+              <span className="font-semibold">{row.email}</span> and revoke
+              their Supabase Auth account. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={pending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {pending ? "Deleting…" : "Delete permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
