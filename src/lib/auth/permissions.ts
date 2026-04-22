@@ -211,7 +211,7 @@ export const permissionMatrix: PermissionMatrix = {
   // ── payroll ───────────────────────────────────────────────────────────────
   // Historical payroll is append-only (CONVENTIONS.md rule 3).
   payroll: {
-    view: ["super_admin", "payroll_admin"],
+    view: ["super_admin", "payroll_admin", "viewer"],
     create: ["super_admin", "payroll_admin"],
     edit: ["super_admin", "payroll_admin"],
     delete: ["super_admin"],
@@ -222,7 +222,7 @@ export const permissionMatrix: PermissionMatrix = {
 
   // ── remittances ───────────────────────────────────────────────────────────
   remittances: {
-    view: ["super_admin", "payroll_admin"],
+    view: ["super_admin", "payroll_admin", "viewer"],
     create: ["super_admin", "payroll_admin"],
     edit: ["super_admin", "payroll_admin"],
     delete: ["super_admin"],
@@ -256,7 +256,7 @@ export const permissionMatrix: PermissionMatrix = {
   // employee_self_service may view/file/edit only their own SALN.
   saln: {
     view: {
-      roles: ["super_admin", "employee_self_service"],
+      roles: ["super_admin", "viewer", "employee_self_service"],
       selfOnly: SELF_ONLY,
     },
     create: ["super_admin", "employee_self_service"],
@@ -280,7 +280,7 @@ export const permissionMatrix: PermissionMatrix = {
 
   // ── admin (system config, user management) ────────────────────────────────
   admin: {
-    view: ["super_admin"],
+    view: ["super_admin", "viewer"],
     create: ["super_admin"],
     edit: ["super_admin"],
     delete: ["super_admin"],

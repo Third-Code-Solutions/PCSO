@@ -39,6 +39,7 @@ import {
   getLoyaltyAwardEligibilityReport,
   getOfficesForReportFilters,
 } from "@/lib/actions/reports/workforce-reports";
+import { requirePermission } from "@/lib/auth/guards";
 
 export const metadata = {
   title: "Loyalty Award Eligibility Report",
@@ -224,6 +225,8 @@ async function Filters() {
 }
 
 export default async function LoyaltyReportPage({ searchParams }: PageProps) {
+  await requirePermission("reports", "view");
+
   const params = await searchParams;
 
   const officeId =

@@ -124,6 +124,7 @@ const NAV_ITEMS: NavItem[] = [
       "hr_admin",
       "payroll_admin",
       "leave_approver",
+      "executive",
       "viewer",
     ],
     children: [
@@ -135,6 +136,7 @@ const NAV_ITEMS: NavItem[] = [
           "hr_admin",
           "payroll_admin",
           "leave_approver",
+          "executive",
           "viewer",
         ],
       },
@@ -146,7 +148,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Plantilla",
         href: "/plantilla",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "New Position",
@@ -156,7 +158,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Vacancies",
         href: "/plantilla/vacancies",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Org Chart",
@@ -166,6 +168,7 @@ const NAV_ITEMS: NavItem[] = [
           "hr_admin",
           "payroll_admin",
           "leave_approver",
+          "executive",
           "viewer",
         ],
       },
@@ -181,6 +184,7 @@ const NAV_ITEMS: NavItem[] = [
       "hr_admin",
       "payroll_admin",
       "leave_approver",
+      "executive",
       "viewer",
       "employee_self_service",
     ],
@@ -193,6 +197,7 @@ const NAV_ITEMS: NavItem[] = [
           "hr_admin",
           "payroll_admin",
           "leave_approver",
+          "executive",
           "viewer",
         ],
       },
@@ -210,6 +215,7 @@ const NAV_ITEMS: NavItem[] = [
           "hr_admin",
           "payroll_admin",
           "leave_approver",
+          "executive",
           "viewer",
           "employee_self_service",
         ],
@@ -237,7 +243,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Analytics",
         href: "/attendance/analytics",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       // Self-service surfaces
       {
@@ -263,6 +269,7 @@ const NAV_ITEMS: NavItem[] = [
       "super_admin",
       "hr_admin",
       "leave_approver",
+      "executive",
       "viewer",
       "employee_self_service",
     ],
@@ -270,7 +277,13 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Applications",
         href: "/leave/applications",
-        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "Approvals Queue",
@@ -290,7 +303,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Advanced Reports",
         href: "/leave/reports/advanced",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Calendar",
@@ -299,6 +312,7 @@ const NAV_ITEMS: NavItem[] = [
           "super_admin",
           "hr_admin",
           "leave_approver",
+          "executive",
           "viewer",
           "employee_self_service",
         ],
@@ -333,7 +347,13 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Payroll",
     icon: Wallet,
-    roles: ["super_admin", "payroll_admin", "viewer", "employee_self_service"],
+    roles: [
+      "super_admin",
+      "payroll_admin",
+      "executive",
+      "viewer",
+      "employee_self_service",
+    ],
     children: [
       {
         label: "Payroll Periods",
@@ -353,7 +373,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "History",
         href: "/payroll/history",
-        roles: ["super_admin", "payroll_admin", "viewer"],
+        roles: ["super_admin", "payroll_admin", "executive", "viewer"],
       },
       {
         label: "JO / COS",
@@ -413,17 +433,17 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Remittances",
     icon: Building2,
-    roles: ["super_admin", "payroll_admin", "viewer"],
+    roles: ["super_admin", "payroll_admin", "executive", "viewer"],
     children: [
       {
         label: "Overview",
         href: "/remittances",
-        roles: ["super_admin", "payroll_admin", "viewer"],
+        roles: ["super_admin", "payroll_admin", "executive", "viewer"],
       },
       {
         label: "GSIS",
         href: "/remittances/gsis",
-        roles: ["super_admin", "payroll_admin", "viewer"],
+        roles: ["super_admin", "payroll_admin", "executive", "viewer"],
       },
       {
         label: "GSIS Retirement",
@@ -433,17 +453,17 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "PhilHealth",
         href: "/remittances/philhealth",
-        roles: ["super_admin", "payroll_admin", "viewer"],
+        roles: ["super_admin", "payroll_admin", "executive", "viewer"],
       },
       {
         label: "Pag-IBIG",
         href: "/remittances/pagibig",
-        roles: ["super_admin", "payroll_admin", "viewer"],
+        roles: ["super_admin", "payroll_admin", "executive", "viewer"],
       },
       {
         label: "BIR",
         href: "/remittances/bir",
-        roles: ["super_admin", "payroll_admin", "viewer"],
+        roles: ["super_admin", "payroll_admin", "executive", "viewer"],
       },
       {
         label: "BIR 1601-C",
@@ -471,6 +491,7 @@ const NAV_ITEMS: NavItem[] = [
       "super_admin",
       "hr_admin",
       "leave_approver",
+      "executive",
       "viewer",
       "employee_self_service",
     ],
@@ -488,6 +509,7 @@ const NAV_ITEMS: NavItem[] = [
           "super_admin",
           "hr_admin",
           "leave_approver",
+          "executive",
           "viewer",
           "employee_self_service",
         ],
@@ -495,7 +517,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "OPCRF",
         href: "/performance/opcrf",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Step Increments",
@@ -509,6 +531,7 @@ const NAV_ITEMS: NavItem[] = [
           "super_admin",
           "hr_admin",
           "leave_approver",
+          "executive",
           "viewer",
           "employee_self_service",
         ],
@@ -520,6 +543,7 @@ const NAV_ITEMS: NavItem[] = [
           "super_admin",
           "hr_admin",
           "leave_approver",
+          "executive",
           "viewer",
           "employee_self_service",
         ],
@@ -527,12 +551,12 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "PBB Qualified List",
         href: "/performance/pbb",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Analytics",
         href: "/performance/analytics",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
     ],
   },
@@ -541,12 +565,18 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "SALN",
     icon: FileText,
-    roles: ["super_admin", "hr_admin", "viewer", "employee_self_service"],
+    roles: [
+      "super_admin",
+      "hr_admin",
+      "executive",
+      "viewer",
+      "employee_self_service",
+    ],
     children: [
       {
         label: "Compliance Dashboard",
         href: "/saln/admin",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Submissions",
@@ -557,12 +587,12 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Tracking",
         href: "/saln/tracking",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Non-Filers",
         href: "/saln/admin/non-filers",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "File New SALN",
@@ -577,32 +607,50 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Recruitment",
     icon: UserPlus,
-    roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+    roles: ["super_admin", "hr_admin", "leave_approver", "executive", "viewer"],
     children: [
       {
         label: "Overview",
         href: "/recruitment",
-        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "MRFs",
         href: "/recruitment/mrf",
-        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "Vacancies",
         href: "/recruitment/vacancies",
-        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "Applicants",
         href: "/recruitment/applicants",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Selection",
         href: "/recruitment/selection",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Appointments",
@@ -620,6 +668,7 @@ const NAV_ITEMS: NavItem[] = [
       "super_admin",
       "hr_admin",
       "leave_approver",
+      "executive",
       "viewer",
       "employee_self_service",
     ],
@@ -631,6 +680,7 @@ const NAV_ITEMS: NavItem[] = [
           "super_admin",
           "hr_admin",
           "leave_approver",
+          "executive",
           "viewer",
           "employee_self_service",
         ],
@@ -638,27 +688,39 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Catalog",
         href: "/learning/catalog",
-        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "Providers",
         href: "/learning/providers",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Schedule",
         href: "/learning/schedule",
-        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "TNA (Training Needs Analysis)",
         href: "/learning/tna",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Mandatory Compliance",
         href: "/learning/mandatory",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Certificates",
@@ -667,6 +729,7 @@ const NAV_ITEMS: NavItem[] = [
           "super_admin",
           "hr_admin",
           "leave_approver",
+          "executive",
           "viewer",
           "employee_self_service",
         ],
@@ -674,7 +737,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Reports",
         href: "/learning/reports",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       // Self-service: LDM-014 — employees view scheduled trainings,
       // confirm attendance, and download certificates via portal.
@@ -691,42 +754,48 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Welfare & PRAISE",
     icon: Award,
-    roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+    roles: ["super_admin", "hr_admin", "leave_approver", "executive", "viewer"],
     children: [
       {
         label: "Overview",
         href: "/welfare",
-        roles: ["super_admin", "hr_admin", "leave_approver", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "Loyalty Awards",
         href: "/welfare/loyalty",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Retirement",
         href: "/welfare/retirement",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "PRAISE",
         href: "/welfare/praise",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Wellness",
         href: "/welfare/wellness",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Loyalty Report",
         href: "/reports/workforce/loyalty",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
       {
         label: "Retirement Report",
         href: "/reports/workforce/retirement",
-        roles: ["super_admin", "hr_admin", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer"],
       },
     ],
   },
@@ -749,7 +818,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Admin",
     icon: Shield,
-    roles: ["super_admin", "viewer"],
+    roles: ["super_admin", "executive", "viewer"],
     children: [
       { label: "Users", href: "/admin/users", roles: ["super_admin"] },
       {
@@ -763,7 +832,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Audit Logs",
         href: "/admin/audit-logs",
-        roles: ["super_admin", "viewer"],
+        roles: ["super_admin", "executive", "viewer"],
       },
       {
         label: "System Settings",

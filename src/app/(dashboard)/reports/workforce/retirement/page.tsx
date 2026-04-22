@@ -40,6 +40,7 @@ import {
   getRetirementEligibilityReport,
   getOfficesForReportFilters,
 } from "@/lib/actions/reports/workforce-reports";
+import { requirePermission } from "@/lib/auth/guards";
 
 export const metadata = {
   title: "Retirement Eligibility Report",
@@ -223,6 +224,8 @@ async function Filters() {
 export default async function RetirementReportPage({
   searchParams,
 }: PageProps) {
+  await requirePermission("reports", "view");
+
   const params = await searchParams;
 
   const officeId =

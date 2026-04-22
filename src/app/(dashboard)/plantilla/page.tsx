@@ -21,6 +21,7 @@ import {
   getActiveEmployees,
 } from "./queries";
 import { PlantillaListParamsSchema } from "@/lib/validations/plantilla";
+import { requireAuth } from "@/lib/auth/guards";
 
 export const metadata: Metadata = {
   title: "Plantilla of Personnel",
@@ -33,6 +34,7 @@ interface PlantillaPageProps {
 export default async function PlantillaPage({
   searchParams,
 }: PlantillaPageProps) {
+  await requireAuth();
   const raw = await searchParams;
   const flat = Object.fromEntries(
     Object.entries(raw).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]),
@@ -68,7 +70,7 @@ export default async function PlantillaPage({
 
   return (
     <div>
-      <RealtimeBoundary tables={["plantilla_items"]} />
+      <RealtimeBoundary tables={["plantilla_positions"]} />
       <PageHeader
         title="Plantilla of Personnel"
         description="Official record of authorized positions in the Philippine Charity Sweepstakes Office."

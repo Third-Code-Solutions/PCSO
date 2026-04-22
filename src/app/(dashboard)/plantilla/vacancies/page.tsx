@@ -21,6 +21,7 @@ import {
 import { getVacancySummary } from "../queries";
 import { cn } from "@/lib/utils/cn";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requireAuth } from "@/lib/auth/guards";
 
 export const metadata: Metadata = {
   title: "Vacancy Dashboard",
@@ -52,6 +53,7 @@ function FillRateBadge({ pct }: { pct: number }) {
 }
 
 export default async function VacanciesPage() {
+  await requireAuth();
   const summaries = await getVacancySummary();
 
   const totalPositions = summaries.reduce((acc, s) => acc + s.total, 0);
@@ -62,7 +64,7 @@ export default async function VacanciesPage() {
 
   return (
     <div>
-      <RealtimeBoundary tables={["plantilla_items"]} />
+      <RealtimeBoundary tables={["plantilla_positions"]} />
       <PageHeader
         title="Vacancy Dashboard"
         description="Track filled and vacant positions across all PCSO offices."

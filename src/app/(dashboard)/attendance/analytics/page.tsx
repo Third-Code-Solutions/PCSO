@@ -10,7 +10,7 @@
 import { requirePermission } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { attendanceLogs, employees, offices } from "@/lib/db/schema";
-import { eq, gte, lte, and, sql, isNull, desc } from "drizzle-orm";
+import { gte, lte, and, isNull } from "drizzle-orm";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import Link from "next/link";
 
