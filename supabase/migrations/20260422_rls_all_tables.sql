@@ -213,6 +213,10 @@ CREATE POLICY "fm_sizes_delete_super_admin" ON fm_sizes FOR DELETE TO authentica
 -- ─── Holidays & System Settings ──────────────────────────────────────────────
 
 ALTER TABLE holidays ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS holidays_select_all ON holidays;
+DROP POLICY IF EXISTS holidays_insert_admin ON holidays;
+DROP POLICY IF EXISTS holidays_update_admin ON holidays;
+DROP POLICY IF EXISTS holidays_delete_super ON holidays;
 CREATE POLICY "holidays_select_all" ON holidays FOR SELECT TO authenticated USING (true);
 CREATE POLICY "holidays_insert_admin" ON holidays FOR INSERT TO authenticated WITH CHECK (public.is_admin());
 CREATE POLICY "holidays_update_admin" ON holidays FOR UPDATE TO authenticated USING (public.is_admin());
@@ -326,17 +330,25 @@ CREATE POLICY "announcement_acknowledgements_delete_admin" ON announcement_ackno
 -- ─── Notifications ───────────────────────────────────────────────────────────
 
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "notifications_select" ON notifications;
+DROP POLICY IF EXISTS "notifications_insert_service" ON notifications;
+DROP POLICY IF EXISTS "notifications_update" ON notifications;
+DROP POLICY IF EXISTS "notifications_delete_admin" ON notifications;
 CREATE POLICY "notifications_select" ON notifications FOR SELECT TO authenticated
-  USING (public.is_admin() OR employee_id = public.current_employee_id());
+  USING (public.is_admin() OR user_id = (SELECT id FROM public.system_users WHERE auth_uid = auth.uid()::text));
 CREATE POLICY "notifications_insert_service" ON notifications FOR INSERT TO service_role WITH CHECK (true);
 CREATE POLICY "notifications_update" ON notifications FOR UPDATE TO authenticated
-  USING (public.is_admin() OR employee_id = public.current_employee_id());
+  USING (public.is_admin() OR user_id = (SELECT id FROM public.system_users WHERE auth_uid = auth.uid()::text));
 CREATE POLICY "notifications_delete_admin" ON notifications FOR DELETE TO authenticated
   USING (public.is_admin());
 
 -- ─── Overtime ────────────────────────────────────────────────────────────────
 
 ALTER TABLE overtime_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS overtime_requests_select ON overtime_requests;
+DROP POLICY IF EXISTS overtime_requests_insert_self ON overtime_requests;
+DROP POLICY IF EXISTS overtime_requests_update ON overtime_requests;
+DROP POLICY IF EXISTS overtime_requests_delete_super ON overtime_requests;
 CREATE POLICY "overtime_requests_select" ON overtime_requests FOR SELECT TO authenticated
   USING (public.is_admin() OR public.current_role() IN ('leave_approver', 'supervisor') OR employee_id = public.current_employee_id());
 CREATE POLICY "overtime_requests_insert" ON overtime_requests FOR INSERT TO authenticated
@@ -350,7 +362,7 @@ CREATE POLICY "overtime_requests_delete_super_admin" ON overtime_requests FOR DE
 
 ALTER TABLE admin_cases ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "admin_cases_select" ON admin_cases FOR SELECT TO authenticated
-  USING (public.is_admin() OR respondent_id = public.current_employee_id());
+  USING (public.is_admin() OR employee_id = public.current_employee_id());
 CREATE POLICY "admin_cases_insert_admin" ON admin_cases FOR INSERT TO authenticated
   WITH CHECK (public.is_admin());
 CREATE POLICY "admin_cases_update_admin" ON admin_cases FOR UPDATE TO authenticated
@@ -416,6 +428,7 @@ CREATE POLICY "gsis_remittance_batches_delete_super_admin" ON gsis_remittance_ba
   USING (public.is_super_admin());
 
 ALTER TABLE gsis_remittance_lines ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gsis_remittance_lines_no_update ON gsis_remittance_lines;
 CREATE POLICY "gsis_remittance_lines_select_payroll" ON gsis_remittance_lines FOR SELECT TO authenticated
   USING (public.is_payroll_admin() OR public.is_admin());
 CREATE POLICY "gsis_remittance_lines_insert_payroll" ON gsis_remittance_lines FOR INSERT TO authenticated
@@ -425,6 +438,10 @@ CREATE POLICY "gsis_remittance_lines_delete_super_admin" ON gsis_remittance_line
   USING (public.is_super_admin());
 
 ALTER TABLE gsis_loans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gsis_loans_select ON gsis_loans;
+DROP POLICY IF EXISTS gsis_loans_insert_admin ON gsis_loans;
+DROP POLICY IF EXISTS gsis_loans_update_admin ON gsis_loans;
+DROP POLICY IF EXISTS gsis_loans_delete_super ON gsis_loans;
 CREATE POLICY "gsis_loans_select" ON gsis_loans FOR SELECT TO authenticated
   USING (public.is_payroll_admin() OR public.is_admin() OR employee_id = public.current_employee_id());
 CREATE POLICY "gsis_loans_insert_payroll" ON gsis_loans FOR INSERT TO authenticated
@@ -435,6 +452,10 @@ CREATE POLICY "gsis_loans_delete_super_admin" ON gsis_loans FOR DELETE TO authen
   USING (public.is_super_admin());
 
 ALTER TABLE gsis_registrations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS gsis_registrations_select ON gsis_registrations;
+DROP POLICY IF EXISTS gsis_registrations_insert_admin ON gsis_registrations;
+DROP POLICY IF EXISTS gsis_registrations_update_admin ON gsis_registrations;
+DROP POLICY IF EXISTS gsis_registrations_delete_super ON gsis_registrations;
 CREATE POLICY "gsis_registrations_select" ON gsis_registrations FOR SELECT TO authenticated
   USING (public.is_payroll_admin() OR public.is_admin() OR employee_id = public.current_employee_id());
 CREATE POLICY "gsis_registrations_insert_payroll" ON gsis_registrations FOR INSERT TO authenticated
@@ -454,14 +475,14 @@ CREATE POLICY "performance_cycles_delete_super_admin" ON performance_cycles FOR 
 
 ALTER TABLE dpcr_forms ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "dpcr_forms_select" ON dpcr_forms FOR SELECT TO authenticated
-  USING (public.is_admin() OR employee_id = public.current_employee_id());
+  USING (true);
 CREATE POLICY "dpcr_forms_insert_admin" ON dpcr_forms FOR INSERT TO authenticated WITH CHECK (public.is_admin());
 CREATE POLICY "dpcr_forms_update_admin" ON dpcr_forms FOR UPDATE TO authenticated USING (public.is_admin());
 CREATE POLICY "dpcr_forms_delete_super_admin" ON dpcr_forms FOR DELETE TO authenticated USING (public.is_super_admin());
 
 ALTER TABLE bpcr_forms ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "bpcr_forms_select" ON bpcr_forms FOR SELECT TO authenticated
-  USING (public.is_admin() OR employee_id = public.current_employee_id());
+  USING (true);
 CREATE POLICY "bpcr_forms_insert_admin" ON bpcr_forms FOR INSERT TO authenticated WITH CHECK (public.is_admin());
 CREATE POLICY "bpcr_forms_update_admin" ON bpcr_forms FOR UPDATE TO authenticated USING (public.is_admin());
 CREATE POLICY "bpcr_forms_delete_super_admin" ON bpcr_forms FOR DELETE TO authenticated USING (public.is_super_admin());
@@ -507,14 +528,14 @@ CREATE POLICY "training_participants_delete_super_admin" ON training_participant
 
 ALTER TABLE training_attendance ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "training_attendance_select" ON training_attendance FOR SELECT TO authenticated
-  USING (public.is_admin() OR employee_id = public.current_employee_id());
+  USING (public.is_admin() OR participant_id IN (SELECT id FROM training_participants WHERE employee_id = public.current_employee_id()));
 CREATE POLICY "training_attendance_insert_admin" ON training_attendance FOR INSERT TO authenticated WITH CHECK (public.is_admin());
 CREATE POLICY "training_attendance_update_admin" ON training_attendance FOR UPDATE TO authenticated USING (public.is_admin());
 CREATE POLICY "training_attendance_delete_super_admin" ON training_attendance FOR DELETE TO authenticated USING (public.is_super_admin());
 
 ALTER TABLE training_certificates ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "training_certificates_select" ON training_certificates FOR SELECT TO authenticated
-  USING (public.is_admin() OR employee_id = public.current_employee_id());
+  USING (public.is_admin() OR participant_id IN (SELECT id FROM training_participants WHERE employee_id = public.current_employee_id()));
 CREATE POLICY "training_certificates_insert_admin" ON training_certificates FOR INSERT TO authenticated WITH CHECK (public.is_admin());
 CREATE POLICY "training_certificates_no_update" ON training_certificates FOR UPDATE TO authenticated USING (false);
 CREATE POLICY "training_certificates_delete_super_admin" ON training_certificates FOR DELETE TO authenticated USING (public.is_super_admin());
@@ -608,37 +629,25 @@ CREATE POLICY "vacancies_update_admin" ON vacancies FOR UPDATE TO authenticated 
 CREATE POLICY "vacancies_delete_super_admin" ON vacancies FOR DELETE TO authenticated USING (public.is_super_admin());
 
 ALTER TABLE applicants ENABLE ROW LEVEL SECURITY;
--- Applicants can view their own record; admins see all
-CREATE POLICY "applicants_select" ON applicants FOR SELECT TO authenticated
-  USING (public.is_admin() OR auth_uid = auth.uid()::TEXT);
-CREATE POLICY "applicants_insert" ON applicants FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin() OR auth_uid = auth.uid()::TEXT);
-CREATE POLICY "applicants_update" ON applicants FOR UPDATE TO authenticated
-  USING (public.is_admin() OR auth_uid = auth.uid()::TEXT);
+-- External applicants use their own passwordHash auth (not Supabase Auth).
+-- Portal operations use service_role; HR admins access via authenticated role.
+CREATE POLICY "applicants_select_admin" ON applicants FOR SELECT TO authenticated
+  USING (public.is_admin());
+CREATE POLICY "applicants_insert_service" ON applicants FOR INSERT TO service_role WITH CHECK (true);
+CREATE POLICY "applicants_update_admin" ON applicants FOR UPDATE TO authenticated
+  USING (public.is_admin());
 CREATE POLICY "applicants_delete_super_admin" ON applicants FOR DELETE TO authenticated
   USING (public.is_super_admin());
 
 ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "applications_select" ON applications FOR SELECT TO authenticated
-  USING (public.is_admin() OR applicant_id IN (SELECT id FROM applicants WHERE auth_uid = auth.uid()::TEXT));
-CREATE POLICY "applications_insert" ON applications FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin() OR applicant_id IN (SELECT id FROM applicants WHERE auth_uid = auth.uid()::TEXT));
+CREATE POLICY "applications_select_admin" ON applications FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY "applications_insert_service" ON applications FOR INSERT TO service_role WITH CHECK (true);
 CREATE POLICY "applications_update_admin" ON applications FOR UPDATE TO authenticated USING (public.is_admin());
 CREATE POLICY "applications_delete_super_admin" ON applications FOR DELETE TO authenticated USING (public.is_super_admin());
 
 ALTER TABLE application_documents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "application_documents_select" ON application_documents FOR SELECT TO authenticated
-  USING (public.is_admin() OR application_id IN (
-    SELECT a.id FROM applications a
-    JOIN applicants ap ON ap.id = a.applicant_id
-    WHERE ap.auth_uid = auth.uid()::TEXT
-  ));
-CREATE POLICY "application_documents_insert" ON application_documents FOR INSERT TO authenticated
-  WITH CHECK (public.is_admin() OR application_id IN (
-    SELECT a.id FROM applications a
-    JOIN applicants ap ON ap.id = a.applicant_id
-    WHERE ap.auth_uid = auth.uid()::TEXT
-  ));
+CREATE POLICY "application_documents_select_admin" ON application_documents FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY "application_documents_insert_service" ON application_documents FOR INSERT TO service_role WITH CHECK (true);
 CREATE POLICY "application_documents_update_admin" ON application_documents FOR UPDATE TO authenticated USING (public.is_admin());
 CREATE POLICY "application_documents_delete_super_admin" ON application_documents FOR DELETE TO authenticated USING (public.is_super_admin());
 
@@ -663,7 +672,7 @@ CREATE POLICY "rpm_status_history_no_delete" ON rpm_status_history FOR DELETE TO
 ALTER TABLE appointment_documents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "appointment_documents_select" ON appointment_documents FOR SELECT TO authenticated
   USING (public.is_admin() OR appointment_id IN (
-    SELECT id FROM appointments WHERE employee_id = public.current_employee_id()
+    SELECT id FROM appointments WHERE provisioned_employee_id = public.current_employee_id()
   ));
 CREATE POLICY "appointment_documents_insert_admin" ON appointment_documents FOR INSERT TO authenticated WITH CHECK (public.is_admin());
 CREATE POLICY "appointment_documents_update_admin" ON appointment_documents FOR UPDATE TO authenticated USING (public.is_admin());
