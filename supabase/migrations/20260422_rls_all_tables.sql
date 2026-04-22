@@ -109,12 +109,14 @@ END $$;
 
 -- ─── Employee-view tables: admin sees all, employee sees own; admin writes ─────
 -- (Employee cannot INSERT — only admin can write these)
+-- Note: training_attendance and training_certificates are handled separately below
+-- because they reference participant_id (not employee_id) and need a join.
 DO $$
 DECLARE
   t text;
   emp_view_tables text[] := ARRAY[
     'employee_schedules', 'employee_documents',
-    'training_participants', 'training_attendance', 'training_certificates',
+    'training_participants',
     'competency_assessments', 'tna_gaps',
     'loyalty_awardees', 'retirement_notices',
     'admin_cases'
@@ -126,6 +128,34 @@ BEGIN
       EXECUTE format('DROP POLICY IF EXISTS "%s_select" ON %I', t, t);
       EXECUTE format($q$CREATE POLICY "%s_select" ON %I FOR SELECT TO authenticated
         USING (public.is_admin() OR employee_id = public.current_employee_id())$q$, t, t);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_insert_admin" ON %I', t, t);
+      EXECUTE format('CREATE POLICY "%s_insert_admin" ON %I FOR INSERT TO authenticated WITH CHECK (public.is_admin())', t, t);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_update_admin" ON %I', t, t);
+      EXECUTE format('CREATE POLICY "%s_update_admin" ON %I FOR UPDATE TO authenticated USING (public.is_admin())', t, t);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_delete_super_admin" ON %I', t, t);
+      EXECUTE format('CREATE POLICY "%s_delete_super_admin" ON %I FOR DELETE TO authenticated USING (public.is_super_admin())', t, t);
+    END IF;
+  END LOOP;
+END $$;
+
+-- ─── training_attendance & training_certificates (participant_id → training_participants.employee_id) ──
+DO $$
+DECLARE
+  t text;
+  participant_tables text[] := ARRAY['training_attendance', 'training_certificates'];
+BEGIN
+  FOREACH t IN ARRAY participant_tables LOOP
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = t) THEN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+      EXECUTE format('DROP POLICY IF EXISTS "%s_select" ON %I', t, t);
+      EXECUTE format($q$CREATE POLICY "%s_select" ON %I FOR SELECT TO authenticated
+        USING (
+          public.is_admin()
+          OR participant_id IN (
+            SELECT id FROM public.training_participants
+            WHERE employee_id = public.current_employee_id()
+          )
+        )$q$, t, t);
       EXECUTE format('DROP POLICY IF EXISTS "%s_insert_admin" ON %I', t, t);
       EXECUTE format('CREATE POLICY "%s_insert_admin" ON %I FOR INSERT TO authenticated WITH CHECK (public.is_admin())', t, t);
       EXECUTE format('DROP POLICY IF EXISTS "%s_update_admin" ON %I', t, t);
@@ -296,12 +326,12 @@ BEGIN
     ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS "notifications_select" ON notifications;
     CREATE POLICY "notifications_select" ON notifications FOR SELECT TO authenticated
-      USING (public.is_admin() OR employee_id = public.current_employee_id());
+      USING (public.is_admin() OR user_id IN (SELECT id FROM public.system_users WHERE auth_uid = auth.uid()::text));
     DROP POLICY IF EXISTS "notifications_insert_service" ON notifications;
     CREATE POLICY "notifications_insert_service" ON notifications FOR INSERT TO service_role WITH CHECK (true);
     DROP POLICY IF EXISTS "notifications_update" ON notifications;
     CREATE POLICY "notifications_update" ON notifications FOR UPDATE TO authenticated
-      USING (public.is_admin() OR employee_id = public.current_employee_id());
+      USING (public.is_admin() OR user_id IN (SELECT id FROM public.system_users WHERE auth_uid = auth.uid()::text));
     DROP POLICY IF EXISTS "notifications_delete_admin" ON notifications;
     CREATE POLICY "notifications_delete_admin" ON notifications FOR DELETE TO authenticated
       USING (public.is_admin());
@@ -345,18 +375,18 @@ BEGIN
     CREATE POLICY "vacancies_delete_super_admin" ON vacancies FOR DELETE TO authenticated USING (public.is_super_admin());
   END IF;
 
-  -- applicants (can view/edit own)
+  -- applicants: external portal uses its own email/password auth (not Supabase auth.uid()).
+  -- Internal HR staff (authenticated) can read/manage; applicant portal ops go via service_role.
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'applicants') THEN
     ALTER TABLE applicants ENABLE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS "applicants_select" ON applicants;
     CREATE POLICY "applicants_select" ON applicants FOR SELECT TO authenticated
-      USING (public.is_admin() OR auth_uid = auth.uid()::TEXT);
+      USING (public.is_admin());
     DROP POLICY IF EXISTS "applicants_insert" ON applicants;
-    CREATE POLICY "applicants_insert" ON applicants FOR INSERT TO authenticated
-      WITH CHECK (public.is_admin() OR auth_uid = auth.uid()::TEXT);
+    CREATE POLICY "applicants_insert" ON applicants FOR INSERT TO service_role WITH CHECK (true);
     DROP POLICY IF EXISTS "applicants_update" ON applicants;
     CREATE POLICY "applicants_update" ON applicants FOR UPDATE TO authenticated
-      USING (public.is_admin() OR auth_uid = auth.uid()::TEXT);
+      USING (public.is_admin());
     DROP POLICY IF EXISTS "applicants_delete_super_admin" ON applicants;
     CREATE POLICY "applicants_delete_super_admin" ON applicants FOR DELETE TO authenticated USING (public.is_super_admin());
   END IF;
@@ -366,10 +396,9 @@ BEGIN
     ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS "applications_select" ON applications;
     CREATE POLICY "applications_select" ON applications FOR SELECT TO authenticated
-      USING (public.is_admin() OR applicant_id IN (SELECT id FROM applicants WHERE auth_uid = auth.uid()::TEXT));
+      USING (public.is_admin());
     DROP POLICY IF EXISTS "applications_insert" ON applications;
-    CREATE POLICY "applications_insert" ON applications FOR INSERT TO authenticated
-      WITH CHECK (public.is_admin() OR applicant_id IN (SELECT id FROM applicants WHERE auth_uid = auth.uid()::TEXT));
+    CREATE POLICY "applications_insert" ON applications FOR INSERT TO service_role WITH CHECK (true);
     DROP POLICY IF EXISTS "applications_update_admin" ON applications;
     CREATE POLICY "applications_update_admin" ON applications FOR UPDATE TO authenticated USING (public.is_admin());
     DROP POLICY IF EXISTS "applications_delete_super_admin" ON applications;
@@ -381,18 +410,9 @@ BEGIN
     ALTER TABLE application_documents ENABLE ROW LEVEL SECURITY;
     DROP POLICY IF EXISTS "application_documents_select" ON application_documents;
     CREATE POLICY "application_documents_select" ON application_documents FOR SELECT TO authenticated
-      USING (public.is_admin() OR application_id IN (
-        SELECT a.id FROM applications a
-        JOIN applicants ap ON ap.id = a.applicant_id
-        WHERE ap.auth_uid = auth.uid()::TEXT
-      ));
+      USING (public.is_admin());
     DROP POLICY IF EXISTS "application_documents_insert" ON application_documents;
-    CREATE POLICY "application_documents_insert" ON application_documents FOR INSERT TO authenticated
-      WITH CHECK (public.is_admin() OR application_id IN (
-        SELECT a.id FROM applications a
-        JOIN applicants ap ON ap.id = a.applicant_id
-        WHERE ap.auth_uid = auth.uid()::TEXT
-      ));
+    CREATE POLICY "application_documents_insert" ON application_documents FOR INSERT TO service_role WITH CHECK (true);
     DROP POLICY IF EXISTS "application_documents_update_admin" ON application_documents;
     CREATE POLICY "application_documents_update_admin" ON application_documents FOR UPDATE TO authenticated USING (public.is_admin());
     DROP POLICY IF EXISTS "application_documents_delete_super_admin" ON application_documents;
