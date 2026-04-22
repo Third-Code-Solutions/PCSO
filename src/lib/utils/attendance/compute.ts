@@ -12,10 +12,19 @@
  * No DB imports. All inputs are plain values.
  */
 
-import type { AttendanceLog, DailyComputationResult, OvertimePay, TimeString, WorkSchedule } from './types';
-import { HOLIDAY_MULTIPLIERS, WORKDAY_MINUTES } from '@/lib/constants/holiday-multipliers';
-import { effectiveGracePeriod } from './rules';
-import type { CscRulesConfig } from './types';
+import type {
+  AttendanceLog,
+  DailyComputationResult,
+  OvertimePay,
+  TimeString,
+  WorkSchedule,
+} from "./types";
+import {
+  HOLIDAY_MULTIPLIERS,
+  WORKDAY_MINUTES,
+} from "@/lib/constants/holiday-multipliers";
+import { effectiveGracePeriod } from "./rules";
+import type { CscRulesConfig } from "./types";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -26,12 +35,12 @@ import type { CscRulesConfig } from './types';
  * Throws if the format is invalid.
  */
 function parseTimeToMinutes(time: TimeString): number {
-  const parts = time.split(':');
+  const parts = time.split(":");
   if (parts.length !== 2) {
     throw new Error(`Invalid time format: "${time}". Expected HH:MM.`);
   }
-  const hourStr = parts[0] ?? '';
-  const minuteStr = parts[1] ?? '';
+  const hourStr = parts[0] ?? "";
+  const minuteStr = parts[1] ?? "";
   const hours = Number(hourStr);
   const minutes = Number(minuteStr);
 
@@ -76,7 +85,7 @@ function elapsedMinutes(startTime: TimeString, endTime: TimeString): number {
  */
 export function isLate(
   timeIn: TimeString,
-  schedule: Pick<WorkSchedule, 'scheduledStart' | 'gracePeriodMinutes'>,
+  schedule: Pick<WorkSchedule, "scheduledStart" | "gracePeriodMinutes">,
   rulesOverride?: Partial<CscRulesConfig>,
 ): boolean {
   return computeLateMinutes(timeIn, schedule, rulesOverride) > 0;
@@ -92,14 +101,16 @@ export function isLate(
  */
 export function computeLateMinutes(
   timeIn: TimeString,
-  schedule: Pick<WorkSchedule, 'scheduledStart' | 'gracePeriodMinutes'>,
+  schedule: Pick<WorkSchedule, "scheduledStart" | "gracePeriodMinutes">,
   rulesOverride?: Partial<CscRulesConfig>,
 ): number {
-  const grace = rulesOverride?.gracePeriodMinutes ?? schedule.gracePeriodMinutes;
+  const grace =
+    rulesOverride?.gracePeriodMinutes ?? schedule.gracePeriodMinutes;
   const effectiveGrace = effectiveGracePeriod({ gracePeriodMinutes: grace });
 
   const arrivedAt = parseTimeToMinutes(timeIn);
-  const latestOnTime = parseTimeToMinutes(schedule.scheduledStart) + effectiveGrace;
+  const latestOnTime =
+    parseTimeToMinutes(schedule.scheduledStart) + effectiveGrace;
 
   const diff = arrivedAt - latestOnTime;
   return Math.max(0, diff);
@@ -117,7 +128,7 @@ export function computeLateMinutes(
  */
 export function computeUndertimeMinutes(
   timeOut: TimeString,
-  schedule: Pick<WorkSchedule, 'scheduledEnd' | 'scheduledStart'>,
+  schedule: Pick<WorkSchedule, "scheduledEnd" | "scheduledStart">,
 ): number {
   const scheduledStartMin = parseTimeToMinutes(schedule.scheduledStart);
   const scheduledEndMin = parseTimeToMinutes(schedule.scheduledEnd);
@@ -130,9 +141,8 @@ export function computeUndertimeMinutes(
     // Scheduled end is next calendar day; normalise by adding 24h to end
     const normalisedEnd = scheduledEndMin + 24 * 60;
     // Normalise actual out: if actual < scheduledStart it's already next-day
-    const normalisedOut = actualOutMin < scheduledStartMin
-      ? actualOutMin + 24 * 60
-      : actualOutMin;
+    const normalisedOut =
+      actualOutMin < scheduledStartMin ? actualOutMin + 24 * 60 : actualOutMin;
     return Math.max(0, normalisedEnd - normalisedOut);
   }
 
@@ -153,7 +163,7 @@ export function computeUndertimeMinutes(
  */
 export function computeOvertimeMinutes(
   timeOut: TimeString,
-  schedule: Pick<WorkSchedule, 'scheduledEnd' | 'scheduledStart'>,
+  schedule: Pick<WorkSchedule, "scheduledEnd" | "scheduledStart">,
   approvedOvertimeMinutes: number,
 ): number {
   if (approvedOvertimeMinutes <= 0) return 0;
@@ -168,9 +178,8 @@ export function computeOvertimeMinutes(
 
   if (isOvernightSchedule) {
     const normalisedEnd = scheduledEndMin + 24 * 60;
-    const normalisedOut = actualOutMin <= scheduledEndMin
-      ? actualOutMin + 24 * 60
-      : actualOutMin;
+    const normalisedOut =
+      actualOutMin < scheduledStartMin ? actualOutMin + 24 * 60 : actualOutMin;
     workedPastEnd = Math.max(0, normalisedOut - normalisedEnd);
   } else {
     workedPastEnd = Math.max(0, actualOutMin - scheduledEndMin);
@@ -190,13 +199,14 @@ export function computeOvertimeMinutes(
  */
 export function computeDailyEquivalent(
   overtimeMinutes: number,
-  dayType: AttendanceLog['dayType'],
+  dayType: AttendanceLog["dayType"],
 ): OvertimePay | null {
   if (overtimeMinutes <= 0) return null;
 
   const config = HOLIDAY_MULTIPLIERS[dayType];
   const multiplier = config.overtimeMultiplier;
-  const dailyEquivalentFraction = (overtimeMinutes / WORKDAY_MINUTES) * multiplier;
+  const dailyEquivalentFraction =
+    (overtimeMinutes / WORKDAY_MINUTES) * multiplier;
 
   return {
     minutes: overtimeMinutes,
@@ -214,7 +224,9 @@ export function computeDailyEquivalent(
  *
  * For an ordinary day this returns 1.0 (no adjustment).
  */
-export function applyHolidayMultiplier(dayType: AttendanceLog['dayType']): number {
+export function applyHolidayMultiplier(
+  dayType: AttendanceLog["dayType"],
+): number {
   return HOLIDAY_MULTIPLIERS[dayType].hourlyMultiplier;
 }
 

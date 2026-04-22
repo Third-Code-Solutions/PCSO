@@ -181,12 +181,7 @@ export const permissionMatrix: PermissionMatrix = {
       ],
       selfOnly: SELF_ONLY,
     },
-    create: [
-      "super_admin",
-      "hr_admin",
-      "leave_approver",
-      "employee_self_service",
-    ],
+    create: ["super_admin", "hr_admin", "employee_self_service"],
     edit: ["super_admin", "hr_admin"],
     delete: ["super_admin"],
     approve: ["super_admin", "hr_admin", "leave_approver"],
