@@ -452,7 +452,6 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/performance/dpcr": [
     "super_admin",
     "hr_admin",
-    "hr_staff",
     "leave_approver",
     "supervisor",
     "employee_self_service",
@@ -460,7 +459,6 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/performance/bpcr": [
     "super_admin",
     "hr_admin",
-    "hr_staff",
     "leave_approver",
     "supervisor",
     "employee_self_service",
@@ -618,7 +616,6 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/learning/certificates": [
     "super_admin",
     "hr_admin",
-    "hr_staff",
     "employee_self_service",
   ],
 
