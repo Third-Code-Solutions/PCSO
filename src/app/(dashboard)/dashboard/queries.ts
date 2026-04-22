@@ -628,65 +628,85 @@ export async function getPayrollAdminKpis(): Promise<PayrollAdminKpis> {
 }
 
 /**
- * Leave-approver dashboard KPIs scoped to the approver's own office unit.
+ * Leave-approver dashboard KPIs.
+ *
+ * When `officeId` is provided, counts are scoped to employees in that office.
+ * Falls back to org-wide counts when `officeId` is null/undefined.
  */
 export async function getLeaveApproverKpis(
-  approverUserId: string,
+  _approverUserId: string,
+  officeId?: string | null,
 ): Promise<LeaveApproverKpis> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [approverUser] = await db
-    .select({ officeId: systemUsers.officeId })
-    .from(systemUsers)
-    .where(eq(systemUsers.authUid, approverUserId))
-    .limit(1);
+  if (officeId) {
+    const [pendingRow, approvedTodayRow, onLeaveTodayRow] = await Promise.all([
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
+        .where(
+          and(
+            eq(leaveApplications.status, "pending"),
+            eq(employees.officeId, officeId),
+          ),
+        ),
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
+        .where(
+          and(
+            eq(leaveApplications.status, "approved"),
+            gte(leaveApplications.approvedAt, new Date(`${today}T00:00:00Z`)),
+            eq(employees.officeId, officeId),
+          ),
+        ),
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
+        .where(
+          and(
+            eq(leaveApplications.status, "approved"),
+            lte(leaveApplications.dateFrom, today),
+            gte(leaveApplications.dateTo, today),
+            eq(employees.officeId, officeId),
+          ),
+        ),
+    ]);
 
-  const officeId = approverUser?.officeId ?? null;
-  const officeFilter = officeId ? eq(employees.officeId, officeId) : undefined;
+    return {
+      pendingMyApprovals: Number(pendingRow[0]?.c ?? 0),
+      approvedLeavesToday: Number(approvedTodayRow[0]?.c ?? 0),
+      teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+    };
+  }
 
+  // Org-wide fallback when no officeId is provided.
   const [pendingRow, approvedTodayRow, onLeaveTodayRow] = await Promise.all([
     db
       .select({ c: count() })
       .from(leaveApplications)
-      .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
+      .where(eq(leaveApplications.status, "pending")),
+    db
+      .select({ c: count() })
+      .from(leaveApplications)
       .where(
-        officeFilter
-          ? and(eq(leaveApplications.status, "pending"), officeFilter)
-          : eq(leaveApplications.status, "pending"),
+        and(
+          eq(leaveApplications.status, "approved"),
+          gte(leaveApplications.approvedAt, new Date(`${today}T00:00:00Z`)),
+        ),
       ),
     db
       .select({ c: count() })
       .from(leaveApplications)
-      .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
       .where(
-        officeFilter
-          ? and(
-              eq(leaveApplications.status, "approved"),
-              gte(leaveApplications.approvedAt, new Date(`${today}T00:00:00Z`)),
-              officeFilter,
-            )
-          : and(
-              eq(leaveApplications.status, "approved"),
-              gte(leaveApplications.approvedAt, new Date(`${today}T00:00:00Z`)),
-            ),
-      ),
-    db
-      .select({ c: count() })
-      .from(leaveApplications)
-      .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
-      .where(
-        officeFilter
-          ? and(
-              eq(leaveApplications.status, "approved"),
-              lte(leaveApplications.dateFrom, today),
-              gte(leaveApplications.dateTo, today),
-              officeFilter,
-            )
-          : and(
-              eq(leaveApplications.status, "approved"),
-              lte(leaveApplications.dateFrom, today),
-              gte(leaveApplications.dateTo, today),
-            ),
+        and(
+          eq(leaveApplications.status, "approved"),
+          lte(leaveApplications.dateFrom, today),
+          gte(leaveApplications.dateTo, today),
+        ),
       ),
   ]);
 
@@ -721,60 +741,99 @@ export interface AuditorKpis {
 }
 
 /**
- * Supervisor / manager dashboard KPIs scoped to the supervisor's own office unit.
+ * Supervisor / manager dashboard KPIs.
+ * When `officeId` is provided, counts are scoped to employees in that office.
+ * Falls back to org-wide counts when `officeId` is null/undefined.
  */
 export async function getSupervisorKpis(
-  supervisorUserId: string,
+  _supervisorUserId: string,
+  officeId?: string | null,
 ): Promise<SupervisorKpis> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [supervisorUser] = await db
-    .select({ officeId: systemUsers.officeId })
-    .from(systemUsers)
-    .where(eq(systemUsers.authUid, supervisorUserId))
-    .limit(1);
+  if (officeId) {
+    const unitEmployeeRows = await db
+      .select({ id: employees.id })
+      .from(employees)
+      .where(
+        and(
+          eq(employees.officeId, officeId),
+          eq(employees.status, "active"),
+          isNull(employees.deletedAt),
+        ),
+      );
 
-  const officeId = supervisorUser?.officeId ?? null;
-  const officeFilter = officeId ? eq(employees.officeId, officeId) : undefined;
+    const unitEmployeeIds = unitEmployeeRows.map((r) => r.id);
 
+    const [pendingRow, onLeaveTodayRow, pendingOtRow, upcomingHol] =
+      await Promise.all([
+        unitEmployeeIds.length > 0
+          ? db
+              .select({ c: count() })
+              .from(leaveApplications)
+              .where(
+                and(
+                  eq(leaveApplications.status, "pending"),
+                  inArray(leaveApplications.employeeId, unitEmployeeIds),
+                ),
+              )
+          : Promise.resolve([{ c: 0 }]),
+        unitEmployeeIds.length > 0
+          ? db
+              .select({ c: count() })
+              .from(leaveApplications)
+              .where(
+                and(
+                  eq(leaveApplications.status, "approved"),
+                  lte(leaveApplications.dateFrom, today),
+                  gte(leaveApplications.dateTo, today),
+                  inArray(leaveApplications.employeeId, unitEmployeeIds),
+                ),
+              )
+          : Promise.resolve([{ c: 0 }]),
+        unitEmployeeIds.length > 0
+          ? db
+              .select({ c: count() })
+              .from(overtimeRequests)
+              .where(
+                and(
+                  eq(overtimeRequests.status, "pending"),
+                  inArray(overtimeRequests.employeeId, unitEmployeeIds),
+                ),
+              )
+          : Promise.resolve([{ c: 0 }]),
+        getUpcomingHolidaysCount(),
+      ]);
+
+    return {
+      pendingTeamLeaves: Number(pendingRow[0]?.c ?? 0),
+      teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+      pendingOtApprovals: Number(pendingOtRow[0]?.c ?? 0),
+      upcomingHolidays: upcomingHol,
+    };
+  }
+
+  // Org-wide fallback when no officeId is provided.
   const [pendingRow, onLeaveTodayRow, pendingOtRow, upcomingHol] =
     await Promise.all([
       db
         .select({ c: count() })
         .from(leaveApplications)
-        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
-        .where(
-          officeFilter
-            ? and(eq(leaveApplications.status, "pending"), officeFilter)
-            : eq(leaveApplications.status, "pending"),
-        ),
+        .where(eq(leaveApplications.status, "pending")),
       db
         .select({ c: count() })
         .from(leaveApplications)
-        .innerJoin(employees, eq(leaveApplications.employeeId, employees.id))
         .where(
-          officeFilter
-            ? and(
-                eq(leaveApplications.status, "approved"),
-                lte(leaveApplications.dateFrom, today),
-                gte(leaveApplications.dateTo, today),
-                officeFilter,
-              )
-            : and(
-                eq(leaveApplications.status, "approved"),
-                lte(leaveApplications.dateFrom, today),
-                gte(leaveApplications.dateTo, today),
-              ),
+          and(
+            eq(leaveApplications.status, "approved"),
+            lte(leaveApplications.dateFrom, today),
+            gte(leaveApplications.dateTo, today),
+          ),
         ),
       db
         .select({ c: count() })
         .from(overtimeRequests)
-        .innerJoin(employees, eq(overtimeRequests.employeeId, employees.id))
-        .where(
-          officeFilter
-            ? and(eq(overtimeRequests.status, "pending"), officeFilter)
-            : eq(overtimeRequests.status, "pending"),
-        ),
+        .where(eq(overtimeRequests.status, "pending")),
       getUpcomingHolidaysCount(),
     ]);
 

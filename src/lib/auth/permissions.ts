@@ -118,6 +118,7 @@ export const permissionMatrix: PermissionMatrix = {
         "super_admin",
         "hr_admin",
         "payroll_admin",
+        "leave_approver",
         "viewer",
         "employee_self_service",
       ],
@@ -133,7 +134,7 @@ export const permissionMatrix: PermissionMatrix = {
 
   // ── plantilla ─────────────────────────────────────────────────────────────
   plantilla: {
-    view: ["super_admin", "hr_admin", "viewer"],
+    view: ["super_admin", "hr_admin", "leave_approver", "viewer"],
     create: ["super_admin", "hr_admin"],
     edit: ["super_admin", "hr_admin"],
     delete: ["super_admin"],
@@ -180,7 +181,12 @@ export const permissionMatrix: PermissionMatrix = {
       ],
       selfOnly: SELF_ONLY,
     },
-    create: ["super_admin", "hr_admin", "employee_self_service"],
+    create: [
+      "super_admin",
+      "hr_admin",
+      "leave_approver",
+      "employee_self_service",
+    ],
     edit: ["super_admin", "hr_admin"],
     delete: ["super_admin"],
     approve: ["super_admin", "hr_admin", "leave_approver"],
@@ -380,6 +386,7 @@ const ALWAYS_AUTHENTICATED: ReadonlyArray<string> = [
  */
 export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   // ── Admin panel ───────────────────────────────────────────────────────────
+  "/admin/audit-logs": ["super_admin", "viewer"],
   "/admin": ["super_admin"],
 
   // ── Payroll ───────────────────────────────────────────────────────────────
@@ -434,8 +441,8 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/plantilla": ["super_admin", "hr_admin", "viewer", "executive", "auditor"],
 
   // ── SALN ──────────────────────────────────────────────────────────────────
-  "/saln/admin": ["super_admin"],
-  "/saln": ["super_admin", "employee_self_service", "auditor"],
+  "/saln/admin": ["super_admin", "hr_admin", "viewer"],
+  "/saln": ["super_admin", "hr_admin", "viewer", "employee_self_service"],
 
   // ── Performance ───────────────────────────────────────────────────────────
   "/performance/cycles": ["super_admin", "hr_admin"],
@@ -508,7 +515,12 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "auditor",
     "employee_self_service",
   ],
-  "/leave/apply": ["super_admin", "hr_admin", "employee_self_service"],
+  "/leave/apply": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "employee_self_service",
+  ],
   "/leave/calendar": [
     "super_admin",
     "hr_admin",
@@ -595,6 +607,7 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "super_admin",
     "hr_admin",
     "payroll_admin",
+    "leave_approver",
     "viewer",
     "executive",
     "auditor",

@@ -88,8 +88,14 @@ async function PayrollKpisSection() {
   return <PayrollAdminDashboard data={data} />;
 }
 
-async function LeaveApproverKpisSection({ userId }: { userId: string }) {
-  const data = await getLeaveApproverKpis(userId);
+async function LeaveApproverKpisSection({
+  userId,
+  officeId,
+}: {
+  userId: string;
+  officeId?: string | null;
+}) {
+  const data = await getLeaveApproverKpis(userId, officeId);
   return <LeaveApproverDashboard data={data} />;
 }
 
@@ -98,8 +104,14 @@ async function EmployeeKpisSection({ employeeId }: { employeeId: string }) {
   return <EmployeeDashboard data={data} />;
 }
 
-async function SupervisorKpisSection({ userId }: { userId: string }) {
-  const data = await getSupervisorKpis(userId);
+async function SupervisorKpisSection({
+  userId,
+  officeId,
+}: {
+  userId: string;
+  officeId?: string | null;
+}) {
+  const data = await getSupervisorKpis(userId, officeId);
   return <SupervisorDashboard data={data} />;
 }
 
@@ -126,6 +138,7 @@ function buildRoleConfig(
   role: Role,
   userId: string,
   employeeId: string | null,
+  officeId: string | null,
 ): RoleConfig {
   switch (role) {
     case "super_admin":
@@ -160,7 +173,7 @@ function buildRoleConfig(
         tables: LEAVE_APPROVER_REALTIME_TABLES,
         body: (
           <Suspense fallback={<KpiGridSkeleton />}>
-            <LeaveApproverKpisSection userId={userId} />
+            <LeaveApproverKpisSection userId={userId} officeId={officeId} />
           </Suspense>
         ),
       };
@@ -173,7 +186,7 @@ function buildRoleConfig(
         tables: SUPERVISOR_REALTIME_TABLES,
         body: (
           <Suspense fallback={<KpiGridSkeleton />}>
-            <SupervisorKpisSection userId={userId} />
+            <SupervisorKpisSection userId={userId} officeId={officeId} />
           </Suspense>
         ),
       };
@@ -217,25 +230,28 @@ function buildRoleConfig(
         };
       }
       return {
-        title: "My Dashboard",
-        description: "PCSO HRIS — Employee Self-Service",
+        title: "Dashboard",
+        description: "PCSO HRIS",
         tables: [],
         body: (
-          <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-            Your account is not yet linked to an employee record. Contact HR to
-            complete your profile setup.
+          <div className="rounded-lg border border-dashed p-8 text-center">
+            <h2 className="text-lg font-semibold">Welcome to PCSO HRIS</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your account is not yet linked to an employee record. Please
+              contact HR to complete your profile setup.
+            </p>
           </div>
         ),
       };
 
     case "viewer":
       return {
-        title: "Dashboard",
-        description: "PCSO HRIS overview",
-        tables: AUDIT_REALTIME_TABLES,
+        title: "Leadership Dashboard",
+        description: "Org-wide workforce analytics and compliance overview",
+        tables: EXECUTIVE_REALTIME_TABLES,
         body: (
           <Suspense fallback={<KpiGridSkeleton />}>
-            <AuditorKpisSection />
+            <ExecutiveKpisSection />
           </Suspense>
         ),
       };
@@ -257,7 +273,12 @@ function buildRoleConfig(
 export default async function DashboardPage() {
   const user = await requireAuth();
 
-  const config = buildRoleConfig(user.role, user.id, user.employeeId);
+  const config = buildRoleConfig(
+    user.role,
+    user.id,
+    user.employeeId,
+    user.officeId ?? null,
+  );
 
   return (
     <div className="space-y-6">

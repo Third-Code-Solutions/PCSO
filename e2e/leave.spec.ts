@@ -63,8 +63,8 @@ test.describe("Leave Management", () => {
       const yesterday = new Date(today);
       yesterday.setDate(today.getDate() - 1);
 
-      const startDate = today.toISOString().split("T")[0]!;
-      const endDate = yesterday.toISOString().split("T")[0]!;
+      const startDate = today.toISOString().split("T")[0] ?? "";
+      const endDate = yesterday.toISOString().split("T")[0] ?? "";
 
       await page.getByLabel(/start date|from/i).fill(startDate);
       await page.getByLabel(/end date|to/i).fill(endDate);
