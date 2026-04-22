@@ -1,3 +1,42 @@
+## Development Quick Reference
+
+**Stack:** Next.js 15 (App Router) · Drizzle ORM · Supabase/PostgreSQL · Vitest · Playwright
+
+**Key commands**
+
+- `npm run dev` — start dev server
+- `npm run type-check` — TypeScript check (no emit)
+- `npm run test` — unit tests (Vitest, no DB required)
+- `npm run lint` — ESLint
+- `npm run build` — production build
+- `npm run db:generate` — generate Drizzle migration
+- `npm run db:push` — push schema to DB
+
+**CI uses `npm` (not pnpm).** Both lock files exist; don't switch to pnpm in CI.
+
+**Migration patterns**
+
+- `CREATE TYPE`: use `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN null; END $$;` (PostgreSQL lacks `CREATE TYPE IF NOT EXISTS`)
+- RLS migrations: guard with `IF EXISTS (SELECT FROM pg_tables WHERE tablename = '...')` before adding policies
+- All tables require RLS — no table should be left without policies
+
+**Auth enforcement (two layers — both required)**
+
+1. Middleware route-gating (before page load)
+2. Server action authorization check (before any DB write)
+
+**Unit test env stubs** (no real DB needed):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://test.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key
+SUPABASE_SERVICE_ROLE_KEY=test-service-role-key
+```
+
+**Schema location:** `src/lib/db/schema/` · **Migrations:** `supabase/migrations/`
+
+---
+
 # PHILIPPINE CHARITY SWEEPSTAKES OFFICE
 
 _Human Resource System_
