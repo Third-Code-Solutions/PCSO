@@ -29,7 +29,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withTx, type Tx } from "@/lib/db/transaction";
 import { requireAuth } from "@/lib/auth/guards";
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   mrfs,
   mrfApprovals,
@@ -559,7 +559,7 @@ export async function publishVacancy(
     const pdfBuffer = await renderToBuffer(CscForm9({ data: pdfData }));
 
     // Upload to Supabase storage
-    const supabase = await createServerClient();
+    const supabase = supabaseAdmin;
     const pdfPath = `csc-form-9/${parsed.vacancyId}.pdf`;
     const { error: uploadErr } = await supabase.storage
       .from(RPM_DOCS_BUCKET)

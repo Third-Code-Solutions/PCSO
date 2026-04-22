@@ -25,7 +25,7 @@ import {
   inArray,
   sql,
 } from "drizzle-orm";
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth } from "@/lib/auth/guards";
 import type { DateString } from "@/lib/utils/attendance/types";
 
@@ -232,7 +232,7 @@ export async function getOvertimeRequests(
   employeeId?: string,
   status?: OvertimeRequestRow["status"],
 ): Promise<OvertimeRequestRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("overtime_requests")
@@ -490,7 +490,7 @@ export async function getTodayKpis(today: DateString): Promise<TodayKpis> {
   // Overtime pending — queried via Supabase since OT requests live there
   let overtimePending = 0;
   try {
-    const supabase = await createServerClient();
+    const supabase = supabaseAdmin;
     const { count } = await supabase
       .from("overtime_requests")
       .select("id", { count: "exact", head: true })

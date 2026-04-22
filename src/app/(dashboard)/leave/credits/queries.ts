@@ -10,8 +10,8 @@
  *  - Callers must separately enforce ownership when user is employee_self_service.
  */
 
-import { createServerClient } from '@/lib/supabase/server';
-import type { LeaveTypeCode } from '@/lib/constants/leave-types';
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import type { LeaveTypeCode } from "@/lib/constants/leave-types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,8 +58,18 @@ export interface CreditsHistoryResult {
 // ---------------------------------------------------------------------------
 
 const MONTH_LABELS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 function monthLabel(month: number): string {
@@ -84,12 +94,13 @@ export async function getCreditsHistoryForYear(
   employeeId: string,
   year: number,
 ): Promise<CreditsHistoryResult> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   // ── 1. Leave applications that consumed VL/SL in this year ────────────────
   const { data: appData, error: appError } = await supabase
-    .from('leave_applications')
-    .select(`
+    .from("leave_applications")
+    .select(
+      `
       id,
       date_from,
       date_to,
@@ -97,12 +108,13 @@ export async function getCreditsHistoryForYear(
       status,
       approved_at,
       leave_types ( code, name )
-    `)
-    .eq('employee_id', employeeId)
-    .in('status', ['approved'])
-    .gte('date_from', `${year}-01-01`)
-    .lte('date_from', `${year}-12-31`)
-    .order('date_from', { ascending: true });
+    `,
+    )
+    .eq("employee_id", employeeId)
+    .in("status", ["approved"])
+    .gte("date_from", `${year}-01-01`)
+    .lte("date_from", `${year}-12-31`)
+    .order("date_from", { ascending: true });
 
   if (appError) {
     throw new Error(`Failed to fetch leave history: ${appError.message}`);
@@ -112,11 +124,11 @@ export async function getCreditsHistoryForYear(
     .filter((row) => {
       const lt = row.leave_types as { code?: string } | null;
       // Only show VL and SL — these are the types that deduct from credits.
-      return lt?.code === 'VL' || lt?.code === 'SL';
+      return lt?.code === "VL" || lt?.code === "SL";
     })
     .map((row) => {
       const lt = row.leave_types as { code?: string; name?: string } | null;
-      const code = (lt?.code ?? 'VL') as LeaveTypeCode;
+      const code = (lt?.code ?? "VL") as LeaveTypeCode;
       return {
         id: String(row.id),
         leaveTypeCode: code,
@@ -125,35 +137,46 @@ export async function getCreditsHistoryForYear(
         dateTo: String(row.date_to),
         daysDeducted: Number(row.no_of_days),
         status: String(row.status),
-        approvedAt: typeof row.approved_at === 'string' ? row.approved_at : null,
+        approvedAt:
+          typeof row.approved_at === "string" ? row.approved_at : null,
       };
     });
 
   // ── 2. Leave credits rows for this year + previous year (carry-over) ───────
   const { data: creditData } = await supabase
-    .from('leave_credits')
-    .select(`
+    .from("leave_credits")
+    .select(
+      `
       year,
       total_credits,
       used_credits,
       balance,
       carry_over,
       leave_types ( code )
-    `)
-    .eq('employee_id', employeeId)
-    .in('year', [year - 1, year]);
+    `,
+    )
+    .eq("employee_id", employeeId)
+    .in("year", [year - 1, year]);
 
   const vlCurrentRow = (creditData ?? []).find(
-    (r) => Number(r.year) === year && (r.leave_types as { code?: string } | null)?.code === 'VL',
+    (r) =>
+      Number(r.year) === year &&
+      (r.leave_types as { code?: string } | null)?.code === "VL",
   );
   const slCurrentRow = (creditData ?? []).find(
-    (r) => Number(r.year) === year && (r.leave_types as { code?: string } | null)?.code === 'SL',
+    (r) =>
+      Number(r.year) === year &&
+      (r.leave_types as { code?: string } | null)?.code === "SL",
   );
   const vlPriorRow = (creditData ?? []).find(
-    (r) => Number(r.year) === year - 1 && (r.leave_types as { code?: string } | null)?.code === 'VL',
+    (r) =>
+      Number(r.year) === year - 1 &&
+      (r.leave_types as { code?: string } | null)?.code === "VL",
   );
   const slPriorRow = (creditData ?? []).find(
-    (r) => Number(r.year) === year - 1 && (r.leave_types as { code?: string } | null)?.code === 'SL',
+    (r) =>
+      Number(r.year) === year - 1 &&
+      (r.leave_types as { code?: string } | null)?.code === "SL",
   );
 
   // Carry-over: current year's carry_over field, fallback to prior year's balance
@@ -176,12 +199,14 @@ export async function getCreditsHistoryForYear(
   // ── 3. Monthly accrual schedule ────────────────────────────────────────────
   // We estimate from hire date. 1.25 days/month per CSC rules.
   const { data: empData } = await supabase
-    .from('employees')
-    .select('date_hired')
-    .eq('id', employeeId)
+    .from("employees")
+    .select("date_hired")
+    .eq("id", employeeId)
     .single();
 
-  const hireDate = empData?.date_hired ? new Date(String(empData.date_hired)) : null;
+  const hireDate = empData?.date_hired
+    ? new Date(String(empData.date_hired))
+    : null;
   const hireYear = hireDate?.getFullYear() ?? year;
   const hireMonthIndex = hireDate?.getMonth() ?? 0; // 0-indexed
   const hireDay = hireDate?.getDate() ?? 1;
@@ -252,20 +277,21 @@ export interface EmployeePickerRow {
  * Only active (non-deleted) employees are included.
  */
 export async function getEmployeePickerList(): Promise<EmployeePickerRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
-    .from('employees')
-    .select('id, employee_no, first_name, last_name, date_hired')
-    .is('deleted_at', null)
-    .order('last_name', { ascending: true });
+    .from("employees")
+    .select("id, employee_no, first_name, last_name, date_hired")
+    .is("deleted_at", null)
+    .order("last_name", { ascending: true });
 
   if (error) throw new Error(`Failed to fetch employee list: ${error.message}`);
 
   return (data ?? []).map((row) => ({
     id: String(row.id),
-    employeeNo: String(row.employee_no ?? ''),
-    fullName: `${String(row.last_name ?? '')}, ${String(row.first_name ?? '')}`.trim(),
-    dateHired: typeof row.date_hired === 'string' ? row.date_hired : null,
+    employeeNo: String(row.employee_no ?? ""),
+    fullName:
+      `${String(row.last_name ?? "")}, ${String(row.first_name ?? "")}`.trim(),
+    dateHired: typeof row.date_hired === "string" ? row.date_hired : null,
   }));
 }

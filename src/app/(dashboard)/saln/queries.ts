@@ -9,7 +9,8 @@
  * is highly restricted under RA 6713 and EO 17).
  */
 
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FilingType, SalnStatus } from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
@@ -141,7 +142,7 @@ function toSubmissionDetail(
 // ---------------------------------------------------------------------------
 
 async function writeSalnViewAudit(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: SupabaseClient,
   params: {
     viewerUserId: string;
     targetEmployeeId: string;
@@ -170,7 +171,7 @@ export async function getMySalnSubmissions(
   viewerUserId: string,
   employeeId: string,
 ): Promise<SalnSubmissionRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("saln_submissions")
@@ -232,7 +233,7 @@ export async function getSalnSubmissionById(
   submissionId: string,
   isSuperAdmin: boolean,
 ): Promise<SalnSubmissionDetail | null> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("saln_submissions")
@@ -312,7 +313,7 @@ export async function getSalnSubmissionById(
 export async function getSalnComplianceForYear(
   year: number,
 ): Promise<ComplianceRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   // Fetch all active employees
   const { data: empData, error: empError } = await supabase
@@ -438,7 +439,7 @@ export async function getAllSubmissionsForSuperAdmin(
   _viewerUserId: string,
   filter: SubmissionsFilter = {},
 ): Promise<PaginatedSubmissions> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
   const page = Math.max(1, filter.page ?? 1);
   const perPage = Math.min(
     200,

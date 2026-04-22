@@ -19,7 +19,7 @@ import {
   checkStepEligibility,
   toRatingRecord,
 } from "@/lib/utils/performance/step-eligibility";
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { AdjectivalRating } from "@/lib/constants/performance";
 import type { Metadata } from "next";
 
@@ -37,7 +37,7 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
   const { employeeId } = await params;
   await requirePermission("performance", "view");
 
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   // Fetch employee details
   const { data: emp, error: empError } = await supabase

@@ -11,7 +11,7 @@
  *    on error or missing data — they never throw on empty result sets.
  */
 
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { LEAVE_TYPES, LEAVE_TYPE_CODES } from "@/lib/constants/leave-types";
 import type { LeaveTypeCode } from "@/lib/constants/leave-types";
 
@@ -105,7 +105,7 @@ export async function getMyLeaveApplications(
   employeeId: string,
 ): Promise<LeaveApplicationRow[]> {
   if (!employeeId) return [];
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("leave_applications")
@@ -212,7 +212,7 @@ export async function getPendingApprovals(
 export async function getPendingApprovals(
   options?: GetPendingApprovalsOptions & { paginated?: boolean },
 ): Promise<PendingApprovalRow[] | PaginatedPendingApprovals> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const page = Math.max(1, options?.page ?? 1);
   const pageSize = Math.min(100, Math.max(5, options?.pageSize ?? 25));
@@ -357,7 +357,7 @@ export async function getLeaveApplicationDetail(
   leaveApplicationId: string,
 ): Promise<LeaveApplicationDetail | null> {
   if (!leaveApplicationId) return null;
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("leave_applications")
@@ -435,7 +435,7 @@ export async function getLeaveCreditBalance(
   year: number,
 ): Promise<LeaveCreditBalanceRow | null> {
   if (!employeeId) return null;
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   // Filter to known leave codes so any stale/unknown rows the DB might carry
   // don't leak into the balance summary.
@@ -518,7 +518,7 @@ export interface PaginatedEmployeeCreditSummaries {
 export async function getAllEmployeeCreditSummaries(
   year: number,
 ): Promise<EmployeeCreditSummary[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("leave_credits")
@@ -634,7 +634,7 @@ export async function getApprovedLeavesForCalendar(
   officeId?: string,
   scopeEmployeeId?: string,
 ): Promise<CalendarLeaveEntry[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("leave_applications")
@@ -732,7 +732,7 @@ async function runLeaveApplicationsQuery(
   filters: GetAllLeaveApplicationsFilters | undefined,
   withCount: boolean,
 ): Promise<PaginatedLeaveApplications> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const page = Math.max(1, filters?.page ?? 1);
   const pageSize = Math.min(200, Math.max(5, filters?.pageSize ?? 50));

@@ -5,7 +5,7 @@
  * with RLS awareness.
  */
 
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { db } from "@/lib/db";
 import { adminCases, attendanceLogs, salnSubmissions } from "@/lib/db/schema";
 import { and, eq, inArray, isNull, gte, lte } from "drizzle-orm";
@@ -192,7 +192,7 @@ function toRatingRow(
 // ─── Performance Periods ──────────────────────────────────────────────────────
 
 export async function getPerformancePeriods(): Promise<PerformancePeriodRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("performance_periods")
@@ -209,7 +209,7 @@ export async function getPerformancePeriods(): Promise<PerformancePeriodRow[]> {
 export async function getPerformancePeriodById(
   periodId: string,
 ): Promise<PerformancePeriodRow | null> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("performance_periods")
@@ -227,7 +227,7 @@ export async function getPerformancePeriodById(
 export async function getMyPerformanceRatings(
   employeeId: string,
 ): Promise<PerformanceRatingRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("performance_ratings")
@@ -278,7 +278,7 @@ export interface ApprovedIpcrfRow extends PerformanceRatingRow {
 export async function getApprovedIpcrfWithPeriodDates(
   employeeId: string,
 ): Promise<ApprovedIpcrfRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("performance_ratings")
@@ -328,7 +328,7 @@ export async function getApprovedIpcrfWithPeriodDates(
 export async function getPerformanceRatingById(
   ratingId: string,
 ): Promise<PerformanceRatingRow | null> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("performance_ratings")
@@ -369,7 +369,7 @@ export async function getRatingsByPeriod(
 ): Promise<
   (PerformanceRatingRow & { employeeName: string; employeeNo: string })[]
 > {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("performance_ratings")
@@ -426,7 +426,7 @@ export interface OpcfrRow extends PerformanceRatingRow {
 }
 
 export async function getOpcfrRatings(periodId?: string): Promise<OpcfrRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("performance_ratings")
@@ -484,7 +484,7 @@ export async function getOpcfrRatings(periodId?: string): Promise<OpcfrRow[]> {
 export async function getStepIncrements(
   status?: string,
 ): Promise<StepIncrementRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("step_increments")
@@ -543,7 +543,7 @@ export async function getStepIncrements(
 export async function getStepIncrementsByEmployee(
   employeeId: string,
 ): Promise<StepIncrementRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("step_increments")
@@ -601,7 +601,7 @@ export async function getStepIncrementsByEmployee(
 export async function getEligibleEmployeesForStepIncrement(): Promise<
   EligibleEmployeeRow[]
 > {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   // Fetch all active employees with their recent ratings
   const { data: employees, error: empError } = await supabase
@@ -722,7 +722,7 @@ export interface PerformanceAnalyticsSummary {
 export async function getPerformanceAnalytics(
   periodId?: string,
 ): Promise<PerformanceAnalyticsSummary> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("performance_ratings")
@@ -831,7 +831,7 @@ export interface PerformanceDashboardKpis {
 }
 
 export async function getPerformanceDashboardKpis(): Promise<PerformanceDashboardKpis> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
   const year = new Date().getFullYear();
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
@@ -897,7 +897,7 @@ export async function getPerformancePeriodsPaginated(
   limit: number,
   statusFilter?: string,
 ): Promise<PaginatedPeriodsResult> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
@@ -950,7 +950,7 @@ export async function getAllIpcrfPaginated(
     q?: string;
   } = {},
 ): Promise<PaginatedIpcrfResult> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
@@ -1033,7 +1033,7 @@ export async function getStepIncrementsPaginated(
   limit: number,
   statusFilter?: string,
 ): Promise<PaginatedStepIncrementsResult> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
@@ -1108,7 +1108,7 @@ export interface OfficeAnalyticsRow {
 export async function getOfficePerformanceBreakdown(
   periodId?: string,
 ): Promise<OfficeAnalyticsRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("performance_ratings")
@@ -1199,7 +1199,7 @@ export interface CycleTrendRow {
 }
 
 export async function getRatingTrend(): Promise<CycleTrendRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("performance_ratings")
@@ -1261,7 +1261,7 @@ export interface DpcrRow {
 }
 
 export async function getDpcrRatings(periodId?: string): Promise<DpcrRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("performance_ratings")
@@ -1338,7 +1338,7 @@ export interface BpcrRow {
 }
 
 export async function getBpcrRatings(periodId?: string): Promise<BpcrRow[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   let query = supabase
     .from("performance_ratings")
@@ -1421,7 +1421,7 @@ export interface PbbListResult {
 }
 
 export async function getPbbQualificationList(): Promise<PbbListResult> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   // Fetch all approved IPCRF ratings for the current/most recent cycle
   const { data: ratingsData, error: ratingsError } = await supabase

@@ -23,7 +23,7 @@ import { withTx, type Tx } from "@/lib/db/transaction";
 import { offices, plantillaPositions, employees } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth/guards";
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   atomicallyProvisionNewEmployee,
   type AppointmentIssueInput,
@@ -351,7 +351,7 @@ export async function issueAppointment(
     },
   ];
 
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
   const bucket = "rpm-appointments";
 
   const documents: AppointmentDocumentStatus[] = [];

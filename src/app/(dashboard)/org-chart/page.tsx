@@ -7,7 +7,7 @@
  */
 
 import type { Metadata } from "next";
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/layouts/page-header";
 import { requireAuth } from "@/lib/auth/guards";
 import { OrgChartClient } from "./_client";
@@ -38,7 +38,7 @@ interface RawOffice {
 // ---------------------------------------------------------------------------
 
 async function getOrgChartData(): Promise<RawOffice[]> {
-  const supabase = await createServerClient();
+  const supabase = supabaseAdmin;
 
   // Fetch all offices with head employee name
   const { data: officesData, error: offErr } = await supabase

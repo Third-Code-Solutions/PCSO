@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layouts/page-header";
 import { requirePermission } from "@/lib/auth/guards";
-import { createServerClient } from "@/lib/supabase/server";
+import { db } from "@/lib/db";
+import { systemUsers } from "@/lib/db/schema/users";
+import { employees } from "@/lib/db/schema/employees";
+import { offices } from "@/lib/db/schema/offices";
+import { eq } from "drizzle-orm";
 
 export const metadata: Metadata = { title: "User Detail — Admin" };
 
@@ -24,21 +28,27 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 async function getUser(id: string) {
-  const supabase = await createServerClient();
-  const { data, error } = await supabase
-    .from("system_users")
-    .select(
-      `
-      id, email, role, is_active, last_login, created_at, auth_uid,
-      offices(name, code),
-      employees(first_name, last_name, position_title, employee_no)
-    `,
-    )
-    .eq("id", id)
-    .single();
-
-  if (error || !data) return null;
-  return data;
+  const rows = await db
+    .select({
+      id: systemUsers.id,
+      email: systemUsers.email,
+      role: systemUsers.role,
+      isActive: systemUsers.isActive,
+      lastLogin: systemUsers.lastLogin,
+      createdAt: systemUsers.createdAt,
+      authUid: systemUsers.authUid,
+      officeName: offices.name,
+      officeCode: offices.code,
+      employeeFirstName: employees.firstName,
+      employeeLastName: employees.lastName,
+      employeeNo: employees.employeeNo,
+    })
+    .from(systemUsers)
+    .leftJoin(employees, eq(systemUsers.employeeId, employees.id))
+    .leftJoin(offices, eq(systemUsers.officeId, offices.id))
+    .where(eq(systemUsers.id, id))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 export default async function UserDetailPage({ params }: PageProps) {
@@ -48,21 +58,16 @@ export default async function UserDetailPage({ params }: PageProps) {
 
   if (!user) notFound();
 
-  const office = Array.isArray(user.offices) ? user.offices[0] : user.offices;
-  const employee = Array.isArray(user.employees)
-    ? user.employees[0]
-    : user.employees;
-
   return (
     <div className="space-y-6 p-6">
       <PageHeader
-        title={user.email as string}
+        title={user.email}
         description="System user account details"
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Admin", href: "/admin" },
           { label: "Users", href: "/admin/users" },
-          { label: user.email as string },
+          { label: user.email },
         ]}
         actions={
           <Button
@@ -82,16 +87,16 @@ export default async function UserDetailPage({ params }: PageProps) {
         <dl className="space-y-4 text-sm">
           <div className="flex justify-between">
             <dt className="font-medium text-muted-foreground">Email</dt>
-            <dd>{user.email as string}</dd>
+            <dd>{user.email}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="font-medium text-muted-foreground">Role</dt>
-            <dd>{ROLE_LABELS[user.role as string] ?? (user.role as string)}</dd>
+            <dd>{ROLE_LABELS[user.role] ?? user.role}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="font-medium text-muted-foreground">Status</dt>
             <dd>
-              {user.is_active ? (
+              {user.isActive ? (
                 <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                   Active
                 </Badge>
@@ -103,8 +108,8 @@ export default async function UserDetailPage({ params }: PageProps) {
           <div className="flex justify-between">
             <dt className="font-medium text-muted-foreground">Office Scope</dt>
             <dd>
-              {office
-                ? `${(office as { name: string }).name} (${(office as { code: string }).code})`
+              {user.officeName
+                ? `${user.officeName} (${user.officeCode})`
                 : "Org-wide"}
             </dd>
           </div>
@@ -113,16 +118,16 @@ export default async function UserDetailPage({ params }: PageProps) {
               Linked Employee
             </dt>
             <dd>
-              {employee
-                ? `${(employee as { first_name: string }).first_name} ${(employee as { last_name: string }).last_name} — ${(employee as { employee_no: string }).employee_no}`
+              {user.employeeFirstName
+                ? `${user.employeeFirstName} ${user.employeeLastName} — ${user.employeeNo}`
                 : "—"}
             </dd>
           </div>
           <div className="flex justify-between">
             <dt className="font-medium text-muted-foreground">Last Login</dt>
             <dd>
-              {user.last_login
-                ? new Date(user.last_login as string).toLocaleString("en-PH")
+              {user.lastLogin
+                ? new Date(user.lastLogin).toLocaleString("en-PH")
                 : "Never"}
             </dd>
           </div>
@@ -130,16 +135,14 @@ export default async function UserDetailPage({ params }: PageProps) {
             <dt className="font-medium text-muted-foreground">
               Account Created
             </dt>
-            <dd>
-              {new Date(user.created_at as string).toLocaleString("en-PH")}
-            </dd>
+            <dd>{new Date(user.createdAt).toLocaleString("en-PH")}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="font-medium text-muted-foreground">
               Supabase Auth UID
             </dt>
             <dd className="font-mono text-xs text-muted-foreground">
-              {(user.auth_uid as string) ?? "—"}
+              {user.authUid ?? "—"}
             </dd>
           </div>
         </dl>
