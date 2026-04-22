@@ -6,35 +6,40 @@
  * and the clock-out button pre-binds to the real attendanceLogId.
  */
 
-import { format } from 'date-fns';
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth/get-current-user';
-import { db } from '@/lib/db';
-import { attendanceLogs } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { ClockWidget } from './clock-widget';
+import { format } from "date-fns";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth/get-current-user";
+import { db } from "@/lib/db";
+import { attendanceLogs } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
+import { ClockWidget } from "./clock-widget";
 
-export const metadata = { title: 'Web Time Clock' };
+export const metadata = { title: "Web Time Clock" };
 
 export default async function ClockPage() {
   const user = await getCurrentUser();
-  if (!user) redirect('/login');
+  if (!user) redirect("/login");
 
   if (!user.employeeId) {
     return (
       <main className="mx-auto max-w-md px-4 py-12">
         <div className="rounded-2xl border border-[#0B2545]/10 bg-white p-8 text-center shadow-md">
           <p className="text-sm text-gray-500">
-            Your account is not linked to an employee record. Contact HR to resolve this.
+            Your account is not linked to an employee record. Contact HR to
+            resolve this.
           </p>
         </div>
       </main>
     );
   }
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const today = format(new Date(), "yyyy-MM-dd");
 
-  let todayLog: { id: string; timeIn: string | null; timeOut: string | null } | null = null;
+  let todayLog: {
+    id: string;
+    timeIn: string | null;
+    timeOut: string | null;
+  } | null = null;
   try {
     const [row] = await db
       .select({
@@ -50,7 +55,13 @@ export default async function ClockPage() {
         ),
       )
       .limit(1);
-    todayLog = row ?? null;
+    if (row) {
+      todayLog = {
+        id: row.id,
+        timeIn: row.timeIn ? row.timeIn.slice(0, 5) : null,
+        timeOut: row.timeOut ? row.timeOut.slice(0, 5) : null,
+      };
+    }
   } catch {
     // Non-fatal — widget will start in a fresh state
     todayLog = null;
