@@ -26,8 +26,14 @@ interface VacancyRow {
   officeName: string | null;
 }
 
+const SELECTION_WRITE_ROLES: ReadonlyArray<string> = [
+  "super_admin",
+  "hr_admin",
+];
+
 export default async function SelectionIndexPage() {
-  await requireAuth();
+  const user = await requireAuth();
+  const canScore = SELECTION_WRITE_ROLES.includes(user.role);
 
   const result = await listActiveVacancies().catch(() => null);
 
@@ -88,7 +94,7 @@ export default async function SelectionIndexPage() {
                       href={`/recruitment/selection/${row.id}`}
                       className="text-sm font-medium text-primary hover:underline"
                     >
-                      Score
+                      {canScore ? "Score" : "View"}
                     </Link>
                   </TableCell>
                 </TableRow>

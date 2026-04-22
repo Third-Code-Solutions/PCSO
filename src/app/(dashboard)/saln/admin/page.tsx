@@ -1,13 +1,12 @@
 /**
  * /saln/admin — SALN Compliance Tracker
  *
- * Super-admin-only view of all employees' annual SALN filing status.
+ * View of all employees' annual SALN filing status.
  * Supports bulk reminder emails and CSV export for COA submission.
  *
- * Access: super_admin only.
+ * Access: super_admin, hr_admin (full); auditor/executive via viewer (read-only).
  */
 
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { UsersIcon } from "lucide-react";
 import { requirePermission } from "@/lib/auth/guards";
@@ -31,12 +30,7 @@ interface AdminSalnPageProps {
 export default async function AdminSalnPage({
   searchParams,
 }: AdminSalnPageProps) {
-  const user = await requirePermission("saln", "approve");
-
-  // Gate to super_admin only
-  if (user.role !== "super_admin") {
-    redirect("/dashboard");
-  }
+  const user = await requirePermission("saln", "view");
 
   const resolvedParams = await searchParams;
   const year = resolvedParams.year
@@ -94,20 +88,28 @@ export default async function AdminSalnPage({
       <ComplianceDashboard
         rows={rows}
         year={year}
-        onSendReminders={async (employeeIds: string[]) => {
-          "use server";
-          const result = await sendReminders({
-            year,
-            employeeIds: employeeIds.length > 0 ? employeeIds : undefined,
-          });
-          return { sent: result.sent, failed: result.failed };
-        }}
-        onExport={async () => {
-          "use server";
-          // Export is downloaded via client-side trigger in the component.
-          // Server action generates data; client initiates download.
-          await exportDocuments({ year, format: "csv" });
-        }}
+        onSendReminders={
+          user.role === "super_admin" || user.role === "hr_admin"
+            ? async (employeeIds: string[]) => {
+                "use server";
+                const result = await sendReminders({
+                  year,
+                  employeeIds: employeeIds.length > 0 ? employeeIds : undefined,
+                });
+                return { sent: result.sent, failed: result.failed };
+              }
+            : undefined
+        }
+        onExport={
+          user.role === "super_admin" || user.role === "hr_admin"
+            ? async () => {
+                "use server";
+                // Export is downloaded via client-side trigger in the component.
+                // Server action generates data; client initiates download.
+                await exportDocuments({ year, format: "csv" });
+              }
+            : undefined
+        }
       />
     </div>
   );

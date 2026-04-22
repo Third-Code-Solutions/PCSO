@@ -8,39 +8,47 @@
  *                        /attendance/clock + /attendance/overtime/new.
  */
 
-import Link from 'next/link';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { requireAuth } from '@/lib/auth/guards';
-import { hasPermission } from '@/lib/auth/permissions';
+import Link from "next/link";
+import { format, startOfMonth, endOfMonth } from "date-fns";
+import { requireAuth } from "@/lib/auth/guards";
 import {
   getOwnAttendanceLogs,
   getAttendanceLogsByPeriod,
   getAnomaliesForPeriod,
   getTodayKpis,
-} from './queries';
-import { DtrCalendar } from '@/components/attendance/dtr-calendar';
-import { DtrTable } from '@/components/attendance/dtr-table';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
+} from "./queries";
+import { DtrCalendar } from "@/components/attendance/dtr-calendar";
+import { DtrTable } from "@/components/attendance/dtr-table";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 
 interface PageProps {
   searchParams: Promise<{ year?: string; month?: string }>;
 }
 
-export const metadata = { title: 'Attendance' };
+export const metadata = { title: "Attendance" };
 
 export default async function AttendancePage({ searchParams }: PageProps) {
   const user = await requireAuth();
-  const isAdmin = hasPermission(user.role, 'attendance', 'approve');
+  // Admin/HR/Approver/Auditor/Viewer see org-wide KPIs; employee_self_service
+  // sees only their own DTR.  We deliberately do NOT gate on `approve` because
+  // auditors have `attendance.view` (via the `viewer` alias) but not `approve`.
+  const isAdmin = user.role !== "employee_self_service";
 
   const params = await searchParams;
   const now = new Date();
   const year = params.year ? Number(params.year) : now.getFullYear();
   const month = params.month ? Number(params.month) : now.getMonth() + 1;
 
-  const periodStart = format(startOfMonth(new Date(year, month - 1, 1)), 'yyyy-MM-dd');
-  const periodEnd = format(endOfMonth(new Date(year, month - 1, 1)), 'yyyy-MM-dd');
-  const today = format(now, 'yyyy-MM-dd');
-  const monthLabel = format(new Date(year, month - 1, 1), 'MMMM yyyy');
+  const periodStart = format(
+    startOfMonth(new Date(year, month - 1, 1)),
+    "yyyy-MM-dd",
+  );
+  const periodEnd = format(
+    endOfMonth(new Date(year, month - 1, 1)),
+    "yyyy-MM-dd",
+  );
+  const today = format(now, "yyyy-MM-dd");
+  const monthLabel = format(new Date(year, month - 1, 1), "MMMM yyyy");
 
   if (isAdmin) {
     // Admin / HR / Approver dashboard
@@ -66,13 +74,16 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
     return (
       <main className="mx-auto max-w-7xl px-4 py-8">
-        <RealtimeBoundary tables={['attendance_logs']} />
+        <RealtimeBoundary tables={["attendance_logs"]} />
 
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[#0B2545]">Attendance Overview</h1>
+            <h1 className="text-2xl font-bold text-[#0B2545]">
+              Attendance Overview
+            </h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              {monthLabel} — {daysUntilCutoff} day{daysUntilCutoff === 1 ? '' : 's'} until period cutoff
+              {monthLabel} — {daysUntilCutoff} day
+              {daysUntilCutoff === 1 ? "" : "s"} until period cutoff
             </p>
           </div>
           <div className="flex gap-2">
@@ -93,17 +104,50 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
         {/* Today KPIs */}
         <section aria-labelledby="today-kpis" className="mb-8">
-          <h2 id="today-kpis" className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Today ({format(now, 'MMM d, yyyy')})
+          <h2
+            id="today-kpis"
+            className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500"
+          >
+            Today ({format(now, "MMM d, yyyy")})
           </h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {[
-              { label: 'Active Employees', value: kpis.activeEmployees, color: 'text-[#0B2545]', bg: 'bg-[#FAF4E6] border-[#C8A84B]/40' },
-              { label: 'Clocked In', value: kpis.present, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-              { label: 'Late', value: kpis.late, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
-              { label: 'Absent', value: kpis.absent, color: 'text-red-700', bg: 'bg-red-50 border-red-200' },
-              { label: 'Incomplete', value: kpis.incomplete, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-200' },
-              { label: 'OT Pending', value: kpis.overtimePending, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
+              {
+                label: "Active Employees",
+                value: kpis.activeEmployees,
+                color: "text-[#0B2545]",
+                bg: "bg-[#FAF4E6] border-[#C8A84B]/40",
+              },
+              {
+                label: "Clocked In",
+                value: kpis.present,
+                color: "text-emerald-700",
+                bg: "bg-emerald-50 border-emerald-200",
+              },
+              {
+                label: "Late",
+                value: kpis.late,
+                color: "text-amber-700",
+                bg: "bg-amber-50 border-amber-200",
+              },
+              {
+                label: "Absent",
+                value: kpis.absent,
+                color: "text-red-700",
+                bg: "bg-red-50 border-red-200",
+              },
+              {
+                label: "Incomplete",
+                value: kpis.incomplete,
+                color: "text-orange-700",
+                bg: "bg-orange-50 border-orange-200",
+              },
+              {
+                label: "OT Pending",
+                value: kpis.overtimePending,
+                color: "text-blue-700",
+                bg: "bg-blue-50 border-blue-200",
+              },
             ].map(({ label, value, color, bg }) => (
               <div key={label} className={`rounded-xl border p-4 ${bg}`}>
                 <div className={`text-2xl font-bold ${color}`}>{value}</div>
@@ -113,8 +157,13 @@ export default async function AttendancePage({ searchParams }: PageProps) {
           </div>
           {anomalies.length > 0 && (
             <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm text-orange-800">
-              <strong>{anomalies.length}</strong> attendance anomal{anomalies.length === 1 ? 'y' : 'ies'} flagged this period — review in
-              <Link href="/attendance/admin" className="ml-1 underline hover:text-orange-900">
+              <strong>{anomalies.length}</strong> attendance anomal
+              {anomalies.length === 1 ? "y" : "ies"} flagged this period —
+              review in
+              <Link
+                href="/attendance/admin"
+                className="ml-1 underline hover:text-orange-900"
+              >
                 Admin view
               </Link>
               .
@@ -124,32 +173,52 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
         {/* Period summary */}
         <section aria-labelledby="period-summary">
-          <h2 id="period-summary" className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <h2
+            id="period-summary"
+            className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500"
+          >
             Period Summary — {monthLabel}
           </h2>
           <div className="rounded-xl border border-[#0B2545]/10 bg-white p-6 shadow-sm">
             <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
               <div>
-                <div className="text-2xl font-bold text-[#0B2545]">{periodLogs.length}</div>
-                <div className="mt-0.5 text-xs text-gray-500">Total Records</div>
+                <div className="text-2xl font-bold text-[#0B2545]">
+                  {periodLogs.length}
+                </div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  Total Records
+                </div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-[#0B2545]">
-                  {periodLogs.reduce((s, l) => s + l.lateMinutes, 0).toLocaleString()}m
+                  {periodLogs
+                    .reduce((s, l) => s + l.lateMinutes, 0)
+                    .toLocaleString()}
+                  m
                 </div>
                 <div className="mt-0.5 text-xs text-gray-500">Total Late</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-[#0B2545]">
-                  {periodLogs.reduce((s, l) => s + l.undertimeMinutes, 0).toLocaleString()}m
+                  {periodLogs
+                    .reduce((s, l) => s + l.undertimeMinutes, 0)
+                    .toLocaleString()}
+                  m
                 </div>
-                <div className="mt-0.5 text-xs text-gray-500">Total Undertime</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  Total Undertime
+                </div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-[#0B2545]">
-                  {periodLogs.reduce((s, l) => s + l.overtimeMinutes, 0).toLocaleString()}m
+                  {periodLogs
+                    .reduce((s, l) => s + l.overtimeMinutes, 0)
+                    .toLocaleString()}
+                  m
                 </div>
-                <div className="mt-0.5 text-xs text-gray-500">Total Overtime</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  Total Overtime
+                </div>
               </div>
             </div>
           </div>
@@ -164,7 +233,8 @@ export default async function AttendancePage({ searchParams }: PageProps) {
   try {
     logs = await getOwnAttendanceLogs(periodStart, periodEnd);
   } catch (err: unknown) {
-    fetchError = err instanceof Error ? err.message : 'Failed to load attendance records';
+    fetchError =
+      err instanceof Error ? err.message : "Failed to load attendance records";
   }
 
   const totalLate = logs.reduce((sum, l) => sum + l.lateMinutes, 0);
@@ -172,8 +242,10 @@ export default async function AttendancePage({ searchParams }: PageProps) {
   const absences = logs.filter((l) => !l.timeIn && !l.timeOut).length;
   const todayLog = logs.find((l) => l.date === today);
 
-  const prevMonth = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
-  const nextMonth = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+  const prevMonth =
+    month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+  const nextMonth =
+    month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -182,14 +254,14 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#0B2545]/10 bg-gradient-to-r from-[#0B2545] to-[#13315C] px-6 py-5 text-[#FAF4E6] shadow-md">
           <div>
             <p className="text-xs uppercase tracking-wide text-[#FAF4E6]/60">
-              Today — {format(now, 'EEEE, MMMM d')}
+              Today — {format(now, "EEEE, MMMM d")}
             </p>
             <p className="mt-1 text-lg font-semibold">
               {todayLog?.timeIn && todayLog?.timeOut
                 ? `Clocked in ${todayLog.timeIn} · Clocked out ${todayLog.timeOut}`
                 : todayLog?.timeIn
-                ? `Clocked in at ${todayLog.timeIn}`
-                : 'You have not clocked in yet today'}
+                  ? `Clocked in at ${todayLog.timeIn}`
+                  : "You have not clocked in yet today"}
             </p>
           </div>
           <div className="flex gap-2">
@@ -197,7 +269,11 @@ export default async function AttendancePage({ searchParams }: PageProps) {
               href="/attendance/clock"
               className="rounded-lg bg-[#C8A84B] px-4 py-2 text-sm font-semibold text-[#0B2545] hover:bg-[#E0C77A]"
             >
-              {todayLog?.timeOut ? 'Clock Page' : todayLog?.timeIn ? 'Clock Out' : 'Clock In'}
+              {todayLog?.timeOut
+                ? "Clock Page"
+                : todayLog?.timeIn
+                  ? "Clock Out"
+                  : "Clock In"}
             </Link>
             <Link
               href="/attendance/overtime/new"
@@ -212,8 +288,12 @@ export default async function AttendancePage({ searchParams }: PageProps) {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#0B2545]">My Daily Time Record</h1>
-          <p className="mt-0.5 text-sm text-gray-500">CSC Form No. 48 — {monthLabel}</p>
+          <h1 className="text-2xl font-bold text-[#0B2545]">
+            My Daily Time Record
+          </h1>
+          <p className="mt-0.5 text-sm text-gray-500">
+            CSC Form No. 48 — {monthLabel}
+          </p>
         </div>
         <nav className="flex items-center gap-3" aria-label="Month navigation">
           <a
@@ -242,10 +322,22 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
-          { label: 'Days Present', value: logs.filter((l) => l.timeIn && l.timeOut).length, color: 'text-emerald-700' },
-          { label: 'Days Absent', value: absences, color: 'text-red-700' },
-          { label: 'Total Late (min)', value: totalLate, color: 'text-amber-700' },
-          { label: 'Total Undertime (min)', value: totalUndertime, color: 'text-orange-700' },
+          {
+            label: "Days Present",
+            value: logs.filter((l) => l.timeIn && l.timeOut).length,
+            color: "text-emerald-700",
+          },
+          { label: "Days Absent", value: absences, color: "text-red-700" },
+          {
+            label: "Total Late (min)",
+            value: totalLate,
+            color: "text-amber-700",
+          },
+          {
+            label: "Total Undertime (min)",
+            value: totalUndertime,
+            color: "text-orange-700",
+          },
         ].map(({ label, value, color }) => (
           <div
             key={label}
@@ -258,14 +350,20 @@ export default async function AttendancePage({ searchParams }: PageProps) {
       </div>
 
       <section aria-labelledby="calendar-heading" className="mb-6">
-        <h2 id="calendar-heading" className="mb-3 text-base font-semibold text-[#0B2545]">
+        <h2
+          id="calendar-heading"
+          className="mb-3 text-base font-semibold text-[#0B2545]"
+        >
           Calendar View
         </h2>
         <DtrCalendar year={year} month={month} logs={logs} />
       </section>
 
       <section aria-labelledby="table-heading">
-        <h2 id="table-heading" className="mb-3 text-base font-semibold text-[#0B2545]">
+        <h2
+          id="table-heading"
+          className="mb-3 text-base font-semibold text-[#0B2545]"
+        >
           Detailed Log
         </h2>
         <DtrTable logs={logs} />

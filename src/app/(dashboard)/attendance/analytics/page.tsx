@@ -27,7 +27,7 @@ export const metadata = { title: "Attendance Analytics" };
 export default async function AttendanceAnalyticsPage({
   searchParams,
 }: PageProps) {
-  await requirePermission("attendance", "approve");
+  await requirePermission("attendance", "view");
   const params = await searchParams;
 
   const now = new Date();

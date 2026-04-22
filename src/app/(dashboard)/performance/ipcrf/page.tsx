@@ -61,9 +61,16 @@ interface Props {
 export default async function IpcrfListPage({ searchParams }: Props) {
   const user = await requireAuth();
   const params = await searchParams;
-  const isHr = hasPermission(user.role, "performance", "edit");
+  // "canEdit" → hr_admin / super_admin: may approve/disapprove ratings.
+  // "canViewAll" → any role with performance.view that is NOT employee_self_service
+  //   (auditor, viewer, executive, leave_approver all get the full org-wide list).
+  //   employee_self_service falls through to the self-service branch below.
+  const canEdit = hasPermission(user.role, "performance", "edit");
+  const canViewAll =
+    hasPermission(user.role, "performance", "view") &&
+    user.role !== "employee_self_service";
 
-  if (!isHr) {
+  if (!canViewAll) {
     if (!user.employeeId) {
       return (
         <main className="mx-auto max-w-5xl px-4 py-6">
@@ -352,7 +359,11 @@ export default async function IpcrfListPage({ searchParams }: Props) {
                     </Badge>
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    <ApprovalButtons ratingId={r.id} status={r.status} />
+                    <ApprovalButtons
+                      ratingId={r.id}
+                      status={r.status}
+                      canApprove={canEdit}
+                    />
                   </td>
                 </tr>
               ))}

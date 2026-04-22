@@ -47,10 +47,12 @@ type FilterStatus = "all" | "filed" | "not_filed" | "late";
 interface ComplianceDashboardProps {
   rows: ComplianceRow[];
   year: number;
-  onSendReminders: (
+  /** Omit to render the Send Reminders button as hidden (read-only roles). */
+  onSendReminders?: (
     employeeIds: string[],
   ) => Promise<{ sent: number; failed: number }>;
-  onExport: () => Promise<void>;
+  /** Omit to render the Export CSV button as hidden (read-only roles). */
+  onExport?: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +161,7 @@ export function ComplianceDashboard({
   }
 
   function handleSendReminders() {
+    if (!onSendReminders) return;
     const ids =
       selected.size > 0
         ? [...selected]
@@ -183,6 +186,7 @@ export function ComplianceDashboard({
   }
 
   function handleExport() {
+    if (!onExport) return;
     startTransition(async () => {
       try {
         await onExport();
@@ -289,29 +293,33 @@ export function ComplianceDashboard({
             Select Non-Filers
           </Button>
 
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={handleSendReminders}
-          >
-            <MailIcon className="mr-1.5 h-4 w-4" aria-hidden />
-            {selected.size > 0
-              ? `Send Reminders (${selected.size})`
-              : "Remind All Non-Filers"}
-          </Button>
+          {onSendReminders && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPending}
+              onClick={handleSendReminders}
+            >
+              <MailIcon className="mr-1.5 h-4 w-4" aria-hidden />
+              {selected.size > 0
+                ? `Send Reminders (${selected.size})`
+                : "Remind All Non-Filers"}
+            </Button>
+          )}
 
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={handleExport}
-          >
-            <DownloadIcon className="mr-1.5 h-4 w-4" aria-hidden />
-            Export CSV
-          </Button>
+          {onExport && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPending}
+              onClick={handleExport}
+            >
+              <DownloadIcon className="mr-1.5 h-4 w-4" aria-hidden />
+              Export CSV
+            </Button>
+          )}
         </div>
       </div>
 

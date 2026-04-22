@@ -252,19 +252,19 @@ export const permissionMatrix: PermissionMatrix = {
   },
 
   // ── saln (Statement of Assets, Liabilities, and Net Worth) ───────────────
-  // Highly restricted: super_admin sees all records.
+  // Per PRD §11: hr_admin has Full access to SALN.
   // employee_self_service may view/file/edit only their own SALN.
   saln: {
     view: {
-      roles: ["super_admin", "viewer", "employee_self_service"],
+      roles: ["super_admin", "hr_admin", "viewer", "employee_self_service"],
       selfOnly: SELF_ONLY,
     },
-    create: ["super_admin", "employee_self_service"],
-    edit: ["super_admin", "employee_self_service"],
+    create: ["super_admin", "hr_admin", "employee_self_service"],
+    edit: ["super_admin", "hr_admin", "employee_self_service"],
     delete: ["super_admin"],
-    approve: ["super_admin"],
-    export: ["super_admin"],
-    process: ["super_admin"],
+    approve: ["super_admin", "hr_admin"],
+    export: ["super_admin", "hr_admin"],
+    process: ["super_admin", "hr_admin"],
   },
 
   // ── reports ───────────────────────────────────────────────────────────────
@@ -386,7 +386,13 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
 
   // ── Payroll ───────────────────────────────────────────────────────────────
   "/payroll/new": ["super_admin", "payroll_admin"],
-  "/payroll/history": ["super_admin", "payroll_admin"],
+  "/payroll/history": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/payroll/process": ["super_admin", "payroll_admin"],
   "/payroll/approve": ["super_admin"],
   "/payroll/remittances": ["super_admin", "payroll_admin"],
@@ -413,17 +419,60 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/payroll": ["super_admin", "payroll_admin"],
 
   // ── Remittances ───────────────────────────────────────────────────────────
+  // /new routes are write operations — restricted to payroll_admin+
   "/remittances/gsis/retirement": ["super_admin", "payroll_admin"],
   "/remittances/gsis/new": ["super_admin", "payroll_admin"],
-  "/remittances/gsis": ["super_admin", "payroll_admin"],
+  "/remittances/gsis": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/remittances/philhealth/new": ["super_admin", "payroll_admin"],
-  "/remittances/philhealth": ["super_admin", "payroll_admin"],
+  "/remittances/philhealth": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/remittances/pagibig/new": ["super_admin", "payroll_admin"],
-  "/remittances/pagibig": ["super_admin", "payroll_admin"],
-  "/remittances/bir/1601-c": ["super_admin", "payroll_admin"],
-  "/remittances/bir/2316": ["super_admin", "payroll_admin"],
-  "/remittances/bir/1604-c": ["super_admin", "payroll_admin"],
-  "/remittances/bir": ["super_admin", "payroll_admin"],
+  "/remittances/pagibig": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
+  "/remittances/bir/1601-c": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
+  "/remittances/bir/2316": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
+  "/remittances/bir/1604-c": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
+  "/remittances/bir": [
+    "super_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/remittances": [
     "super_admin",
     "payroll_admin",
@@ -441,14 +490,29 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
 
   // ── Performance ───────────────────────────────────────────────────────────
   "/performance/cycles": ["super_admin", "hr_admin"],
-  "/performance/opcrf": ["super_admin", "hr_admin"],
+  "/performance/opcrf": [
+    "super_admin",
+    "hr_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/performance/step-increments": ["super_admin", "hr_admin"],
-  "/performance/analytics": ["super_admin", "hr_admin"],
+  "/performance/analytics": [
+    "super_admin",
+    "hr_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/performance/dpcr": [
     "super_admin",
     "hr_admin",
     "leave_approver",
     "supervisor",
+    "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/performance/bpcr": [
@@ -456,6 +520,9 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "hr_admin",
     "leave_approver",
     "supervisor",
+    "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
   "/performance/ipcrf": [
@@ -611,6 +678,9 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/learning/certificates": [
     "super_admin",
     "hr_admin",
+    "viewer",
+    "executive",
+    "auditor",
     "employee_self_service",
   ],
 

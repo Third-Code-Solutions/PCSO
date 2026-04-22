@@ -1,18 +1,17 @@
 /**
  * /saln/tracking — SALN Compliance Tracking Dashboard
  *
- * Super-admin-only. Displays KPI cards, a compliance progress bar,
- * per-office fill rate bars, an upcoming deadline countdown, and a
- * non-filer table with individual and bulk "Send Reminder" controls.
+ * Displays KPI cards, a compliance progress bar, per-office fill rate bars,
+ * an upcoming deadline countdown, and a non-filer table with individual and
+ * bulk "Send Reminder" controls.
  *
- * Access: super_admin only (requirePermission + explicit role guard).
- * Others → /dashboard?error=forbidden.
+ * Access: any role with saln.view permission (super_admin, hr_admin, auditor).
+ * Write actions (Send Reminder, Export) are shown only for super_admin / hr_admin.
  *
  * Realtime: RealtimeBoundary on ['saln_submissions'] refreshes the
  * page whenever a new submission lands.
  */
 
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth/guards";
 import {
@@ -79,13 +78,10 @@ interface TrackingPageProps {
 export default async function SalnTrackingPage({
   searchParams,
 }: TrackingPageProps) {
-  // Auth: require saln/approve permission (super_admin holds this)
-  const user = await requirePermission("saln", "approve");
+  // Auth: require saln/view permission (super_admin, hr_admin, auditor)
+  const user = await requirePermission("saln", "view");
 
-  // Strict role gate — any other role goes to dashboard
-  if (user.role !== "super_admin") {
-    redirect("/dashboard?error=forbidden");
-  }
+  const canWrite = user.role === "super_admin" || user.role === "hr_admin";
 
   const resolved = await searchParams;
   const year = resolved.year
@@ -118,11 +114,12 @@ export default async function SalnTrackingPage({
   const currentYear = new Date().getFullYear();
   const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
-  // Inline server actions forwarded to client
+  // Inline server actions forwarded to client (write actions — guarded)
   async function handleSendReminders(
     employeeIds: string[],
   ): Promise<{ sent: number; failed: number }> {
     "use server";
+    await requirePermission("saln", "approve");
     const result = await sendReminders({
       year,
       employeeIds: employeeIds.length > 0 ? employeeIds : undefined,
@@ -136,6 +133,7 @@ export default async function SalnTrackingPage({
     mimeType: string;
   }> {
     "use server";
+    await requirePermission("saln", "approve");
     return exportDocuments({ year, format: "csv" });
   }
 
@@ -184,6 +182,7 @@ export default async function SalnTrackingPage({
         daysLeft={daysLeft}
         deadlineDateLabel={deadlineDateLabel}
         nonFilers={nonFilers}
+        canWrite={canWrite}
         onSendReminders={handleSendReminders}
         onExportCsv={handleExportCsv}
       />

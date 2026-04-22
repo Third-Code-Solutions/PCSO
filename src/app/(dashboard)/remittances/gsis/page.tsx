@@ -8,6 +8,7 @@ import { eq, and, isNull, count, gte } from "drizzle-orm";
 import { getGsisBatches } from "./actions";
 import { GsisBatchTable } from "@/components/remittances/gsis-batch-table";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { hasPermission } from "@/lib/auth/permissions";
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
@@ -102,7 +103,8 @@ function StatCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function GsisRemittancePage() {
-  await requirePermission("remittances", "view");
+  const user = await requirePermission("remittances", "view");
+  const canCreate = hasPermission(user.role, "remittances", "create");
   const stats = await fetchGsisStats();
 
   return (
@@ -119,20 +121,22 @@ export default async function GsisRemittancePage() {
           { label: "GSIS" },
         ]}
         actions={
-          <div className="flex items-center gap-3">
-            <Link
-              href="/remittances/gsis/retirement"
-              className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
-            >
-              Retirement Tracker
-            </Link>
-            <Link
-              href="/remittances/gsis/new"
-              className="rounded-lg bg-pcso-navy px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-pcso-navy-light"
-            >
-              Generate Batch
-            </Link>
-          </div>
+          canCreate ? (
+            <div className="flex items-center gap-3">
+              <Link
+                href="/remittances/gsis/retirement"
+                className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
+              >
+                Retirement Tracker
+              </Link>
+              <Link
+                href="/remittances/gsis/new"
+                className="rounded-lg bg-pcso-navy px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-pcso-navy-light"
+              >
+                Generate Batch
+              </Link>
+            </div>
+          ) : undefined
         }
       />
 

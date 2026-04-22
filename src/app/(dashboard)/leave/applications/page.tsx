@@ -93,7 +93,14 @@ export default async function LeaveApplicationsPage({
   const user = await requirePermission("leave", "view");
 
   const canPending = hasPermission(user.role, "leave", "approve");
-  const canAll = hasPermission(user.role, "leave", "export");
+  // `canAll` grants access to the full filterable history tab.
+  // Auditors/viewers have leave.view but not leave.export — they should still
+  // be able to see all applications read-only.  Export capability is checked
+  // separately inside the AllApplicationsTable client component.
+  const canAll =
+    hasPermission(user.role, "leave", "export") ||
+    (hasPermission(user.role, "leave", "view") &&
+      user.role !== "employee_self_service");
 
   const params = await searchParams;
   const rawTab = pickString(params["tab"]);

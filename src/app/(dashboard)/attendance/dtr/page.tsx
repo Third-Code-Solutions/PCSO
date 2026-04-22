@@ -9,26 +9,26 @@
  * props to the client shell.
  */
 
-import { Suspense } from 'react';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { requirePermission } from '@/lib/auth/guards';
-import { hasPermission } from '@/lib/auth/permissions';
+import { Suspense } from "react";
+import { format, startOfMonth, endOfMonth } from "date-fns";
+import { requirePermission } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import {
   getOwnAttendanceLogs,
   getAttendanceLogsByPeriod,
   getEmployeeSummaries,
   type AttendanceLogRow,
   type EmployeeSummary,
-} from '@/app/(dashboard)/attendance/queries';
-import { PageHeader } from '@/components/layouts/page-header';
-import { DtrClient } from './_client';
-import type { DateString } from '@/lib/utils/attendance/types';
+} from "@/app/(dashboard)/attendance/queries";
+import { PageHeader } from "@/components/layouts/page-header";
+import { DtrClient } from "./_client";
+import type { DateString } from "@/lib/utils/attendance/types";
 
 // ---------------------------------------------------------------------------
 // Metadata
 // ---------------------------------------------------------------------------
 
-export const metadata = { title: 'Daily Time Record' };
+export const metadata = { title: "Daily Time Record" };
 
 // ---------------------------------------------------------------------------
 // Page
@@ -48,7 +48,11 @@ interface PageProps {
 
 function DtrSkeleton() {
   return (
-    <div aria-busy="true" aria-live="polite" aria-label="Loading attendance records">
+    <div
+      aria-busy="true"
+      aria-live="polite"
+      aria-label="Loading attendance records"
+    >
       {/* Controls bar skeleton */}
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <div className="h-10 w-64 animate-pulse rounded-lg bg-gray-200" />
@@ -68,10 +72,7 @@ function DtrSkeleton() {
       <div className="overflow-hidden rounded-lg border border-gray-200">
         <div className="h-10 bg-[#0B2545]" />
         {Array.from({ length: 8 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex gap-2 border-t border-gray-100 p-3"
-          >
+          <div key={i} className="flex gap-2 border-t border-gray-100 p-3">
             <div className="h-4 w-full animate-pulse rounded bg-gray-100" />
           </div>
         ))}
@@ -87,6 +88,7 @@ function DtrSkeleton() {
 
 interface DtrDataProps {
   canExport: boolean;
+  canViewAll: boolean;
   userEmployeeId: string | null;
   employeeIdParam: string | undefined;
   year: number;
@@ -100,6 +102,7 @@ interface DtrDataProps {
 
 async function DtrData({
   canExport,
+  canViewAll,
   userEmployeeId,
   employeeIdParam,
   year,
@@ -110,8 +113,10 @@ async function DtrData({
   periodStart,
   periodEnd,
 }: DtrDataProps) {
+  // Load the employee picker for anyone who can view all employees' DTRs
+  // (includes auditors/viewers who cannot export but can browse).
   let employeeList: EmployeeSummary[] = [];
-  if (canExport) {
+  if (canViewAll) {
     try {
       employeeList = await getEmployeeSummaries();
     } catch {
@@ -124,7 +129,7 @@ async function DtrData({
   let fetchError: string | null = null;
 
   try {
-    if (canExport) {
+    if (canViewAll) {
       if (employeeIdParam) {
         selectedEmployeeId = employeeIdParam;
         logs = await getAttendanceLogsByPeriod(
@@ -141,7 +146,7 @@ async function DtrData({
     }
   } catch (err: unknown) {
     fetchError =
-      err instanceof Error ? err.message : 'Failed to load attendance records.';
+      err instanceof Error ? err.message : "Failed to load attendance records.";
   }
 
   return (
@@ -171,12 +176,19 @@ async function DtrData({
 }
 
 export default async function DtrPage({ searchParams }: PageProps) {
-  const user = await requirePermission('attendance', 'view');
+  const user = await requirePermission("attendance", "view");
 
   const params = await searchParams;
   const now = new Date();
 
-  const canExport = hasPermission(user.role, 'attendance', 'export');
+  const canExport = hasPermission(user.role, "attendance", "export");
+  // Auditors/viewers have attendance.view but not attendance.export.
+  // They should still be able to browse any employee's DTR (read-only) —
+  // canViewAll gates the employee picker and the all-employees data fetch.
+  const canViewAll =
+    canExport ||
+    (hasPermission(user.role, "attendance", "view") &&
+      user.role !== "employee_self_service");
 
   const year = params.year ? Number(params.year) : now.getFullYear();
   const month = params.month ? Number(params.month) : now.getMonth() + 1;
@@ -187,18 +199,18 @@ export default async function DtrPage({ searchParams }: PageProps) {
 
   const periodStart = format(
     startOfMonth(new Date(year, month - 1, 1)),
-    'yyyy-MM-dd',
+    "yyyy-MM-dd",
   ) as DateString;
   const periodEnd = format(
     endOfMonth(new Date(year, month - 1, 1)),
-    'yyyy-MM-dd',
+    "yyyy-MM-dd",
   ) as DateString;
-  const monthLabel = format(new Date(year, month - 1, 1), 'MMMM yyyy');
+  const monthLabel = format(new Date(year, month - 1, 1), "MMMM yyyy");
 
   // Suspense key forces the boundary to re-suspend (and show the skeleton)
   // when year / month / employee changes — giving responsive feedback for
   // concurrent users paging between periods.
-  const suspenseKey = `${year}-${month}-${params.employeeId ?? 'self'}`;
+  const suspenseKey = `${year}-${month}-${params.employeeId ?? "self"}`;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -206,14 +218,15 @@ export default async function DtrPage({ searchParams }: PageProps) {
         title="Daily Time Record"
         description="CSC Form No. 48 — Attendance browser and CSV export"
         breadcrumbs={[
-          { label: 'Time & Attendance', href: '/attendance' },
-          { label: 'Daily Time Record' },
+          { label: "Time & Attendance", href: "/attendance" },
+          { label: "Daily Time Record" },
         ]}
       />
 
       <Suspense key={suspenseKey} fallback={<DtrSkeleton />}>
         <DtrData
           canExport={canExport}
+          canViewAll={canViewAll}
           userEmployeeId={user.employeeId ?? null}
           employeeIdParam={params.employeeId}
           year={year}

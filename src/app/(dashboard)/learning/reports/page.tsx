@@ -27,7 +27,7 @@ interface PageProps {
 }
 
 export default async function LearningReportsPage({ searchParams }: PageProps) {
-  const user = await requireAuth();
+  await requireAuth();
   const params = await searchParams;
 
   const rawYear = Array.isArray(params["year"])

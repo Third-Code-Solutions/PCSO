@@ -8,18 +8,25 @@ import { approveRating, disapproveRating } from "../actions";
 interface ApprovalButtonsProps {
   ratingId: string;
   status: string;
+  /** When false (auditor/viewer), always show a View link — never approve/reject buttons. */
+  canApprove?: boolean;
 }
 
 /**
  * Inline approve/disapprove for submitted ratings on the HR list view.
- * Collapses into a single "Review →" link for any other status.
+ * Collapses into a single "View" link when status is not "submitted" OR
+ * when `canApprove` is false (auditor/viewer roles).
  */
-export function ApprovalButtons({ ratingId, status }: ApprovalButtonsProps) {
+export function ApprovalButtons({
+  ratingId,
+  status,
+  canApprove = false,
+}: ApprovalButtonsProps) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<"approve" | "disapprove" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-  if (status !== "submitted") {
+  if (status !== "submitted" || !canApprove) {
     return (
       <a
         href={`/performance/ipcrf/${ratingId}`}

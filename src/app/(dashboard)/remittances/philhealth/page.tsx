@@ -8,6 +8,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/layouts/page-header";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 import { requirePermission } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import { getPhilHealthBatches } from "./actions";
 
 export const metadata: Metadata = {
@@ -29,7 +30,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default async function PhilHealthPage() {
-  await requirePermission("remittances", "view");
+  const user = await requirePermission("remittances", "view");
+  const canCreate = hasPermission(user.role, "remittances", "create");
   const batches = await getPhilHealthBatches({ page: 1, perPage: 25 });
 
   return (
@@ -44,12 +46,14 @@ export default async function PhilHealthPage() {
           { label: "PhilHealth" },
         ]}
         actions={
-          <Link
-            href="/remittances/philhealth/new"
-            className="rounded-lg bg-pcso-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-pcso-navy-light"
-          >
-            Generate New Batch
-          </Link>
+          canCreate ? (
+            <Link
+              href="/remittances/philhealth/new"
+              className="rounded-lg bg-pcso-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-pcso-navy-light"
+            >
+              Generate New Batch
+            </Link>
+          ) : undefined
         }
       />
 
@@ -68,12 +72,14 @@ export default async function PhilHealthPage() {
           <p className="mt-1 text-xs text-gray-300">
             Generate a batch after the payroll period is approved or paid.
           </p>
-          <Link
-            href="/remittances/philhealth/new"
-            className="mt-4 inline-block rounded-lg bg-pcso-navy px-4 py-2 text-sm font-semibold text-white"
-          >
-            Generate First Batch
-          </Link>
+          {canCreate && (
+            <Link
+              href="/remittances/philhealth/new"
+              className="mt-4 inline-block rounded-lg bg-pcso-navy px-4 py-2 text-sm font-semibold text-white"
+            >
+              Generate First Batch
+            </Link>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">

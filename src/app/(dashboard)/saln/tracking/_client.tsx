@@ -65,6 +65,7 @@ interface TrackingClientProps {
   daysLeft: number;
   deadlineDateLabel: string;
   nonFilers: ComplianceRow[];
+  canWrite: boolean;
   onSendReminders: (
     employeeIds: string[],
   ) => Promise<{ sent: number; failed: number }>;
@@ -211,6 +212,7 @@ export function TrackingClient({
   daysLeft,
   deadlineDateLabel,
   nonFilers,
+  canWrite,
   onSendReminders,
   onExportCsv,
 }: TrackingClientProps) {
@@ -431,26 +433,30 @@ export function TrackingClient({
                 className="h-8 w-52 text-sm"
                 aria-label="Search non-filers"
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isPending || totalNotFiled === 0}
-                onClick={handleSendAll}
-              >
-                <Mail className="mr-1.5 h-4 w-4" aria-hidden />
-                Send Reminder to All
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isPending}
-                onClick={handleExport}
-              >
-                <Download className="mr-1.5 h-4 w-4" aria-hidden />
-                Export Non-Compliance CSV
-              </Button>
+              {canWrite && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending || totalNotFiled === 0}
+                    onClick={handleSendAll}
+                  >
+                    <Mail className="mr-1.5 h-4 w-4" aria-hidden />
+                    Send Reminder to All
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={handleExport}
+                  >
+                    <Download className="mr-1.5 h-4 w-4" aria-hidden />
+                    Export Non-Compliance CSV
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -503,22 +509,24 @@ export function TrackingClient({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs text-pcso-navy hover:bg-pcso-navy/10"
-                        disabled={isPending && sendingId === row.employeeId}
-                        onClick={() =>
-                          handleSendSingle(row.employeeId, row.employeeName)
-                        }
-                        aria-label={`Send reminder to ${row.employeeName}`}
-                      >
-                        <Mail className="mr-1 h-3 w-3" aria-hidden />
-                        {isPending && sendingId === row.employeeId
-                          ? "Sending..."
-                          : "Send Reminder"}
-                      </Button>
+                      {canWrite && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-pcso-navy hover:bg-pcso-navy/10"
+                          disabled={isPending && sendingId === row.employeeId}
+                          onClick={() =>
+                            handleSendSingle(row.employeeId, row.employeeName)
+                          }
+                          aria-label={`Send reminder to ${row.employeeName}`}
+                        >
+                          <Mail className="mr-1 h-3 w-3" aria-hidden />
+                          {isPending && sendingId === row.employeeId
+                            ? "Sending..."
+                            : "Send Reminder"}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

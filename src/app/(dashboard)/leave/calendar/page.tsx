@@ -45,10 +45,12 @@ export default async function LeaveCalendarPage({ searchParams }: PageProps) {
   const user = await requireAuth();
   const params = await searchParams;
 
+  // Auditors/viewers have leave.view but not leave.approve — they should still
+  // see the full org-wide calendar, not be scoped to their own office.
+  // Use leave.view with a role-is-not-employee check instead of leave.approve.
   const canViewAllOffices =
-    user.role === "super_admin" ||
-    user.role === "hr_admin" ||
-    hasPermission(user.role, "leave", "approve");
+    hasPermission(user.role, "leave", "view") &&
+    user.role !== "employee_self_service";
 
   const rawMonth = Array.isArray(params["month"])
     ? params["month"][0]
