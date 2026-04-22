@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
+import { Bell, Building2, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +55,45 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           { label: "Settings" },
         ]}
       />
+
+      {/* Sub-page navigation cards */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link
+          href="/admin/settings/org-profile"
+          className="group flex items-center gap-4 rounded-lg border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-pcso-navy/10">
+            <Building2 className="h-5 w-5 text-pcso-navy" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-semibold text-foreground group-hover:text-pcso-navy transition-colors">
+              Organization Profile
+            </h2>
+            <p className="text-sm text-muted-foreground truncate">
+              Agency identity, employer IDs, and contact info (P0-001)
+            </p>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
+
+        <Link
+          href="/admin/settings/notifications"
+          className="group flex items-center gap-4 rounded-lg border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-pcso-navy/10">
+            <Bell className="h-5 w-5 text-pcso-navy" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-semibold text-foreground group-hover:text-pcso-navy transition-colors">
+              Notification Templates
+            </h2>
+            <p className="text-sm text-muted-foreground truncate">
+              Configure 38 system notification templates (PRD §13)
+            </p>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      </div>
 
       <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
         <Card>

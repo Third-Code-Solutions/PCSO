@@ -164,7 +164,10 @@ export async function generateAnnualNotices(
 
 // ─── listPendingNotices ─────────────────────────────────────────────────────
 
-export type RetirementNoticeRow = RetirementNotice;
+export interface RetirementNoticeRow extends RetirementNotice {
+  employeeName: string;
+  employeeNo: string;
+}
 
 export async function listPendingNotices(
   input: unknown,
@@ -182,11 +185,52 @@ export async function listPendingNotices(
     }
 
     const rows = await db
-      .select()
+      .select({
+        id: retirementNotices.id,
+        forYear: retirementNotices.forYear,
+        generatedAt: retirementNotices.generatedAt,
+        employeeId: retirementNotices.employeeId,
+        retirementType: retirementNotices.retirementType,
+        eligibleDate: retirementNotices.eligibleDate,
+        monthsUntilEligible: retirementNotices.monthsUntilEligible,
+        status: retirementNotices.status,
+        notifiedAt: retirementNotices.notifiedAt,
+        createdAt: retirementNotices.createdAt,
+        updatedAt: retirementNotices.updatedAt,
+        deletedAt: retirementNotices.deletedAt,
+        firstName: employees.firstName,
+        middleName: employees.middleName,
+        lastName: employees.lastName,
+        suffix: employees.suffix,
+        employeeNo: employees.employeeNo,
+      })
       .from(retirementNotices)
+      .leftJoin(employees, eq(retirementNotices.employeeId, employees.id))
       .where(and(...clauses));
 
-    return ok(rows);
+    const result: RetirementNoticeRow[] = rows.map((r) => {
+      const name = [r.firstName, r.middleName, r.lastName, r.suffix]
+        .filter(Boolean)
+        .join(" ");
+      return {
+        id: r.id,
+        forYear: r.forYear,
+        generatedAt: r.generatedAt,
+        employeeId: r.employeeId,
+        retirementType: r.retirementType,
+        eligibleDate: r.eligibleDate,
+        monthsUntilEligible: r.monthsUntilEligible,
+        status: r.status,
+        notifiedAt: r.notifiedAt,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        deletedAt: r.deletedAt,
+        employeeName: name || r.employeeId,
+        employeeNo: r.employeeNo ?? "",
+      };
+    });
+
+    return ok(result);
   } catch (e) {
     return err(toErrMsg(e));
   }

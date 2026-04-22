@@ -13,7 +13,7 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { workSchedules } from "@/lib/db/schema/attendance";
-import { eq, or, ilike, desc, isNull } from "drizzle-orm";
+import { and, eq, or, ilike, desc, isNull } from "drizzle-orm";
 import { format } from "date-fns";
 
 interface PageProps {
@@ -53,7 +53,12 @@ export default async function WorkSchedulesPage({ searchParams }: PageProps) {
 
   const schedules = await db.query.workSchedules
     .findMany({
-      where: conditions.length > 0 ? conditions[0] : undefined,
+      where:
+        conditions.length > 1
+          ? and(...conditions)
+          : conditions.length === 1
+            ? conditions[0]
+            : undefined,
       orderBy: [desc(workSchedules.createdAt)],
     })
     .catch(() => []);

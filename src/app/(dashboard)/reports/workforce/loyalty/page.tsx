@@ -50,6 +50,58 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[]>>;
 }
 
+async function SummaryStats({
+  officeId,
+  yearFilter,
+}: {
+  officeId?: string;
+  yearFilter?: number;
+}) {
+  const result = await getLoyaltyAwardEligibilityReport({
+    officeId,
+    milestone: "all",
+    yearFilter,
+  });
+  const data = result.data;
+  const tier1 = data.filter((r) => r.milestone <= 15).length;
+  const tier2 = data.filter(
+    (r) => r.milestone >= 20 && r.milestone <= 25,
+  ).length;
+  const tier3 = data.filter(
+    (r) => r.milestone >= 30 && r.milestone <= 35,
+  ).length;
+  const tier4 = data.filter((r) => r.milestone >= 40).length;
+
+  return (
+    <div className="grid gap-4 md:grid-cols-4">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>10-15 Year Milestones</CardDescription>
+          <CardTitle className="text-2xl">{tier1}</CardTitle>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>20-25 Year Milestones</CardDescription>
+          <CardTitle className="text-2xl">{tier2}</CardTitle>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>30-35 Year Milestones</CardDescription>
+          <CardTitle className="text-2xl">{tier3}</CardTitle>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>40+ Year Milestones</CardDescription>
+          <CardTitle className="text-2xl">{tier4}</CardTitle>
+        </CardHeader>
+      </Card>
+    </div>
+  );
+}
+
 async function LoyaltyReportTable({
   officeId,
   milestone,
@@ -267,32 +319,24 @@ export default async function LoyaltyReportPage({ searchParams }: PageProps) {
       </header>
 
       {/* Summary Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>10-15 Year Milestones</CardDescription>
-            <CardTitle className="text-2xl">0</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>20-25 Year Milestones</CardDescription>
-            <CardTitle className="text-2xl">0</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>30-35 Year Milestones</CardDescription>
-            <CardTitle className="text-2xl">0</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>40+ Year Milestones</CardDescription>
-            <CardTitle className="text-2xl">0</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
+      <Suspense
+        fallback={
+          <div className="grid gap-4 md:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <CardDescription>Loading…</CardDescription>
+                  <CardTitle className="text-2xl text-muted-foreground">
+                    —
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
+        }
+      >
+        <SummaryStats officeId={officeId} yearFilter={yearFilter} />
+      </Suspense>
 
       {/* Filters */}
       <Suspense fallback={<Card className="p-6">Loading filters...</Card>}>

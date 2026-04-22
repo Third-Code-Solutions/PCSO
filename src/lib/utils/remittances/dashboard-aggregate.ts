@@ -10,6 +10,7 @@
 import { db } from "@/lib/db";
 import { remittanceBatches, gsisRemittanceBatches } from "@/lib/db/schema";
 import { eq, and, gte, lte, isNull, desc, count, sql } from "drizzle-orm";
+import { requirePermission } from "@/lib/auth/guards";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,6 +103,8 @@ function monthBounds(date: Date = new Date()): { start: string; end: string } {
  * and the GSIS-specific `gsis_remittance_batches` for GSIS (Phase 10 schema).
  */
 export async function fetchDashboardAggregate(): Promise<DashboardAggregate> {
+  await requirePermission("remittances", "view");
+
   const now = new Date();
   const { start: monthStart, end: monthEnd } = monthBounds(now);
 

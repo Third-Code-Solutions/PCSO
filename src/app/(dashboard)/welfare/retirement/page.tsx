@@ -38,6 +38,8 @@ export default async function RetirementListPage() {
       ? result.data.map((r) => ({
           id: r.id,
           employeeId: r.employeeId,
+          employeeName: r.employeeName,
+          employeeNo: r.employeeNo,
           retirementType: r.retirementType,
           eligibleDate: r.eligibleDate,
           monthsUntilEligible: r.monthsUntilEligible,

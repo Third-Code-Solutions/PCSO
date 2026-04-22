@@ -27,6 +27,17 @@ function formatPeso(value: string | null | undefined): string {
   return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const SCOPE_LABELS: Record<string, string> = {
+  regular: "Regular",
+  jo_cos: "JO/COS",
+  rata: "RATA",
+  cash_advance: "Cash Advance",
+  benefits_bonuses: "Benefits & Bonuses",
+  salary_differential: "Salary Differential",
+  special: "Special",
+  magna_carta: "Magna Carta",
+};
+
 export const metadata = { title: "Payroll History" };
 
 export default async function PayrollHistoryPage() {
@@ -107,8 +118,8 @@ export default async function PayrollHistoryPage() {
                         {formatDate(period.periodEnd)}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm capitalize">
-                          {period.scope === "jo_cos" ? "JO/COS" : "Regular"}
+                        <span className="text-sm">
+                          {SCOPE_LABELS[period.scope] ?? period.scope}
                         </span>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">

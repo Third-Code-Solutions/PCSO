@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { EmployeeForm } from "@/components/employees/employee-form";
 import { getOfficesForSelect } from "../queries";
+import { requirePermission } from "@/lib/auth/guards";
 
 export const metadata = {
   title: "Add Employee",
@@ -9,6 +10,7 @@ export const metadata = {
 };
 
 export default async function NewEmployeePage() {
+  await requirePermission("employees", "create");
   const offices = await getOfficesForSelect();
 
   return (

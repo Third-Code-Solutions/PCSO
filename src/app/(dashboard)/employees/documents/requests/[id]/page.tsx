@@ -10,6 +10,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { requireAuth } from "@/lib/auth/guards";
 import {
   ArrowLeft,
   FileText,
@@ -411,6 +412,7 @@ async function RequestDetailContent({ id }: { id: string }) {
 }
 
 export default async function DocumentRequestDetailPage({ params }: PageProps) {
+  await requireAuth();
   const { id } = await params;
 
   return (

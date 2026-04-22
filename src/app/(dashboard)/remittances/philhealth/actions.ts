@@ -232,45 +232,6 @@ export async function exportPhilHealthEprs(input: unknown) {
 
   if (!batch) throw new Error("PhilHealth remittance batch not found.");
 
-  const lines = await db
-    .select({
-      rr: remittanceRecords,
-      emp: {
-        philhealthNo: employees.philhealthNo,
-        firstName: employees.firstName,
-        middleName: employees.middleName,
-        lastName: employees.lastName,
-        suffix: employees.suffix,
-        authorizedSalary: payrollRecords.authorizedSalary,
-      },
-    })
-    .from(remittanceRecords)
-    .innerJoin(employees, eq(remittanceRecords.employeeId, employees.id))
-    .innerJoin(
-      payrollRecords,
-      and(
-        eq(payrollRecords.employeeId, remittanceRecords.employeeId),
-        // Find the payroll record in the same period
-        eq(
-          payrollRecords.periodId,
-          db
-            .select({ id: payrollPeriods.id })
-            .from(payrollPeriods)
-            .where(
-              and(
-                eq(payrollPeriods.periodStart, batch.periodStart),
-                eq(payrollPeriods.periodEnd, batch.periodEnd),
-              ),
-            )
-            .limit(1)
-            .as("periodSub"),
-        ),
-      ),
-    )
-    .where(eq(remittanceRecords.batchId, parsed.batchId))
-    .orderBy(asc(employees.lastName), asc(employees.firstName));
-
-  // Fallback: fetch records + employees separately to avoid correlated subquery complexity
   const recordsWithEmps = await db
     .select({
       rr: remittanceRecords,

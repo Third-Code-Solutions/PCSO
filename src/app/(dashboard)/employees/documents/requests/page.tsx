@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { getDocumentRequests } from "@/lib/actions/documents/document-request-actions";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requireAuth } from "@/lib/auth/guards";
 
 export const metadata = {
   title: "Document Requests",
@@ -159,6 +160,7 @@ async function DocumentRequestsTable() {
 export default async function DocumentRequestsPage({
   searchParams,
 }: PageProps) {
+  await requireAuth();
   return (
     <div className="space-y-6 p-6">
       {/* Realtime subscription */}

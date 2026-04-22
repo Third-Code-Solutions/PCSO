@@ -43,6 +43,7 @@ export default async function CertificatesListPage({
       pdfUrl: trainingCertificates.pdfUrl,
       qrTokenJwt: trainingCertificates.qrTokenJwt,
       participantId: trainingCertificates.participantId,
+      employeeId: employees.id,
       employeeFirst: employees.firstName,
       employeeLast: employees.lastName,
       employeeNo: employees.employeeNo,
@@ -120,7 +121,11 @@ export default async function CertificatesListPage({
           { label: "Certificates" },
         ]}
         actions={
-          <RoleGate role={user.role} roles={["super_admin", "hr_admin"]}>
+          <RoleGate
+            role={user.role}
+            roles={["super_admin", "hr_admin"]}
+            fallback={null}
+          >
             <Link href="/learning/certificates/generate">
               <Button className="bg-pcso-navy hover:bg-pcso-navy-light text-pcso-cream">
                 <Award className="mr-2 h-4 w-4" />
@@ -230,7 +235,7 @@ export default async function CertificatesListPage({
                   </td>
                   <td className="px-4 py-3">
                     <Link
-                      href={`/employees/${r.participantId}`}
+                      href={`/employees/${r.employeeId}`}
                       className="hover:text-pcso-navy hover:underline"
                     >
                       {r.employeeFirst} {r.employeeLast}

@@ -50,14 +50,25 @@ interface SubmissionsPageProps {
 export default async function SalnSubmissionsPage({
   searchParams,
 }: SubmissionsPageProps) {
-  // Gate: only super_admin and employee_self_service may access SALN.
-  // requirePermission redirects all other roles to /dashboard?error=forbidden.
+  // Gate: super_admin, hr_admin, auditor (viewer) may view all SALN submissions.
+  // employee_self_service sees only their own records.
+  // requirePermission redirects any role without saln.view to /login?unauthorized.
   const user = await requirePermission("saln", "view");
 
+  // "admin view" = full paginated list of all submissions.
+  // Super admin, hr_admin, and auditor/viewer roles all get the admin view.
+  const isAdminView =
+    user.role === "super_admin" ||
+    user.role === "hr_admin" ||
+    user.role === "auditor" ||
+    user.role === "viewer";
+
+  // Keep legacy isSuperAdmin flag for write-action gating (only super_admin can
+  // change statuses from within this page).
   const isSuperAdmin = user.role === "super_admin";
 
-  // employee_self_service must have an employeeId to view their own SALN.
-  if (!isSuperAdmin && !user.employeeId) {
+  // Self-service employees must have an employeeId to view their own SALN.
+  if (!isAdminView && !user.employeeId) {
     redirect("/dashboard");
   }
 
@@ -77,13 +88,13 @@ export default async function SalnSubmissionsPage({
       ? (rawStatus as SalnStatus)
       : undefined;
 
-  const employeeNoFilter = isSuperAdmin
+  const employeeNoFilter = isAdminView
     ? (resolvedParams.employee_no ?? undefined)
     : undefined;
 
-  // Year filter — only meaningful for super_admin.
+  // Year filter — only meaningful for admin roles.
   const yearFilter = (() => {
-    if (!isSuperAdmin || !resolvedParams.year) return undefined;
+    if (!isAdminView || !resolvedParams.year) return undefined;
     const parsed = parseInt(resolvedParams.year, 10);
     if (Number.isNaN(parsed) || parsed < 2000 || parsed > 2100)
       return undefined;
@@ -97,12 +108,12 @@ export default async function SalnSubmissionsPage({
     return Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
   })();
 
-  // Fetch submissions — self-only for employees, paginated for super_admin.
+  // Fetch submissions — self-only for employees, paginated for admin roles.
   let submissions: Awaited<ReturnType<typeof getMySalnSubmissions>>;
   let total = 0;
   let perPage = SUBMISSIONS_PAGE_SIZE;
 
-  if (isSuperAdmin) {
+  if (isAdminView) {
     const result = await getAllSubmissionsForSuperAdmin(user.id, {
       status: statusFilter,
       employeeNo: employeeNoFilter,
@@ -123,7 +134,7 @@ export default async function SalnSubmissionsPage({
 
   // For employee_self_service apply status filter in-page (query is already self-scoped).
   const filtered =
-    !isSuperAdmin && statusFilter
+    !isAdminView && statusFilter
       ? submissions.filter((s) => s.status === statusFilter)
       : submissions;
 
@@ -132,7 +143,7 @@ export default async function SalnSubmissionsPage({
       <RealtimeBoundary tables={["saln_submissions"]} />
 
       <PageHeader
-        title={isSuperAdmin ? "SALN Submissions" : "My SALN Submissions"}
+        title={isAdminView ? "SALN Submissions" : "My SALN Submissions"}
         description="Statement of Assets, Liabilities, and Net Worth — RA 6713 / EO 17"
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
@@ -154,7 +165,7 @@ export default async function SalnSubmissionsPage({
 
       <SubmissionsBrowser
         submissions={filtered}
-        isSuperAdmin={isSuperAdmin}
+        isSuperAdmin={isAdminView}
         activeStatus={statusFilter}
         activeEmployeeNo={employeeNoFilter ?? ""}
         activeYear={yearFilter}

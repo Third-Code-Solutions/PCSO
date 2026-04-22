@@ -114,9 +114,13 @@ export default async function RecruitmentOverviewPage() {
     ? applicationData
     : (applicationData?.rows ?? []);
 
-  const appointmentData = unwrap<
-    { rows?: AppointmentRow[] } | AppointmentRow[]
-  >(appointmentsResult);
+  // listAppointments (rpm/appointment.ts) returns a plain array, not a wrapped
+  // ActionResult, so unwrap() returns null.  Handle both shapes.
+  const appointmentData = Array.isArray(appointmentsResult)
+    ? (appointmentsResult as AppointmentRow[])
+    : unwrap<{ rows?: AppointmentRow[] } | AppointmentRow[]>(
+        appointmentsResult,
+      );
   const appointmentRows: AppointmentRow[] = Array.isArray(appointmentData)
     ? appointmentData
     : (appointmentData?.rows ?? []);

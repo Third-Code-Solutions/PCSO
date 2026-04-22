@@ -4,7 +4,7 @@
  */
 
 import Link from "next/link";
-import { requireAuth } from "@/lib/auth/guards";
+import { requirePermission } from "@/lib/auth/guards";
 import { hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +37,7 @@ interface Props {
 }
 
 export default async function DpcrListPage({ searchParams }: Props) {
-  const user = await requireAuth();
+  const user = await requirePermission("performance", "view");
   const canEdit = hasPermission(user.role, "performance", "edit");
 
   const params = await searchParams;

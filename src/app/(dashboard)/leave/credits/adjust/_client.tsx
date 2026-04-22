@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { adjustLeaveCredits } from "@/lib/actions/leave-gaps";
+import { adjustLeaveCredits } from "@/app/(dashboard)/leave/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,42 +14,102 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, CheckCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, SearchIcon } from "lucide-react";
 
-export function AdjustLeaveCreditsForm() {
+interface EmployeeOption {
+  id: string;
+  employeeNo: string;
+  fullName: string;
+  vlBalance: number;
+  slBalance: number;
+}
+
+interface AdjustLeaveCreditsFormProps {
+  employees: EmployeeOption[];
+  currentYear: number;
+}
+
+export function AdjustLeaveCreditsForm({
+  employees,
+  currentYear,
+}: AdjustLeaveCreditsFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [employeeId, setEmployeeId] = useState("");
-  const [leaveTypeId, setLeaveTypeId] = useState("");
-  const [adjustment, setAdjustment] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [leaveTypeCode, setLeaveTypeCode] = useState<"VL" | "SL" | "">("");
+  const [delta, setDelta] = useState("");
   const [reason, setReason] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return employees;
+    const q = search.toLowerCase();
+    return employees.filter(
+      (e) =>
+        e.fullName.toLowerCase().includes(q) ||
+        e.employeeNo.toLowerCase().includes(q),
+    );
+  }, [employees, search]);
+
+  const selectedEmployee = employees.find((e) => e.id === selectedEmployeeId);
+  const currentBalance =
+    selectedEmployee && leaveTypeCode
+      ? leaveTypeCode === "VL"
+        ? selectedEmployee.vlBalance
+        : selectedEmployee.slBalance
+      : null;
+
+  const deltaNum = parseFloat(delta);
+  const projected =
+    currentBalance !== null && Number.isFinite(deltaNum)
+      ? currentBalance + deltaNum
+      : null;
+
+  const canSubmit =
+    selectedEmployeeId &&
+    leaveTypeCode &&
+    Number.isFinite(deltaNum) &&
+    deltaNum !== 0 &&
+    Math.abs(deltaNum) <= 200 &&
+    projected !== null &&
+    projected >= 0 &&
+    reason.trim().length >= 5 &&
+    !isPending;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
+    if (!selectedEmployeeId || !leaveTypeCode || !Number.isFinite(deltaNum)) {
+      setError("Please fill in all fields.");
+      return;
+    }
+
     startTransition(async () => {
       try {
         const result = await adjustLeaveCredits({
-          employeeId,
-          leaveTypeId,
-          adjustment: parseFloat(adjustment),
-          reason,
+          employeeId: selectedEmployeeId,
+          year: currentYear,
+          leaveTypeCode: leaveTypeCode as "VL" | "SL",
+          delta: deltaNum,
+          reason: reason.trim(),
         });
 
+        const empName = selectedEmployee?.fullName ?? "Employee";
         setSuccess(
-          `Successfully adjusted credits from ${result.previousBalance.toFixed(3)} to ${result.newBalance.toFixed(3)}`,
+          `${empName} — ${leaveTypeCode} adjusted: ${result.previousBalance.toFixed(3)} → ${result.newBalance.toFixed(3)} days`,
         );
 
         // Reset form
-        setEmployeeId("");
-        setLeaveTypeId("");
-        setAdjustment("");
+        setSelectedEmployeeId("");
+        setLeaveTypeCode("");
+        setDelta("");
         setReason("");
+        setSearch("");
 
         router.refresh();
       } catch (err) {
@@ -59,64 +119,130 @@ export function AdjustLeaveCreditsForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">
-          <AlertCircle className="h-5 w-5" />
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p className="text-sm font-medium">{error}</p>
         </div>
       )}
 
       {success && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-700 border border-green-200">
-          <CheckCircle className="h-5 w-5" />
+        <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-green-700">
+          <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p className="text-sm font-medium">{success}</p>
         </div>
       )}
 
+      {/* Employee search + picker */}
       <div className="space-y-2">
-        <Label htmlFor="employeeId">Employee ID</Label>
-        <Input
-          id="employeeId"
-          placeholder="UUID of employee"
-          value={employeeId}
-          onChange={(e) => setEmployeeId(e.target.value)}
-          required
-        />
+        <Label htmlFor="search">Search Employee</Label>
+        <div className="relative">
+          <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="search"
+            placeholder="Name or employee number…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="leaveTypeId">Leave Type ID</Label>
-        <Input
-          id="leaveTypeId"
-          placeholder="UUID of leave type (VL or SL)"
-          value={leaveTypeId}
-          onChange={(e) => setLeaveTypeId(e.target.value)}
-          required
-        />
+        <Label htmlFor="employee">Employee</Label>
+        <Select
+          value={selectedEmployeeId}
+          onValueChange={setSelectedEmployeeId}
+        >
+          <SelectTrigger id="employee">
+            <SelectValue placeholder="Select employee" />
+          </SelectTrigger>
+          <SelectContent className="max-h-72">
+            {filtered.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-muted-foreground">
+                No employees found
+              </div>
+            ) : (
+              filtered.map((emp) => (
+                <SelectItem key={emp.id} value={emp.id}>
+                  {emp.fullName}{" "}
+                  <span className="text-muted-foreground">
+                    ({emp.employeeNo})
+                  </span>
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
       </div>
 
+      {/* Leave type */}
       <div className="space-y-2">
-        <Label htmlFor="adjustment">Adjustment (days)</Label>
+        <Label htmlFor="leaveType">Leave Type</Label>
+        <Select
+          value={leaveTypeCode}
+          onValueChange={(v) => setLeaveTypeCode(v as "VL" | "SL")}
+        >
+          <SelectTrigger id="leaveType">
+            <SelectValue placeholder="Select leave type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="VL">Vacation Leave (VL)</SelectItem>
+            <SelectItem value="SL">Sick Leave (SL)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Current / projected balance */}
+      {currentBalance !== null && (
+        <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">
+              Current {leaveTypeCode} balance ({currentYear}):
+            </span>
+            <span className="font-semibold tabular-nums">
+              {currentBalance.toFixed(3)} days
+            </span>
+          </div>
+          {projected !== null &&
+            Number.isFinite(deltaNum) &&
+            deltaNum !== 0 && (
+              <div className="mt-1 flex justify-between">
+                <span className="text-muted-foreground">After adjustment:</span>
+                <span
+                  className={`font-bold tabular-nums ${projected < 0 ? "text-red-600" : "text-pcso-navy"}`}
+                >
+                  {projected.toFixed(3)} days
+                </span>
+              </div>
+            )}
+        </div>
+      )}
+
+      {/* Delta */}
+      <div className="space-y-2">
+        <Label htmlFor="delta">Adjustment (days)</Label>
         <Input
-          id="adjustment"
+          id="delta"
           type="number"
           step="0.001"
           placeholder="e.g., 5.000 or -2.500"
-          value={adjustment}
-          onChange={(e) => setAdjustment(e.target.value)}
+          value={delta}
+          onChange={(e) => setDelta(e.target.value)}
           required
         />
         <p className="text-xs text-muted-foreground">
-          Positive for credit, negative for deduction
+          Positive to add credits, negative to deduct. Maximum ±200 days.
         </p>
       </div>
 
+      {/* Reason */}
       <div className="space-y-2">
-        <Label htmlFor="reason">Reason (for audit trail)</Label>
+        <Label htmlFor="reason">Reason (audit trail)</Label>
         <Textarea
           id="reason"
-          placeholder="Explain why this adjustment is needed..."
+          placeholder="Explain why this adjustment is needed (min 5 characters)…"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           required
@@ -124,9 +250,9 @@ export function AdjustLeaveCreditsForm() {
         />
       </div>
 
-      <div className="flex gap-2">
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Adjusting..." : "Adjust Credits"}
+      <div className="flex gap-2 pt-1">
+        <Button type="submit" disabled={!canSubmit}>
+          {isPending ? "Adjusting…" : "Adjust Credits"}
         </Button>
         <Button
           type="button"

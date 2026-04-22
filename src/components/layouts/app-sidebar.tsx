@@ -172,6 +172,11 @@ const NAV_ITEMS: NavItem[] = [
           "viewer",
         ],
       },
+      {
+        label: "Document Requests",
+        href: "/employees/documents/requests",
+        roles: ["super_admin", "hr_admin"],
+      },
     ],
   },
 
@@ -258,6 +263,11 @@ const NAV_ITEMS: NavItem[] = [
         roles: ["super_admin", "hr_admin", "employee_self_service"],
         selfOnly: true,
       },
+      {
+        label: "Biometric Devices",
+        href: "/attendance/biometric",
+        roles: ["super_admin", "hr_admin"],
+      },
     ],
   },
 
@@ -339,6 +349,11 @@ const NAV_ITEMS: NavItem[] = [
           "employee_self_service",
         ],
         selfOnly: true,
+      },
+      {
+        label: "Adjust Credits",
+        href: "/leave/credits/adjust",
+        roles: ["super_admin", "hr_admin"],
       },
     ],
   },
@@ -837,6 +852,16 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "System Settings",
         href: "/admin/settings",
+        roles: ["super_admin"],
+      },
+      {
+        label: "Notification Templates",
+        href: "/admin/settings/notifications",
+        roles: ["super_admin"],
+      },
+      {
+        label: "Agency Profile",
+        href: "/admin/settings/org-profile",
         roles: ["super_admin"],
       },
     ],

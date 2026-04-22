@@ -52,6 +52,49 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[]>>;
 }
 
+async function SummaryStats({
+  officeId,
+  monthsAhead,
+}: {
+  officeId?: string;
+  monthsAhead: number;
+}) {
+  const result = await getRetirementEligibilityReport({
+    officeId,
+    eligibilityType: "all",
+    monthsAhead,
+  });
+  const data = result.data;
+  const total = data.length;
+  const optional = data.filter((r) => r.eligibilityType === "optional").length;
+  const compulsory = data.filter(
+    (r) => r.eligibilityType === "compulsory",
+  ).length;
+
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>Eligible Now (All Types)</CardDescription>
+          <CardTitle className="text-2xl">{total}</CardTitle>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>Optional Retirement</CardDescription>
+          <CardTitle className="text-2xl">{optional}</CardTitle>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>Compulsory Retirement</CardDescription>
+          <CardTitle className="text-2xl">{compulsory}</CardTitle>
+        </CardHeader>
+      </Card>
+    </div>
+  );
+}
+
 async function RetirementReportTable({
   officeId,
   eligibilityType,
@@ -263,26 +306,24 @@ export default async function RetirementReportPage({
       </header>
 
       {/* Summary Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Eligible Now (All Types)</CardDescription>
-            <CardTitle className="text-2xl">0</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Optional Retirement</CardDescription>
-            <CardTitle className="text-2xl">0</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Compulsory Retirement</CardDescription>
-            <CardTitle className="text-2xl">0</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
+      <Suspense
+        fallback={
+          <div className="grid gap-4 md:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <CardDescription>Loading…</CardDescription>
+                  <CardTitle className="text-2xl text-muted-foreground">
+                    —
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
+        }
+      >
+        <SummaryStats officeId={officeId} monthsAhead={monthsAhead} />
+      </Suspense>
 
       {/* Filters */}
       <Suspense fallback={<Card className="p-6">Loading filters...</Card>}>

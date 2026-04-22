@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 export interface RetirementNoticeDisplayRow {
   id: string;
   employeeId: string;
+  employeeName?: string;
+  employeeNo?: string;
   retirementType: "optional" | "compulsory";
   eligibleDate: string;
   monthsUntilEligible: number;
@@ -46,6 +48,7 @@ export function RetirementEligibilityTable({
       <TableHeader>
         <TableRow>
           <TableHead>Employee</TableHead>
+          <TableHead>Employee No.</TableHead>
           <TableHead>Type</TableHead>
           <TableHead>Eligible date</TableHead>
           <TableHead>Months until</TableHead>
@@ -55,8 +58,15 @@ export function RetirementEligibilityTable({
       <TableBody>
         {rows.map((row) => (
           <TableRow key={row.id}>
-            <TableCell className="font-mono text-xs">
-              {row.employeeId}
+            <TableCell>
+              {row.employeeName ?? (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {row.employeeId}
+                </span>
+              )}
+            </TableCell>
+            <TableCell className="font-mono text-xs text-muted-foreground">
+              {row.employeeNo ?? "—"}
             </TableCell>
             <TableCell className="capitalize">{row.retirementType}</TableCell>
             <TableCell>{row.eligibleDate}</TableCell>

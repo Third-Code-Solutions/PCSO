@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { EmployeeForm } from "@/components/employees/employee-form";
 import { getEmployeeForEdit, getOfficesForSelect } from "../../queries";
+import { requirePermission } from "@/lib/auth/guards";
 
 export async function generateMetadata({
   params,
@@ -22,6 +23,7 @@ interface PageProps {
 }
 
 export default async function EditEmployeePage({ params }: PageProps) {
+  await requirePermission("employees", "edit");
   const { id } = await params;
 
   const [employee, offices] = await Promise.all([

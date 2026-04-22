@@ -47,7 +47,7 @@ const MILLIS_PER_DAY = 86_400_000;
 const sendAdvanceNoticeSchema = z.object({
   payrollPeriodStart: z.coerce.date(),
   payrollPeriodEnd: z.coerce.date(),
-  eligibleEmployeeIds: z.array(z.string().uuid()).min(1),
+  eligibleEmployeeIds: z.array(z.string().uuid()),
   totalProjectedAmount: z
     .union([z.number().nonnegative(), z.string()])
     .optional(),
@@ -74,6 +74,12 @@ export async function sendAdvanceNotice(
   try {
     const user = await requirePermission("employees", "process");
     const parsed = sendAdvanceNoticeSchema.parse(input);
+
+    if (parsed.eligibleEmployeeIds.length === 0) {
+      return err(
+        "No eligible employees attached. Resolve the PRAISE eligibility query before sending a notice.",
+      );
+    }
 
     if (
       parsed.payrollPeriodEnd.getTime() < parsed.payrollPeriodStart.getTime()

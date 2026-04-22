@@ -6,7 +6,6 @@ import {
   trainingPrograms,
   trainingCertificates,
 } from "@/lib/db/schema/learning";
-import { employees } from "@/lib/db/schema/employees";
 import { eq, desc } from "drizzle-orm";
 import { format } from "date-fns";
 import {

@@ -58,6 +58,14 @@ export default async function NewPraiseNoticePage() {
         ]}
       />
 
+      {eligibleEmployeeIds.length === 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+          <strong>No eligible employees found.</strong> The PRAISE eligibility
+          query has not been wired yet (EWB-004 TODO). This notice cannot be
+          submitted until at least one eligible employee ID is resolved.
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Notice details</CardTitle>
