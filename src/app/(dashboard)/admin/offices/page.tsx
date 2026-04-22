@@ -6,7 +6,7 @@
  */
 
 import type { Metadata } from "next";
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/layouts/page-header";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 import { requirePermission } from "@/lib/auth/guards";
@@ -27,6 +27,7 @@ interface OfficeListRow {
   type: string;
   parentId: string | null;
   parentName: string | null;
+  headEmployeeId: string | null;
   headEmployeeName: string | null;
   plantillaCount: number;
   memberCount: number;
@@ -34,9 +35,7 @@ interface OfficeListRow {
 }
 
 async function getOfficeList(): Promise<OfficeListRow[]> {
-  const supabase = await createServerClient();
-
-  const { data: offices, error } = await supabase
+  const { data: offices, error } = await supabaseAdmin
     .from("offices")
     .select(
       `
@@ -62,7 +61,7 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
   );
 
   // Plantilla position counts
-  const { data: posCounts } = await supabase
+  const { data: posCounts } = await supabaseAdmin
     .from("plantilla_positions")
     .select("office_id")
     .is("deleted_at", null);
@@ -74,7 +73,7 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
   }
 
   // Employee member counts
-  const { data: empCounts } = await supabase
+  const { data: empCounts } = await supabaseAdmin
     .from("employees")
     .select("office_id")
     .eq("status", "active")
@@ -99,6 +98,7 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
       parentName: row.parent_id
         ? (parentNames.get(row.parent_id as string) ?? null)
         : null,
+      headEmployeeId: (row.head_employee_id as string | null) ?? null,
       headEmployeeName: headEmp
         ? `${(headEmp as { first_name: string }).first_name} ${(headEmp as { last_name: string }).last_name}`
         : null,
@@ -112,8 +112,7 @@ async function getOfficeList(): Promise<OfficeListRow[]> {
 async function getEmployeeOptions(): Promise<
   { id: string; firstName: string; lastName: string; positionTitle: string }[]
 > {
-  const supabase = await createServerClient();
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from("employees")
     .select("id, first_name, last_name, position_title")
     .eq("status", "active")

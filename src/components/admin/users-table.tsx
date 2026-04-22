@@ -58,6 +58,9 @@ const ROLE_LABELS: Record<string, string> = {
   leave_approver: "Leave Approver",
   viewer: "Viewer",
   employee_self_service: "Employee",
+  supervisor: "Supervisor",
+  executive: "Executive",
+  auditor: "Auditor",
 };
 
 const ROLE_COLORS: Record<string, string> = {
@@ -67,6 +70,9 @@ const ROLE_COLORS: Record<string, string> = {
   leave_approver: "bg-purple-100 text-purple-800",
   viewer: "bg-gray-100 text-gray-700",
   employee_self_service: "bg-green-100 text-green-800",
+  supervisor: "bg-orange-100 text-orange-800",
+  executive: "bg-indigo-100 text-indigo-800",
+  auditor: "bg-rose-100 text-rose-800",
 };
 
 // ─── Row Actions ─────────────────────────────────────────────────────────────

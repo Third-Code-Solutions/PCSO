@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { UsersTable, type UserRow } from '@/components/admin/users-table';
+import * as React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { UsersTable, type UserRow } from "@/components/admin/users-table";
 
 interface OfficeOption {
   id: string;
@@ -25,27 +25,32 @@ interface UsersFilterBarProps {
 }
 
 const ROLES = [
-  { value: '', label: 'Any role' },
-  { value: 'super_admin', label: 'Super Admin' },
-  { value: 'hr_admin', label: 'HR Admin' },
-  { value: 'payroll_admin', label: 'Payroll Admin' },
-  { value: 'leave_approver', label: 'Leave Approver' },
-  { value: 'viewer', label: 'Viewer' },
-  { value: 'employee_self_service', label: 'Employee' },
+  { value: "", label: "Any role" },
+  { value: "super_admin", label: "Super Admin" },
+  { value: "hr_admin", label: "HR Admin" },
+  { value: "payroll_admin", label: "Payroll Admin" },
+  { value: "leave_approver", label: "Leave Approver" },
+  { value: "viewer", label: "Viewer" },
+  { value: "employee_self_service", label: "Employee (Self-Service)" },
+  { value: "supervisor", label: "Supervisor / Manager" },
+  { value: "executive", label: "Executive / Leadership" },
+  { value: "auditor", label: "Compliance & Audit" },
 ];
 
 export function UsersFilterBar({ initial, offices }: UsersFilterBarProps) {
   const router = useRouter();
-  const [search, setSearch] = React.useState(initial.search ?? '');
-  const [role, setRole] = React.useState(initial.role ?? '');
-  const [status, setStatus] = React.useState(initial.status ?? '');
-  const [officeId, setOfficeId] = React.useState(initial.officeId ?? '');
-  const [pageSize, setPageSize] = React.useState(String(initial.pageSize ?? 50));
+  const [search, setSearch] = React.useState(initial.search ?? "");
+  const [role, setRole] = React.useState(initial.role ?? "");
+  const [status, setStatus] = React.useState(initial.status ?? "");
+  const [officeId, setOfficeId] = React.useState(initial.officeId ?? "");
+  const [pageSize, setPageSize] = React.useState(
+    String(initial.pageSize ?? 50),
+  );
 
   // Debounce search
   React.useEffect(() => {
     const t = setTimeout(() => {
-      pushParams({ search, role, status, officeId, pageSize, page: '1' });
+      pushParams({ search, role, status, officeId, pageSize, page: "1" });
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,31 +66,31 @@ export function UsersFilterBar({ initial, offices }: UsersFilterBarProps) {
 
   function onRoleChange(v: string) {
     setRole(v);
-    pushParams({ search, role: v, status, officeId, pageSize, page: '1' });
+    pushParams({ search, role: v, status, officeId, pageSize, page: "1" });
   }
 
   function onStatusChange(v: string) {
     setStatus(v);
-    pushParams({ search, role, status: v, officeId, pageSize, page: '1' });
+    pushParams({ search, role, status: v, officeId, pageSize, page: "1" });
   }
 
   function onOfficeChange(v: string) {
     setOfficeId(v);
-    pushParams({ search, role, status, officeId: v, pageSize, page: '1' });
+    pushParams({ search, role, status, officeId: v, pageSize, page: "1" });
   }
 
   function onPageSizeChange(v: string) {
     setPageSize(v);
-    pushParams({ search, role, status, officeId, pageSize: v, page: '1' });
+    pushParams({ search, role, status, officeId, pageSize: v, page: "1" });
   }
 
   function reset() {
-    setSearch('');
-    setRole('');
-    setStatus('');
-    setOfficeId('');
-    setPageSize('50');
-    router.push('/admin/users');
+    setSearch("");
+    setRole("");
+    setStatus("");
+    setOfficeId("");
+    setPageSize("50");
+    router.push("/admin/users");
   }
 
   return (
@@ -197,9 +202,9 @@ export function UsersPagination({
   function href(nextPage: number): string {
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(searchParams)) {
-      if (v && k !== 'page') sp.set(k, v);
+      if (v && k !== "page") sp.set(k, v);
     }
-    sp.set('page', String(nextPage));
+    sp.set("page", String(nextPage));
     return `/admin/users?${sp.toString()}`;
   }
 
@@ -207,7 +212,7 @@ export function UsersPagination({
     <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
       <p className="text-sm text-muted-foreground">
         Showing <span className="font-medium">{start.toLocaleString()}</span>–
-        <span className="font-medium">{end.toLocaleString()}</span> of{' '}
+        <span className="font-medium">{end.toLocaleString()}</span> of{" "}
         <span className="font-medium">{total.toLocaleString()}</span>
       </p>
       <div className="flex items-center gap-2">
@@ -215,10 +220,15 @@ export function UsersPagination({
           <Link href={href(Math.max(1, page - 1))}>Previous</Link>
         </Button>
         <span className="text-sm text-muted-foreground">
-          Page <span className="font-medium">{page.toLocaleString()}</span> of{' '}
+          Page <span className="font-medium">{page.toLocaleString()}</span> of{" "}
           <span className="font-medium">{totalPages.toLocaleString()}</span>
         </span>
-        <Button variant="outline" size="sm" asChild disabled={page >= totalPages}>
+        <Button
+          variant="outline"
+          size="sm"
+          asChild
+          disabled={page >= totalPages}
+        >
           <Link href={href(Math.min(totalPages, page + 1))}>Next</Link>
         </Button>
       </div>

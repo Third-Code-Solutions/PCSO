@@ -24,6 +24,9 @@ const ROLE_LABELS: Record<(typeof SYSTEM_ROLE_VALUES)[number], string> = {
   leave_approver: "Leave Approver",
   viewer: "Viewer",
   employee_self_service: "Employee (Self-Service)",
+  supervisor: "Supervisor / Manager",
+  executive: "Executive / Leadership",
+  auditor: "Compliance & Audit",
 };
 
 export default function NewUserPage() {

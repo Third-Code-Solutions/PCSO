@@ -55,6 +55,7 @@ interface OfficeListRow {
   type: string;
   parentId: string | null;
   parentName: string | null;
+  headEmployeeId: string | null;
   headEmployeeName: string | null;
   plantillaCount: number;
   memberCount: number;
@@ -125,7 +126,7 @@ function OfficeFormDialog({
       code: defaultValues?.code ?? "",
       type: (defaultValues?.type as OfficeInput["type"]) ?? "office",
       parentId: defaultValues?.parentId ?? null,
-      headEmployeeId: null,
+      headEmployeeId: defaultValues?.headEmployeeId ?? null,
     },
   });
 

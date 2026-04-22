@@ -1,24 +1,24 @@
-'use server';
+"use server";
 
-import { revalidatePath } from 'next/cache';
-import { createServerClient } from '@/lib/supabase/server';
-import { requirePermission } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit';
-import { withTx } from '@/lib/db/transaction';
-import { lockKey } from '@/lib/concurrency';
+import { revalidatePath } from "next/cache";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
+import { withTx } from "@/lib/db/transaction";
+import { lockKey } from "@/lib/concurrency";
 import {
   OfficeSchema,
   OfficeUpdateSchema,
   type OfficeInput,
   type OfficeUpdateInput,
-} from '@/lib/validations/offices';
+} from "@/lib/validations/offices";
 
 // ---------------------------------------------------------------------------
 // Create office
 // ---------------------------------------------------------------------------
 
 export async function createOffice(input: unknown): Promise<{ id: string }> {
-  const user = await requirePermission('admin', 'create');
+  const user = await requirePermission("admin", "create");
   const parsed: OfficeInput = OfficeSchema.parse(input);
 
   // Advisory lock on the code guarantees that two admins racing to create
@@ -28,9 +28,8 @@ export async function createOffice(input: unknown): Promise<{ id: string }> {
   const id = await withTx(async (tx) => {
     await lockKey(tx, `admin:office:code:${code}`);
 
-    const supabase = await createServerClient();
-    const { data, error } = await supabase
-      .from('offices')
+    const { data, error } = await supabaseAdmin
+      .from("offices")
       .insert({
         name: parsed.name,
         code,
@@ -38,11 +37,11 @@ export async function createOffice(input: unknown): Promise<{ id: string }> {
         parent_id: parsed.parentId ?? null,
         head_employee_id: parsed.headEmployeeId ?? null,
       })
-      .select('id')
+      .select("id")
       .single();
 
     if (error) {
-      if (error.code === '23505') {
+      if (error.code === "23505") {
         throw new Error(`An office with code "${code}" already exists.`);
       }
       throw new Error(`Failed to create office: ${error.message}`);
@@ -52,14 +51,14 @@ export async function createOffice(input: unknown): Promise<{ id: string }> {
 
   void auditLog({
     userId: user.id,
-    action: 'create',
-    table: 'offices',
+    action: "create",
+    table: "offices",
     recordId: id,
     newValues: { ...parsed },
   });
 
-  revalidatePath('/admin/offices');
-  revalidatePath('/org-chart');
+  revalidatePath("/admin/offices");
+  revalidatePath("/org-chart");
   return { id };
 }
 
@@ -68,37 +67,37 @@ export async function createOffice(input: unknown): Promise<{ id: string }> {
 // ---------------------------------------------------------------------------
 
 export async function updateOffice(input: unknown): Promise<void> {
-  const user = await requirePermission('admin', 'edit');
+  const user = await requirePermission("admin", "edit");
   const parsed: OfficeUpdateInput = OfficeUpdateSchema.parse(input);
   const { id, ...updates } = parsed;
 
   const oldRow = await withTx(async (tx) => {
     await lockKey(tx, `admin:office:${id}`);
 
-    const supabase = await createServerClient();
-
-    const { data: row } = await supabase
-      .from('offices')
-      .select('*')
-      .eq('id', id)
+    const { data: row } = await supabaseAdmin
+      .from("offices")
+      .select("*")
+      .eq("id", id)
       .single();
 
-    const { error } = await supabase
-      .from('offices')
+    const { error } = await supabaseAdmin
+      .from("offices")
       .update({
         ...(updates.name !== undefined && { name: updates.name }),
         ...(updates.code !== undefined && { code: updates.code.toUpperCase() }),
         ...(updates.type !== undefined && { type: updates.type }),
-        ...(updates.parentId !== undefined && { parent_id: updates.parentId ?? null }),
+        ...(updates.parentId !== undefined && {
+          parent_id: updates.parentId ?? null,
+        }),
         ...(updates.headEmployeeId !== undefined && {
           head_employee_id: updates.headEmployeeId ?? null,
         }),
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq("id", id);
 
     if (error) {
-      if (error.code === '23505') {
+      if (error.code === "23505") {
         throw new Error(`An office with that code already exists.`);
       }
       throw new Error(`Failed to update office: ${error.message}`);
@@ -109,15 +108,15 @@ export async function updateOffice(input: unknown): Promise<void> {
 
   void auditLog({
     userId: user.id,
-    action: 'update',
-    table: 'offices',
+    action: "update",
+    table: "offices",
     recordId: id,
     oldValues: oldRow as Record<string, unknown>,
     newValues: { id, ...updates },
   });
 
-  revalidatePath('/admin/offices');
-  revalidatePath('/org-chart');
+  revalidatePath("/admin/offices");
+  revalidatePath("/org-chart");
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +124,7 @@ export async function updateOffice(input: unknown): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function deleteOffice(id: string): Promise<void> {
-  const user = await requirePermission('admin', 'delete');
+  const user = await requirePermission("admin", "delete");
 
   // Lock covers the full reference-integrity check + soft-delete so another
   // transaction can't re-parent a child office onto this row while we're
@@ -133,13 +132,11 @@ export async function deleteOffice(id: string): Promise<void> {
   const oldRow = await withTx(async (tx) => {
     await lockKey(tx, `admin:office:${id}`);
 
-    const supabase = await createServerClient();
-
-    const { count: positionCount } = await supabase
-      .from('plantilla_positions')
-      .select('id', { count: 'exact', head: true })
-      .eq('office_id', id)
-      .is('deleted_at', null);
+    const { count: positionCount } = await supabaseAdmin
+      .from("plantilla_positions")
+      .select("id", { count: "exact", head: true })
+      .eq("office_id", id)
+      .is("deleted_at", null);
 
     if ((positionCount ?? 0) > 0) {
       throw new Error(
@@ -147,11 +144,11 @@ export async function deleteOffice(id: string): Promise<void> {
       );
     }
 
-    const { count: childCount } = await supabase
-      .from('offices')
-      .select('id', { count: 'exact', head: true })
-      .eq('parent_id', id)
-      .is('deleted_at', null);
+    const { count: childCount } = await supabaseAdmin
+      .from("offices")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_id", id)
+      .is("deleted_at", null);
 
     if ((childCount ?? 0) > 0) {
       throw new Error(
@@ -159,16 +156,16 @@ export async function deleteOffice(id: string): Promise<void> {
       );
     }
 
-    const { data: row } = await supabase
-      .from('offices')
-      .select('*')
-      .eq('id', id)
+    const { data: row } = await supabaseAdmin
+      .from("offices")
+      .select("*")
+      .eq("id", id)
       .single();
 
-    const { error } = await supabase
-      .from('offices')
+    const { error } = await supabaseAdmin
+      .from("offices")
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq("id", id);
 
     if (error) throw new Error(`Failed to delete office: ${error.message}`);
     return row;
@@ -176,12 +173,12 @@ export async function deleteOffice(id: string): Promise<void> {
 
   void auditLog({
     userId: user.id,
-    action: 'delete',
-    table: 'offices',
+    action: "delete",
+    table: "offices",
     recordId: id,
     oldValues: oldRow as Record<string, unknown>,
   });
 
-  revalidatePath('/admin/offices');
-  revalidatePath('/org-chart');
+  revalidatePath("/admin/offices");
+  revalidatePath("/org-chart");
 }

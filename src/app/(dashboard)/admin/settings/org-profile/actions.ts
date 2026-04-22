@@ -19,7 +19,9 @@ const OrgProfileSchema = z.object({
   agencyName: z.string().min(1, "Agency name is required").max(200),
   agencyShortName: z.string().min(1, "Short name is required").max(40),
   agencyAddress: z.string().min(1, "Address is required"),
-  logoUrl: z.string().url("Must be a valid URL").max(500),
+  logoUrl: z
+    .union([z.string().url("Must be a valid URL"), z.literal("")])
+    .pipe(z.string().max(500)),
   birTin: z.string().max(30).optional(),
   birAgencyName: z.string().max(200).optional(),
   philhealthEmployerNo: z.string().max(30).optional(),
@@ -53,7 +55,7 @@ export async function getOrgProfile(): Promise<OrgProfileInput> {
       agencyShortName: "PCSO",
       agencyAddress:
         "605 Shaw Boulevard, Mandaluyong City, Metro Manila, Philippines 1552",
-      logoUrl: "/pcso-seal.png",
+      logoUrl: "",
       birTin: "",
       birAgencyName: "Philippine Charity Sweepstakes Office",
       philhealthEmployerNo: "",

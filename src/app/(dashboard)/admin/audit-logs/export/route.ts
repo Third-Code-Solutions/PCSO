@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth/guards";
-import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 // ─── Excel export for audit logs ─────────────────────────────────────────────
 //
@@ -25,9 +25,7 @@ type Row = {
 };
 
 async function fetchLogs(searchParams: URLSearchParams): Promise<Row[]> {
-  const supabase = await createServerClient();
-
-  let query = supabase
+  let query = supabaseAdmin
     .from("audit_logs")
     .select(
       `

@@ -25,6 +25,9 @@ const ROLE_LABELS: Record<string, string> = {
   leave_approver: "Leave Approver",
   viewer: "Viewer",
   employee_self_service: "Employee (Self-Service)",
+  supervisor: "Supervisor / Manager",
+  executive: "Executive / Leadership",
+  auditor: "Compliance & Audit",
 };
 
 async function getUser(id: string) {

@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
@@ -56,8 +55,7 @@ export async function createUser(input: unknown): Promise<{ id: string }> {
 
     const uid = created.user.id;
 
-    const supabase = await createServerClient();
-    const { data: row, error: insertError } = await supabase
+    const { data: row, error: insertError } = await supabaseAdmin
       .from("system_users")
       .upsert(
         {
@@ -117,9 +115,7 @@ export async function updateUser(input: unknown): Promise<void> {
   const { oldRow, updates } = await withTx(async (tx) => {
     await lockKey(tx, `admin:user:${parsed.id}`);
 
-    const supabase = await createServerClient();
-
-    const { data: row, error: fetchError } = await supabase
+    const { data: row, error: fetchError } = await supabaseAdmin
       .from("system_users")
       .select("*")
       .eq("id", parsed.id)
@@ -136,7 +132,7 @@ export async function updateUser(input: unknown): Promise<void> {
     if (parsed.employeeId !== undefined)
       patch["employee_id"] = parsed.employeeId ?? null;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("system_users")
       .update(patch)
       .eq("id", parsed.id);
@@ -183,9 +179,7 @@ export async function activateUser(userId: string): Promise<void> {
   const alreadyActive = await withTx(async (tx) => {
     await lockKey(tx, `admin:user:${userId}`);
 
-    const supabase = await createServerClient();
-
-    const { data: row, error: fetchError } = await supabase
+    const { data: row, error: fetchError } = await supabaseAdmin
       .from("system_users")
       .select("id, is_active, auth_uid")
       .eq("id", userId)
@@ -196,7 +190,7 @@ export async function activateUser(userId: string): Promise<void> {
     // Idempotent: already active → no-op + no audit spam.
     if (row["is_active"] === true) return true;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("system_users")
       .update({ is_active: true, updated_at: new Date().toISOString() })
       .eq("id", userId);
@@ -235,9 +229,7 @@ export async function deactivateUser(userId: string): Promise<void> {
   const alreadyInactive = await withTx(async (tx) => {
     await lockKey(tx, `admin:user:${userId}`);
 
-    const supabase = await createServerClient();
-
-    const { data: row, error: fetchError } = await supabase
+    const { data: row, error: fetchError } = await supabaseAdmin
       .from("system_users")
       .select("id, is_active, auth_uid")
       .eq("id", userId)
@@ -247,7 +239,7 @@ export async function deactivateUser(userId: string): Promise<void> {
 
     if (row["is_active"] === false) return true;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("system_users")
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq("id", userId);
@@ -393,7 +385,7 @@ export async function searchEmployeesForPicker(
     .or(
       `first_name.ilike.${needle},last_name.ilike.${needle},employee_no.ilike.${needle}`,
     )
-    .eq("is_deleted", false)
+    .eq("status", "active")
     .limit(10);
 
   if (error) return [];
@@ -412,9 +404,7 @@ export async function searchEmployeesForPicker(
 export async function sendPasswordReset(userId: string): Promise<void> {
   const actor = await requirePermission("admin", "edit");
 
-  const supabase = await createServerClient();
-
-  const { data: row, error: fetchError } = await supabase
+  const { data: row, error: fetchError } = await supabaseAdmin
     .from("system_users")
     .select("email")
     .eq("id", userId)
@@ -424,7 +414,7 @@ export async function sendPasswordReset(userId: string): Promise<void> {
 
   const email = row["email"] as string;
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+  const { error } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/auth/reset-password`,
   });
 
