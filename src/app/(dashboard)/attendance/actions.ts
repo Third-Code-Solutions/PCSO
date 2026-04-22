@@ -19,7 +19,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { attendanceLogs } from "@/lib/db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
@@ -219,15 +219,13 @@ export async function clockOut(input: unknown): Promise<void> {
       .where(
         and(
           eq(attendanceLogs.id, parsed.attendanceLogId),
-          eq(attendanceLogs.updatedAt, current.updatedAt),
+          isNull(attendanceLogs.timeOut),
         ),
       )
       .returning();
 
     if (!next) {
-      throw new Error(
-        "This record was updated by another session. Please refresh and try again.",
-      );
+      throw new Error("You have already clocked out for today.");
     }
 
     return { existing: current, updated: next };
@@ -392,6 +390,15 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
       ),
     );
 
+    // Stale-version check: reject if the client's snapshot is outdated.
+    // We compare at millisecond precision (JS Date limit) — sufficient since
+    // concurrent edits by two HR staff to the same row are detectable within ms.
+    if (current.updatedAt.getTime() !== expected.getTime()) {
+      throw new Error(
+        "This record was changed since you loaded it. Please refresh and try again.",
+      );
+    }
+
     const [next] = await tx
       .update(attendanceLogs)
       .set({
@@ -405,28 +412,11 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
         source: "manual",
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(attendanceLogs.id, parsed.attendanceLogId),
-          eq(attendanceLogs.updatedAt, current.updatedAt),
-        ),
-      )
+      .where(eq(attendanceLogs.id, parsed.attendanceLogId))
       .returning();
 
     if (!next) {
-      throw new Error(
-        "This record was just changed by someone else. Refresh and try again.",
-      );
-    }
-
-    // Additionally verify the caller's expected version matches current.
-    // If the expected version is stale relative to DB, we already failed
-    // above — but this second check catches the case where a cached UI
-    // re-submits its old version.
-    if (current.updatedAt.getTime() !== expected.getTime()) {
-      throw new Error(
-        "Stale version in UI. Please refresh and re-enter the correction.",
-      );
+      throw new Error("Attendance log not found.");
     }
 
     return { updated: next, previous: current };

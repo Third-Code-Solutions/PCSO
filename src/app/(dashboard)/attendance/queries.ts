@@ -1,4 +1,4 @@
-'use server';
+"use server";
 
 /**
  * Server-side data fetching for the attendance module.
@@ -12,12 +12,22 @@
  * (`date`, `deductionFraction` computed from late+undertime / 480).
  */
 
-import { db } from '@/lib/db';
-import { attendanceLogs, employees, offices } from '@/lib/db/schema';
-import { and, eq, gte, lte, isNull, or, ilike, inArray, sql } from 'drizzle-orm';
-import { createServerClient } from '@/lib/supabase/server';
-import { requireAuth } from '@/lib/auth/guards';
-import type { DateString } from '@/lib/utils/attendance/types';
+import { db } from "@/lib/db";
+import { attendanceLogs, employees, offices } from "@/lib/db/schema";
+import {
+  and,
+  eq,
+  gte,
+  lte,
+  isNull,
+  or,
+  ilike,
+  inArray,
+  sql,
+} from "drizzle-orm";
+import { createServerClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/auth/guards";
+import type { DateString } from "@/lib/utils/attendance/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -58,7 +68,7 @@ export interface OvertimeRequestRow {
   dayType: string;
   justification: string;
   supervisorId: string;
-  status: 'pending' | 'approved' | 'denied' | 'partial';
+  status: "pending" | "approved" | "denied" | "partial";
   supervisorComments: string | null;
   createdAt: string;
 }
@@ -77,16 +87,20 @@ export interface EmployeeSummary {
 
 type DbAttendanceLog = typeof attendanceLogs.$inferSelect;
 
+function hhMM(t: string | null): string | null {
+  return t ? t.slice(0, 5) : null;
+}
+
 function mapLog(row: DbAttendanceLog): AttendanceLogRow {
   const deduction = (row.lateMinutes + row.undertimeMinutes) / WORKDAY_MINUTES;
   return {
     id: row.id,
     employeeId: row.employeeId,
     date: row.logDate,
-    timeIn: row.timeIn,
-    timeOut: row.timeOut,
-    timeInPm: row.timeInPm,
-    timeOutPm: row.timeOutPm,
+    timeIn: hhMM(row.timeIn),
+    timeOut: hhMM(row.timeOut),
+    timeInPm: hhMM(row.timeInPm),
+    timeOutPm: hhMM(row.timeOutPm),
     source: row.source,
     isLate: row.isLate,
     lateMinutes: row.lateMinutes,
@@ -164,7 +178,7 @@ export async function getAttendanceLogsByPeriod(
 export interface AnomalyFlag {
   employeeId: string;
   date: DateString;
-  type: 'missing_time_in' | 'missing_time_out' | 'absent' | 'excessive_late';
+  type: "missing_time_in" | "missing_time_out" | "absent" | "excessive_late";
   details: string;
 }
 
@@ -180,28 +194,28 @@ export async function getAnomaliesForPeriod(
       anomalies.push({
         employeeId: log.employeeId,
         date: log.date,
-        type: 'absent',
-        details: 'No time-in or time-out recorded',
+        type: "absent",
+        details: "No time-in or time-out recorded",
       });
     } else if (!log.timeIn) {
       anomalies.push({
         employeeId: log.employeeId,
         date: log.date,
-        type: 'missing_time_in',
-        details: 'Time-out recorded but no time-in found',
+        type: "missing_time_in",
+        details: "Time-out recorded but no time-in found",
       });
     } else if (!log.timeOut) {
       anomalies.push({
         employeeId: log.employeeId,
         date: log.date,
-        type: 'missing_time_out',
-        details: 'Time-in recorded but no time-out found',
+        type: "missing_time_out",
+        details: "Time-in recorded but no time-out found",
       });
     } else if (log.lateMinutes > 240) {
       anomalies.push({
         employeeId: log.employeeId,
         date: log.date,
-        type: 'excessive_late',
+        type: "excessive_late",
         details: `Employee was ${log.lateMinutes} minutes late`,
       });
     }
@@ -216,20 +230,21 @@ export async function getAnomaliesForPeriod(
 
 export async function getOvertimeRequests(
   employeeId?: string,
-  status?: OvertimeRequestRow['status'],
+  status?: OvertimeRequestRow["status"],
 ): Promise<OvertimeRequestRow[]> {
   const supabase = await createServerClient();
 
   let query = supabase
-    .from('overtime_requests')
-    .select('*')
-    .order('date', { ascending: false });
+    .from("overtime_requests")
+    .select("*")
+    .order("date", { ascending: false });
 
-  if (employeeId) query = query.eq('employee_id', employeeId);
-  if (status) query = query.eq('status', status);
+  if (employeeId) query = query.eq("employee_id", employeeId);
+  if (status) query = query.eq("status", status);
 
   const { data, error } = await query;
-  if (error) throw new Error(`Failed to fetch overtime requests: ${error.message}`);
+  if (error)
+    throw new Error(`Failed to fetch overtime requests: ${error.message}`);
 
   return (data ?? []).map((row) => ({
     id: row.id as string,
@@ -240,7 +255,7 @@ export async function getOvertimeRequests(
     dayType: row.day_type as string,
     justification: row.justification as string,
     supervisorId: row.supervisor_id as string,
-    status: row.status as OvertimeRequestRow['status'],
+    status: row.status as OvertimeRequestRow["status"],
     supervisorComments: row.supervisor_comments as string | null,
     createdAt: row.created_at as string,
   }));
@@ -275,7 +290,7 @@ export async function getEmployeeSummaries(): Promise<EmployeeSummary[]> {
     firstName: e.firstName,
     lastName: e.lastName,
     // officeId alone is available; full office name join is a future enhancement
-    department: e.officeId ?? 'Unassigned',
+    department: e.officeId ?? "Unassigned",
   }));
 }
 
@@ -300,7 +315,12 @@ export async function getOfficeOptions(): Promise<OfficeOption[]> {
 // Paginated admin grid — one row per employee per day
 // ---------------------------------------------------------------------------
 
-export type AdminStatusFilter = 'any' | 'late' | 'undertime' | 'absent' | 'incomplete';
+export type AdminStatusFilter =
+  | "any"
+  | "late"
+  | "undertime"
+  | "absent"
+  | "incomplete";
 
 export interface AdminGridRow {
   employeeId: string;
@@ -336,10 +356,11 @@ export async function getAdminGrid(options: {
 }): Promise<AdminGridResult> {
   const pageSize = Math.min(Math.max(options.pageSize ?? 50, 10), 200);
   const page = Math.max(options.page ?? 1, 1);
-  const search = options.search?.trim() ?? '';
+  const search = options.search?.trim() ?? "";
 
   const empConditions = [isNull(employees.deletedAt)];
-  if (options.officeId) empConditions.push(eq(employees.officeId, options.officeId));
+  if (options.officeId)
+    empConditions.push(eq(employees.officeId, options.officeId));
   if (search) {
     const pattern = `%${search}%`;
     const cond = or(
@@ -399,8 +420,8 @@ export async function getAdminGrid(options: {
       officeName: e.officeName ?? null,
       logId: l?.id ?? null,
       logDate: l?.logDate ?? options.date,
-      timeIn: l?.timeIn ?? null,
-      timeOut: l?.timeOut ?? null,
+      timeIn: hhMM(l?.timeIn ?? null),
+      timeOut: hhMM(l?.timeOut ?? null),
       lateMinutes: l?.lateMinutes ?? 0,
       undertimeMinutes: l?.undertimeMinutes ?? 0,
       overtimeMinutes: l?.overtimeMinutes ?? 0,
@@ -411,13 +432,13 @@ export async function getAdminGrid(options: {
 
   const filtered = rows.filter((r) => {
     switch (options.status) {
-      case 'late':
+      case "late":
         return r.lateMinutes > 0;
-      case 'undertime':
+      case "undertime":
         return r.undertimeMinutes > 0;
-      case 'absent':
+      case "absent":
         return !r.timeIn && !r.timeOut;
-      case 'incomplete':
+      case "incomplete":
         return (!!r.timeIn && !r.timeOut) || (!r.timeIn && !!r.timeOut);
       default:
         return true;
@@ -463,7 +484,7 @@ export async function getTodayKpis(today: DateString): Promise<TodayKpis> {
 
   const present = logs.filter((l) => l.timeIn).length;
   const late = logs.filter((l) => l.isLate).length;
-  const incomplete = logs.filter((l) => (!!l.timeIn) !== (!!l.timeOut)).length;
+  const incomplete = logs.filter((l) => !!l.timeIn !== !!l.timeOut).length;
   const absent = Math.max(activeEmployees - present, 0);
 
   // Overtime pending — queried via Supabase since OT requests live there
@@ -471,13 +492,20 @@ export async function getTodayKpis(today: DateString): Promise<TodayKpis> {
   try {
     const supabase = await createServerClient();
     const { count } = await supabase
-      .from('overtime_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending');
+      .from("overtime_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
     overtimePending = count ?? 0;
   } catch {
     overtimePending = 0;
   }
 
-  return { activeEmployees, present, late, absent, incomplete, overtimePending };
+  return {
+    activeEmployees,
+    present,
+    late,
+    absent,
+    incomplete,
+    overtimePending,
+  };
 }
