@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   CreatePeriodSchema,
   type CreatePeriodInput,
@@ -46,9 +47,14 @@ export function PeriodForm({ defaultScope = "regular" }: PeriodFormProps) {
       periodEnd: "",
       payDate: "",
       scope: defaultScope,
+      customTitle: "",
+      skipMandatoryDeductions: false,
       notes: "",
     },
   });
+
+  const scope = form.watch("scope");
+  const isSpecial = scope === "special";
 
   function onSubmit(values: CreatePeriodInput) {
     startTransition(async () => {
@@ -179,6 +185,62 @@ export function PeriodForm({ defaultScope = "regular" }: PeriodFormProps) {
             </FormItem>
           )}
         />
+
+        {/* Special payroll fields — only shown when scope === "special" */}
+        {isSpecial && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-amber-800">
+              Special Payroll Options
+            </p>
+
+            <FormField
+              control={form.control}
+              name="customTitle"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Custom Title <span className="text-destructive">*</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g., Mid-Year Supplemental Pay — June 2025"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Required for special payroll runs. This title appears on
+                    payslips and the payroll register (PAY-007).
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="skipMandatoryDeductions"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border border-amber-200 bg-white p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>Skip Mandatory Deductions</FormLabel>
+                    <FormDescription>
+                      When enabled, GSIS, PhilHealth, Pag-IBIG, and withholding
+                      tax are not deducted from this special payroll run. Ensure
+                      this is authorized before proceeding.
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
+        )}
 
         <FormField
           control={form.control}

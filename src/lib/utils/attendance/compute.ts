@@ -179,7 +179,7 @@ export function computeOvertimeMinutes(
   if (isOvernightSchedule) {
     const normalisedEnd = scheduledEndMin + 24 * 60;
     const normalisedOut =
-      actualOutMin <= scheduledEndMin ? actualOutMin + 24 * 60 : actualOutMin;
+      actualOutMin < scheduledStartMin ? actualOutMin + 24 * 60 : actualOutMin;
     workedPastEnd = Math.max(0, normalisedOut - normalisedEnd);
   } else {
     workedPastEnd = Math.max(0, actualOutMin - scheduledEndMin);

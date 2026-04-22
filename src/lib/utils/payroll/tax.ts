@@ -40,7 +40,7 @@ interface TaxBracket {
  */
 export const MONTHLY_TAX_BRACKETS: readonly TaxBracket[] = [
   { floor: 0, ceiling: 20_833, baseAmount: 0, rate: 0 },
-  { floor: 20_833, ceiling: 33_332, baseAmount: 0, rate: 0.15 },
+  { floor: 20_833, ceiling: 33_333, baseAmount: 0, rate: 0.15 },
   { floor: 33_332, ceiling: 66_666, baseAmount: 1_875, rate: 0.2 },
   { floor: 66_666, ceiling: 166_666, baseAmount: 8_541.8, rate: 0.25 },
   { floor: 166_666, ceiling: 666_666, baseAmount: 33_541.8, rate: 0.3 },
@@ -53,7 +53,7 @@ export const MONTHLY_TAX_BRACKETS: readonly TaxBracket[] = [
  */
 export const SEMI_MONTHLY_TAX_BRACKETS: readonly TaxBracket[] = [
   { floor: 0, ceiling: 10_416.5, baseAmount: 0, rate: 0 },
-  { floor: 10_416.5, ceiling: 16_666, baseAmount: 0, rate: 0.15 },
+  { floor: 10_416.5, ceiling: 16_666.5, baseAmount: 0, rate: 0.15 },
   { floor: 16_666, ceiling: 33_333, baseAmount: 937.5, rate: 0.2 },
   { floor: 33_333, ceiling: 83_333, baseAmount: 4_270.9, rate: 0.25 },
   { floor: 83_333, ceiling: 333_333, baseAmount: 16_770.9, rate: 0.3 },
@@ -104,7 +104,7 @@ function computeTaxFromBrackets(
     // Taxable income exceeds all brackets — use the last bracket
     const last = brackets[brackets.length - 1]!;
     const excess = taxableIncome - last.floor;
-    const tax = roundHalfEven(last.baseAmount + excess * last.rate, 2);
+    const tax = last.baseAmount + excess * last.rate;
     return {
       tax,
       detail: {
@@ -119,7 +119,7 @@ function computeTaxFromBrackets(
   }
 
   const excess = taxableIncome - bracket.floor;
-  const tax = roundHalfEven(bracket.baseAmount + excess * bracket.rate, 2);
+  const tax = bracket.baseAmount + excess * bracket.rate;
 
   return {
     tax,

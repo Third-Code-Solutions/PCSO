@@ -10,16 +10,13 @@
  * - Late / Undertime / Absence deductions per CSC/DBM rules
  */
 
-import { roundHalfEven } from './rounding';
-import {
-  WORKING_DAYS_PER_MONTH,
-  WORKING_HOURS_PER_DAY,
-} from './salary';
+import { roundHalfEven } from "./rounding";
+import { WORKING_DAYS_PER_MONTH, WORKING_HOURS_PER_DAY } from "./salary";
 import type {
   GSISBreakdown,
   PhilHealthBreakdown,
   PagIBIGBreakdown,
-} from './types';
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // GSIS constants (2024)
@@ -49,7 +46,7 @@ export const GSIS_LIFE_INSURANCE_MONTHLY = 100;
  */
 export function computeGSIS(
   monthlySalary: number,
-  periodType: 'semi-monthly' | 'monthly' = 'semi-monthly',
+  periodType: "semi-monthly" | "monthly" = "semi-monthly",
 ): GSISBreakdown {
   if (monthlySalary < 0) {
     throw new RangeError(
@@ -57,16 +54,10 @@ export function computeGSIS(
     );
   }
 
-  const monthlyPersonal = roundHalfEven(
-    monthlySalary * GSIS_PERSONAL_RATE,
-    2,
-  );
-  const monthlyEmployer = roundHalfEven(
-    monthlySalary * GSIS_EMPLOYER_RATE,
-    2,
-  );
+  const monthlyPersonal = roundHalfEven(monthlySalary * GSIS_PERSONAL_RATE, 2);
+  const monthlyEmployer = roundHalfEven(monthlySalary * GSIS_EMPLOYER_RATE, 2);
 
-  const divisor = periodType === 'semi-monthly' ? 2 : 1;
+  const divisor = periodType === "semi-monthly" ? 2 : 1;
 
   return {
     personal: roundHalfEven(monthlyPersonal / divisor, 2).toFixed(2),
@@ -103,7 +94,7 @@ export const PHILHEALTH_CEILING_PREMIUM = 5_000; // premium at ceiling salary (1
  */
 export function computePhilHealth(
   monthlySalary: number,
-  periodType: 'semi-monthly' | 'monthly' = 'semi-monthly',
+  periodType: "semi-monthly" | "monthly" = "semi-monthly",
 ): PhilHealthBreakdown {
   if (monthlySalary < 0) {
     throw new RangeError(
@@ -117,10 +108,11 @@ export function computePhilHealth(
     Math.min(PHILHEALTH_SALARY_CEILING, monthlySalary),
   );
   const monthlyTotal = roundHalfEven(mss * PHILHEALTH_PREMIUM_RATE, 2);
-  const monthlyPersonal = roundHalfEven(monthlyTotal / 2, 2);
+  const monthlyPersonal =
+    Math.round(mss * (PHILHEALTH_PREMIUM_RATE / 2) * 100) / 100;
   const monthlyEmployer = roundHalfEven(monthlyTotal - monthlyPersonal, 2); // avoids rounding gap
 
-  const divisor = periodType === 'semi-monthly' ? 2 : 1;
+  const divisor = periodType === "semi-monthly" ? 2 : 1;
 
   const periodTotal = roundHalfEven(monthlyTotal / divisor, 2);
   const periodPersonal = roundHalfEven(monthlyPersonal / divisor, 2);
@@ -163,7 +155,7 @@ export const PAGIBIG_MAX_MSS = 10_000; // ceiling for mandatory contribution bas
  */
 export function computePagIBIG(
   monthlySalary: number,
-  periodType: 'semi-monthly' | 'monthly' = 'semi-monthly',
+  periodType: "semi-monthly" | "monthly" = "semi-monthly",
 ): PagIBIGBreakdown {
   if (monthlySalary < 0) {
     throw new RangeError(
@@ -179,10 +171,7 @@ export function computePagIBIG(
   // Cap the salary base at PAGIBIG_MAX_MSS for mandatory computation
   const computationBase = Math.min(monthlySalary, PAGIBIG_MAX_MSS);
 
-  let monthlyEmployee = roundHalfEven(
-    computationBase * employeeRate,
-    2,
-  );
+  let monthlyEmployee = roundHalfEven(computationBase * employeeRate, 2);
   let monthlyEmployer = roundHalfEven(
     computationBase * PAGIBIG_EMPLOYER_RATE,
     2,
@@ -192,7 +181,7 @@ export function computePagIBIG(
   monthlyEmployee = Math.min(monthlyEmployee, PAGIBIG_MAX_MONTHLY_CONTRIBUTION);
   monthlyEmployer = Math.min(monthlyEmployer, PAGIBIG_MAX_MONTHLY_CONTRIBUTION);
 
-  const divisor = periodType === 'semi-monthly' ? 2 : 1;
+  const divisor = periodType === "semi-monthly" ? 2 : 1;
 
   return {
     personal: roundHalfEven(monthlyEmployee / divisor, 2).toFixed(2),
@@ -218,7 +207,7 @@ export function computePagIBIG(
 export function computeLateDeduction(
   lateMinutes: number,
   monthlySalary: number,
-  periodType: 'semi-monthly' | 'monthly' = 'semi-monthly',
+  periodType: "semi-monthly" | "monthly" = "semi-monthly",
 ): number {
   if (lateMinutes < 0) {
     throw new RangeError(

@@ -26,7 +26,7 @@ export function roundHalfEven(value: number, decimals: number = 2): number {
 
   let rounded: number;
 
-  if (Math.abs(diff - 0.5) < Number.EPSILON * 10) {
+  if (Math.abs(diff - 0.5) < Number.EPSILON) {
     // Exactly half — round to even
     rounded = floor % 2 === 0 ? floor : floor + 1;
   } else {
@@ -49,7 +49,7 @@ export function roundMoney(value: number): string {
  * Parse a money string to a number. Accepts strings like "1,234.56" or "1234.56".
  */
 export function parseMoney(value: string): number {
-  const cleaned = value.replace(/,/g, '');
+  const cleaned = value.replace(/,/g, "");
   const parsed = parseFloat(cleaned);
   if (!Number.isFinite(parsed)) {
     throw new RangeError(`parseMoney: cannot parse "${value}" as a number`);
