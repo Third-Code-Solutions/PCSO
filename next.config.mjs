@@ -17,6 +17,9 @@ const nextConfig = {
       allowedOrigins: [
         "localhost:3000",
         "*.asse.devtunnels.ms",
+        "*.ngrok-free.app",
+        "*.ngrok.io",
+        "*.ngrok.app",
         ...(process.env.ALLOWED_ORIGINS
           ? process.env.ALLOWED_ORIGINS.split(",")
           : []),

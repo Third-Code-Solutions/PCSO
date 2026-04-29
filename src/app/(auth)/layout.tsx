@@ -83,7 +83,7 @@ export default function AuthLayout({
       <main className="flex-1 bg-pcso-cream flex flex-col min-h-screen overflow-y-auto">
         <div className="lg:hidden bg-pcso-navy px-6 py-4 flex items-center gap-3">
           <Image
-            src="/logos/pcso.svg"
+            src="/logos/pcso-official.png"
             alt="PCSO seal"
             width={36}
             height={36}
