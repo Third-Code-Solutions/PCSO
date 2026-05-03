@@ -1157,9 +1157,7 @@ function NavLeaf({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 export function AppSidebar({
   open,
   mobileOpen = false,
-  // TODO: Replace with real role from session. Defaulting to super_admin so all
-  //       items are visible during development.
-  role = "super_admin",
+  role = "employee_self_service",
   employeeId = null,
   onClose,
 }: AppSidebarProps) {

@@ -36,7 +36,6 @@ playwright/.cache/
 test-results/
 
 # Drizzle
-drizzle/
 .drizzle/
 
 # Agentmemory local data (dev only)
