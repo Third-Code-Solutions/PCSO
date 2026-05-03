@@ -11,6 +11,8 @@ import {
 } from "@/lib/validations/employees";
 import { APPOINTMENT_TYPE_LABELS } from "@/lib/constants/appointment-types";
 
+export const dynamic = "force-dynamic";
+
 // CSV export — mirrors the filter/search logic in queries.ts so the exported
 // rows match exactly what the user sees in the table.
 

@@ -10,6 +10,8 @@ import {
 import { authenticateApplicantRequest } from "@/lib/utils/rpm/applicant-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
 // TODO integrator (API-005): rate limit uploads; add virus scanning hook.
 
 export const runtime = "nodejs";

@@ -6,6 +6,8 @@ import { applications, vacancies } from "@/lib/db/schema/recruitment";
 import { createApplicationSchema } from "@/lib/validations/recruitment";
 import { authenticateApplicantRequest } from "@/lib/utils/rpm/applicant-auth";
 
+export const dynamic = "force-dynamic";
+
 // TODO integrator (API-005): rate limit.
 
 export const runtime = "nodejs";

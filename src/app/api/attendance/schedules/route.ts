@@ -8,6 +8,8 @@ import { workSchedules } from "@/lib/db/schema/attendance";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/guards";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth();

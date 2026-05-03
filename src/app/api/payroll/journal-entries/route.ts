@@ -6,6 +6,8 @@ import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { format as dateFnsFormat } from "date-fns";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/payroll/journal-entries?periodId={uuid}&format={json|csv}
  *

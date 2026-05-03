@@ -1,5 +1,7 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 /**
  * Signs the current user out and clears session cookies.
@@ -18,7 +20,7 @@ async function handleSignOut(request: NextRequest) {
     await supabase.auth.signOut();
   }
 
-  const loginUrl = new URL('/login', request.url);
+  const loginUrl = new URL("/login", request.url);
   return NextResponse.redirect(loginUrl);
 }
 

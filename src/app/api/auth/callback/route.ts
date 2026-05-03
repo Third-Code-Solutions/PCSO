@@ -1,5 +1,7 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 /**
  * Supabase Auth callback handler.
@@ -15,13 +17,13 @@ import { createServerClient } from '@/lib/supabase/server';
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get('code');
+  const code = searchParams.get("code");
   // `next` is the path the user was trying to reach before being redirected to login.
-  const next = searchParams.get('next') ?? '/dashboard';
+  const next = searchParams.get("next") ?? "/dashboard";
 
   if (!code) {
     // No code means this is a direct hit or a misconfigured link.
-    return NextResponse.redirect(new URL('/login?error=missing_code', origin));
+    return NextResponse.redirect(new URL("/login?error=missing_code", origin));
   }
 
   const supabase = await createServerClient();
@@ -29,13 +31,16 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     // TODO: replace with Sentry.captureException(error) once Sentry is configured (Phase 04+)
-    console.error('[auth/callback] Code exchange failed:', error.message);
+    console.error("[auth/callback] Code exchange failed:", error.message);
     return NextResponse.redirect(
-      new URL(`/login?error=callback_failed&message=${encodeURIComponent(error.message)}`, origin),
+      new URL(
+        `/login?error=callback_failed&message=${encodeURIComponent(error.message)}`,
+        origin,
+      ),
     );
   }
 
   // Ensure the redirect target is a relative path to prevent open-redirect attacks.
-  const safeNext = next.startsWith('/') ? next : '/dashboard';
+  const safeNext = next.startsWith("/") ? next : "/dashboard";
   return NextResponse.redirect(new URL(safeNext, origin));
 }

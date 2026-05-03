@@ -4,6 +4,8 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { vacancies } from "@/lib/db/schema/recruitment";
 
+export const dynamic = "force-dynamic";
+
 // TODO integrator (API-005): add rate limiting to all public RPM endpoints.
 
 export const runtime = "nodejs";

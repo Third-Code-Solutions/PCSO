@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { vacancies } from "@/lib/db/schema/recruitment";
 
+export const dynamic = "force-dynamic";
+
 // TODO integrator (API-005): rate limit.
 
 export const runtime = "nodejs";

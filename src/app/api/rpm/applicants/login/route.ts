@@ -9,6 +9,8 @@ import {
   verifyPassword,
 } from "@/lib/utils/rpm/applicant-auth";
 
+export const dynamic = "force-dynamic";
+
 // TODO integrator (API-005): brute-force protection — lock after N failed
 // attempts, add CAPTCHA or exponential backoff.
 

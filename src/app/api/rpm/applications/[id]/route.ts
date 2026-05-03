@@ -10,6 +10,8 @@ import {
   type VacancyQualificationStandards,
 } from "@/lib/utils/rpm/qualification-score";
 
+export const dynamic = "force-dynamic";
+
 // TODO integrator (API-005): rate limit.
 
 export const runtime = "nodejs";

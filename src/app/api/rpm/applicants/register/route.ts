@@ -9,6 +9,8 @@ import {
   hashPassword,
 } from "@/lib/utils/rpm/applicant-auth";
 
+export const dynamic = "force-dynamic";
+
 // TODO integrator (API-005): rate limit (e.g. 5 registrations per IP per hour).
 
 export const runtime = "nodejs";
