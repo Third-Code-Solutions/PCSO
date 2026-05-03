@@ -55,7 +55,6 @@ export default function AuthLayout({
               alt="PCSO seal"
               width={160}
               height={160}
-              priority
               className="drop-shadow-xl"
             />
           </div>
