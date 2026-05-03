@@ -461,11 +461,15 @@ export async function getPendingOvertimeCount(): Promise<number> {
  * Count DTR periods submitted and awaiting approval.
  */
 export async function getPendingDtrApprovalsCount(): Promise<number> {
-  const [row] = await db
-    .select({ c: count() })
-    .from(dtrPeriods)
-    .where(eq(dtrPeriods.status, "submitted"));
-  return Number(row?.c ?? 0);
+  try {
+    const [row] = await db
+      .select({ c: count() })
+      .from(dtrPeriods)
+      .where(eq(dtrPeriods.status, "submitted"));
+    return Number(row?.c ?? 0);
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -474,18 +478,25 @@ export async function getPendingDtrApprovalsCount(): Promise<number> {
 export async function getUpcomingHolidaysCount(
   daysAhead = 90,
 ): Promise<number> {
-  const today = new Date().toISOString().slice(0, 10);
-  const horizon = new Date(Date.now() + daysAhead * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const horizon = new Date(Date.now() + daysAhead * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
 
-  const [row] = await db
-    .select({ c: count() })
-    .from(holidays)
-    .where(
-      and(gte(holidays.holidayDate, today), lte(holidays.holidayDate, horizon)),
-    );
-  return Number(row?.c ?? 0);
+    const [row] = await db
+      .select({ c: count() })
+      .from(holidays)
+      .where(
+        and(
+          gte(holidays.holidayDate, today),
+          lte(holidays.holidayDate, horizon),
+        ),
+      );
+    return Number(row?.c ?? 0);
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -495,16 +506,20 @@ export async function getNextHoliday(): Promise<{
   name: string;
   date: string;
 } | null> {
-  const today = new Date().toISOString().slice(0, 10);
-  const [row] = await db
-    .select({ name: holidays.name, date: holidays.holidayDate })
-    .from(holidays)
-    .where(gte(holidays.holidayDate, today))
-    .orderBy(holidays.holidayDate)
-    .limit(1);
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const [row] = await db
+      .select({ name: holidays.name, date: holidays.holidayDate })
+      .from(holidays)
+      .where(gte(holidays.holidayDate, today))
+      .orderBy(holidays.holidayDate)
+      .limit(1);
 
-  if (!row) return null;
-  return { name: row.name, date: row.date };
+    if (!row) return null;
+    return { name: row.name, date: row.date };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -512,48 +527,73 @@ export async function getNextHoliday(): Promise<{
  * Defaults to last calendar year (annual SALN is due April 30 for prior year).
  */
 export async function getSalnNonFilersCount(year?: number): Promise<number> {
-  const targetYear = year ?? new Date().getFullYear() - 1;
+  try {
+    const targetYear = year ?? new Date().getFullYear() - 1;
 
-  const [activeRow] = await db
-    .select({ c: count() })
-    .from(employees)
-    .where(and(eq(employees.status, "active"), isNull(employees.deletedAt)));
+    const [activeRow] = await db
+      .select({ c: count() })
+      .from(employees)
+      .where(and(eq(employees.status, "active"), isNull(employees.deletedAt)));
 
-  const activeCount = Number(activeRow?.c ?? 0);
+    const activeCount = Number(activeRow?.c ?? 0);
 
-  const filerRows = await db
-    .selectDistinct({ employeeId: salnSubmissions.employeeId })
-    .from(salnSubmissions)
-    .where(
-      and(
-        eq(salnSubmissions.year, targetYear),
-        inArray(salnSubmissions.status, ["submitted", "received", "verified"]),
-      ),
-    );
+    const filerRows = await db
+      .selectDistinct({ employeeId: salnSubmissions.employeeId })
+      .from(salnSubmissions)
+      .where(
+        and(
+          eq(salnSubmissions.year, targetYear),
+          inArray(salnSubmissions.status, [
+            "submitted",
+            "received",
+            "verified",
+          ]),
+        ),
+      );
 
-  return Math.max(0, activeCount - filerRows.length);
+    return Math.max(0, activeCount - filerRows.length);
+  } catch {
+    return 0;
+  }
 }
 
 /**
  * System-wide KPIs for super_admin / hr_admin.
  */
 export async function getAdminDashboardKpis(): Promise<AdminKpis> {
+  const safeCount = async (
+    query: Promise<{ c: unknown }[]>,
+  ): Promise<number> => {
+    try {
+      const [row] = await query;
+      return Number(row?.c ?? 0);
+    } catch {
+      return 0;
+    }
+  };
+
   const [
-    totalEmpRow,
-    pendingLeaveRow,
-    pendingOt,
-    pendingDtr,
-    upcomingHol,
-    salnNon,
+    totalEmployees,
+    pendingLeaves,
+    pendingOvertimes,
+    pendingDtrApprovals,
+    upcomingHolidays,
+    salnNonFilers,
   ] = await Promise.all([
-    db
-      .select({ c: count() })
-      .from(employees)
-      .where(and(eq(employees.status, "active"), isNull(employees.deletedAt))),
-    db
-      .select({ c: count() })
-      .from(leaveApplications)
-      .where(eq(leaveApplications.status, "pending")),
+    safeCount(
+      db
+        .select({ c: count() })
+        .from(employees)
+        .where(
+          and(eq(employees.status, "active"), isNull(employees.deletedAt)),
+        ),
+    ),
+    safeCount(
+      db
+        .select({ c: count() })
+        .from(leaveApplications)
+        .where(eq(leaveApplications.status, "pending")),
+    ),
     getPendingOvertimeCount(),
     getPendingDtrApprovalsCount(),
     getUpcomingHolidaysCount(),
@@ -561,12 +601,12 @@ export async function getAdminDashboardKpis(): Promise<AdminKpis> {
   ]);
 
   return {
-    totalEmployees: Number(totalEmpRow[0]?.c ?? 0),
-    pendingLeaves: Number(pendingLeaveRow[0]?.c ?? 0),
-    pendingOvertimes: pendingOt,
-    pendingDtrApprovals: pendingDtr,
-    salnNonFilers: salnNon,
-    upcomingHolidays: upcomingHol,
+    totalEmployees,
+    pendingLeaves,
+    pendingOvertimes,
+    pendingDtrApprovals,
+    salnNonFilers,
+    upcomingHolidays,
   };
 }
 
@@ -574,57 +614,71 @@ export async function getAdminDashboardKpis(): Promise<AdminKpis> {
  * Payroll admin dashboard KPIs.
  */
 export async function getPayrollAdminKpis(): Promise<PayrollAdminKpis> {
-  const [activePeriodRows, totalEmpRow, remittancesActiveRow] =
-    await Promise.all([
-      db
-        .select({
-          id: payrollPeriods.id,
-          name: payrollPeriods.name,
-        })
-        .from(payrollPeriods)
-        .where(
-          and(
-            inArray(payrollPeriods.status, ["draft", "processing"]),
-            isNull(payrollPeriods.deletedAt),
+  try {
+    const [activePeriodRows, totalEmpRow, remittancesActiveRow] =
+      await Promise.all([
+        db
+          .select({
+            id: payrollPeriods.id,
+            name: payrollPeriods.name,
+          })
+          .from(payrollPeriods)
+          .where(
+            and(
+              inArray(payrollPeriods.status, ["draft", "processing"]),
+              isNull(payrollPeriods.deletedAt),
+            ),
+          )
+          .orderBy(payrollPeriods.periodEnd)
+          .limit(1),
+        db
+          .select({ c: count() })
+          .from(employees)
+          .where(
+            and(eq(employees.status, "active"), isNull(employees.deletedAt)),
           ),
-        )
-        .orderBy(payrollPeriods.periodEnd)
-        .limit(1),
-      db
-        .select({ c: count() })
-        .from(employees)
-        .where(
-          and(eq(employees.status, "active"), isNull(employees.deletedAt)),
-        ),
-      db
-        .select({ c: count() })
-        .from(remittanceBatches)
-        .where(inArray(remittanceBatches.status, ["draft", "generated"])),
-    ]);
+        db
+          .select({ c: count() })
+          .from(remittanceBatches)
+          .where(inArray(remittanceBatches.status, ["draft", "generated"])),
+      ]);
 
-  const activePeriod = activePeriodRows[0] ?? null;
-  let pendingPayrollEntries = 0;
+    const activePeriod = activePeriodRows[0] ?? null;
+    let pendingPayrollEntries = 0;
 
-  if (activePeriod) {
-    const [entries] = await db
-      .select({ c: count() })
-      .from(payrollRecords)
-      .where(
-        and(
-          eq(payrollRecords.periodId, activePeriod.id),
-          notInArray(payrollRecords.status, ["paid"]),
-        ),
-      );
-    pendingPayrollEntries = Number(entries?.c ?? 0);
+    if (activePeriod) {
+      try {
+        const [entries] = await db
+          .select({ c: count() })
+          .from(payrollRecords)
+          .where(
+            and(
+              eq(payrollRecords.periodId, activePeriod.id),
+              notInArray(payrollRecords.status, ["paid"]),
+            ),
+          );
+        pendingPayrollEntries = Number(entries?.c ?? 0);
+      } catch {
+        pendingPayrollEntries = 0;
+      }
+    }
+
+    return {
+      activePayrollPeriodName: activePeriod?.name ?? null,
+      activePayrollPeriodId: activePeriod?.id ?? null,
+      pendingPayrollEntries,
+      remittanceDeadlines: Number(remittancesActiveRow[0]?.c ?? 0),
+      payrollEmployeeCount: Number(totalEmpRow[0]?.c ?? 0),
+    };
+  } catch {
+    return {
+      activePayrollPeriodName: null,
+      activePayrollPeriodId: null,
+      pendingPayrollEntries: 0,
+      remittanceDeadlines: 0,
+      payrollEmployeeCount: 0,
+    };
   }
-
-  return {
-    activePayrollPeriodName: activePeriod?.name ?? null,
-    activePayrollPeriodId: activePeriod?.id ?? null,
-    pendingPayrollEntries,
-    remittanceDeadlines: Number(remittancesActiveRow[0]?.c ?? 0),
-    payrollEmployeeCount: Number(totalEmpRow[0]?.c ?? 0),
-  };
 }
 
 /**
@@ -749,59 +803,92 @@ export async function getSupervisorKpis(
   _supervisorUserId: string,
   officeId?: string | null,
 ): Promise<SupervisorKpis> {
-  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const today = new Date().toISOString().slice(0, 10);
 
-  if (officeId) {
-    const unitEmployeeRows = await db
-      .select({ id: employees.id })
-      .from(employees)
-      .where(
-        and(
-          eq(employees.officeId, officeId),
-          eq(employees.status, "active"),
-          isNull(employees.deletedAt),
-        ),
-      );
+    if (officeId) {
+      const unitEmployeeRows = await db
+        .select({ id: employees.id })
+        .from(employees)
+        .where(
+          and(
+            eq(employees.officeId, officeId),
+            eq(employees.status, "active"),
+            isNull(employees.deletedAt),
+          ),
+        );
 
-    const unitEmployeeIds = unitEmployeeRows.map((r) => r.id);
+      const unitEmployeeIds = unitEmployeeRows.map((r) => r.id);
 
+      const [pendingRow, onLeaveTodayRow, pendingOtRow, upcomingHol] =
+        await Promise.all([
+          unitEmployeeIds.length > 0
+            ? db
+                .select({ c: count() })
+                .from(leaveApplications)
+                .where(
+                  and(
+                    eq(leaveApplications.status, "pending"),
+                    inArray(leaveApplications.employeeId, unitEmployeeIds),
+                  ),
+                )
+            : Promise.resolve([{ c: 0 }]),
+          unitEmployeeIds.length > 0
+            ? db
+                .select({ c: count() })
+                .from(leaveApplications)
+                .where(
+                  and(
+                    eq(leaveApplications.status, "approved"),
+                    lte(leaveApplications.dateFrom, today),
+                    gte(leaveApplications.dateTo, today),
+                    inArray(leaveApplications.employeeId, unitEmployeeIds),
+                  ),
+                )
+            : Promise.resolve([{ c: 0 }]),
+          unitEmployeeIds.length > 0
+            ? db
+                .select({ c: count() })
+                .from(overtimeRequests)
+                .where(
+                  and(
+                    eq(overtimeRequests.status, "pending"),
+                    inArray(overtimeRequests.employeeId, unitEmployeeIds),
+                  ),
+                )
+            : Promise.resolve([{ c: 0 }]),
+          getUpcomingHolidaysCount(),
+        ]);
+
+      return {
+        pendingTeamLeaves: Number(pendingRow[0]?.c ?? 0),
+        teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
+        pendingOtApprovals: Number(pendingOtRow[0]?.c ?? 0),
+        upcomingHolidays: upcomingHol,
+      };
+    }
+
+    // Org-wide fallback when no officeId is provided.
     const [pendingRow, onLeaveTodayRow, pendingOtRow, upcomingHol] =
       await Promise.all([
-        unitEmployeeIds.length > 0
-          ? db
-              .select({ c: count() })
-              .from(leaveApplications)
-              .where(
-                and(
-                  eq(leaveApplications.status, "pending"),
-                  inArray(leaveApplications.employeeId, unitEmployeeIds),
-                ),
-              )
-          : Promise.resolve([{ c: 0 }]),
-        unitEmployeeIds.length > 0
-          ? db
-              .select({ c: count() })
-              .from(leaveApplications)
-              .where(
-                and(
-                  eq(leaveApplications.status, "approved"),
-                  lte(leaveApplications.dateFrom, today),
-                  gte(leaveApplications.dateTo, today),
-                  inArray(leaveApplications.employeeId, unitEmployeeIds),
-                ),
-              )
-          : Promise.resolve([{ c: 0 }]),
-        unitEmployeeIds.length > 0
-          ? db
-              .select({ c: count() })
-              .from(overtimeRequests)
-              .where(
-                and(
-                  eq(overtimeRequests.status, "pending"),
-                  inArray(overtimeRequests.employeeId, unitEmployeeIds),
-                ),
-              )
-          : Promise.resolve([{ c: 0 }]),
+        db
+          .select({ c: count() })
+          .from(leaveApplications)
+          .where(eq(leaveApplications.status, "pending")),
+        db
+          .select({ c: count() })
+          .from(leaveApplications)
+          .where(
+            and(
+              eq(leaveApplications.status, "approved"),
+              lte(leaveApplications.dateFrom, today),
+              gte(leaveApplications.dateTo, today),
+            ),
+          ),
+        db
+          .select({ c: count() })
+          .from(overtimeRequests)
+          .where(eq(overtimeRequests.status, "pending")),
         getUpcomingHolidaysCount(),
       ]);
 
@@ -811,95 +898,93 @@ export async function getSupervisorKpis(
       pendingOtApprovals: Number(pendingOtRow[0]?.c ?? 0),
       upcomingHolidays: upcomingHol,
     };
+  } catch {
+    return {
+      pendingTeamLeaves: 0,
+      teamOnLeaveToday: 0,
+      pendingOtApprovals: 0,
+      upcomingHolidays: 0,
+    };
   }
-
-  // Org-wide fallback when no officeId is provided.
-  const [pendingRow, onLeaveTodayRow, pendingOtRow, upcomingHol] =
-    await Promise.all([
-      db
-        .select({ c: count() })
-        .from(leaveApplications)
-        .where(eq(leaveApplications.status, "pending")),
-      db
-        .select({ c: count() })
-        .from(leaveApplications)
-        .where(
-          and(
-            eq(leaveApplications.status, "approved"),
-            lte(leaveApplications.dateFrom, today),
-            gte(leaveApplications.dateTo, today),
-          ),
-        ),
-      db
-        .select({ c: count() })
-        .from(overtimeRequests)
-        .where(eq(overtimeRequests.status, "pending")),
-      getUpcomingHolidaysCount(),
-    ]);
-
-  return {
-    pendingTeamLeaves: Number(pendingRow[0]?.c ?? 0),
-    teamOnLeaveToday: Number(onLeaveTodayRow[0]?.c ?? 0),
-    pendingOtApprovals: Number(pendingOtRow[0]?.c ?? 0),
-    upcomingHolidays: upcomingHol,
-  };
 }
 
 /**
  * Executive / leadership dashboard KPIs. Read-only aggregates.
  */
 export async function getExecutiveKpis(): Promise<ExecutiveKpis> {
-  const [totalEmpRow, vacantRow, upcomingHol, salnNon] = await Promise.all([
-    db
-      .select({ c: count() })
-      .from(employees)
-      .where(and(eq(employees.status, "active"), isNull(employees.deletedAt))),
-    db
-      .select({ c: count() })
-      .from(plantillaPositions)
-      .where(
-        and(
-          eq(plantillaPositions.isFilled, false),
-          isNull(plantillaPositions.deletedAt),
+  try {
+    const [totalEmpRow, vacantRow, upcomingHol, salnNon] = await Promise.all([
+      db
+        .select({ c: count() })
+        .from(employees)
+        .where(
+          and(eq(employees.status, "active"), isNull(employees.deletedAt)),
         ),
-      ),
-    getUpcomingHolidaysCount(),
-    getSalnNonFilersCount(),
-  ]);
+      db
+        .select({ c: count() })
+        .from(plantillaPositions)
+        .where(
+          and(
+            eq(plantillaPositions.isFilled, false),
+            isNull(plantillaPositions.deletedAt),
+          ),
+        ),
+      getUpcomingHolidaysCount(),
+      getSalnNonFilersCount(),
+    ]);
 
-  return {
-    totalEmployees: Number(totalEmpRow[0]?.c ?? 0),
-    vacantPositions: Number(vacantRow[0]?.c ?? 0),
-    salnNonFilers: salnNon,
-    upcomingHolidays: upcomingHol,
-  };
+    return {
+      totalEmployees: Number(totalEmpRow[0]?.c ?? 0),
+      vacantPositions: Number(vacantRow[0]?.c ?? 0),
+      salnNonFilers: salnNon,
+      upcomingHolidays: upcomingHol,
+    };
+  } catch {
+    return {
+      totalEmployees: 0,
+      vacantPositions: 0,
+      salnNonFilers: 0,
+      upcomingHolidays: 0,
+    };
+  }
 }
 
 /**
  * Compliance / audit dashboard KPIs. Read-only aggregates.
  */
 export async function getAuditorKpis(): Promise<AuditorKpis> {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
 
-  const [auditRow, salnNon, pendingLeaveRow, upcomingHol] = await Promise.all([
-    db
-      .select({ c: count() })
-      .from(auditLogs)
-      .where(gte(auditLogs.createdAt, sevenDaysAgo)),
-    getSalnNonFilersCount(),
-    db
-      .select({ c: count() })
-      .from(leaveApplications)
-      .where(eq(leaveApplications.status, "pending")),
-    getUpcomingHolidaysCount(),
-  ]);
+    const [auditRow, salnNon, pendingLeaveRow, upcomingHol] = await Promise.all(
+      [
+        db
+          .select({ c: count() })
+          .from(auditLogs)
+          .where(gte(auditLogs.createdAt, sevenDaysAgo)),
+        getSalnNonFilersCount(),
+        db
+          .select({ c: count() })
+          .from(leaveApplications)
+          .where(eq(leaveApplications.status, "pending")),
+        getUpcomingHolidaysCount(),
+      ],
+    );
 
-  return {
-    salnNonFilers: salnNon,
-    auditEntriesLast7Days: Number(auditRow[0]?.c ?? 0),
-    pendingLeaves: Number(pendingLeaveRow[0]?.c ?? 0),
-    upcomingHolidays: upcomingHol,
-  };
+    return {
+      salnNonFilers: salnNon,
+      auditEntriesLast7Days: Number(auditRow[0]?.c ?? 0),
+      pendingLeaves: Number(pendingLeaveRow[0]?.c ?? 0),
+      upcomingHolidays: upcomingHol,
+    };
+  } catch {
+    return {
+      salnNonFilers: 0,
+      auditEntriesLast7Days: 0,
+      pendingLeaves: 0,
+      upcomingHolidays: 0,
+    };
+  }
 }
 
 /**
@@ -908,53 +993,81 @@ export async function getAuditorKpis(): Promise<AuditorKpis> {
 export async function getEmployeeDashboardKpis(
   employeeId: string,
 ): Promise<EmployeeKpis> {
-  const currentYear = new Date().getFullYear();
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const deadlineThisYear = new Date(Date.UTC(year, 3, 30));
+  const salnDeadline =
+    now <= deadlineThisYear
+      ? deadlineThisYear.toISOString().slice(0, 10)
+      : new Date(Date.UTC(year + 1, 3, 30)).toISOString().slice(0, 10);
+
+  const currentYear = now.getFullYear();
+  const today = now.toISOString().slice(0, 10);
+
+  const safeQuery = async <T>(query: Promise<T>, fallback: T): Promise<T> => {
+    try {
+      return await query;
+    } catch {
+      return fallback;
+    }
+  };
 
   const [creditRows, latestPayrollRows, todayLog, nextHol] = await Promise.all([
-    db
-      .select({
-        code: leaveTypes.code,
-        balance: leaveCredits.balance,
-      })
-      .from(leaveCredits)
-      .leftJoin(leaveTypes, eq(leaveCredits.leaveTypeId, leaveTypes.id))
-      .where(
-        and(
-          eq(leaveCredits.employeeId, employeeId),
-          eq(leaveCredits.year, currentYear),
-          inArray(leaveTypes.code, ["VL", "SL"]),
+    safeQuery(
+      db
+        .select({
+          code: leaveTypes.code,
+          balance: leaveCredits.balance,
+        })
+        .from(leaveCredits)
+        .leftJoin(leaveTypes, eq(leaveCredits.leaveTypeId, leaveTypes.id))
+        .where(
+          and(
+            eq(leaveCredits.employeeId, employeeId),
+            eq(leaveCredits.year, currentYear),
+            inArray(leaveTypes.code, ["VL", "SL"]),
+          ),
         ),
-      ),
-    db
-      .select({
-        periodId: payrollRecords.periodId,
-        periodName: payrollPeriods.name,
-        periodEnd: payrollPeriods.periodEnd,
-      })
-      .from(payrollRecords)
-      .leftJoin(payrollPeriods, eq(payrollRecords.periodId, payrollPeriods.id))
-      .where(
-        and(
-          eq(payrollRecords.employeeId, employeeId),
-          eq(payrollRecords.status, "paid"),
-        ),
-      )
-      .orderBy(desc(payrollPeriods.periodEnd))
-      .limit(1),
-    db
-      .select({
-        timeIn: attendanceLogs.timeIn,
-        timeOut: attendanceLogs.timeOut,
-      })
-      .from(attendanceLogs)
-      .where(
-        and(
-          eq(attendanceLogs.employeeId, employeeId),
-          eq(attendanceLogs.logDate, today),
-        ),
-      )
-      .limit(1),
+      [],
+    ),
+    safeQuery(
+      db
+        .select({
+          periodId: payrollRecords.periodId,
+          periodName: payrollPeriods.name,
+          periodEnd: payrollPeriods.periodEnd,
+        })
+        .from(payrollRecords)
+        .leftJoin(
+          payrollPeriods,
+          eq(payrollRecords.periodId, payrollPeriods.id),
+        )
+        .where(
+          and(
+            eq(payrollRecords.employeeId, employeeId),
+            eq(payrollRecords.status, "paid"),
+          ),
+        )
+        .orderBy(desc(payrollPeriods.periodEnd))
+        .limit(1),
+      [],
+    ),
+    safeQuery(
+      db
+        .select({
+          timeIn: attendanceLogs.timeIn,
+          timeOut: attendanceLogs.timeOut,
+        })
+        .from(attendanceLogs)
+        .where(
+          and(
+            eq(attendanceLogs.employeeId, employeeId),
+            eq(attendanceLogs.logDate, today),
+          ),
+        )
+        .limit(1),
+      [],
+    ),
     getNextHoliday(),
   ]);
 
@@ -971,15 +1084,6 @@ export async function getEmployeeDashboardKpis(
   let dtrTodayStatus: "present" | "incomplete" | "absent" = "absent";
   if (log?.timeIn && log?.timeOut) dtrTodayStatus = "present";
   else if (log?.timeIn || log?.timeOut) dtrTodayStatus = "incomplete";
-
-  // Annual SALN filing deadline: April 30 each year (RA 6713).
-  const now = new Date();
-  const year = now.getFullYear();
-  const deadlineThisYear = new Date(Date.UTC(year, 3, 30));
-  const salnDeadline =
-    now <= deadlineThisYear
-      ? deadlineThisYear.toISOString().slice(0, 10)
-      : new Date(Date.UTC(year + 1, 3, 30)).toISOString().slice(0, 10);
 
   return {
     vlBalance,
