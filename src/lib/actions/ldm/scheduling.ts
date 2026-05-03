@@ -59,16 +59,6 @@ import {
   type ScheduleParticipantsInput,
 } from "@/lib/validations/learning";
 
-// ─── Public input / return types ─────────────────────────────────────────────
-
-export type {
-  RunStatus,
-  ParticipantStatus,
-  TrainingRun,
-  TrainingParticipant,
-  TrainingRunApproval,
-} from "@/lib/utils/ldm/schedule-generator";
-
 type Result<T> = { data: T } | { error: string };
 
 function rethrowIfRedirectError(error: unknown): void {
