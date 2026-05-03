@@ -24,8 +24,6 @@ import { TrainingBudgetSummary } from "@/components/pdf/training-budget-summary"
 import { _readRun } from "./scheduling";
 import type { TrainingRun } from "@/lib/utils/ldm/schedule-generator";
 
-export type { TrainingRun } from "@/lib/utils/ldm/schedule-generator";
-
 type Result<T> = { data: T } | { error: string };
 
 export interface BudgetSummaryContext {

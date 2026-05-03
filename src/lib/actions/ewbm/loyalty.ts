@@ -444,6 +444,3 @@ export async function historyByMilestone(
 
 // Unused import guard — keep `sql` import available for any later raw usage.
 void sql;
-
-// Export canonical types for UI consumers.
-export type { LoyaltyAwardRun, LoyaltyAwardee };

@@ -920,7 +920,3 @@ export async function notifyExamResults(
   );
   return { ok: true, data: { notified: recipients.length } };
 }
-
-// ── Exports — ensure Application type is reachable for consumers ─────────────
-
-export type { Application };

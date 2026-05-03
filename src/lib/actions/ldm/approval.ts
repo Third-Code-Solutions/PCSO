@@ -25,11 +25,6 @@ import type {
 
 import { _listApprovalsByRun, _readRun, _writeRunStatus } from "./scheduling";
 
-export type {
-  ApprovalDecision,
-  TrainingRunApproval,
-} from "@/lib/utils/ldm/schedule-generator";
-
 type Result<T> = { data: T } | { error: string };
 
 // Default two-level chain: HRD Manager → AGM.
