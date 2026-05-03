@@ -7,6 +7,7 @@
  *           links to fill/monitor their own IPCRF.
  */
 
+import type { ComponentType } from "react";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth/guards";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -65,8 +66,13 @@ export default async function PerformanceDashboardPage() {
   const activePeriod = periods.find((p) => p.status !== "closed") ?? periods[0];
   const latestRating = myRatings[0];
 
+  const canViewCycles = hasPermission(user.role, "performance", "edit");
+  const canViewOpcrf = hasPermission(user.role, "performance", "approve");
+  const canViewStepIncrements = hasPermission(user.role, "performance", "edit");
+  const canViewAnalytics = hasPermission(user.role, "performance", "approve");
+
   const quickLinks = [
-    {
+    canViewCycles && {
       href: "/performance/cycles",
       icon: ClipboardListIcon,
       label: "Performance Cycles",
@@ -80,25 +86,30 @@ export default async function PerformanceDashboardPage() {
         ? "Review and approve employees\u2019 IPCRFs"
         : "Individual performance commitment & review",
     },
-    {
+    canViewOpcrf && {
       href: "/performance/opcrf",
       icon: BuildingIcon,
       label: "OPCRF",
       description: "Office performance ratings",
     },
-    {
+    canViewStepIncrements && {
       href: "/performance/step-increments",
       icon: TrendingUpIcon,
       label: "Step Increments",
       description: "Eligibility tracker and processing",
     },
-    {
+    canViewAnalytics && {
       href: "/performance/analytics",
       icon: BarChart3Icon,
       label: "Analytics",
       description: "Performance trends and summaries",
     },
-  ];
+  ].filter(Boolean) as {
+    href: string;
+    icon: ComponentType<{ className?: string }>;
+    label: string;
+    description: string;
+  }[];
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
@@ -197,14 +208,16 @@ export default async function PerformanceDashboardPage() {
                   {activePeriod.dateFrom} – {activePeriod.dateTo}
                 </span>
               </div>
-              <div className="mt-4">
-                <Link
-                  href={`/performance/cycles/${activePeriod.id}`}
-                  className="inline-flex items-center gap-1 text-sm text-pcso-navy hover:text-pcso-navy-light transition-colors"
-                >
-                  View cycle details <ChevronRightIcon className="h-4 w-4" />
-                </Link>
-              </div>
+              {canViewCycles && (
+                <div className="mt-4">
+                  <Link
+                    href={`/performance/cycles/${activePeriod.id}`}
+                    className="inline-flex items-center gap-1 text-sm text-pcso-navy hover:text-pcso-navy-light transition-colors"
+                  >
+                    View cycle details <ChevronRightIcon className="h-4 w-4" />
+                  </Link>
+                </div>
+              )}
             </section>
           )}
 

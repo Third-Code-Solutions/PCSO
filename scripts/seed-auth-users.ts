@@ -1,23 +1,24 @@
 /**
- * Auth Users Seed Script — Senate HRIS
+ * Auth Users Seed Script — PCSO HRIS
  *
  * Usage: npm run db:seed-auth
  *
- * Creates 5 Supabase Auth users and links them to system_users rows.
+ * Creates 7 Supabase Auth users (one per PRD §3.4 dashboard role) and links
+ * them to system_users rows.
  * Idempotent — skips users that already exist by email.
  *
  * Requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local
  * Uses the service_role admin client to bypass RLS.
  */
-import { config as loadEnv } from 'dotenv';
-loadEnv({ path: '.env.local' });
-loadEnv({ path: '.env' });
+import { config as loadEnv } from "dotenv";
+loadEnv({ path: ".env.local" });
+loadEnv({ path: ".env" });
 
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
-import { createClient } from '@supabase/supabase-js';
-import * as schema from '../src/lib/db/schema';
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { eq } from "drizzle-orm";
+import { createClient } from "@supabase/supabase-js";
+import * as schema from "../src/lib/db/schema";
 
 // ─── Validate env ──────────────────────────────────────────────────────────────
 
@@ -25,9 +26,9 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const databaseUrl = process.env.DATABASE_URL;
 
-if (!supabaseUrl) throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set');
-if (!serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set');
-if (!databaseUrl) throw new Error('DATABASE_URL is not set');
+if (!supabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL is not set");
+if (!serviceRoleKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
+if (!databaseUrl) throw new Error("DATABASE_URL is not set");
 
 // ─── Clients ───────────────────────────────────────────────────────────────────
 
@@ -52,54 +53,75 @@ function log(step: string, detail: string): void {
 interface AuthUserConfig {
   email: string;
   password: string;
-  role: typeof schema.systemRoleEnum.enumValues[number];
+  role: (typeof schema.systemRoleEnum.enumValues)[number];
   officeCode: string | null;
   employeeNo: string | null;
 }
 
 const AUTH_USERS: AuthUserConfig[] = [
+  // D1 — Employee Self-Service
   {
-    email: 'admin@senate.gov.ph',
-    password: 'SenateAdmin2026!',
-    role: 'super_admin',
+    email: "ess@pcso.gov.ph",
+    password: "PCSO-employee-self-service-B7RlGdel",
+    role: "employee_self_service",
+    officeCode: null,
+    employeeNo: "EMP-2026-00001",
+  },
+  // D2 — Supervisor / Manager
+  {
+    email: "supervisor@pcso.gov.ph",
+    password: "PCSO-supervisor-tqCcVJI3",
+    role: "supervisor",
     officeCode: null,
     employeeNo: null,
   },
+  // D3 — HR Administrator
   {
-    email: 'hr@senate.gov.ph',
-    password: 'SenateHR2026!',
-    role: 'hr_admin',
-    officeCode: 'OSP',
-    employeeNo: 'EMP-2026-00020',
-  },
-  {
-    email: 'payroll@senate.gov.ph',
-    password: 'SenatePayroll2026!',
-    role: 'payroll_admin',
-    officeCode: 'OSP',
+    email: "hr@pcso.gov.ph",
+    password: "PCSO-hr-admin-y8R9fUQM",
+    role: "hr_admin",
+    officeCode: null,
     employeeNo: null,
   },
+  // D4 — Payroll & Compensation
   {
-    email: 'approver@senate.gov.ph',
-    password: 'SenateApprover2026!',
-    role: 'leave_approver',
-    officeCode: 'OSP',
-    employeeNo: 'EMP-2026-00001',
+    email: "payroll@pcso.gov.ph",
+    password: "PCSO-payroll-admin-2EBCCrQt",
+    role: "payroll_admin",
+    officeCode: null,
+    employeeNo: null,
   },
+  // D5 — Executive / Leadership (read-only analytics)
   {
-    email: 'employee@senate.gov.ph',
-    password: 'SenateEmployee2026!',
-    role: 'employee_self_service',
-    officeCode: 'COF',
-    employeeNo: 'EMP-2026-00006',
+    email: "executive@pcso.gov.ph",
+    password: "PCSO-executive-2_3XZENR",
+    role: "executive",
+    officeCode: null,
+    employeeNo: null,
+  },
+  // D6 — Compliance & Audit (read-everywhere, write-nowhere)
+  {
+    email: "audit@pcso.gov.ph",
+    password: "PCSO-auditor-l36e_poM",
+    role: "auditor",
+    officeCode: null,
+    employeeNo: null,
+  },
+  // D7 — System Administrator
+  {
+    email: "sysadmin@pcso.gov.ph",
+    password: "PCSO-super-admin-vAs45Fhn",
+    role: "super_admin",
+    officeCode: null,
+    employeeNo: null,
   },
 ];
 
 // ─── Seed Function ─────────────────────────────────────────────────────────────
 
 async function seedAuthUsers(): Promise<void> {
-  console.log('Senate HRIS — Auth Users Seed');
-  console.log('─'.repeat(50));
+  console.log("PCSO HRIS — Auth Users Seed");
+  console.log("─".repeat(50));
 
   // Fetch office IDs for assignment
   const officeRows = await db
@@ -112,7 +134,10 @@ async function seedAuthUsers(): Promise<void> {
 
   // Fetch employee IDs for assignment
   const employeeRows = await db
-    .select({ id: schema.employees.id, employeeNo: schema.employees.employeeNo })
+    .select({
+      id: schema.employees.id,
+      employeeNo: schema.employees.employeeNo,
+    })
     .from(schema.employees);
   const employeeIdByNo: Record<string, string> = {};
   for (const e of employeeRows) {
@@ -123,8 +148,8 @@ async function seedAuthUsers(): Promise<void> {
     await processAuthUser(userConfig, officeIdByCode, employeeIdByNo);
   }
 
-  console.log('─'.repeat(50));
-  console.log('Auth users seed completed successfully.');
+  console.log("─".repeat(50));
+  console.log("Auth users seed completed successfully.");
 }
 
 async function processAuthUser(
@@ -133,13 +158,17 @@ async function processAuthUser(
   employeeIdByNo: Record<string, string>,
 ): Promise<void> {
   // 1. Check if auth user already exists
-  const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
+  const { data: listData, error: listError } =
+    await supabaseAdmin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
 
   if (listError) {
-    console.error(`  [${config.email}] Failed to list auth users:`, listError.message);
+    console.error(
+      `  [${config.email}] Failed to list auth users:`,
+      listError.message,
+    );
     return;
   }
 
@@ -152,17 +181,21 @@ async function processAuthUser(
     authUid = existingAuthUser.id;
   } else {
     // 2. Create auth user with email_confirmed
-    const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: config.email,
-      password: config.password,
-      email_confirm: true,
-      user_metadata: {
-        role: config.role,
-      },
-    });
+    const { data: createData, error: createError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email: config.email,
+        password: config.password,
+        email_confirm: true,
+        user_metadata: {
+          role: config.role,
+        },
+      });
 
     if (createError) {
-      console.error(`  [${config.email}] Failed to create auth user:`, createError.message);
+      console.error(
+        `  [${config.email}] Failed to create auth user:`,
+        createError.message,
+      );
       return;
     }
 
@@ -176,8 +209,37 @@ async function processAuthUser(
   }
 
   // 3. Resolve foreign key values
-  const officeId = config.officeCode ? (officeIdByCode[config.officeCode] ?? null) : null;
-  const employeeId = config.employeeNo ? (employeeIdByNo[config.employeeNo] ?? null) : null;
+  const officeId = config.officeCode
+    ? (officeIdByCode[config.officeCode] ?? null)
+    : null;
+  const employeeId = config.employeeNo
+    ? (employeeIdByNo[config.employeeNo] ?? null)
+    : null;
+
+  // 3b. Update auth user app_metadata so that JWT claims include employee_id
+  //     and role. This is what the Supabase RLS functions (current_employee_id,
+  //     current_role) read at query time — user_metadata alone is not enough.
+  const { error: metaError } = await supabaseAdmin.auth.admin.updateUserById(
+    authUid,
+    {
+      app_metadata: {
+        role: config.role,
+        ...(employeeId ? { employee_id: employeeId } : {}),
+        ...(officeId ? { office_id: officeId } : {}),
+      },
+    },
+  );
+  if (metaError) {
+    console.error(
+      `  [${config.email}] Failed to update app_metadata:`,
+      metaError.message,
+    );
+  } else {
+    log(
+      config.email,
+      `Updated app_metadata — role=${config.role}, employee_id=${employeeId ?? "null"}`,
+    );
+  }
 
   // 4. Upsert system_users row (created by trigger or may already exist)
   //    Strategy: try to find by auth_uid or email, then update; otherwise insert.
@@ -235,7 +297,7 @@ async function main(): Promise<void> {
   try {
     await seedAuthUsers();
   } catch (err) {
-    console.error('Auth seed failed:', err);
+    console.error("Auth seed failed:", err);
     process.exit(1);
   } finally {
     await pgClient.end();

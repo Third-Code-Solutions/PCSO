@@ -26,7 +26,7 @@ interface PageProps {
 export const metadata = { title: "Work Schedules" };
 
 export default async function WorkSchedulesPage({ searchParams }: PageProps) {
-  await requirePermission("attendance", "approve");
+  await requirePermission("attendance", "view");
   const params = await searchParams;
 
   const status = params.status || "active";

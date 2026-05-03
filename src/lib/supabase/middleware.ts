@@ -1,6 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/** Abort auth network calls after this many ms to prevent 60s middleware hangs. */
+const AUTH_FETCH_TIMEOUT_MS = 8_000;
+
+function fetchWithTimeout(
+  url: RequestInfo | URL,
+  options?: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), AUTH_FETCH_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(id),
+  );
+}
+
 /**
  * Refreshes the Supabase session inside Next.js middleware.
  *
@@ -20,6 +34,7 @@ export async function refreshSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: fetchWithTimeout },
       cookies: {
         getAll() {
           return request.cookies.getAll();

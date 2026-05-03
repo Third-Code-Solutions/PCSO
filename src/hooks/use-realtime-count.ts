@@ -14,8 +14,8 @@
  *     `router.refresh()` every 30s until realtime recovers.
  *   - Returns a `connectionState` value for optional UI indication.
  */
-import { useEffect, useRef, useState, startTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 export type RealtimeConnectionState =
@@ -41,6 +41,7 @@ export function useRealtimeRefresh(
   tables: readonly string[],
 ): UseRealtimeRefreshResult {
   const router = useRouter();
+  const pathname = usePathname();
   const [connectionState, setConnectionState] =
     useState<RealtimeConnectionState>("disconnected");
 
@@ -51,17 +52,53 @@ export function useRealtimeRefresh(
     routerRef.current = router;
   }, [router]);
 
+  // Track the pathname at the time the channel was mounted. We only call
+  // router.refresh() when the current document URL matches the mount pathname,
+  // preventing stale refreshes from firing during page-to-page navigation when
+  // the previous page's channel cleanup causes a reconnect cycle on the new page.
+  const mountPathnameRef = useRef(pathname);
   useEffect(() => {
-    if (tables.length === 0) {
+    mountPathnameRef.current = pathname;
+  }, [pathname]);
+
+  // Stabilise the tables array so that inline array literals passed from
+  // Server Components (new reference on every render) don't re-trigger the
+  // Supabase channel setup/teardown on each RSC re-render.
+  const tablesKey = tables.join(",");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableTables = useMemo(() => tables, [tablesKey]);
+
+  useEffect(() => {
+    if (stableTables.length === 0) {
       setConnectionState("disconnected");
       return;
     }
 
     const supabase = createBrowserClient();
-    const channelName = `refresh:${tables.join(":")}`;
+    const channelName = `refresh:${stableTables.join(":")}`;
+
+    // Snapshot of the pathname when this effect ran. Used to guard
+    // router.refresh() calls — we must not refresh if the user has already
+    // navigated away (which would cause the old page's refresh to land on
+    // the new page's URL, causing unexpected re-renders or navigation artifacts).
+    const effectPathname = mountPathnameRef.current;
+
+    // Safe refresh: only fires when the document URL matches the pathname at
+    // the time this channel was created. Prevents stale reconnects from
+    // triggering refreshes on unrelated pages.
+    const safeRefresh = () => {
+      if (window.location.pathname !== effectPathname) return;
+      startTransition(() => routerRef.current.refresh());
+    };
 
     let attempt = 0;
     let disposed = false;
+    let isFirstConnect = true;
+    // Timestamp of first SUBSCRIBED event — used to suppress router.refresh()
+    // calls that happen within the stabilisation window after mount (e.g. HMR
+    // reconnects in dev, or rapid Supabase reconnects on cold start).
+    let firstConnectedAt = 0;
+    const STABILISE_MS = 8_000; // ignore reconnects for 8 s after first connect
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
@@ -100,7 +137,8 @@ export function useRealtimeRefresh(
       if (pollInterval) return;
       setConnectionState("polling-fallback");
       pollInterval = setInterval(() => {
-        startTransition(() => routerRef.current.refresh());
+        if (disposed) return;
+        safeRefresh();
       }, POLLING_INTERVAL_MS);
     };
     const armFallbackTimer = () => {
@@ -125,25 +163,47 @@ export function useRealtimeRefresh(
       );
 
       const channel = supabase.channel(channelName);
-      for (const table of tables) {
+      for (const table of stableTables) {
         channel.on(
           // supabase-js narrows this string literal; the runtime accepts it.
           "postgres_changes" as never,
           { event: "*", schema: "public", table } as never,
-          () => startTransition(() => routerRef.current.refresh()),
+          () => {
+            if (!disposed) safeRefresh();
+          },
         );
       }
 
       channel.subscribe((status: string) => {
         if (disposed) return;
         if (status === "SUBSCRIBED") {
+          const wasReconnect = !isFirstConnect;
+          if (!wasReconnect) {
+            firstConnectedAt = Date.now();
+          }
+          isFirstConnect = false;
           attempt = 0;
           clearReconnectTimer();
           clearFallbackTimer();
           stopPolling();
           setConnectionState("connected");
-          // Recover any missed changes during the outage.
-          startTransition(() => routerRef.current.refresh());
+          // Only recover missed changes on reconnection — not on initial connect.
+          // Refreshing on first connect causes cascading RSC fetch failures when
+          // multiple components mount simultaneously (each refresh triggers the
+          // next via the realtime channel re-subscribing).
+          //
+          // Additionally, suppress router.refresh() for STABILISE_MS after the
+          // first connect to avoid HMR-induced reconnects (dev mode) being
+          // misidentified as data-change reconnects and replaying stale router
+          // navigation state from the previous page load.
+          if (wasReconnect) {
+            const withinStabiliseWindow =
+              firstConnectedAt > 0 &&
+              Date.now() - firstConnectedAt < STABILISE_MS;
+            if (!withinStabiliseWindow) {
+              safeRefresh();
+            }
+          }
           return;
         }
         if (
@@ -177,7 +237,7 @@ export function useRealtimeRefresh(
       stopPolling();
       teardownCurrentChannel();
     };
-  }, [tables]);
+  }, [stableTables]);
 
   return { connectionState };
 }

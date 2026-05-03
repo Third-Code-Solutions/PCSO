@@ -64,48 +64,24 @@ async function getOverviewKpis(): Promise<{
   const now = new Date();
   const mStart = startOfMonth(now);
   const mEnd = endOfMonth(now);
-
-  const [scheduledMonth] = await db
-    .select({ n: count() })
-    .from(trainingRuns)
-    .where(
-      and(
-        gte(trainingRuns.scheduledStart, mStart),
-        lte(trainingRuns.scheduledStart, mEnd),
-        inArray(trainingRuns.status, ["scheduled", "approved"]),
-      ),
-    );
-
-  const [inProgress] = await db
-    .select({ n: count() })
-    .from(trainingRuns)
-    .where(eq(trainingRuns.status, "in_progress"));
-
-  const [approvalsPending] = await db
-    .select({ n: count() })
-    .from(trainingRuns)
-    .where(eq(trainingRuns.status, "for_approval"));
-
-  const [confirmationsPending] = await db
-    .select({ n: count() })
-    .from(trainingParticipants)
-    .where(eq(trainingParticipants.status, "nominated"));
+  const yearStart = new Date(now.getFullYear(), 0, 1);
 
   // Mandatory compliance — total mandatory programs × count of completion
   // records vs. active employees is prohibitive to compute accurately here,
   // so we approximate with "count of participants completed / count of
   // participants nominated on mandatory programs this year".
-  const mandatoryProgramIds = await db
-    .select({ id: trainingPrograms.id })
-    .from(trainingPrograms)
-    .where(eq(trainingPrograms.mandatoryFlag, true));
+  async function getMandatoryCompliance(): Promise<{
+    total: number;
+    compliant: number;
+  }> {
+    const mandatoryProgramIds = await db
+      .select({ id: trainingPrograms.id })
+      .from(trainingPrograms)
+      .where(eq(trainingPrograms.mandatoryFlag, true));
 
-  const ids = mandatoryProgramIds.map((r) => r.id);
+    const ids = mandatoryProgramIds.map((r) => r.id);
+    if (ids.length === 0) return { total: 0, compliant: 0 };
 
-  let mandatoryTotal = 0;
-  let mandatoryCompliant = 0;
-  if (ids.length > 0) {
-    const yearStart = new Date(now.getFullYear(), 0, 1);
     const [row] = await db
       .select({
         total: count(),
@@ -119,40 +95,74 @@ async function getOverviewKpis(): Promise<{
           gte(trainingRuns.scheduledStart, yearStart),
         ),
       );
-    mandatoryTotal = Number(row?.total ?? 0);
-    mandatoryCompliant = Number(row?.done ?? 0);
+    return {
+      total: Number(row?.total ?? 0),
+      compliant: Number(row?.done ?? 0),
+    };
   }
 
-  const upcomingRows = await db
-    .select({
-      id: trainingRuns.id,
-      runNumber: trainingRuns.runNumber,
-      scheduledStart: trainingRuns.scheduledStart,
-      status: trainingRuns.status,
-      plannedHeadcount: trainingRuns.plannedHeadcount,
-      programTitle: trainingPrograms.title,
-    })
-    .from(trainingRuns)
-    .innerJoin(
-      trainingPrograms,
-      eq(trainingPrograms.id, trainingRuns.programId),
-    )
-    .where(
-      and(
-        gte(trainingRuns.scheduledStart, now),
-        inArray(trainingRuns.status, ["approved", "scheduled"]),
+  const [
+    [scheduledMonth],
+    [inProgressRow],
+    [approvalsPendingRow],
+    [confirmationsPendingRow],
+    upcomingRows,
+    mandatory,
+  ] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(trainingRuns)
+      .where(
+        and(
+          gte(trainingRuns.scheduledStart, mStart),
+          lte(trainingRuns.scheduledStart, mEnd),
+          inArray(trainingRuns.status, ["scheduled", "approved"]),
+        ),
       ),
-    )
-    .orderBy(trainingRuns.scheduledStart)
-    .limit(5);
+    db
+      .select({ n: count() })
+      .from(trainingRuns)
+      .where(eq(trainingRuns.status, "in_progress")),
+    db
+      .select({ n: count() })
+      .from(trainingRuns)
+      .where(eq(trainingRuns.status, "for_approval")),
+    db
+      .select({ n: count() })
+      .from(trainingParticipants)
+      .where(eq(trainingParticipants.status, "nominated")),
+    db
+      .select({
+        id: trainingRuns.id,
+        runNumber: trainingRuns.runNumber,
+        scheduledStart: trainingRuns.scheduledStart,
+        status: trainingRuns.status,
+        plannedHeadcount: trainingRuns.plannedHeadcount,
+        programTitle: trainingPrograms.title,
+      })
+      .from(trainingRuns)
+      .innerJoin(
+        trainingPrograms,
+        eq(trainingPrograms.id, trainingRuns.programId),
+      )
+      .where(
+        and(
+          gte(trainingRuns.scheduledStart, now),
+          inArray(trainingRuns.status, ["approved", "scheduled"]),
+        ),
+      )
+      .orderBy(trainingRuns.scheduledStart)
+      .limit(5),
+    getMandatoryCompliance(),
+  ]);
 
   return {
     scheduledThisMonth: Number(scheduledMonth?.n ?? 0),
-    inProgress: Number(inProgress?.n ?? 0),
-    approvalsPending: Number(approvalsPending?.n ?? 0),
-    confirmationsPending: Number(confirmationsPending?.n ?? 0),
-    mandatoryTotal,
-    mandatoryCompliant,
+    inProgress: Number(inProgressRow?.n ?? 0),
+    approvalsPending: Number(approvalsPendingRow?.n ?? 0),
+    confirmationsPending: Number(confirmationsPendingRow?.n ?? 0),
+    mandatoryTotal: mandatory.total,
+    mandatoryCompliant: mandatory.compliant,
     upcoming: upcomingRows.map((r) => ({
       id: r.id,
       runNumber: r.runNumber,

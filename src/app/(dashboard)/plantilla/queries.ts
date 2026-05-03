@@ -1,7 +1,8 @@
-"use server";
-
 /**
  * Server-side data fetching for the plantilla module.
+ * NOTE: This must NOT have "use server" — that directive turns exports into
+ * Server Actions (client-invoked RPCs). These are inline server-component
+ * queries, not actions, so adding "use server" here causes the page to hang.
  *
  * These functions READ data only — mutations live in actions.ts.
  */

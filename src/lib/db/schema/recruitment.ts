@@ -520,7 +520,7 @@ export const rpmStatusHistoryRelations = relations(
 
 // ─── Appointment Enums ──────────────────────────────────────────────────────
 
-export const appointmentStatusEnum = pgEnum("appointment_status", [
+export const appointmentStatusEnum = pgEnum("rpm_appointment_status", [
   "draft",
   "pending_documents",
   "ready_for_provisioning",
@@ -528,7 +528,7 @@ export const appointmentStatusEnum = pgEnum("appointment_status", [
   "cancelled",
 ]);
 
-export const appointmentDocumentTypeEnum = pgEnum("appointment_document_type", [
+export const appointmentDocumentTypeEnum = pgEnum("rpm_appointment_doc_type", [
   "csc_appointment",
   "position_description",
   "oath_of_office",
@@ -539,7 +539,7 @@ export const appointmentDocumentTypeEnum = pgEnum("appointment_document_type", [
 // ─── appointments ────────────────────────────────────────────────────────────
 
 export const appointments = pgTable(
-  "appointments",
+  "rpm_appointments",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     // APT-YYYY-NNNNNN — assigned at creation
@@ -600,7 +600,7 @@ export const appointments = pgTable(
 
 // ─── appointmentDocuments ────────────────────────────────────────────────────
 
-export const appointmentDocuments = pgTable("appointment_documents", {
+export const appointmentDocuments = pgTable("rpm_appointment_documents", {
   id: uuid("id").primaryKey().defaultRandom(),
   appointmentId: uuid("appointment_id")
     .notNull()

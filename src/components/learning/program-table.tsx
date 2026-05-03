@@ -14,11 +14,13 @@ export interface ProgramRow {
 interface Props {
   rows: ProgramRow[];
   emptyLabel?: string;
+  canEdit?: boolean;
 }
 
 export function ProgramTable({
   rows,
   emptyLabel = "No training programs yet.",
+  canEdit = false,
 }: Props) {
   if (rows.length === 0) {
     return (
@@ -75,12 +77,14 @@ export function ProgramTable({
                 )}
               </td>
               <td className="px-4 py-3 text-right">
-                <Link
-                  href={`/learning/catalog/${p.id}`}
-                  className="text-xs font-medium text-pcso-navy hover:underline"
-                >
-                  Edit
-                </Link>
+                {canEdit && (
+                  <Link
+                    href={`/learning/catalog/${p.id}`}
+                    className="text-xs font-medium text-pcso-navy hover:underline"
+                  >
+                    Edit
+                  </Link>
+                )}
               </td>
             </tr>
           ))}

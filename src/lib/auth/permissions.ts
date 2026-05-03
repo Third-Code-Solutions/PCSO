@@ -210,14 +210,15 @@ export const permissionMatrix: PermissionMatrix = {
 
   // ── payroll ───────────────────────────────────────────────────────────────
   // Historical payroll is append-only (CONVENTIONS.md rule 3).
+  // hr_admin has full payroll access per PRD §11 Role-Permission Matrix.
   payroll: {
-    view: ["super_admin", "payroll_admin", "viewer"],
-    create: ["super_admin", "payroll_admin"],
-    edit: ["super_admin", "payroll_admin"],
+    view: ["super_admin", "hr_admin", "payroll_admin", "viewer"],
+    create: ["super_admin", "hr_admin", "payroll_admin"],
+    edit: ["super_admin", "hr_admin", "payroll_admin"],
     delete: ["super_admin"],
-    approve: ["super_admin"],
-    export: ["super_admin", "payroll_admin"],
-    process: ["super_admin", "payroll_admin"],
+    approve: ["super_admin", "hr_admin", "payroll_admin"],
+    export: ["super_admin", "hr_admin", "payroll_admin"],
+    process: ["super_admin", "hr_admin", "payroll_admin"],
   },
 
   // ── remittances ───────────────────────────────────────────────────────────
@@ -226,7 +227,7 @@ export const permissionMatrix: PermissionMatrix = {
     create: ["super_admin", "payroll_admin"],
     edit: ["super_admin", "payroll_admin"],
     delete: ["super_admin"],
-    approve: ["super_admin"],
+    approve: ["super_admin", "payroll_admin"],
     export: ["super_admin", "payroll_admin"],
     process: ["super_admin", "payroll_admin"],
   },
@@ -256,7 +257,13 @@ export const permissionMatrix: PermissionMatrix = {
   // employee_self_service may view/file/edit only their own SALN.
   saln: {
     view: {
-      roles: ["super_admin", "hr_admin", "viewer", "employee_self_service"],
+      roles: [
+        "super_admin",
+        "hr_admin",
+        "viewer",
+        "employee_self_service",
+        "auditor",
+      ],
       selfOnly: SELF_ONLY,
     },
     create: ["super_admin", "hr_admin", "employee_self_service"],
@@ -279,8 +286,10 @@ export const permissionMatrix: PermissionMatrix = {
   },
 
   // ── admin (system config, user management) ────────────────────────────────
+  // hr_admin and auditor are granted view access for audit log visibility;
+  // all write operations remain super_admin-only.
   admin: {
-    view: ["super_admin", "viewer"],
+    view: ["super_admin", "hr_admin", "viewer", "auditor"],
     create: ["super_admin"],
     edit: ["super_admin"],
     delete: ["super_admin"],
@@ -381,21 +390,22 @@ const ALWAYS_AUTHENTICATED: ReadonlyArray<string> = [
  */
 export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   // ── Admin panel ───────────────────────────────────────────────────────────
-  "/admin/audit-logs": ["super_admin", "viewer"],
+  "/admin/audit-logs": ["super_admin", "hr_admin", "viewer", "auditor"],
   "/admin": ["super_admin"],
 
   // ── Payroll ───────────────────────────────────────────────────────────────
-  "/payroll/new": ["super_admin", "payroll_admin"],
+  "/payroll/new": ["super_admin", "hr_admin", "payroll_admin"],
   "/payroll/history": [
     "super_admin",
+    "hr_admin",
     "payroll_admin",
     "viewer",
     "executive",
     "auditor",
   ],
-  "/payroll/process": ["super_admin", "payroll_admin"],
-  "/payroll/approve": ["super_admin"],
-  "/payroll/remittances": ["super_admin", "payroll_admin"],
+  "/payroll/process": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/approve": ["super_admin", "hr_admin"],
+  "/payroll/remittances": ["super_admin", "hr_admin", "payroll_admin"],
   "/payroll/payslips": [
     "super_admin",
     "hr_admin",
@@ -407,16 +417,16 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "auditor",
     "employee_self_service",
   ],
-  "/payroll/jo-cos": ["super_admin", "payroll_admin"],
-  "/payroll/benefits": ["super_admin", "payroll_admin"],
-  "/payroll/cash-advance": ["super_admin", "payroll_admin"],
-  "/payroll/differential": ["super_admin", "payroll_admin"],
-  "/payroll/loans": ["super_admin", "payroll_admin"],
-  "/payroll/rata": ["super_admin", "payroll_admin"],
-  "/payroll/special": ["super_admin", "payroll_admin"],
-  "/payroll/magna-carta": ["super_admin", "payroll_admin"],
-  "/payroll/bank-configs": ["super_admin", "payroll_admin"],
-  "/payroll": ["super_admin", "payroll_admin"],
+  "/payroll/jo-cos": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/benefits": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/cash-advance": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/differential": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/loans": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/rata": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/special": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/magna-carta": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll/bank-configs": ["super_admin", "hr_admin", "payroll_admin"],
+  "/payroll": ["super_admin", "hr_admin", "payroll_admin"],
 
   // ── Remittances ───────────────────────────────────────────────────────────
   // /new routes are write operations — restricted to payroll_admin+
@@ -485,8 +495,14 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/plantilla": ["super_admin", "hr_admin", "viewer", "executive", "auditor"],
 
   // ── SALN ──────────────────────────────────────────────────────────────────
-  "/saln/admin": ["super_admin", "hr_admin", "viewer"],
-  "/saln": ["super_admin", "hr_admin", "viewer", "employee_self_service"],
+  "/saln/admin": ["super_admin", "hr_admin", "viewer", "auditor"],
+  "/saln": [
+    "super_admin",
+    "hr_admin",
+    "viewer",
+    "employee_self_service",
+    "auditor",
+  ],
 
   // ── Performance ───────────────────────────────────────────────────────────
   "/performance/cycles": ["super_admin", "hr_admin"],
@@ -605,6 +621,8 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   // ── Attendance ────────────────────────────────────────────────────────────
   "/attendance/admin": ["super_admin", "hr_admin"],
   "/attendance/import": ["super_admin", "hr_admin"],
+  "/attendance/schedules/new": ["super_admin", "hr_admin"],
+  "/attendance/schedules": ["super_admin", "hr_admin"],
   "/attendance/timesheets": [
     "super_admin",
     "hr_admin",
@@ -662,16 +680,20 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   ],
 
   // ── Employees ─────────────────────────────────────────────────────────────
+  // employee_self_service must NOT access the full employee list — they can
+  // only view their own profile via /profile. The selfOnly constraint in the
+  // permission matrix is advisory for query-level guards; route-level access
+  // is the hard gate here.
   "/employees/new": ["super_admin", "hr_admin"],
   "/employees": [
     "super_admin",
     "hr_admin",
     "payroll_admin",
     "leave_approver",
+    "supervisor",
     "viewer",
     "executive",
     "auditor",
-    "employee_self_service",
   ],
 
   // ── Learning & Development ────────────────────────────────────────────────

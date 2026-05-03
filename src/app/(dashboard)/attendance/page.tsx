@@ -33,6 +33,17 @@ export default async function AttendancePage({ searchParams }: PageProps) {
   // sees only their own DTR.  We deliberately do NOT gate on `approve` because
   // auditors have `attendance.view` (via the `viewer` alias) but not `approve`.
   const isAdmin = user.role !== "employee_self_service";
+  const canViewAttendanceAdmin = ["super_admin", "hr_admin"].includes(
+    user.role,
+  );
+  const canViewTimesheets = [
+    "super_admin",
+    "hr_admin",
+    "payroll_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ].includes(user.role);
 
   const params = await searchParams;
   const now = new Date();
@@ -76,7 +87,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
       <main className="mx-auto max-w-7xl px-4 py-8">
         <RealtimeBoundary tables={["attendance_logs"]} />
 
-        <div className="mb-6 flex items-start justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-[#0B2545]">
               Attendance Overview
@@ -86,19 +97,23 @@ export default async function AttendancePage({ searchParams }: PageProps) {
               {daysUntilCutoff === 1 ? "" : "s"} until period cutoff
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link
-              href="/attendance/admin"
-              className="rounded-lg border border-[#0B2545]/20 px-4 py-2 text-sm font-medium text-[#0B2545] hover:bg-[#0B2545]/5"
-            >
-              Admin View
-            </Link>
-            <Link
-              href="/attendance/timesheets"
-              className="rounded-lg bg-[#0B2545] px-4 py-2 text-sm font-semibold text-[#FAF4E6] hover:bg-[#13315C]"
-            >
-              Timesheets
-            </Link>
+          <div className="flex flex-wrap gap-2">
+            {canViewAttendanceAdmin && (
+              <Link
+                href="/attendance/admin"
+                className="rounded-lg border border-[#0B2545]/20 px-4 py-2 text-sm font-medium text-[#0B2545] hover:bg-[#0B2545]/5"
+              >
+                Admin View
+              </Link>
+            )}
+            {canViewTimesheets && (
+              <Link
+                href="/attendance/timesheets"
+                className="rounded-lg bg-[#0B2545] px-4 py-2 text-sm font-semibold text-[#FAF4E6] hover:bg-[#13315C]"
+              >
+                Timesheets
+              </Link>
+            )}
           </div>
         </div>
 
@@ -155,7 +170,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
               </div>
             ))}
           </div>
-          {anomalies.length > 0 && (
+          {canViewAttendanceAdmin && anomalies.length > 0 && (
             <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm text-orange-800">
               <strong>{anomalies.length}</strong> attendance anomal
               {anomalies.length === 1 ? "y" : "ies"} flagged this period —
@@ -286,7 +301,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
       </section>
 
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#0B2545]">
             My Daily Time Record

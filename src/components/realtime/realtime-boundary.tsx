@@ -1,44 +1,29 @@
-'use client';
+"use client";
 
 /**
  * RealtimeBoundary — a tiny client component that Server Components can drop in
  * to enable router.refresh() on table changes.
  *
- * The underlying hook handles exponential-backoff reconnect, a 10s
- * disconnected → 30s polling fallback, and exposes a `connectionState`.
- * By default the boundary renders nothing. Pass a `children` render-prop to
- * surface connection status to the user (e.g. a "reconnecting…" toast).
+ * Rendered client-side only (ssr: false) to avoid React module loading issues
+ * in the SSR bundle when useState is called before React is fully initialized.
  *
- * @example basic — silent realtime
- *   <RealtimeBoundary tables={['employees', 'plantilla_positions']} />
- *
- * @example with connection indicator
- *   <RealtimeBoundary tables={['leave_applications']}>
- *     {({ connectionState }) =>
- *       connectionState === 'polling-fallback' ? <OfflineBadge /> : null
- *     }
- *   </RealtimeBoundary>
+ * The inner implementation lives in realtime-boundary-inner.tsx so that
+ * next/dynamic can track it as a real module import across Turbopack HMR
+ * updates (inline Promise.resolve factories are not HMR-stable).
  */
-import type { ReactNode } from 'react';
-import {
-  useRealtimeRefresh,
-  type RealtimeConnectionState,
-} from '@/hooks/use-realtime-count';
+import dynamic from "next/dynamic";
+import type { RealtimeBoundaryRenderArgs } from "./realtime-boundary-inner";
 
-export interface RealtimeBoundaryRenderArgs {
-  connectionState: RealtimeConnectionState;
-}
+export type { RealtimeBoundaryRenderArgs };
 
 export interface RealtimeBoundaryProps {
   tables: readonly string[];
-  children?: (args: RealtimeBoundaryRenderArgs) => ReactNode;
+  children?: (args: RealtimeBoundaryRenderArgs) => import("react").ReactNode;
 }
 
-export function RealtimeBoundary({
-  tables,
-  children,
-}: RealtimeBoundaryProps): ReactNode {
-  const { connectionState } = useRealtimeRefresh(tables);
-  if (!children) return null;
-  return children({ connectionState });
-}
+// Use a real module-level dynamic import so Turbopack can properly track
+// the dependency and invalidate it correctly across HMR updates.
+export const RealtimeBoundary = dynamic(
+  () => import("./realtime-boundary-inner"),
+  { ssr: false },
+);

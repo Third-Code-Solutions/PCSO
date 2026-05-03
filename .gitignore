@@ -50,3 +50,10 @@ docs/DEV_CREDENTIALS.md
 
 # Claude Code worktrees (never track parallel-swarm working copies)
 .claude/worktrees/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+tmp/
+
+# Test/debug screenshots (root-level PNGs from E2E runs)
+/*.png

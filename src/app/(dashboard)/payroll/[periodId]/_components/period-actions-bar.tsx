@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { Lock, Play, CheckCircle, DollarSign, Mail } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Lock, Play, CheckCircle, DollarSign, Mail } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,15 +15,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 import {
   lockPeriod,
   processPayroll,
   approvePayroll,
   releasePayroll,
   emailPayslips,
-} from '@/app/(dashboard)/payroll/actions';
-import type { PayrollPeriod } from '@/lib/db/schema';
+} from "@/app/(dashboard)/payroll/actions";
+import type { PayrollPeriod } from "@/lib/db/schema";
 
 interface PeriodActionsBarProps {
   period: PayrollPeriod;
@@ -44,6 +44,17 @@ export function PeriodActionsBar({ period }: PeriodActionsBarProps) {
         toast.success(successMessage);
         router.refresh();
       } catch (err) {
+        // Next.js redirect() throws a special error — re-throw so the framework
+        // can handle the navigation instead of swallowing it as a toast error.
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "digest" in err &&
+          typeof (err as { digest: string }).digest === "string" &&
+          (err as { digest: string }).digest.startsWith("NEXT_")
+        ) {
+          throw err;
+        }
         const message = err instanceof Error ? err.message : `Failed: ${label}`;
         toast.error(message);
       }
@@ -56,18 +67,38 @@ export function PeriodActionsBar({ period }: PeriodActionsBarProps) {
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 p-4">
       {/* Step indicators */}
       <div className="flex flex-1 items-center gap-2 text-sm text-muted-foreground">
-        <StepPill step={1} label="Draft" active={status === 'draft'} done={status !== 'draft'} />
+        <StepPill
+          step={1}
+          label="Draft"
+          active={status === "draft"}
+          done={status !== "draft"}
+        />
         <StepConnector />
-        <StepPill step={2} label="Processing" active={status === 'processing'} done={['approved', 'paid'].includes(status)} />
+        <StepPill
+          step={2}
+          label="Processing"
+          active={status === "processing"}
+          done={["approved", "paid"].includes(status)}
+        />
         <StepConnector />
-        <StepPill step={3} label="Approved" active={status === 'approved'} done={status === 'paid'} />
+        <StepPill
+          step={3}
+          label="Approved"
+          active={status === "approved"}
+          done={status === "paid"}
+        />
         <StepConnector />
-        <StepPill step={4} label="Paid" active={status === 'paid'} done={false} />
+        <StepPill
+          step={4}
+          label="Paid"
+          active={status === "paid"}
+          done={false}
+        />
       </div>
 
       {/* Action buttons per status */}
       <div className="flex shrink-0 items-center gap-2">
-        {status === 'draft' && (
+        {status === "draft" && (
           <ConfirmButton
             label="Lock & Process"
             icon={<Lock className="mr-2 h-4 w-4" />}
@@ -76,18 +107,18 @@ export function PeriodActionsBar({ period }: PeriodActionsBarProps) {
             disabled={isPending}
             onConfirm={() =>
               handleAction(
-                'lock',
+                "lock",
                 async () => {
                   await lockPeriod(id);
                   await processPayroll(id);
                 },
-                'Payroll processed. Review records before approving.',
+                "Payroll processed. Review records before approving.",
               )
             }
           />
         )}
 
-        {status === 'processing' && (
+        {status === "processing" && (
           <>
             <Button
               size="sm"
@@ -95,9 +126,9 @@ export function PeriodActionsBar({ period }: PeriodActionsBarProps) {
               disabled={isPending}
               onClick={() =>
                 handleAction(
-                  'reprocess',
+                  "reprocess",
                   () => processPayroll(id),
-                  'Payroll re-processed.',
+                  "Payroll re-processed.",
                 )
               }
             >
@@ -112,13 +143,17 @@ export function PeriodActionsBar({ period }: PeriodActionsBarProps) {
               disabled={isPending}
               className="bg-[#0B2545] text-white hover:bg-[#13315C]"
               onConfirm={() =>
-                handleAction('approve', () => approvePayroll(id), 'Payroll approved.')
+                handleAction(
+                  "approve",
+                  () => approvePayroll(id),
+                  "Payroll approved.",
+                )
               }
             />
           </>
         )}
 
-        {status === 'approved' && (
+        {status === "approved" && (
           <>
             <ConfirmButton
               label="Release (Mark Paid)"
@@ -128,13 +163,17 @@ export function PeriodActionsBar({ period }: PeriodActionsBarProps) {
               disabled={isPending}
               className="bg-emerald-700 text-white hover:bg-emerald-800"
               onConfirm={() =>
-                handleAction('release', () => releasePayroll(id), 'Payroll released and marked as paid.')
+                handleAction(
+                  "release",
+                  () => releasePayroll(id),
+                  "Payroll released and marked as paid.",
+                )
               }
             />
           </>
         )}
 
-        {(status === 'approved' || status === 'paid') && (
+        {(status === "approved" || status === "paid") && (
           <ConfirmButton
             label="Email Payslips"
             icon={<Mail className="mr-2 h-4 w-4" />}
@@ -144,9 +183,9 @@ export function PeriodActionsBar({ period }: PeriodActionsBarProps) {
             variant="outline"
             onConfirm={() =>
               handleAction(
-                'email',
+                "email",
                 () => emailPayslips({ periodId: id }),
-                'Payslips emailed to all employees.',
+                "Payslips emailed to all employees.",
               )
             }
           />
@@ -173,18 +212,22 @@ function StepPill({
     <div
       className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
         active
-          ? 'bg-[#0B2545] text-white'
+          ? "bg-[#0B2545] text-white"
           : done
-            ? 'bg-emerald-100 text-emerald-700'
-            : 'bg-transparent text-muted-foreground'
+            ? "bg-emerald-100 text-emerald-700"
+            : "bg-transparent text-muted-foreground"
       }`}
     >
       <span
         className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
-          active ? 'bg-white text-[#0B2545]' : done ? 'bg-emerald-500 text-white' : 'bg-muted-foreground/20 text-muted-foreground'
+          active
+            ? "bg-white text-[#0B2545]"
+            : done
+              ? "bg-emerald-500 text-white"
+              : "bg-muted-foreground/20 text-muted-foreground"
         }`}
       >
-        {done ? '✓' : step}
+        {done ? "✓" : step}
       </span>
       {label}
     </div>
@@ -202,7 +245,7 @@ interface ConfirmButtonProps {
   confirmLabel: string;
   disabled?: boolean;
   className?: string;
-  variant?: 'default' | 'outline';
+  variant?: "default" | "outline";
   onConfirm: () => void;
 }
 
@@ -213,13 +256,18 @@ function ConfirmButton({
   confirmLabel,
   disabled,
   className,
-  variant = 'default',
+  variant = "default",
   onConfirm,
 }: ConfirmButtonProps) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button size="sm" variant={variant} disabled={disabled} className={className}>
+        <Button
+          size="sm"
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        >
           {icon}
           {label}
         </Button>

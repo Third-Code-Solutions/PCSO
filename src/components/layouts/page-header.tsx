@@ -1,5 +1,5 @@
-import * as React from 'react';
-import { cn } from '@/lib/utils/cn';
+import * as React from "react";
+import { cn } from "@/lib/utils/cn";
 
 interface BreadcrumbItem {
   label: string;
@@ -22,18 +22,17 @@ export function PageHeader({
   description,
   breadcrumbs,
   backHref,
-  backLabel = 'Back',
+  backLabel = "Back",
   actions,
   className,
 }: PageHeaderProps) {
   // Merge backHref into breadcrumbs when provided
-  const resolvedCrumbs: BreadcrumbItem[] =
-    backHref
-      ? [{ label: backLabel, href: backHref }, { label: title }]
-      : (breadcrumbs ?? []);
+  const resolvedCrumbs: BreadcrumbItem[] = backHref
+    ? [{ label: backLabel, href: backHref }, { label: title }]
+    : (breadcrumbs ?? []);
 
   return (
-    <header className={cn('mb-6', className)}>
+    <header className={cn("mb-6", className)}>
       {resolvedCrumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="mb-2">
           <ol className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -55,11 +54,11 @@ export function PageHeader({
                   <span
                     className={
                       index === resolvedCrumbs.length - 1
-                        ? 'text-foreground font-medium'
+                        ? "text-foreground font-medium"
                         : undefined
                     }
                     aria-current={
-                      index === resolvedCrumbs.length - 1 ? 'page' : undefined
+                      index === resolvedCrumbs.length - 1 ? "page" : undefined
                     }
                   >
                     {crumb.label}
@@ -71,8 +70,8 @@ export function PageHeader({
         </nav>
       )}
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             {title}
           </h1>
@@ -82,7 +81,9 @@ export function PageHeader({
         </div>
 
         {actions && (
-          <div className="flex shrink-0 items-center gap-2">{actions}</div>
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            {actions}
+          </div>
         )}
       </div>
     </header>

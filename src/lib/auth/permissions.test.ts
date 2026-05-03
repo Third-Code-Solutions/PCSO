@@ -4,6 +4,7 @@ import {
   isSelfOnly,
   canAccess,
   getRolesFor,
+  isRouteAllowed,
   permissionMatrix,
   SELF_ONLY,
   type Role,
@@ -105,9 +106,10 @@ describe("hasPermission()", () => {
       }
     });
 
-    it("allows super_admin and viewer to view admin (audit logs)", () => {
+    it("allows super_admin, hr_admin, viewer, and auditor to view admin (audit logs)", () => {
       const viewAllowedRoles: Role[] = [
         "super_admin",
+        "hr_admin",
         "viewer",
         "executive",
         "auditor",
@@ -138,16 +140,28 @@ describe("hasPermission()", () => {
       expect(hasPermission("hr_admin", "leave", "approve")).toBe(true);
     });
 
-    it("cannot process payroll", () => {
-      expect(hasPermission("hr_admin", "payroll", "process")).toBe(false);
+    it("can process payroll (per PRD §11 HR Admin Full payroll access)", () => {
+      expect(hasPermission("hr_admin", "payroll", "process")).toBe(true);
     });
 
-    it("cannot approve payroll", () => {
-      expect(hasPermission("hr_admin", "payroll", "approve")).toBe(false);
+    it("can approve payroll (per PRD §11 HR Admin Full payroll access)", () => {
+      expect(hasPermission("hr_admin", "payroll", "approve")).toBe(true);
     });
 
-    it("cannot access admin module", () => {
-      for (const action of ALL_ACTIONS) {
+    it("can view admin module (audit logs access for HR Admin)", () => {
+      expect(hasPermission("hr_admin", "admin", "view")).toBe(true);
+    });
+
+    it("cannot perform write actions on admin module", () => {
+      const writeActions: Action[] = [
+        "create",
+        "edit",
+        "delete",
+        "approve",
+        "export",
+        "process",
+      ];
+      for (const action of writeActions) {
         expect(hasPermission("hr_admin", "admin", action)).toBe(false);
       }
     });
@@ -163,8 +177,8 @@ describe("hasPermission()", () => {
       expect(hasPermission("payroll_admin", "payroll", "process")).toBe(true);
     });
 
-    it("cannot approve payroll (super_admin only)", () => {
-      expect(hasPermission("payroll_admin", "payroll", "approve")).toBe(false);
+    it("can approve payroll (payroll_admin has full payroll access)", () => {
+      expect(hasPermission("payroll_admin", "payroll", "approve")).toBe(true);
     });
 
     it("can process remittances", () => {
@@ -324,8 +338,8 @@ describe("canAccess()", () => {
     }
   });
 
-  it("hr_admin cannot access admin resource", () => {
-    expect(canAccess("hr_admin", "admin")).toBe(false);
+  it("hr_admin can access admin resource (view-only, for audit logs)", () => {
+    expect(canAccess("hr_admin", "admin")).toBe(true);
   });
 
   it("viewer can access reports", () => {
@@ -357,9 +371,11 @@ describe("getRolesFor()", () => {
     expect(roles).toContain("super_admin");
   });
 
-  it("returns empty array for payroll.process roles minus non-payroll roles", () => {
+  it("restricts payroll.process to payroll and HR admin roles only", () => {
     const roles = getRolesFor("payroll", "process");
-    expect(roles).not.toContain("hr_admin");
+    expect(roles).toContain("super_admin");
+    expect(roles).toContain("hr_admin");
+    expect(roles).toContain("payroll_admin");
     expect(roles).not.toContain("viewer");
     expect(roles).not.toContain("leave_approver");
     expect(roles).not.toContain("employee_self_service");
@@ -435,5 +451,63 @@ describe("delete is super_admin-only invariant", () => {
 describe("SELF_ONLY constant", () => {
   it('equals the string "self_only"', () => {
     expect(SELF_ONLY).toBe("self_only");
+  });
+});
+
+// ─── isRouteAllowed — ESS security invariants ────────────────────────────────
+
+describe("isRouteAllowed() — employee_self_service security gates", () => {
+  it("ESS cannot access /employees (full employee list is admin-only)", () => {
+    expect(isRouteAllowed("employee_self_service", "/employees")).toBe(false);
+  });
+
+  it("ESS cannot access /employees/new", () => {
+    expect(isRouteAllowed("employee_self_service", "/employees/new")).toBe(
+      false,
+    );
+  });
+
+  it("ESS cannot access /admin", () => {
+    expect(isRouteAllowed("employee_self_service", "/admin")).toBe(false);
+  });
+
+  it("ESS cannot access /admin/users", () => {
+    expect(isRouteAllowed("employee_self_service", "/admin/users")).toBe(false);
+  });
+
+  it("ESS cannot access /payroll (run management)", () => {
+    expect(isRouteAllowed("employee_self_service", "/payroll")).toBe(false);
+  });
+
+  it("ESS cannot access /remittances", () => {
+    expect(isRouteAllowed("employee_self_service", "/remittances")).toBe(false);
+  });
+
+  it("ESS cannot access /plantilla", () => {
+    expect(isRouteAllowed("employee_self_service", "/plantilla")).toBe(false);
+  });
+
+  it("ESS CAN access /payroll/payslips (self-service payslips)", () => {
+    expect(isRouteAllowed("employee_self_service", "/payroll/payslips")).toBe(
+      true,
+    );
+  });
+
+  it("ESS CAN access /dashboard", () => {
+    expect(isRouteAllowed("employee_self_service", "/dashboard")).toBe(true);
+  });
+
+  it("ESS CAN access /profile", () => {
+    expect(isRouteAllowed("employee_self_service", "/profile")).toBe(true);
+  });
+
+  it("ESS CAN access /leave", () => {
+    expect(isRouteAllowed("employee_self_service", "/leave")).toBe(true);
+  });
+
+  it("ESS CAN access /attendance/dtr", () => {
+    expect(isRouteAllowed("employee_self_service", "/attendance/dtr")).toBe(
+      true,
+    );
   });
 });

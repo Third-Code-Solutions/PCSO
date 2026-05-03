@@ -17,9 +17,11 @@
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { eq, and } from "drizzle-orm";
 import { AlertTriangle, Pencil } from "lucide-react";
 import { requirePermission } from "@/lib/auth/guards";
-import { createServerClient } from "@/lib/supabase/server";
+import { db } from "@/lib/db";
+import { employees, offices, salnSubmissions } from "@/lib/db/schema";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Button } from "@/components/ui/button";
 import { SalnForm } from "@/components/saln/saln-form";
@@ -66,26 +68,38 @@ const FILING_TYPE_LABELS: Record<FilingType, string> = {
  * Find any existing submission that would collide with a new insert against
  * the (employee_id, year, filing_type) unique index. Drafts are returned too
  * so we can guide the user to resume, rather than silently blocking them.
+ *
+ * Uses the Drizzle `db` (service-role) client so RLS does not interfere.
  */
 async function findExistingSubmission(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
   employeeId: string,
   year: number,
   filingType: FilingType,
 ): Promise<ExistingSubmission | null> {
-  const { data, error } = await supabase
-    .from("saln_submissions")
-    .select("id, status")
-    .eq("employee_id", employeeId)
-    .eq("year", year)
-    .eq("filing_type", filingType)
-    .maybeSingle();
+  const [row] = await db
+    .select({ id: salnSubmissions.id, status: salnSubmissions.status })
+    .from(salnSubmissions)
+    .where(
+      and(
+        eq(salnSubmissions.employeeId, employeeId),
+        eq(salnSubmissions.year, year),
+        eq(
+          salnSubmissions.filingType,
+          filingType as
+            | "annual"
+            | "initial"
+            | "upon_assumption"
+            | "upon_separation",
+        ),
+      ),
+    )
+    .limit(1);
 
-  if (error || !data) return null;
+  if (!row) return null;
 
   return {
-    id: String(data.id),
-    status: (data.status as SalnStatus) ?? "draft",
+    id: String(row.id),
+    status: (row.status as SalnStatus) ?? "draft",
   };
 }
 
@@ -111,51 +125,44 @@ export default async function NewSalnPage({ searchParams }: NewSalnPageProps) {
     ? parseInt(resolvedParams.year, 10)
     : currentCoverageYear();
 
-  // Load employee info
-  const supabase = await createServerClient();
-  const { data: emp, error } = await supabase
-    .from("employees")
-    .select(
-      `
-      id,
-      employee_no,
-      first_name,
-      middle_name,
-      last_name,
-      position_title,
-      email,
-      date_hired,
-      offices (name)
-    `,
-    )
-    .eq("id", user.employeeId)
-    .single();
+  // Load employee info via Drizzle (service-role) to bypass RLS
+  const [empRow] = await db
+    .select({
+      id: employees.id,
+      employeeNo: employees.employeeNo,
+      firstName: employees.firstName,
+      middleName: employees.middleName,
+      lastName: employees.lastName,
+      positionTitle: employees.positionTitle,
+      email: employees.email,
+      dateHired: employees.dateHired,
+      officeName: offices.name,
+    })
+    .from(employees)
+    .leftJoin(offices, eq(employees.officeId, offices.id))
+    .where(eq(employees.id, user.employeeId))
+    .limit(1);
 
-  if (error || !emp) {
+  if (!empRow) {
     redirect("/saln");
   }
 
-  const officeRaw = emp.offices;
-  const office = (
-    Array.isArray(officeRaw) ? officeRaw[0] : officeRaw
-  ) as Record<string, unknown> | null;
-  const fullName = [emp.first_name, emp.middle_name, emp.last_name]
+  const fullName = [empRow.firstName, empRow.middleName, empRow.lastName]
     .filter(Boolean)
     .join(" ");
 
   const employee: EmployeeInfo = {
-    id: emp.id,
-    employeeNo: emp.employee_no,
+    id: empRow.id,
+    employeeNo: empRow.employeeNo,
     fullName,
-    positionTitle: emp.position_title,
-    officeName: office ? String(office["name"] ?? "") : null,
-    email: emp.email ?? null,
-    dateHired: emp.date_hired,
+    positionTitle: empRow.positionTitle,
+    officeName: empRow.officeName ?? null,
+    email: empRow.email ?? null,
+    dateHired: empRow.dateHired,
   };
 
   // ── Duplicate-submission guard ──────────────────────────────────────────
   const existing = await findExistingSubmission(
-    supabase,
     user.employeeId,
     coverageYear,
     filingType,

@@ -123,7 +123,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<RouteRule> = [
   },
   {
     prefix: "/attendance/timesheets",
-    permission: { resource: "attendance", action: "approve" },
+    permission: { resource: "attendance", action: "view" },
   },
   {
     prefix: "/attendance/import",
@@ -165,7 +165,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<RouteRule> = [
   // ── SALN ───────────────────────────────────────────────────────────────────
   {
     prefix: "/saln/admin",
-    permission: { resource: "saln", action: "approve" },
+    permission: { resource: "saln", action: "view" },
   },
   // Submissions/tracking: view required; page scopes to self for employees.
   {

@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { toast } from 'sonner';
+import * as React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
 import {
   Form,
   FormControl,
@@ -12,26 +12,29 @@ import {
   FormLabel,
   FormMessage,
   FormDescription,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { OverrideRecordSchema, type OverrideRecordInput } from '@/lib/validations/payroll';
-import { overrideRecord } from '@/app/(dashboard)/payroll/actions';
+} from "@/components/ui/dialog";
+import {
+  OverrideRecordSchema,
+  type OverrideRecordInput,
+} from "@/lib/validations/payroll";
+import { overrideRecord } from "@/app/(dashboard)/payroll/actions";
 
 interface AdjustmentFormProps {
   recordId: string;
@@ -41,21 +44,33 @@ interface AdjustmentFormProps {
 }
 
 /** Fields that can be overridden, with labels */
-const OVERRIDEABLE_FIELDS: Array<{ value: string; label: string; type: 'earning' | 'deduction' }> = [
-  { value: 'basicPay', label: 'Basic Pay', type: 'earning' },
-  { value: 'rata', label: 'RATA', type: 'earning' },
-  { value: 'longevityPay', label: 'Longevity Pay', type: 'earning' },
-  { value: 'overtimePay', label: 'Overtime Pay', type: 'earning' },
-  { value: 'pera', label: 'PERA', type: 'earning' },
-  { value: 'otherEarnings', label: 'Other Earnings', type: 'earning' },
-  { value: 'gsisPersonal', label: 'GSIS Personal', type: 'deduction' },
-  { value: 'philhealthPersonal', label: 'PhilHealth Personal', type: 'deduction' },
-  { value: 'pagibigPersonal', label: 'Pag-IBIG Personal', type: 'deduction' },
-  { value: 'withholdingTax', label: 'Withholding Tax', type: 'deduction' },
-  { value: 'lateDeduction', label: 'Late Deduction', type: 'deduction' },
-  { value: 'undertimeDeduction', label: 'Undertime Deduction', type: 'deduction' },
-  { value: 'absenceDeduction', label: 'Absence Deduction', type: 'deduction' },
-  { value: 'otherDeductions', label: 'Other Deductions', type: 'deduction' },
+const OVERRIDEABLE_FIELDS: Array<{
+  value: string;
+  label: string;
+  type: "earning" | "deduction";
+}> = [
+  { value: "basicPay", label: "Basic Pay", type: "earning" },
+  { value: "rata", label: "RATA", type: "earning" },
+  { value: "longevityPay", label: "Longevity Pay", type: "earning" },
+  { value: "overtimePay", label: "Overtime Pay", type: "earning" },
+  { value: "pera", label: "PERA", type: "earning" },
+  { value: "otherEarnings", label: "Other Earnings", type: "earning" },
+  { value: "gsisPersonal", label: "GSIS Personal", type: "deduction" },
+  {
+    value: "philhealthPersonal",
+    label: "PhilHealth Personal",
+    type: "deduction",
+  },
+  { value: "pagibigPersonal", label: "Pag-IBIG Personal", type: "deduction" },
+  { value: "withholdingTax", label: "Withholding Tax", type: "deduction" },
+  { value: "lateDeduction", label: "Late Deduction", type: "deduction" },
+  {
+    value: "undertimeDeduction",
+    label: "Undertime Deduction",
+    type: "deduction",
+  },
+  { value: "absenceDeduction", label: "Absence Deduction", type: "deduction" },
+  { value: "otherDeductions", label: "Other Deductions", type: "deduction" },
 ];
 
 export function AdjustmentForm({
@@ -70,20 +85,20 @@ export function AdjustmentForm({
     resolver: zodResolver(OverrideRecordSchema),
     defaultValues: {
       recordId,
-      fieldName: '',
-      adjustedValue: '',
-      adjustmentType: 'earning',
-      description: '',
-      justification: '',
+      fieldName: "",
+      adjustedValue: "",
+      adjustmentType: "earning",
+      description: "",
+      justification: "",
     },
   });
 
   // Auto-fill adjustmentType when field is selected
-  const watchedField = form.watch('fieldName');
+  const watchedField = form.watch("fieldName");
   React.useEffect(() => {
     const found = OVERRIDEABLE_FIELDS.find((f) => f.value === watchedField);
     if (found) {
-      form.setValue('adjustmentType', found.type);
+      form.setValue("adjustmentType", found.type);
     }
   }, [watchedField, form]);
 
@@ -91,12 +106,13 @@ export function AdjustmentForm({
     startTransition(async () => {
       try {
         await overrideRecord(values);
-        toast.success('Override applied. Record marked for review.');
+        toast.success("Override applied. Record marked for review.");
         form.reset();
         onOpenChange(false);
         onSuccess();
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to apply override.';
+        const message =
+          err instanceof Error ? err.message : "Failed to apply override.";
         toast.error(message);
       }
     });
@@ -121,16 +137,16 @@ export function AdjustmentForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Field to Override</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select field..." />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="" disabled>
-                        Select field...
-                      </SelectItem>
                       {OVERRIDEABLE_FIELDS.map((f) => (
                         <SelectItem key={f.value} value={f.value}>
                           {f.label}
@@ -158,7 +174,9 @@ export function AdjustmentForm({
                       {...field}
                     />
                   </FormControl>
-                  <FormDescription>Enter the corrected amount in pesos.</FormDescription>
+                  <FormDescription>
+                    Enter the corrected amount in pesos.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -171,7 +189,10 @@ export function AdjustmentForm({
                 <FormItem>
                   <FormLabel>Short Description</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Corrected overtime hours" {...field} />
+                    <Input
+                      placeholder="e.g., Corrected overtime hours"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -213,7 +234,7 @@ export function AdjustmentForm({
                 disabled={isPending}
                 className="bg-[#0B2545] text-white hover:bg-[#13315C]"
               >
-                {isPending ? 'Applying...' : 'Apply Override'}
+                {isPending ? "Applying..." : "Apply Override"}
               </Button>
             </div>
           </form>

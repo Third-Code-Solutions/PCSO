@@ -54,6 +54,7 @@ function Input({
                  text-slate-900 placeholder:text-slate-400 shadow-sm
                  focus:outline-none focus:ring-2 focus:ring-pcso-navy focus:border-transparent
                  disabled:opacity-60 disabled:cursor-not-allowed transition"
+      suppressHydrationWarning
       {...rest}
     />
   );

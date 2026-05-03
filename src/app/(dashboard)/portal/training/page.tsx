@@ -18,7 +18,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download, Calendar, Award, BookOpen } from "lucide-react";
-import Link from "next/link";
 
 export const metadata = { title: "My Training History" };
 

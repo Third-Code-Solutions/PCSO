@@ -364,6 +364,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Wallet,
     roles: [
       "super_admin",
+      "hr_admin",
       "payroll_admin",
       "executive",
       "viewer",
@@ -373,67 +374,73 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Payroll Periods",
         href: "/payroll",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "New Period",
         href: "/payroll/new",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Payslips (Admin)",
         href: "/payroll/payslips",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "History",
         href: "/payroll/history",
-        roles: ["super_admin", "payroll_admin", "executive", "viewer"],
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "payroll_admin",
+          "executive",
+          "viewer",
+        ],
       },
       {
         label: "JO / COS",
         href: "/payroll/jo-cos",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Benefits & Bonuses",
         href: "/payroll/benefits",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Cash Advance",
         href: "/payroll/cash-advance",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Salary Differential",
         href: "/payroll/differential",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Loan Ledger",
         href: "/payroll/loans",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "RATA Payroll",
         href: "/payroll/rata",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Special Payroll",
         href: "/payroll/special",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Magna Carta",
         href: "/payroll/magna-carta",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "Bank Configs",
         href: "/payroll/bank-configs",
-        roles: ["super_admin", "payroll_admin"],
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
         label: "My Payslips",
@@ -833,7 +840,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Admin",
     icon: Shield,
-    roles: ["super_admin", "executive", "viewer"],
+    roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
     children: [
       { label: "Users", href: "/admin/users", roles: ["super_admin"] },
       {
@@ -847,7 +854,7 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Audit Logs",
         href: "/admin/audit-logs",
-        roles: ["super_admin", "executive", "viewer"],
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
       },
       {
         label: "System Settings",

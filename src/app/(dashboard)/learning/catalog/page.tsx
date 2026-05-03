@@ -89,7 +89,10 @@ export default async function CatalogListPage({ searchParams }: PageProps) {
       />
       <ActionStatusBanner status={statusRaw} entityLabel="Training Program" />
       <div className="mt-6">
-        <ProgramTable rows={rows} />
+        <ProgramTable
+          rows={rows}
+          canEdit={ADMIN_ROLES.includes(user.role as Role)}
+        />
       </div>
     </main>
   );

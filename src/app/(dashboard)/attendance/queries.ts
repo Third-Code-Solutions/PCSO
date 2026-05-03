@@ -1,10 +1,12 @@
-"use server";
-
 /**
  * Server-side data fetching for the attendance module.
  *
- * These functions are called from page components and server actions.
+ * These functions are called from Server Component pages.
  * They do NOT mutate data — use actions.ts for writes.
+ * Do NOT add "use server" here: that directive marks exports as Server Actions
+ * (client-invocable RPCs). Plain async functions imported by Server Components
+ * must NOT carry that directive — doing so routes calls through the Server
+ * Action boundary and causes requests to hang indefinitely.
  *
  * Field mapping: DB schema uses `logDate`, `timeIn`, `timeOut`, `timeInPm`,
  * `timeOutPm`, `lateMinutes`, `undertimeMinutes`, `overtimeMinutes`, `remarks`.
@@ -14,17 +16,7 @@
 
 import { db } from "@/lib/db";
 import { attendanceLogs, employees, offices } from "@/lib/db/schema";
-import {
-  and,
-  eq,
-  gte,
-  lte,
-  isNull,
-  or,
-  ilike,
-  inArray,
-  sql,
-} from "drizzle-orm";
+import { and, eq, gte, lte, isNull, or, ilike, sql } from "drizzle-orm";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requireAuth } from "@/lib/auth/guards";
 import type { DateString } from "@/lib/utils/attendance/types";
@@ -162,8 +154,26 @@ export async function getAttendanceLogsByPeriod(
         lte(attendanceLogs.logDate, endDate),
       );
 
+  // Select only the columns needed by callers to avoid transferring full rows
+  // across the network for large period scans.
   const rows = await db
-    .select()
+    .select({
+      id: attendanceLogs.id,
+      employeeId: attendanceLogs.employeeId,
+      logDate: attendanceLogs.logDate,
+      timeIn: attendanceLogs.timeIn,
+      timeOut: attendanceLogs.timeOut,
+      timeInPm: attendanceLogs.timeInPm,
+      timeOutPm: attendanceLogs.timeOutPm,
+      source: attendanceLogs.source,
+      isLate: attendanceLogs.isLate,
+      lateMinutes: attendanceLogs.lateMinutes,
+      undertimeMinutes: attendanceLogs.undertimeMinutes,
+      overtimeMinutes: attendanceLogs.overtimeMinutes,
+      remarks: attendanceLogs.remarks,
+      createdAt: attendanceLogs.createdAt,
+      updatedAt: attendanceLogs.updatedAt,
+    })
     .from(attendanceLogs)
     .where(conditions)
     .orderBy(attendanceLogs.logDate);
@@ -186,37 +196,55 @@ export async function getAnomaliesForPeriod(
   startDate: DateString,
   endDate: DateString,
 ): Promise<AnomalyFlag[]> {
-  const logs = await getAttendanceLogsByPeriod(startDate, endDate);
+  // Use a minimal projection so we avoid re-fetching full rows when the caller
+  // also calls getAttendanceLogsByPeriod in parallel. Only fetch the 4 columns
+  // needed for anomaly classification.
+  const rows = await db
+    .select({
+      employeeId: attendanceLogs.employeeId,
+      logDate: attendanceLogs.logDate,
+      timeIn: attendanceLogs.timeIn,
+      timeOut: attendanceLogs.timeOut,
+      lateMinutes: attendanceLogs.lateMinutes,
+    })
+    .from(attendanceLogs)
+    .where(
+      and(
+        gte(attendanceLogs.logDate, startDate),
+        lte(attendanceLogs.logDate, endDate),
+      ),
+    );
+
   const anomalies: AnomalyFlag[] = [];
 
-  for (const log of logs) {
-    if (!log.timeIn && !log.timeOut) {
+  for (const row of rows) {
+    if (!row.timeIn && !row.timeOut) {
       anomalies.push({
-        employeeId: log.employeeId,
-        date: log.date,
+        employeeId: row.employeeId,
+        date: row.logDate,
         type: "absent",
         details: "No time-in or time-out recorded",
       });
-    } else if (!log.timeIn) {
+    } else if (!row.timeIn) {
       anomalies.push({
-        employeeId: log.employeeId,
-        date: log.date,
+        employeeId: row.employeeId,
+        date: row.logDate,
         type: "missing_time_in",
         details: "Time-out recorded but no time-in found",
       });
-    } else if (!log.timeOut) {
+    } else if (!row.timeOut) {
       anomalies.push({
-        employeeId: log.employeeId,
-        date: log.date,
+        employeeId: row.employeeId,
+        date: row.logDate,
         type: "missing_time_out",
         details: "Time-in recorded but no time-out found",
       });
-    } else if (log.lateMinutes > 240) {
+    } else if (row.lateMinutes > 240) {
       anomalies.push({
-        employeeId: log.employeeId,
-        date: log.date,
+        employeeId: row.employeeId,
+        date: row.logDate,
         type: "excessive_late",
-        details: `Employee was ${log.lateMinutes} minutes late`,
+        details: `Employee was ${row.lateMinutes} minutes late`,
       });
     }
   }
@@ -357,7 +385,9 @@ export async function getAdminGrid(options: {
   const pageSize = Math.min(Math.max(options.pageSize ?? 50, 10), 200);
   const page = Math.max(options.page ?? 1, 1);
   const search = options.search?.trim() ?? "";
+  const status = options.status ?? "any";
 
+  // Build the employee filter conditions (applied to both count and data queries)
   const empConditions = [isNull(employees.deletedAt)];
   if (options.officeId)
     empConditions.push(eq(employees.officeId, options.officeId));
@@ -371,82 +401,104 @@ export async function getAdminGrid(options: {
     if (cond) empConditions.push(cond);
   }
 
-  const totalCountRow = await db
+  // Build the attendance-log filter for the status dimension.
+  // When a status filter is active we use a LEFT JOIN + WHERE pattern so that
+  // "absent" (no log row at all) and "late/undertime/incomplete" (log row exists
+  // with specific values) are handled in one query. This pushes filtering into
+  // the DB and keeps the count accurate for the active filter.
+  const buildStatusCondition = () => {
+    switch (status) {
+      case "late":
+        return sql`${attendanceLogs.lateMinutes} > 0`;
+      case "undertime":
+        return sql`${attendanceLogs.undertimeMinutes} > 0`;
+      case "absent":
+        // No log row for this date OR a log row with no time-in and no time-out
+        return sql`(${attendanceLogs.id} IS NULL OR (${attendanceLogs.timeIn} IS NULL AND ${attendanceLogs.timeOut} IS NULL))`;
+      case "incomplete":
+        return sql`(${attendanceLogs.timeIn} IS NOT NULL AND ${attendanceLogs.timeOut} IS NULL) OR (${attendanceLogs.timeIn} IS NULL AND ${attendanceLogs.timeOut} IS NOT NULL)`;
+      default:
+        return undefined;
+    }
+  };
+
+  const statusCond = buildStatusCondition();
+
+  // Run count and paginated data fetch in parallel
+  const countQuery = db
     .select({ count: sql<number>`count(*)::int` })
     .from(employees)
-    .where(and(...empConditions));
-  const totalEmployees = totalCountRow[0]?.count ?? 0;
+    .leftJoin(
+      attendanceLogs,
+      and(
+        eq(attendanceLogs.employeeId, employees.id),
+        eq(attendanceLogs.logDate, options.date),
+      ),
+    )
+    .where(
+      statusCond ? and(...empConditions, statusCond) : and(...empConditions),
+    );
 
-  const empRows = await db
+  const dataQuery = db
     .select({
       id: employees.id,
       employeeNo: employees.employeeNo,
       firstName: employees.firstName,
       lastName: employees.lastName,
       officeName: offices.name,
+      logId: attendanceLogs.id,
+      logDate: attendanceLogs.logDate,
+      timeIn: attendanceLogs.timeIn,
+      timeOut: attendanceLogs.timeOut,
+      lateMinutes: attendanceLogs.lateMinutes,
+      undertimeMinutes: attendanceLogs.undertimeMinutes,
+      overtimeMinutes: attendanceLogs.overtimeMinutes,
+      source: attendanceLogs.source,
+      updatedAt: attendanceLogs.updatedAt,
     })
     .from(employees)
     .leftJoin(offices, eq(employees.officeId, offices.id))
-    .where(and(...empConditions))
+    .leftJoin(
+      attendanceLogs,
+      and(
+        eq(attendanceLogs.employeeId, employees.id),
+        eq(attendanceLogs.logDate, options.date),
+      ),
+    )
+    .where(
+      statusCond ? and(...empConditions, statusCond) : and(...empConditions),
+    )
     .orderBy(employees.lastName, employees.firstName)
     .limit(pageSize)
     .offset((page - 1) * pageSize);
+
+  const [totalCountRow, empRows] = await Promise.all([countQuery, dataQuery]);
+
+  const totalEmployees = totalCountRow[0]?.count ?? 0;
 
   if (empRows.length === 0) {
     return { rows: [], totalEmployees, page, pageSize };
   }
 
-  const empIds = empRows.map((e) => e.id);
-  const logs = await db
-    .select()
-    .from(attendanceLogs)
-    .where(
-      and(
-        eq(attendanceLogs.logDate, options.date),
-        inArray(attendanceLogs.employeeId, empIds),
-      ),
-    );
-
-  const logByEmp = new Map<string, (typeof logs)[number]>();
-  for (const l of logs) logByEmp.set(l.employeeId, l);
-
-  const rows: AdminGridRow[] = empRows.map((e) => {
-    const l = logByEmp.get(e.id) ?? null;
-    return {
-      employeeId: e.id,
-      employeeNumber: e.employeeNo,
-      firstName: e.firstName,
-      lastName: e.lastName,
-      officeName: e.officeName ?? null,
-      logId: l?.id ?? null,
-      logDate: l?.logDate ?? options.date,
-      timeIn: hhMM(l?.timeIn ?? null),
-      timeOut: hhMM(l?.timeOut ?? null),
-      lateMinutes: l?.lateMinutes ?? 0,
-      undertimeMinutes: l?.undertimeMinutes ?? 0,
-      overtimeMinutes: l?.overtimeMinutes ?? 0,
-      source: l?.source ?? null,
-      updatedAt: l?.updatedAt.toISOString() ?? null,
-    };
-  });
-
-  const filtered = rows.filter((r) => {
-    switch (options.status) {
-      case "late":
-        return r.lateMinutes > 0;
-      case "undertime":
-        return r.undertimeMinutes > 0;
-      case "absent":
-        return !r.timeIn && !r.timeOut;
-      case "incomplete":
-        return (!!r.timeIn && !r.timeOut) || (!r.timeIn && !!r.timeOut);
-      default:
-        return true;
-    }
-  });
+  const rows: AdminGridRow[] = empRows.map((e) => ({
+    employeeId: e.id,
+    employeeNumber: e.employeeNo,
+    firstName: e.firstName,
+    lastName: e.lastName,
+    officeName: e.officeName ?? null,
+    logId: e.logId ?? null,
+    logDate: e.logDate ?? options.date,
+    timeIn: hhMM(e.timeIn ?? null),
+    timeOut: hhMM(e.timeOut ?? null),
+    lateMinutes: e.lateMinutes ?? 0,
+    undertimeMinutes: e.undertimeMinutes ?? 0,
+    overtimeMinutes: e.overtimeMinutes ?? 0,
+    source: e.source ?? null,
+    updatedAt: e.updatedAt?.toISOString() ?? null,
+  }));
 
   return {
-    rows: filtered,
+    rows,
     totalEmployees,
     page,
     pageSize,

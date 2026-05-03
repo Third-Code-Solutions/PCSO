@@ -1,7 +1,7 @@
-import { db } from '@/lib/db';
-import { employees, offices, type Employee } from '@/lib/db/schema';
-import { eq, and, isNull, ilike, or, desc, sql, count } from 'drizzle-orm';
-import type { EmployeeListParams } from '@/lib/validations/employees';
+import { db } from "@/lib/db";
+import { employees, offices, type Employee } from "@/lib/db/schema";
+import { eq, and, isNull, ilike, or, desc, sql, count } from "drizzle-orm";
+import type { EmployeeListParams } from "@/lib/validations/employees";
 
 // ---------------------------------------------------------------------------
 // Shared column selection for list views
@@ -37,10 +37,10 @@ export type EmployeeListRow = {
   lastName: string;
   suffix: string | null;
   positionTitle: string;
-  appointmentType: Employee['appointmentType'];
+  appointmentType: Employee["appointmentType"];
   salaryGrade: number;
   step: number;
-  status: Employee['status'];
+  status: Employee["status"];
   officeId: string | null;
   officeName: string | null;
   email: string | null;
@@ -61,8 +61,18 @@ export type EmployeeListResult = {
 // ---------------------------------------------------------------------------
 // getEmployees — paginated list with search and filters
 // ---------------------------------------------------------------------------
-export async function getEmployees(params: EmployeeListParams): Promise<EmployeeListResult> {
-  const { page, perPage, search, appointmentType, officeId, status, salaryGrade } = params;
+export async function getEmployees(
+  params: EmployeeListParams,
+): Promise<EmployeeListResult> {
+  const {
+    page,
+    perPage,
+    search,
+    appointmentType,
+    officeId,
+    status,
+    salaryGrade,
+  } = params;
   const offset = (page - 1) * perPage;
 
   const conditions = [isNull(employees.deletedAt)];
@@ -101,10 +111,7 @@ export async function getEmployees(params: EmployeeListParams): Promise<Employee
   const whereClause = and(...conditions);
 
   const [totalResult, rows] = await Promise.all([
-    db
-      .select({ count: count() })
-      .from(employees)
-      .where(whereClause),
+    db.select({ count: count() }).from(employees).where(whereClause),
     db
       .select({
         ...employeeListSelect,
@@ -113,7 +120,11 @@ export async function getEmployees(params: EmployeeListParams): Promise<Employee
       .from(employees)
       .leftJoin(offices, eq(employees.officeId, offices.id))
       .where(whereClause)
-      .orderBy(desc(employees.updatedAt), employees.lastName, employees.firstName)
+      .orderBy(
+        desc(employees.updatedAt),
+        employees.lastName,
+        employees.firstName,
+      )
       .limit(perPage)
       .offset(offset),
   ]);
@@ -155,7 +166,17 @@ export type EmployeeProfile = Employee & {
   officeName: string | null;
 };
 
-export async function getEmployeeById(id: string): Promise<EmployeeProfile | null> {
+// UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function getEmployeeById(
+  id: string,
+): Promise<EmployeeProfile | null> {
+  // Guard against non-UUID strings (e.g. segment names like "org-chart") which
+  // would cause a Postgres "invalid input syntax for type uuid" error.
+  if (!UUID_REGEX.test(id)) return null;
+
   const [row] = await db
     .select({
       employee: employees,

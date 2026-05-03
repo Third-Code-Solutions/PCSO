@@ -11,66 +11,66 @@
  * Role gate: only employee_self_service, hr_admin, super_admin may apply.
  */
 
-import { Suspense } from 'react';
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { requirePermission } from '@/lib/auth/guards';
-import { PageHeader } from '@/components/layouts/page-header';
-import { LeaveApplyForm } from '@/components/leave/leave-apply-form';
-import { getEligibleLeaveTypes } from '@/lib/utils/leave/eligibility';
-import { getLeaveCreditBalance } from '@/app/(dashboard)/leave/queries';
-import { applyLeave } from '@/app/(dashboard)/leave/actions';
-import type { Gender, CivilStatus } from '@/lib/utils/leave/eligibility';
-import { createServerClient } from '@/lib/supabase/server';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { AlertCircleIcon, ArrowLeftIcon } from 'lucide-react';
-import type { Metadata } from 'next';
+import { Suspense } from "react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { requirePermission } from "@/lib/auth/guards";
+import { PageHeader } from "@/components/layouts/page-header";
+import { LeaveApplyForm } from "@/components/leave/leave-apply-form";
+import { getEligibleLeaveTypes } from "@/lib/utils/leave/eligibility";
+import { getLeaveCreditBalance } from "@/app/(dashboard)/leave/queries";
+import { applyLeave } from "@/app/(dashboard)/leave/actions";
+import type { Gender, CivilStatus } from "@/lib/utils/leave/eligibility";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { AlertCircleIcon, ArrowLeftIcon } from "lucide-react";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: 'Apply for Leave',
+  title: "Apply for Leave",
 };
 
 // Routes that can apply for leave themselves.
 const APPLY_ROLES = new Set([
-  'employee_self_service',
-  'hr_admin',
-  'super_admin',
+  "employee_self_service",
+  "hr_admin",
+  "super_admin",
 ]);
 
 type AppointmentType =
-  | 'permanent'
-  | 'temporary'
-  | 'casual'
-  | 'coterminous'
-  | 'job_order'
-  | 'contract_of_service';
+  | "permanent"
+  | "temporary"
+  | "casual"
+  | "coterminous"
+  | "job_order"
+  | "contract_of_service";
 
 export default async function ApplyLeavePage() {
   // `view` is the minimum permission to see the apply shell; the server
   // action enforces `create` on submit. Keeps the page open to approvers
   // (who may need to refer people to it) without bypassing any write guard.
-  const user = await requirePermission('leave', 'view');
+  const user = await requirePermission("leave", "view");
 
   // Role gate — approvers/auditors without employeeId still fall through to
   // the "no employee record" empty state below. Redirect out of /leave/apply
   // entirely if the role simply can't apply.
   if (!APPLY_ROLES.has(user.role)) {
-    redirect('/leave');
+    redirect("/leave");
   }
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
-      <RealtimeBoundary tables={['leave_applications', 'leave_credits']} />
+      <RealtimeBoundary tables={["leave_applications", "leave_credits"]} />
 
       <PageHeader
         title="Apply for Leave"
         description="File a leave application. Credits will be checked in real time."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Leave', href: '/leave' },
-          { label: 'Apply' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Leave", href: "/leave" },
+          { label: "Apply" },
         ]}
         actions={
           <Button variant="outline" size="sm" asChild>
@@ -101,13 +101,15 @@ export default async function ApplyLeavePage() {
 // ---------------------------------------------------------------------------
 
 async function ApplyFormLoader({ employeeId }: { employeeId: string }) {
-  const supabase = await createServerClient();
-
+  // Use the admin client so this fetch succeeds regardless of whether the
+  // user's JWT already reflects the updated app_metadata (employee_id claim).
+  // Security: employeeId was already validated by requirePermission + the
+  // system_users lookup in getCurrentUser — we are not bypassing auth here.
   const [{ data: emp, error: empError }, creditBalance] = await Promise.all([
-    supabase
-      .from('employees')
-      .select('gender, civil_status, appointment_type, date_hired, status')
-      .eq('id', employeeId)
+    supabaseAdmin
+      .from("employees")
+      .select("gender, civil_status, appointment_type, date_hired, status")
+      .eq("id", employeeId)
       .single(),
     getLeaveCreditBalance(employeeId, new Date().getFullYear()),
   ]);
@@ -121,13 +123,14 @@ async function ApplyFormLoader({ employeeId }: { employeeId: string }) {
     );
   }
 
-  const appointmentType = (emp.appointment_type as AppointmentType) ?? 'permanent';
+  const appointmentType =
+    (emp.appointment_type as AppointmentType) ?? "permanent";
 
   // Job-order / contract-of-service personnel aren't entitled to CSC leaves
   // under IRR §47. Guard at the page so we don't render a broken form.
   if (
-    appointmentType === 'job_order' ||
-    appointmentType === 'contract_of_service'
+    appointmentType === "job_order" ||
+    appointmentType === "contract_of_service"
   ) {
     return (
       <EmptyState
@@ -144,8 +147,8 @@ async function ApplyFormLoader({ employeeId }: { employeeId: string }) {
     (Date.now() - hireDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
 
   const eligibleLeaveTypes = getEligibleLeaveTypes({
-    gender: (emp.gender as Gender) ?? 'male',
-    civilStatus: (emp.civil_status as CivilStatus) ?? 'single',
+    gender: (emp.gender as Gender) ?? "male",
+    civilStatus: (emp.civil_status as CivilStatus) ?? "single",
     yearsInService,
     appointmentType,
   });

@@ -629,12 +629,3 @@ export async function getBir1601CBatches(params: {
     .limit(perPage)
     .offset(offset);
 }
-
-export const PCSO_EMPLOYER = {
-  name: AGENCY_NAME,
-  tin: AGENCY_TIN,
-  address: AGENCY_ADDRESS,
-} as const;
-
-/** @deprecated Prefer PCSO_EMPLOYER. Kept for backward compatibility. */
-export const SENATE_EMPLOYER = PCSO_EMPLOYER;

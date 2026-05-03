@@ -7,12 +7,14 @@ import { EmployeeListTable } from "@/components/employees/employee-list-table";
 import { EmployeeListSkeleton } from "@/components/employees/employee-list-skeleton";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 import { requireAuth } from "@/lib/auth/guards";
+import { redirect } from "next/navigation";
 import { RoleGate } from "@/components/role-gate";
 import { getEmployees, getOfficesForSelect } from "./queries";
 import { EmployeeListParamsSchema } from "@/lib/validations/employees";
 import type { Role } from "@/lib/auth/permissions";
 
-const WRITE_ROLES: ReadonlyArray<Role> = ["super_admin", "hr_admin"];
+// Export CSV is available to roles that can export employee data.
+const EXPORT_ROLES: ReadonlyArray<Role> = ["super_admin", "hr_admin"];
 
 export const metadata = {
   title: "Employees",
@@ -24,7 +26,14 @@ interface PageProps {
 }
 
 export default async function EmployeesPage({ searchParams }: PageProps) {
+  // Two-layer auth enforcement per CLAUDE.md:
+  //   Layer 1: middleware ROUTE_ACCESS blocks employee_self_service at the edge.
+  //   Layer 2: server-component guard — ESS may only view their own profile,
+  //            not the full employee list. Redirect them to /profile.
   const user = await requireAuth();
+  if (user.role === "employee_self_service") {
+    redirect("/profile");
+  }
   const rawParams = await searchParams;
 
   // Flatten string arrays to first value for each key
@@ -94,7 +103,7 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <RoleGate role={user.role} roles={WRITE_ROLES} fallback={null}>
+          <RoleGate role={user.role} roles={EXPORT_ROLES} fallback={null}>
             <Button variant="outline" size="sm" className="gap-2" asChild>
               <a
                 href={
@@ -109,7 +118,10 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
               </a>
             </Button>
           </RoleGate>
-          <RoleGate role={user.role} roles={WRITE_ROLES} fallback={null}>
+          {/* Add Employee — restricted to roles that can access /employees/new.
+              Uses pathname-based gate so this stays in sync with ROUTE_ACCESS
+              in permissions.ts without a separate hardcoded role list. */}
+          <RoleGate role={user.role} pathname="/employees/new" fallback={null}>
             <Button
               asChild
               size="sm"

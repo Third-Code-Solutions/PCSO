@@ -4,7 +4,7 @@
   "private": true,
   "description": "Philippine Charity Sweepstakes Office (PCSO) Human Resource System — Government-compliant HR, payroll, and compliance platform",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

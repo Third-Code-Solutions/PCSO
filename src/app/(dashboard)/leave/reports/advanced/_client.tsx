@@ -87,16 +87,19 @@ export function AdvancedReportsClient() {
           <div className="space-y-2">
             <Label htmlFor="leaveTypeCode">Leave Type</Label>
             <Select
-              value={filters.leaveTypeCode}
+              value={filters.leaveTypeCode || "all"}
               onValueChange={(value) =>
-                setFilters({ ...filters, leaveTypeCode: value })
+                setFilters({
+                  ...filters,
+                  leaveTypeCode: value === "all" ? "" : value,
+                })
               }
             >
               <SelectTrigger id="leaveTypeCode">
                 <SelectValue placeholder="All types" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All types</SelectItem>
+                <SelectItem value="all">All types</SelectItem>
                 <SelectItem value="VL">Vacation Leave</SelectItem>
                 <SelectItem value="SL">Sick Leave</SelectItem>
                 <SelectItem value="ML">Maternity Leave</SelectItem>
@@ -108,16 +111,16 @@ export function AdvancedReportsClient() {
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>
             <Select
-              value={filters.status}
+              value={filters.status || "all"}
               onValueChange={(value) =>
-                setFilters({ ...filters, status: value })
+                setFilters({ ...filters, status: value === "all" ? "" : value })
               }
             >
               <SelectTrigger id="status">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All statuses</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="disapproved">Disapproved</SelectItem>
@@ -128,14 +131,16 @@ export function AdvancedReportsClient() {
           <div className="space-y-2">
             <Label htmlFor="sex">Sex</Label>
             <Select
-              value={filters.sex}
-              onValueChange={(value) => setFilters({ ...filters, sex: value })}
+              value={filters.sex || "all"}
+              onValueChange={(value) =>
+                setFilters({ ...filters, sex: value === "all" ? "" : value })
+              }
             >
               <SelectTrigger id="sex">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All</SelectItem>
+                <SelectItem value="all">All</SelectItem>
                 <SelectItem value="M">Male</SelectItem>
                 <SelectItem value="F">Female</SelectItem>
               </SelectContent>

@@ -1,12 +1,12 @@
-'use server';
+"use server";
 
-import { z } from 'zod';
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
-import { employees } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
-import { requireAuth } from '@/lib/auth/guards';
-import { auditLog } from '@/lib/audit/index';
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { employees } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { requireAuth } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit/index";
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -16,27 +16,39 @@ const PH_PHONE_REGEX = /^(\+63|0)9\d{9}$/;
  * Narrow schema — only the fields a user may self-edit.
  * HR-managed fields (position, salary grade, IDs, etc.) are excluded.
  */
-export const UpdateOwnContactInfoSchema = z.object({
+const UpdateOwnContactInfoSchema = z.object({
   phone: z
     .string()
-    .regex(PH_PHONE_REGEX, 'Phone must be in format +639XXXXXXXXX or 09XXXXXXXXX')
+    .regex(
+      PH_PHONE_REGEX,
+      "Phone must be in format +639XXXXXXXXX or 09XXXXXXXXX",
+    )
     .optional()
-    .or(z.literal('')),
-  addressStreet: z.string().max(500).optional().or(z.literal('')),
-  addressBarangay: z.string().max(100).optional().or(z.literal('')),
-  addressCity: z.string().max(100).optional().or(z.literal('')),
-  addressProvince: z.string().max(100).optional().or(z.literal('')),
-  addressZipCode: z.string().max(10).optional().or(z.literal('')),
-  emergencyContactName: z.string().max(255).optional().or(z.literal('')),
-  emergencyContactRelationship: z.string().max(100).optional().or(z.literal('')),
+    .or(z.literal("")),
+  addressStreet: z.string().max(500).optional().or(z.literal("")),
+  addressBarangay: z.string().max(100).optional().or(z.literal("")),
+  addressCity: z.string().max(100).optional().or(z.literal("")),
+  addressProvince: z.string().max(100).optional().or(z.literal("")),
+  addressZipCode: z.string().max(10).optional().or(z.literal("")),
+  emergencyContactName: z.string().max(255).optional().or(z.literal("")),
+  emergencyContactRelationship: z
+    .string()
+    .max(100)
+    .optional()
+    .or(z.literal("")),
   emergencyContactPhone: z
     .string()
-    .regex(PH_PHONE_REGEX, 'Emergency phone must be in format +639XXXXXXXXX or 09XXXXXXXXX')
+    .regex(
+      PH_PHONE_REGEX,
+      "Emergency phone must be in format +639XXXXXXXXX or 09XXXXXXXXX",
+    )
     .optional()
-    .or(z.literal('')),
+    .or(z.literal("")),
 });
 
-export type UpdateOwnContactInfoInput = z.infer<typeof UpdateOwnContactInfoSchema>;
+export type UpdateOwnContactInfoInput = z.infer<
+  typeof UpdateOwnContactInfoSchema
+>;
 
 // ─── Action ───────────────────────────────────────────────────────────────────
 
@@ -63,7 +75,8 @@ export async function updateOwnContactInfo(
   if (!user.employeeId) {
     return {
       success: false,
-      error: 'Your account is not linked to an employee record. Contact HR or an administrator.',
+      error:
+        "Your account is not linked to an employee record. Contact HR or an administrator.",
     };
   }
 
@@ -73,7 +86,7 @@ export async function updateOwnContactInfo(
     const firstError = parsed.error.errors[0];
     return {
       success: false,
-      error: firstError?.message ?? 'Invalid input.',
+      error: firstError?.message ?? "Invalid input.",
     };
   }
 
@@ -99,13 +112,13 @@ export async function updateOwnContactInfo(
   if (!existing) {
     return {
       success: false,
-      error: 'Employee record not found. Contact HR.',
+      error: "Employee record not found. Contact HR.",
     };
   }
 
   // 4. Build the update — coerce empty strings to null for nullable columns.
   const nullIfEmpty = (v: string | undefined): string | null =>
-    !v || v.trim() === '' ? null : v.trim();
+    !v || v.trim() === "" ? null : v.trim();
 
   const update = {
     phone: nullIfEmpty(data.phone),
@@ -115,13 +128,18 @@ export async function updateOwnContactInfo(
     addressProvince: nullIfEmpty(data.addressProvince),
     addressZipCode: nullIfEmpty(data.addressZipCode),
     emergencyContactName: nullIfEmpty(data.emergencyContactName),
-    emergencyContactRelationship: nullIfEmpty(data.emergencyContactRelationship),
+    emergencyContactRelationship: nullIfEmpty(
+      data.emergencyContactRelationship,
+    ),
     emergencyContactPhone: nullIfEmpty(data.emergencyContactPhone),
     updatedAt: new Date(),
   };
 
   // 5. Persist — always scoped to the authenticated user's own employeeId.
-  await db.update(employees).set(update).where(eq(employees.id, user.employeeId));
+  await db
+    .update(employees)
+    .set(update)
+    .where(eq(employees.id, user.employeeId));
 
   // 6. Audit log — every write must produce an entry.
   const oldValues: Record<string, unknown> = {
@@ -136,18 +154,18 @@ export async function updateOwnContactInfo(
     emergencyContactPhone: existing.emergencyContactPhone,
   };
   const newValues: Record<string, unknown> = { ...update };
-  delete newValues['updatedAt'];
+  delete newValues["updatedAt"];
 
   await auditLog({
     userId: user.id,
-    action: 'self_update_contact',
-    table: 'employees',
+    action: "self_update_contact",
+    table: "employees",
     recordId: user.employeeId,
     oldValues,
     newValues,
   });
 
-  revalidatePath('/profile');
+  revalidatePath("/profile");
 
   return { success: true };
 }
