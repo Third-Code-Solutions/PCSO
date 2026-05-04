@@ -92,6 +92,7 @@ function revalidateLeavePaths(): void {
   revalidatePath("/leave/credits");
   revalidatePath("/leave/approvals");
   revalidatePath("/leave/calendar");
+  revalidatePath("/dashboard");
 }
 
 async function sendEmail(params: {

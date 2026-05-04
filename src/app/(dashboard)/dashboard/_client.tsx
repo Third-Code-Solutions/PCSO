@@ -17,6 +17,7 @@ import {
   PartyPopper,
   Building2,
   ShieldCheck,
+  FileText,
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import type {
@@ -321,7 +322,7 @@ export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
 
   return (
     <section aria-label="My dashboard">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <Link
           href="/leave/credits"
           className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -388,6 +389,28 @@ export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
             detail={data.nextHolidayDate ?? "No upcoming holidays"}
             icon={PartyPopper}
             iconColorClass="bg-indigo-50 text-indigo-600"
+          />
+        </Link>
+
+        <Link
+          href="/portal/document-requests"
+          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KpiCard
+            title="Document Requests"
+            value={data.pendingDocRequests}
+            detail="Active requests pending HR"
+            icon={FileText}
+            iconColorClass="bg-violet-50 text-violet-600"
+            trend={
+              data.pendingDocRequests > 0
+                ? {
+                    direction: "up",
+                    label: "In progress",
+                    upIsPositive: true,
+                  }
+                : { direction: "neutral", label: "No active requests" }
+            }
           />
         </Link>
       </div>

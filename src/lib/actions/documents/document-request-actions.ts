@@ -18,6 +18,10 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { generateCOE } from "./coe-generator";
+import {
+  generateSerialNumber,
+  DOCUMENT_TYPES,
+} from "@/lib/db/serial-sequence-helpers";
 import type { DocumentRequestWithEmployee } from "@/lib/db/schema";
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
@@ -220,65 +224,73 @@ export async function processDocumentRequest(
       };
     }
 
-    // Generate document based on type
-    let result: {
-      success: boolean;
-      serialNumber?: string;
-      documentUrl?: string;
-      error?: string;
+    // Map document type to serial prefix and optional PDF generator
+    const DOC_SERIAL_MAP: Record<string, keyof typeof DOCUMENT_TYPES> = {
+      COE: "COE",
+      COE_REMUNERATION: "COE_REMUNERATION",
+      SERVICE_RECORD: "SERVICE_RECORD",
+      PDS: "PDS",
+      NOSI: "NOSI",
+      NOSA: "NOSA",
+      CLEARANCE: "CLEARANCE",
+      CERTIFICATE_TRAINING: "TRAINING_CERT",
+      AD_HOC: "AD_HOC",
     };
 
-    switch (request.documentType) {
-      case "COE":
-        result = await generateCOE({
-          employeeId: request.employeeId,
-          purpose: request.purpose || "as requested",
-          includeSalary: false,
-        });
-        break;
-
-      case "COE_REMUNERATION":
-        result = await generateCOE({
-          employeeId: request.employeeId,
-          purpose: request.purpose || "as requested",
-          includeSalary: true,
-        });
-        break;
-
-      // TODO: Implement other document generators
-      case "SERVICE_RECORD":
-      case "PDS":
-      case "NOSI":
-      case "NOSA":
-      case "CLEARANCE":
-      case "CERTIFICATE_TRAINING":
-      case "AD_HOC":
-        return {
-          success: false,
-          error: `Document type ${request.documentType} generator not yet implemented`,
-        };
-
-      default:
-        return {
-          success: false,
-          error: `Unknown document type: ${request.documentType}`,
-        };
-    }
-
-    if (!result.success) {
+    const serialKey = DOC_SERIAL_MAP[request.documentType];
+    if (!serialKey) {
       return {
         success: false,
-        error: result.error || "Document generation failed",
+        error: `Unknown document type: ${request.documentType}`,
       };
     }
 
-    // Update request to READY with generated document URL
+    let serialNumber: string;
+    let documentUrl: string | undefined;
+
+    // Run PDF generator for types that have one; for others, assign serial and
+    // mark ready so HR can manually prepare and release the physical document.
+    if (request.documentType === "COE") {
+      const generated = await generateCOE({
+        employeeId: request.employeeId,
+        purpose: request.purpose || "as requested",
+        includeSalary: false,
+      });
+      if (!generated.success) {
+        return {
+          success: false,
+          error: generated.error || "COE generation failed",
+        };
+      }
+      serialNumber = generated.serialNumber!;
+      documentUrl = generated.documentUrl;
+    } else if (request.documentType === "COE_REMUNERATION") {
+      const generated = await generateCOE({
+        employeeId: request.employeeId,
+        purpose: request.purpose || "as requested",
+        includeSalary: true,
+      });
+      if (!generated.success) {
+        return {
+          success: false,
+          error: generated.error || "COE generation failed",
+        };
+      }
+      serialNumber = generated.serialNumber!;
+      documentUrl = generated.documentUrl;
+    } else {
+      // Unimplemented PDF generators — assign serial number and move to READY.
+      // HR prepares the physical/manual document and releases it to the employee.
+      serialNumber = await generateSerialNumber(DOCUMENT_TYPES[serialKey]);
+    }
+
+    // Update request to READY
     await db
       .update(documentRequests)
       .set({
         status: "ready",
-        serialNumber: result.serialNumber,
-        generatedDocumentUrl: result.documentUrl,
+        serialNumber,
+        generatedDocumentUrl: documentUrl ?? null,
         readyAt: new Date(),
         updatedAt: new Date(),
       })
@@ -291,8 +303,8 @@ export async function processDocumentRequest(
 
     return {
       success: true,
-      message: `Document generated successfully. Serial: ${result.serialNumber}`,
-      serialNumber: result.serialNumber,
+      message: `Document ready. Serial: ${serialNumber}`,
+      serialNumber,
     };
   } catch (error) {
     console.error("Process document request error:", error);

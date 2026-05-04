@@ -38,6 +38,8 @@ import {
   type MrfApproval,
   type Vacancy,
 } from "@/lib/db/schema/recruitment";
+import { offices } from "@/lib/db/schema/offices";
+import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import {
   createMrfSchema,
   updateMrfSchema,
@@ -558,10 +560,22 @@ export async function publishVacancy(
     // Generate PDF bytes
     const pdfBuffer = await renderToBuffer(CscForm9({ data: pdfData }));
 
+    // Ensure bucket exists (creates it if missing)
+    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+    const bucketExists = buckets?.some((b) => b.name === RPM_DOCS_BUCKET);
+    if (!bucketExists) {
+      const { error: bucketErr } = await supabaseAdmin.storage.createBucket(
+        RPM_DOCS_BUCKET,
+        { public: false },
+      );
+      if (bucketErr && !bucketErr.message.includes("already exists")) {
+        return { error: `Storage bucket error: ${bucketErr.message}` };
+      }
+    }
+
     // Upload to Supabase storage
-    const supabase = supabaseAdmin;
     const pdfPath = `csc-form-9/${parsed.vacancyId}.pdf`;
-    const { error: uploadErr } = await supabase.storage
+    const { error: uploadErr } = await supabaseAdmin.storage
       .from(RPM_DOCS_BUCKET)
       .upload(pdfPath, pdfBuffer, {
         contentType: "application/pdf",
@@ -671,8 +685,9 @@ export async function listMrfs(): Promise<ActionResult<Mrf[]>> {
 
 export async function getMrf(id: string): Promise<
   ActionResult<{
-    mrf: Mrf;
+    mrf: Mrf & { officeName: string | null; positionTitle: string | null };
     approvals: MrfApproval[];
+    vacancyId: string | null;
   }>
 > {
   try {
@@ -680,19 +695,60 @@ export async function getMrf(id: string): Promise<
     const parsed = z.string().uuid().parse(id);
 
     const [row] = await db
-      .select()
+      .select({
+        mrf: mrfs,
+        officeName: offices.name,
+        positionTitle: plantillaPositions.positionTitle,
+      })
       .from(mrfs)
+      .leftJoin(offices, eq(mrfs.officeId, offices.id))
+      .leftJoin(plantillaPositions, eq(mrfs.positionId, plantillaPositions.id))
       .where(eq(mrfs.id, parsed))
       .limit(1);
     if (!row) return { error: "MRF not found" };
 
-    const approvals = await db
-      .select()
-      .from(mrfApprovals)
-      .where(eq(mrfApprovals.mrfId, parsed))
-      .orderBy(mrfApprovals.sequenceOrder);
+    const [approvals, vacancyRows] = await Promise.all([
+      db
+        .select()
+        .from(mrfApprovals)
+        .where(eq(mrfApprovals.mrfId, parsed))
+        .orderBy(mrfApprovals.sequenceOrder),
+      db
+        .select({ id: vacancies.id })
+        .from(vacancies)
+        .where(and(eq(vacancies.mrfId, parsed), isNull(vacancies.deletedAt)))
+        .limit(1),
+    ]);
 
-    return ok({ mrf: row, approvals });
+    return ok({
+      mrf: {
+        ...row.mrf,
+        officeName: row.officeName ?? null,
+        positionTitle: row.positionTitle ?? null,
+      },
+      approvals,
+      vacancyId: vacancyRows[0]?.id ?? null,
+    });
+  } catch (err: unknown) {
+    return fail(err);
+  }
+}
+
+/** Publish the vacancy linked to an MRF using a 30-day default deadline. */
+export async function publishVacancyForMrf(
+  vacancyId: string,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requireAuth();
+    const parsed = z.string().uuid().parse(vacancyId);
+    const deadline = new Date();
+    deadline.setDate(deadline.getDate() + 30);
+    const result = await publishVacancy({
+      vacancyId: parsed,
+      applicationDeadline: deadline.toISOString(),
+    });
+    if ("error" in result) return result;
+    return ok({ id: result.data.id });
   } catch (err: unknown) {
     return fail(err);
   }

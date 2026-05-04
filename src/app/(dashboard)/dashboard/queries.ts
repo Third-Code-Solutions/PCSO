@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   employees,
   plantillaPositions,
@@ -16,6 +17,7 @@ import {
   attendanceLogs,
   salnSubmissions,
   overtimeRequests,
+  documentRequests,
 } from "@/lib/db/schema";
 import {
   eq,
@@ -438,6 +440,7 @@ export interface EmployeeKpis {
   salnDeadline: string | null;
   nextHolidayName: string | null;
   nextHolidayDate: string | null;
+  pendingDocRequests: number;
 }
 
 // ─── Role-aware dashboard queries ────────────────────────────────────────────
@@ -1012,64 +1015,80 @@ export async function getEmployeeDashboardKpis(
     }
   };
 
-  const [creditRows, latestPayrollRows, todayLog, nextHol] = await Promise.all([
-    safeQuery(
-      db
-        .select({
-          code: leaveTypes.code,
-          balance: leaveCredits.balance,
-        })
-        .from(leaveCredits)
-        .leftJoin(leaveTypes, eq(leaveCredits.leaveTypeId, leaveTypes.id))
-        .where(
-          and(
-            eq(leaveCredits.employeeId, employeeId),
-            eq(leaveCredits.year, currentYear),
-            inArray(leaveTypes.code, ["VL", "SL"]),
+  const creditRowsPromise = (async () => {
+    try {
+      const { data } = await supabaseAdmin
+        .from("leave_credits")
+        .select("balance, leave_types(code)")
+        .eq("employee_id", employeeId)
+        .eq("year", currentYear);
+      return (data ?? [])
+        .map((r) => ({
+          code:
+            (r.leave_types as unknown as { code: string } | null)?.code ?? null,
+          balance: r.balance as string | null,
+        }))
+        .filter((r) => r.code === "VL" || r.code === "SL");
+    } catch {
+      return [] as { code: string | null; balance: string | null }[];
+    }
+  })();
+
+  const [creditRows, latestPayrollRows, todayLog, nextHol, docRequestRow] =
+    await Promise.all([
+      creditRowsPromise,
+      safeQuery(
+        db
+          .select({
+            periodId: payrollRecords.periodId,
+            periodName: payrollPeriods.name,
+            periodEnd: payrollPeriods.periodEnd,
+          })
+          .from(payrollRecords)
+          .leftJoin(
+            payrollPeriods,
+            eq(payrollRecords.periodId, payrollPeriods.id),
+          )
+          .where(
+            and(
+              eq(payrollRecords.employeeId, employeeId),
+              eq(payrollRecords.status, "paid"),
+            ),
+          )
+          .orderBy(desc(payrollPeriods.periodEnd))
+          .limit(1),
+        [],
+      ),
+      safeQuery(
+        db
+          .select({
+            timeIn: attendanceLogs.timeIn,
+            timeOut: attendanceLogs.timeOut,
+          })
+          .from(attendanceLogs)
+          .where(
+            and(
+              eq(attendanceLogs.employeeId, employeeId),
+              eq(attendanceLogs.logDate, today),
+            ),
+          )
+          .limit(1),
+        [],
+      ),
+      getNextHoliday(),
+      safeQuery(
+        db
+          .select({ c: count() })
+          .from(documentRequests)
+          .where(
+            and(
+              eq(documentRequests.employeeId, employeeId),
+              notInArray(documentRequests.status, ["released", "disapproved"]),
+            ),
           ),
-        ),
-      [],
-    ),
-    safeQuery(
-      db
-        .select({
-          periodId: payrollRecords.periodId,
-          periodName: payrollPeriods.name,
-          periodEnd: payrollPeriods.periodEnd,
-        })
-        .from(payrollRecords)
-        .leftJoin(
-          payrollPeriods,
-          eq(payrollRecords.periodId, payrollPeriods.id),
-        )
-        .where(
-          and(
-            eq(payrollRecords.employeeId, employeeId),
-            eq(payrollRecords.status, "paid"),
-          ),
-        )
-        .orderBy(desc(payrollPeriods.periodEnd))
-        .limit(1),
-      [],
-    ),
-    safeQuery(
-      db
-        .select({
-          timeIn: attendanceLogs.timeIn,
-          timeOut: attendanceLogs.timeOut,
-        })
-        .from(attendanceLogs)
-        .where(
-          and(
-            eq(attendanceLogs.employeeId, employeeId),
-            eq(attendanceLogs.logDate, today),
-          ),
-        )
-        .limit(1),
-      [],
-    ),
-    getNextHoliday(),
-  ]);
+        [{ c: 0 }],
+      ),
+    ]);
 
   let vlBalance = 0;
   let slBalance = 0;
@@ -1094,5 +1113,6 @@ export async function getEmployeeDashboardKpis(
     salnDeadline,
     nextHolidayName: nextHol?.name ?? null,
     nextHolidayDate: nextHol?.date ?? null,
+    pendingDocRequests: Number(docRequestRow[0]?.c ?? 0),
   };
 }

@@ -10,7 +10,7 @@
 
 import { requirePermission } from "@/lib/auth/guards";
 import { PageHeader } from "@/components/layouts/page-header";
-import { getAllEmployeeCreditSummaries } from "@/app/(dashboard)/leave/queries";
+import { getAllActiveEmployeesWithCredits } from "@/app/(dashboard)/leave/queries";
 import { AdjustLeaveCreditsForm } from "./_client";
 import type { Metadata } from "next";
 
@@ -22,7 +22,7 @@ export default async function AdjustLeaveCreditsPage() {
   await requirePermission("leave", "approve");
 
   const currentYear = new Date().getFullYear();
-  const summaries = await getAllEmployeeCreditSummaries(currentYear);
+  const summaries = await getAllActiveEmployeesWithCredits(currentYear);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6 space-y-6">

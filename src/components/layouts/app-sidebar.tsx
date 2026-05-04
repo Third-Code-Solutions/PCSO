@@ -45,6 +45,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { HIDDEN_ROUTES } from "./nav-hide-config";
 
 // ─── Nav tree types ──────────────────────────────────────────────────────────
 
@@ -826,12 +827,18 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Employee Portal",
     icon: Megaphone,
-    roles: ["super_admin", "hr_admin"],
+    roles: ["super_admin", "hr_admin", "employee_self_service"],
     children: [
       {
         label: "Announcements",
         href: "/portal/announcements",
-        roles: ["super_admin", "hr_admin"],
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+      },
+      {
+        label: "Document Requests",
+        href: "/portal/document-requests",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
       },
     ],
   },
@@ -958,11 +965,21 @@ function matchesGate(
   return roleAllowed || permAllowed;
 }
 
+/** Returns true when the href is in the temporary hide list for this role. */
+function isRouteHidden(
+  href: string | undefined,
+  role: Role | undefined,
+): boolean {
+  if (!href || !role) return false;
+  return HIDDEN_ROUTES[role]?.includes(href) ?? false;
+}
+
 function isChildVisible(
   child: NavChild,
   role: Role | undefined,
   employeeId: string | null,
 ): boolean {
+  if (isRouteHidden(child.href, role)) return false;
   return matchesGate(child, role, employeeId);
 }
 
@@ -973,6 +990,7 @@ function isItemVisible(
 ): boolean {
   // The item itself must clear its own gate. Groups additionally need at
   // least one visible child below to render.
+  if (isRouteHidden(item.href, role)) return false;
   if (!matchesGate(item, role, employeeId)) return false;
 
   if (item.children && item.children.length > 0) {

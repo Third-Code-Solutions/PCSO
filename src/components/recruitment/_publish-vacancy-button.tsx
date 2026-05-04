@@ -5,17 +5,15 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
-type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
-
 interface PublishVacancyButtonClientProps {
-  mrfId: string;
+  vacancyId: string;
   publishAction: (
-    mrfId: string,
-  ) => Promise<ActionResult<{ vacancyId: string }>>;
+    vacancyId: string,
+  ) => Promise<{ data: { id: string } } | { error: string }>;
 }
 
 export function PublishVacancyButtonClient({
-  mrfId,
+  vacancyId,
   publishAction,
 }: PublishVacancyButtonClientProps) {
   const router = useRouter();
@@ -24,12 +22,12 @@ export function PublishVacancyButtonClient({
   async function onClick() {
     setPending(true);
     try {
-      const result = await publishAction(mrfId);
-      if (!result.ok) {
+      const result = await publishAction(vacancyId);
+      if ("error" in result) {
         toast.error(result.error);
       } else {
-        toast.success("Vacancy published.");
-        router.push(`/recruitment/vacancies/${result.data.vacancyId}`);
+        toast.success("Vacancy published successfully.");
+        router.push(`/recruitment/vacancies/${vacancyId}`);
         router.refresh();
       }
     } catch (err) {

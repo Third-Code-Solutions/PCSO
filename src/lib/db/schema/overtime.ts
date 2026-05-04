@@ -2,8 +2,7 @@ import {
   pgTable,
   uuid,
   date,
-  time,
-  numeric,
+  integer,
   text,
   jsonb,
   index,
@@ -17,8 +16,17 @@ import { employees } from "./employees";
 export const overtimeStatusEnum = pgEnum("overtime_status", [
   "pending",
   "approved",
-  "disapproved",
-  "cancelled",
+  "denied",
+  "partial",
+]);
+
+export const overtimeDayTypeEnum = pgEnum("overtime_day_type", [
+  "ordinary",
+  "special_non_working",
+  "regular_holiday",
+  "rest_day",
+  "rest_day_and_special",
+  "rest_day_and_regular_holiday",
 ]);
 
 export const overtimeRequests = pgTable(
@@ -29,17 +37,15 @@ export const overtimeRequests = pgTable(
       .notNull()
       .references(() => employees.id),
     date: date("date").notNull(),
-    startTime: time("start_time").notNull(),
-    endTime: time("end_time").notNull(),
-    hoursRendered: numeric("hours_rendered", {
-      precision: 4,
-      scale: 2,
-    }).notNull(),
-    reason: text("reason"),
+    requestedMinutes: integer("requested_minutes").notNull(),
+    dayType: overtimeDayTypeEnum("day_type").notNull(),
+    justification: text("justification"),
+    supervisorId: uuid("supervisor_id").references(() => employees.id),
+    approvedMinutes: integer("approved_minutes"),
+    supervisorComments: text("supervisor_comments"),
+    approvedBy: text("approved_by"),
     status: overtimeStatusEnum("status").notNull().default("pending"),
-    approvedById: uuid("approved_by_id").references(() => employees.id),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
-    disapprovalReason: text("disapproval_reason"),
     attachmentPaths: jsonb("attachment_paths"),
     ...timestamps,
     ...softDelete,
@@ -48,7 +54,7 @@ export const overtimeRequests = pgTable(
     index("overtime_requests_employee_id_idx").on(t.employeeId),
     index("overtime_requests_date_idx").on(t.date),
     index("overtime_requests_status_idx").on(t.status),
-    index("overtime_requests_approved_by_idx").on(t.approvedById),
+    index("overtime_requests_supervisor_id_idx").on(t.supervisorId),
   ],
 );
 
@@ -59,8 +65,8 @@ export const overtimeRequestsRelations = relations(
       fields: [overtimeRequests.employeeId],
       references: [employees.id],
     }),
-    approvedBy: one(employees, {
-      fields: [overtimeRequests.approvedById],
+    supervisor: one(employees, {
+      fields: [overtimeRequests.supervisorId],
       references: [employees.id],
     }),
   }),

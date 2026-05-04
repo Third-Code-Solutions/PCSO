@@ -9,13 +9,15 @@ import {
   type MrfApprovalStep,
 } from "@/components/recruitment/mrf-approval-list";
 import { PublishVacancyButtonClient } from "@/components/recruitment/_publish-vacancy-button";
+import { SubmitMrfButton } from "@/components/recruitment/_submit-mrf-button";
 import { RoleGate } from "@/components/role-gate";
 import { getCurrentUser } from "@/lib/auth/get-current-user";
 import {
   getMrf,
+  submitMrf,
   approveMrfStep,
   returnMrf,
-  publishVacancy,
+  publishVacancyForMrf,
 } from "@/lib/actions/rpm/mrf";
 import { unwrap } from "@/components/recruitment/_result";
 
@@ -56,6 +58,7 @@ export default async function MrfDetailPage({ params }: MrfDetailPageProps) {
   const unwrapped = unwrap<{
     mrf: MrfDetailData;
     approvals: MrfApprovalStep[];
+    vacancyId: string | null;
   }>(result);
   if (!unwrapped) {
     notFound();
@@ -63,9 +66,11 @@ export default async function MrfDetailPage({ params }: MrfDetailPageProps) {
 
   const mrf: MrfDetailData = unwrapped.mrf;
   const approvals: MrfApprovalStep[] = unwrapped.approvals ?? [];
+  const vacancyId: string | null = unwrapped.vacancyId ?? null;
   const currentApproverEmployeeId = user?.employeeId ?? null;
   const role = user?.role ?? "employee_self_service";
-  const displayItem = mrf.itemNumber ?? mrf.mrfNumber ?? mrf.id.slice(0, 8);
+  const displayItem = mrf.mrfNumber ?? mrf.itemNumber ?? mrf.id.slice(0, 8);
+  const isDraft = mrf.status === "draft" || mrf.status === "returned";
 
   return (
     <div>
@@ -111,7 +116,30 @@ export default async function MrfDetailPage({ params }: MrfDetailPageProps) {
             </CardContent>
           </Card>
 
-          {mrf.status === "approved" && (
+          {isDraft && (
+            <RoleGate
+              role={role}
+              roles={["super_admin", "hr_admin", "supervisor"]}
+              fallback={null}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Submit for Approval
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Submit this MRF to start the approval chain: Department Head
+                    → AGM → General Manager.
+                  </p>
+                  <SubmitMrfButton mrfId={mrf.id} submitAction={submitMrf} />
+                </CardContent>
+              </Card>
+            </RoleGate>
+          )}
+
+          {mrf.status === "approved" && vacancyId && (
             <RoleGate
               role={role}
               roles={["super_admin", "hr_admin"]}
@@ -129,15 +157,8 @@ export default async function MrfDetailPage({ params }: MrfDetailPageProps) {
                     vacancy to open it for applicants.
                   </p>
                   <PublishVacancyButtonClient
-                    mrfId={mrf.id}
-                    publishAction={
-                      publishVacancy as unknown as (
-                        mrfId: string,
-                      ) => Promise<
-                        | { ok: true; data: { vacancyId: string } }
-                        | { ok: false; error: string }
-                      >
-                    }
+                    vacancyId={vacancyId}
+                    publishAction={publishVacancyForMrf}
                   />
                 </CardContent>
               </Card>

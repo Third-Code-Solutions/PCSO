@@ -1,4 +1,4 @@
-import 'server-only';
+import "server-only";
 
 /**
  * Audit log writer — Phase 14 update
@@ -7,9 +7,9 @@ import 'server-only';
  * Rows in `audit_logs` are immutable; they are never updated or deleted.
  */
 
-import { createServerClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
-export { diffValues } from './diff';
+export { diffValues } from "./diff";
 
 export interface AuditLogParams {
   userId: string;
@@ -30,8 +30,7 @@ export interface AuditLogParams {
  */
 export async function auditLog(params: AuditLogParams): Promise<void> {
   try {
-    const supabase = await createServerClient();
-    await supabase.from('audit_logs').insert({
+    await supabaseAdmin.from("audit_logs").insert({
       user_id: params.userId,
       action: params.action,
       table_name: params.table,
@@ -44,7 +43,6 @@ export async function auditLog(params: AuditLogParams): Promise<void> {
   } catch (err) {
     // Audit failures must not break the primary mutation.
     // TODO: forward to Sentry in production.
-    console.error('[audit] Failed to write audit log:', err);
+    console.error("[audit] Failed to write audit log:", err);
   }
 }
-

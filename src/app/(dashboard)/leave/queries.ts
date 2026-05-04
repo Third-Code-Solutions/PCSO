@@ -584,6 +584,62 @@ export async function getAllEmployeeCreditSummaries(
 }
 
 /**
+ * Returns ALL active, non-deleted employees with their current leave credit
+ * balances for the given year.  Employees who have no credit row yet appear
+ * with vlBalance: 0 / slBalance: 0 so HR can still adjust them from the
+ * Adjust Credits page.
+ */
+export async function getAllActiveEmployeesWithCredits(
+  year: number,
+): Promise<EmployeeCreditSummary[]> {
+  const [empResult, creditsResult] = await Promise.all([
+    supabaseAdmin
+      .from("employees")
+      .select("id, employee_no, first_name, last_name, office_id")
+      .is("deleted_at", null)
+      .in("status", ["active", "on_leave"]),
+    supabaseAdmin
+      .from("leave_credits")
+      .select("employee_id, balance, leave_types(code)")
+      .eq("year", year),
+  ]);
+
+  if (empResult.error) {
+    console.error(
+      "[leave/queries] getAllActiveEmployeesWithCredits employees:",
+      empResult.error.message,
+    );
+    return [];
+  }
+
+  const creditMap = new Map<string, { vlBalance: number; slBalance: number }>();
+  for (const row of creditsResult.data ?? []) {
+    const empId = String(row.employee_id);
+    const code = (row.leave_types as { code?: string } | null)?.code ?? "";
+    if (!creditMap.has(empId))
+      creditMap.set(empId, { vlBalance: 0, slBalance: 0 });
+    const entry = creditMap.get(empId)!;
+    if (code === "VL") entry.vlBalance = Number(row.balance);
+    if (code === "SL") entry.slBalance = Number(row.balance);
+  }
+
+  return (empResult.data ?? [])
+    .map((emp) => {
+      const credits = creditMap.get(emp.id) ?? { vlBalance: 0, slBalance: 0 };
+      return {
+        employeeId: emp.id,
+        employeeNo: String(emp.employee_no ?? ""),
+        fullName: `${emp.last_name ?? ""}, ${emp.first_name ?? ""}`.trim(),
+        officeId: typeof emp.office_id === "string" ? emp.office_id : null,
+        vlBalance: credits.vlBalance,
+        slBalance: credits.slBalance,
+        year,
+      };
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+/**
  * Paginated variant of {@link getAllEmployeeCreditSummaries} for admin
  * screens that render a large roster. Pagination happens in-memory after the
  * per-row aggregation because the underlying table has two rows per employee

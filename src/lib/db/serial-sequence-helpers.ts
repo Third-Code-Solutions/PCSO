@@ -28,6 +28,9 @@ export const DOCUMENT_TYPES = {
   SERVICE_RECORD: "SR",
   NOSI: "NOSI",
   NOSA: "NOSA",
+  PDS: "PDS",
+  CLEARANCE: "CLR",
+  AD_HOC: "AHC",
   // LDM
   TRAINING_CERT: "CT",
   // EWBM
