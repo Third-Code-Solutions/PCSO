@@ -7,7 +7,7 @@
  * domain/competency codes. Feeds TNA gap analysis.
  *
  * Authorization:
- *  - Writes → permission('admin', 'create' | 'edit')
+ *  - Writes → permission('learning', 'create' | 'edit')
  *  - Reads  → permission('reports', 'view')
  *
  * Envelope: `{ data } | { error }`.
@@ -60,7 +60,7 @@ export async function recordAssessment(
   input: RecordAssessmentInput,
 ): Promise<Result<CompetencyAssessment>> {
   try {
-    await requirePermission("admin", "create");
+    await requirePermission("learning", "create");
     const parsed = competencyAssessmentSchema.parse(input);
 
     const [row] = await db
@@ -87,7 +87,7 @@ export async function bulkRecordAssessments(
   inputs: unknown,
 ): Promise<Result<CompetencyAssessment[]>> {
   try {
-    await requirePermission("admin", "create");
+    await requirePermission("learning", "create");
 
     if (!Array.isArray(inputs)) {
       return err("Expected an array of assessments");

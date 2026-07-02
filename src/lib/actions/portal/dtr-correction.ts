@@ -174,6 +174,7 @@ export async function submitDtrCorrectionRequest(
 export async function supervisorReviewDtrCorrection(
   input: z.infer<typeof reviewSchema>,
 ): Promise<Result<DtrCorrectionRequest>> {
+  await requirePermission("attendance", "approve");
   const session = await requireAuth();
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {

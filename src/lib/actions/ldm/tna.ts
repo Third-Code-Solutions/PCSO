@@ -8,8 +8,8 @@
  * an employee or an entire office in a given cycle year.
  *
  * Authorization:
- *  - Writes → permission('admin', 'create' | 'edit')
- *  - Reads  → permission('reports', 'view')
+ *  - Writes → permission('learning', 'create' | 'edit')
+ *  - Reads  → permission('learning', 'view')
  *
  * Envelope: `{ data } | { error }`.
  */
@@ -185,7 +185,7 @@ export async function generateTnaForEmployee(
   cycleYear: number,
 ): Promise<Result<GenerateResult>> {
   try {
-    await requirePermission("admin", "create");
+    await requirePermission("learning", "create");
 
     const [emp] = await db
       .select({ id: employees.id, salaryGrade: employees.salaryGrade })
@@ -225,7 +225,7 @@ export async function generateTnaForOffice(
   cycleYear: number,
 ): Promise<Result<OfficeSummary>> {
   try {
-    await requirePermission("admin", "create");
+    await requirePermission("learning", "create");
 
     const emps = await db
       .select({ id: employees.id, salaryGrade: employees.salaryGrade })
@@ -280,7 +280,7 @@ export async function listGaps(
   filter: ListGapsFilter = {},
 ): Promise<Result<TnaGap[]>> {
   try {
-    await requirePermission("reports", "view");
+    await requirePermission("learning", "view");
 
     const conds = [];
     if (filter.employeeId)
@@ -313,7 +313,7 @@ export async function resolveGap(
   notes?: string,
 ): Promise<Result<TnaGap>> {
   try {
-    await requirePermission("admin", "edit");
+    await requirePermission("learning", "edit");
 
     // The schema's `tna_gaps` table does not carry a completedProgramId
     // column — the "program that closed the gap" is recorded in the
@@ -348,7 +348,7 @@ export async function listGapsByIds(
   ids: readonly string[],
 ): Promise<Result<TnaGap[]>> {
   try {
-    await requirePermission("reports", "view");
+    await requirePermission("learning", "view");
     if (ids.length === 0) return ok([]);
 
     const rows = await db

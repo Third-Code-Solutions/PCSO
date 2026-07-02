@@ -8,8 +8,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/auth/guards";
-import { hasPermission } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/guards";
 import {
   dpcrForms,
   bpcrForms,
@@ -46,10 +45,7 @@ const dpcrSchema = z.object({
 export async function createDpcr(
   data: z.infer<typeof dpcrSchema>,
 ): Promise<{ success: boolean; error?: string; id?: string }> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "edit")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "create");
 
   const parsed = dpcrSchema.safeParse(data);
   if (!parsed.success) {
@@ -86,10 +82,7 @@ export async function updateDpcr(
   id: string,
   data: Partial<z.infer<typeof dpcrSchema>>,
 ): Promise<{ success: boolean; error?: string }> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "edit")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "edit");
 
   try {
     await db
@@ -112,10 +105,7 @@ export async function updateDpcr(
 export async function submitDpcr(
   id: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "edit")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "edit");
 
   try {
     await db
@@ -159,10 +149,7 @@ const bpcrSchema = z.object({
 export async function createBpcr(
   data: z.infer<typeof bpcrSchema>,
 ): Promise<{ success: boolean; error?: string; id?: string }> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "edit")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "create");
 
   const parsed = bpcrSchema.safeParse(data);
   if (!parsed.success) {
@@ -199,10 +186,7 @@ export async function updateBpcr(
   id: string,
   data: Partial<z.infer<typeof bpcrSchema>>,
 ): Promise<{ success: boolean; error?: string }> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "edit")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "edit");
 
   try {
     await db
@@ -225,10 +209,7 @@ export async function updateBpcr(
 export async function submitBpcr(
   id: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "edit")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "edit");
 
   try {
     await db
@@ -261,10 +242,7 @@ export async function submitBpcr(
 export async function generatePbbList(
   cycleId: string,
 ): Promise<{ success: boolean; error?: string; qualifiedCount?: number }> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "edit")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "process");
 
   try {
     // Get all IPCRF ratings for this cycle with rating ≥ 2.500
@@ -399,10 +377,7 @@ export async function checkForcedRanking(
   cycleId: string,
   officeId?: string,
 ): Promise<ForcedRankingResult> {
-  const user = await requireAuth();
-  if (!hasPermission(user.role, "performance", "view")) {
-    return { success: false, error: "Permission denied" };
-  }
+  await requirePermission("performance", "view");
 
   try {
     // Build WHERE clause

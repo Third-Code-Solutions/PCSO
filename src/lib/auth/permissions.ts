@@ -696,6 +696,19 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "auditor",
   ],
 
+  // ── Recruitment (RPM) ─────────────────────────────────────────────────────
+  // Read-only landing for the recruitment module; matches the nav group roles.
+  // Applicant screening / selection / appointment writes are gated in actions.
+  "/recruitment": [
+    "super_admin",
+    "hr_admin",
+    "leave_approver",
+    "supervisor",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
+
   // ── Learning & Development ────────────────────────────────────────────────
   "/learning/certificates": [
     "super_admin",
@@ -703,6 +716,38 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "viewer",
     "executive",
     "auditor",
+    "employee_self_service",
+  ],
+  // Broad view landing for L&D (learning.view set). Writes are gated in
+  // actions. Longest-prefix match keeps /learning/certificates above intact.
+  "/learning": [
+    "super_admin",
+    "hr_admin",
+    "payroll_admin",
+    "leave_approver",
+    "supervisor",
+    "viewer",
+    "executive",
+    "auditor",
+    "employee_self_service",
+  ],
+
+  // ── Welfare & PRAISE (EWBM) ───────────────────────────────────────────────
+  // Read landing for executive/audit oversight; writes gated in actions.
+  "/welfare": ["super_admin", "hr_admin", "viewer", "executive", "auditor"],
+
+  // ── Employee Portal (self-service) ────────────────────────────────────────
+  // Self-service area — open to every authenticated role. Per-record scope is
+  // enforced by selfOnly constraints in queries / action guards.
+  "/portal": [
+    "super_admin",
+    "hr_admin",
+    "payroll_admin",
+    "supervisor",
+    "executive",
+    "auditor",
+    "leave_approver",
+    "viewer",
     "employee_self_service",
   ],
 

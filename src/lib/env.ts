@@ -42,7 +42,16 @@ function buildFallback(): ServerEnv {
 }
 
 function parseEnv(): ServerEnv {
-  const parsed = ServerEnvSchema.safeParse(process.env);
+  // Empty strings must be treated as "unset" so schema defaults apply. Build-time
+  // inlining of NEXT_PUBLIC_* vars turns an unconfigured var into "" (not
+  // undefined); z `.default()` only fills undefined, so a blank NEXT_PUBLIC_APP_URL
+  // would otherwise fail `.url()` and crash every page that imports env.
+  const normalized: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    normalized[key] = value === "" ? undefined : value;
+  }
+
+  const parsed = ServerEnvSchema.safeParse(normalized);
   if (parsed.success) return parsed.data;
 
   // During `next build` the runtime secrets may not be present on the build

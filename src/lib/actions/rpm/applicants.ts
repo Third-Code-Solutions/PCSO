@@ -12,9 +12,10 @@
  *   - src/lib/validations/recruitment.ts
  *
  * Permissions: a dedicated 'recruitment' Resource is not yet in
- * `src/lib/auth/permissions.ts`. Until Agent 14 adds it we gate with
- * `'admin'` (super_admin / hr_admin reach everything). TODO integrator:
- * swap to 'recruitment' once the matrix is extended.
+ * `src/lib/auth/permissions.ts`. Until one exists we gate on the 'employees'
+ * Resource — hr_admin (the intended recruiter) holds employees.view/edit/
+ * process and super_admin reaches everything. Reads use 'view'; screening
+ * writes (qualify / shortlist / notify) use 'edit'.
  */
 
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -35,8 +36,11 @@ import {
   type VacancyQualificationStandards,
 } from "@/lib/utils/rpm/qualification-score";
 
-// TODO integrator: replace with ('recruitment', …) once Resource is extended.
-const RECRUITMENT_RESOURCE: Resource = "admin";
+// Recruitment has no dedicated Resource in the permission matrix yet, so we
+// gate on 'employees': hr_admin (the intended recruiter) holds
+// employees.view/edit/process while super_admin retains full reach. Swap to a
+// dedicated 'recruitment' Resource here if the matrix is later extended.
+const RECRUITMENT_RESOURCE: Resource = "employees";
 const VIEW: Action = "view";
 const EDIT: Action = "edit";
 

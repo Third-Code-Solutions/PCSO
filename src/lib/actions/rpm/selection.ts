@@ -40,7 +40,7 @@ import { employees } from "@/lib/db/schema/employees";
 import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import { systemUsers } from "@/lib/db/schema/users";
 import { notifications } from "@/lib/db/schema/notifications";
-import { requireAuth } from "@/lib/auth/guards";
+import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import {
   rankApplications,
   topN,
@@ -210,6 +210,7 @@ export interface CreateAssessmentInput {
 export async function createAssessment(
   input: CreateAssessmentInput,
 ): Promise<SelectionResult<{ assessmentId: string }>> {
+  await requirePermission("employees", "process");
   const { vacancyId, examDate, venue, dimensions } = input;
   if (dimensions.length === 0) {
     return {
@@ -323,6 +324,7 @@ interface StoredDimension {
 export async function recordAssessmentScore(
   input: RecordScoreInput,
 ): Promise<SelectionResult<{ completed: boolean }>> {
+  await requirePermission("employees", "process");
   const {
     assessmentId,
     applicationId,
@@ -469,6 +471,7 @@ export interface RankedApplicationDetail extends RankedApplication {
 export async function listRanked(
   vacancyId: string,
 ): Promise<SelectionResult<RankedApplicationDetail[]>> {
+  await requirePermission("employees", "view");
   const rows = await db
     .select({
       id: applications.id,
@@ -519,6 +522,7 @@ export async function listRanked(
 export async function listShortlisted(
   vacancyId: string,
 ): Promise<SelectionResult<RankedApplicationDetail[]>> {
+  await requirePermission("employees", "view");
   const res = await listRanked(vacancyId);
   if (!res.ok) return res;
 
@@ -540,6 +544,7 @@ export async function listShortlisted(
 export async function generateAssessmentFormPdf(
   vacancyId: string,
 ): Promise<SelectionResult<{ bytes: Buffer; serial: string }>> {
+  await requirePermission("employees", "view");
   const ctx = await loadVacancyContext(vacancyId);
   if (!ctx) return { ok: false, error: "Vacancy not found" };
 
@@ -602,6 +607,7 @@ export async function generateAssessmentFormPdf(
 export async function generateRatingSheetPdf(
   vacancyId: string,
 ): Promise<SelectionResult<{ bytes: Buffer; serial: string }>> {
+  await requirePermission("employees", "view");
   const ctx = await loadVacancyContext(vacancyId);
   if (!ctx) return { ok: false, error: "Vacancy not found" };
   const [assessment] = await db
@@ -646,6 +652,7 @@ export async function shortlistTop5(
 ): Promise<
   SelectionResult<{ shortlisted: string[]; pdf: Buffer; serial: string }>
 > {
+  await requirePermission("employees", "process");
   const employeeId = await currentEmployeeId();
   if (!employeeId) return { ok: false, error: "Not authenticated" };
 
@@ -762,6 +769,7 @@ export async function shortlistTop5(
 export async function recommendForBoard(
   applicationIds: string[],
 ): Promise<SelectionResult<{ pdf: Buffer; serial: string }>> {
+  await requirePermission("employees", "process");
   const firstId = applicationIds[0];
   if (applicationIds.length === 0 || !firstId) {
     return { ok: false, error: "No applications selected" };
@@ -874,6 +882,7 @@ export async function recommendForBoard(
 export async function notifyExamResults(
   vacancyId: string,
 ): Promise<SelectionResult<{ notified: number }>> {
+  await requirePermission("employees", "process");
   const ctx = await loadVacancyContext(vacancyId);
   if (!ctx) return { ok: false, error: "Vacancy not found" };
 

@@ -28,7 +28,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { withTx, type Tx } from "@/lib/db/transaction";
-import { requireAuth } from "@/lib/auth/guards";
+import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   mrfs,
@@ -144,7 +144,7 @@ export async function createMrf(
   input: CreateMrfInput,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "create");
     const parsed = createMrfSchema.parse(input);
 
     const [row] = await db
@@ -176,7 +176,7 @@ export async function updateMrf(
   input: UpdateMrfInput,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "edit");
     const parsed = updateMrfSchema.parse(input);
     const { id, ...rest } = parsed;
 
@@ -212,7 +212,7 @@ export async function submitMrf(
   input: SubmitMrfInput,
 ): Promise<ActionResult<{ id: string; mrfNumber: string }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "edit");
     const parsed = submitMrfSchema.parse(input);
 
     const result = await withTx(async (tx: Tx) => {
@@ -283,7 +283,7 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
   }>
 > {
   try {
-    await requireAuth();
+    await requirePermission("employees", "process");
     const parsed = approveMrfSchema.parse(input);
 
     const result = await withTx(async (tx: Tx) => {
@@ -434,7 +434,7 @@ export async function returnMrf(
   input: z.infer<typeof returnMrfSchema>,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "process");
     const parsed = returnMrfSchema.parse(input);
 
     await withTx(async (tx: Tx) => {
@@ -482,7 +482,7 @@ export async function publishVacancy(
   input: z.infer<typeof publishVacancyInputSchema>,
 ): Promise<ActionResult<{ id: string; pdfPath: string }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "process");
     const parsed = publishVacancyInputSchema.parse(input);
 
     // Load vacancy + related rows BEFORE the tx (we'll still write inside tx).
@@ -617,7 +617,7 @@ export async function uploadCscReceipt(
   input: z.infer<typeof uploadCscReceiptSchema>,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "edit");
     const parsed = uploadCscReceiptSchema.parse(input);
 
     const [row] = await db
@@ -645,7 +645,7 @@ export async function detectDuplicateItemNumber(
   itemNumber: string,
 ): Promise<ActionResult<{ count: number }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "view");
     const trimmed = z.string().trim().min(1).max(20).parse(itemNumber);
 
     const rows = await db
@@ -671,7 +671,7 @@ export async function detectDuplicateItemNumber(
 
 export async function listMrfs(): Promise<ActionResult<Mrf[]>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "view");
     const rows = await db
       .select()
       .from(mrfs)
@@ -691,7 +691,7 @@ export async function getMrf(id: string): Promise<
   }>
 > {
   try {
-    await requireAuth();
+    await requirePermission("employees", "view");
     const parsed = z.string().uuid().parse(id);
 
     const [row] = await db
@@ -739,7 +739,7 @@ export async function publishVacancyForMrf(
   vacancyId: string,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "process");
     const parsed = z.string().uuid().parse(vacancyId);
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + 30);
@@ -756,7 +756,7 @@ export async function publishVacancyForMrf(
 
 export async function listActiveVacancies(): Promise<ActionResult<Vacancy[]>> {
   try {
-    await requireAuth();
+    await requirePermission("employees", "view");
     const rows = await db
       .select()
       .from(vacancies)
@@ -778,5 +778,6 @@ export async function listActiveVacancies(): Promise<ActionResult<Vacancy[]>> {
 export async function formatTimestamp(
   value: Date | string | null,
 ): Promise<string> {
+  await requireAuth();
   return toIsoString(value);
 }
