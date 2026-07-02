@@ -178,7 +178,80 @@ export const applicantLoginSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
+// ─── Applicant profile (RPM-010, PATCH /api/rpm/applicants/me) ───────────────
+// Wizard-collected history entries. Dates arrive as YYYY-MM-DD from
+// <input type="date">, hence the looser format than the application schemas.
+
+const dateOnly = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a YYYY-MM-DD date");
+
+const profileEducationEntrySchema = z.object({
+  schoolName: nonEmpty("School name", 200),
+  degree: z.string().trim().max(200).optional(),
+  yearGraduated: z.coerce.number().int().min(1900).max(2100).optional(),
+});
+
+const profileWorkEntrySchema = z.object({
+  position: nonEmpty("Position", 200),
+  company: nonEmpty("Company", 200),
+  startDate: dateOnly.optional(),
+  endDate: dateOnly.optional(),
+});
+
+const profileEligibilityEntrySchema = z.object({
+  type: nonEmpty("Eligibility type", 100),
+  rating: z.string().trim().max(20).optional(),
+  dateTaken: dateOnly.optional(),
+});
+
+const profileTrainingEntrySchema = z.object({
+  title: nonEmpty("Training title", 200),
+  provider: z.string().trim().max(200).optional(),
+  hours: z.coerce.number().min(0).max(10_000).optional(),
+  dateCompleted: dateOnly.optional(),
+});
+
+const profileReferenceEntrySchema = z.object({
+  name: nonEmpty("Reference name", 200),
+  position: z.string().trim().max(200).optional(),
+  contactNumber: z.string().trim().max(20).optional(),
+  email: z.string().email().max(200),
+});
+
+export const applicantProfileUpdateSchema = z
+  .object({
+    firstName: nonEmpty("First name", 100).optional(),
+    lastName: nonEmpty("Last name", 100).optional(),
+    middleName: z.string().trim().max(100).optional().nullable(),
+    contactNumber: nonEmpty("Contact number", 20).optional(),
+    currentAddress: nonEmpty("Current address", 1000).optional(),
+    profile: z
+      .object({
+        education: z.array(profileEducationEntrySchema).max(20).optional(),
+        workExperience: z.array(profileWorkEntrySchema).max(50).optional(),
+        eligibility: z.array(profileEligibilityEntrySchema).max(20).optional(),
+        trainings: z.array(profileTrainingEntrySchema).max(100).optional(),
+        references: z.array(profileReferenceEntrySchema).max(10).optional(),
+      })
+      .optional(),
+  })
+  .refine(
+    (value) => Object.values(value).some((field) => field !== undefined),
+    "At least one field must be provided",
+  );
+
 // ─── Application schemas ─────────────────────────────────────────────────────
+
+/**
+ * Stub-create payload (POST /api/rpm/applications). The apply button only knows
+ * the vacancy; the applicant is derived solely from the bearer token and the
+ * NOT NULL detail JSONB columns are seeded with empty-but-valid defaults. The
+ * full payload is collected by the wizard and validated at submit time.
+ */
+export const startApplicationSchema = z.object({
+  vacancyId: uuid,
+});
 
 export const createApplicationSchema = z.object({
   vacancyId: uuid,
@@ -258,6 +331,10 @@ export type CreateVacancyInput = z.infer<typeof createVacancySchema>;
 export type PublishVacancyInput = z.infer<typeof publishVacancySchema>;
 export type ApplicantRegisterInput = z.infer<typeof applicantRegisterSchema>;
 export type ApplicantLoginInput = z.infer<typeof applicantLoginSchema>;
+export type ApplicantProfileUpdateInput = z.infer<
+  typeof applicantProfileUpdateSchema
+>;
+export type StartApplicationInput = z.infer<typeof startApplicationSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type SubmitApplicationInput = z.infer<typeof submitApplicationSchema>;
 export type QualifyApplicationInput = z.infer<typeof qualifyApplicationSchema>;

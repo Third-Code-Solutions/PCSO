@@ -3,6 +3,7 @@
 import * as React from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NotificationBell } from "@/components/layouts/notification-bell";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/layouts/user-menu";
@@ -12,16 +13,35 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { Role } from "@/lib/auth/permissions";
 
 interface BreadcrumbItem {
   label: string;
   href?: string;
 }
 
+/**
+ * Role label + data scope shown in the top bar so users always see what they
+ * can act on (PRD 3.4.4 — every dashboard must display role and data scope).
+ */
+const ROLE_SCOPE_BADGES: Record<Role, { label: string; scope: string }> = {
+  super_admin: { label: "System Admin", scope: "Full Access" },
+  hr_admin: { label: "HR Admin", scope: "All Units" },
+  payroll_admin: { label: "Payroll Admin", scope: "All Units" },
+  supervisor: { label: "Supervisor", scope: "Own Unit" },
+  executive: { label: "Executive", scope: "All Units · Read-only" },
+  auditor: { label: "Auditor", scope: "All Units · Read-only" },
+  employee_self_service: { label: "Employee", scope: "Own Records" },
+  leave_approver: { label: "Leave Approver", scope: "Own Unit" },
+  viewer: { label: "Viewer", scope: "All Units · Read-only" },
+};
+
 interface TopNavProps {
   breadcrumbs?: BreadcrumbItem[];
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  /** Role of the signed-in user; renders the role + data-scope badge when set */
+  role?: Role;
   user?: {
     name: string;
     email: string;
@@ -34,9 +54,11 @@ export function TopNav({
   breadcrumbs,
   sidebarOpen,
   onToggleSidebar,
+  role,
   user,
   onSignOut,
 }: TopNavProps) {
+  const roleBadge = role ? ROLE_SCOPE_BADGES[role] : undefined;
   const displayUser = user ?? {
     name: "PCSO Staff",
     email: "staff@pcso.gov.ph",
@@ -108,6 +130,17 @@ export function TopNav({
       )}
 
       <div className="flex-1" />
+
+      {/* Role + data scope (PRD 3.4.4) */}
+      {roleBadge && (
+        <Badge
+          variant="muted"
+          className="hidden whitespace-nowrap font-medium md:inline-flex"
+          title={`Signed in as ${roleBadge.label} — data scope: ${roleBadge.scope}`}
+        >
+          {roleBadge.label} — {roleBadge.scope}
+        </Badge>
+      )}
 
       {/* Notifications */}
       <NotificationBell />

@@ -1,35 +1,78 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { Resend } from "resend";
 
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { applicants } from "@/lib/db/schema/recruitment";
 import { applicantRegisterSchema } from "@/lib/validations/recruitment";
 import {
   generateVerificationToken,
   hashPassword,
 } from "@/lib/utils/rpm/applicant-auth";
+import { enforceRateLimit } from "@/lib/utils/rate-limit";
+import {
+  ApplicantVerificationEmail,
+  applicantVerificationPlainText,
+} from "@/lib/email/templates/applicant-verification";
 
 export const dynamic = "force-dynamic";
 
-// TODO integrator (API-005): rate limit (e.g. 5 registrations per IP per hour).
-
 export const runtime = "nodejs";
 
+// API-005: registrations are scarce per IP.
+const RATE_LIMIT = { bucket: "rpm:register", limit: 5, windowMs: 60 * 60_000 };
+
+const VERIFICATION_TTL_HOURS = 24;
+
 /**
- * Local email stub — TODO integrator (N-026): replace with the shared
- * src/lib/email sender once Agent 14 lands the applicant templates.
+ * Send the verification email via Resend. When RESEND_API_KEY is absent
+ * (dev/test) we log the link instead and registration still succeeds.
+ * Delivery failure is logged but never blocks registration.
  */
-async function sendVerificationEmail(to: string, token: string): Promise<void> {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const url = `${baseUrl}/applicant/verify?token=${encodeURIComponent(token)}`;
-  if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console -- dev-only visibility.
-    console.info(`[rpm/register] verification link for ${to}: ${url}`);
+async function sendVerificationEmail(
+  to: string,
+  firstName: string,
+  token: string,
+): Promise<void> {
+  const verifyUrl = `${env.NEXT_PUBLIC_APP_URL}/applicant/verify?token=${encodeURIComponent(token)}`;
+
+  if (!env.RESEND_API_KEY) {
+    if (process.env.NODE_ENV !== "production") {
+      // Dev-only visibility when no email provider is configured.
+      console.info(`[rpm/register] verification link for ${to}: ${verifyUrl}`);
+    }
+    return;
+  }
+
+  try {
+    const resend = new Resend(env.RESEND_API_KEY);
+    const from = env.RESEND_FROM_EMAIL ?? "noreply@pcso.gov.ph";
+    const props = {
+      firstName,
+      verifyUrl,
+      expiresInHours: VERIFICATION_TTL_HOURS,
+    };
+    const { error } = await resend.emails.send({
+      from: `PCSO HRIS <${from}>`,
+      to,
+      subject: "Verify your PCSO applicant account",
+      react: ApplicantVerificationEmail(props),
+      text: applicantVerificationPlainText(props),
+    });
+    if (error) {
+      console.error("[rpm/register] verification email failed:", error);
+    }
+  } catch (error: unknown) {
+    console.error("[rpm/register] verification email failed:", error);
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const limited = enforceRateLimit(request, RATE_LIMIT);
+    if (limited) return limited;
+
     const json: unknown = await request.json().catch(() => null);
     if (!json) {
       return NextResponse.json(
@@ -79,7 +122,9 @@ export async function POST(request: Request) {
 
     const passwordHash = hashPassword(input.password);
     const verificationToken = generateVerificationToken();
-    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const verificationExpires = new Date(
+      Date.now() + VERIFICATION_TTL_HOURS * 60 * 60 * 1000,
+    );
 
     // dateOfBirth is an ISO datetime on the wire; the DB column is `date`
     // (YYYY-MM-DD). Keep only the date portion.
@@ -116,7 +161,11 @@ export async function POST(request: Request) {
       );
     }
 
-    await sendVerificationEmail(inserted.email, verificationToken);
+    await sendVerificationEmail(
+      inserted.email,
+      input.firstName,
+      verificationToken,
+    );
 
     return NextResponse.json(
       {

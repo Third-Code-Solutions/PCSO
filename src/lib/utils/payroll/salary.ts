@@ -347,17 +347,23 @@ export function computeOvertimePay(
 
 /**
  * Get the effective monthly salary for payroll computation.
- * For JO/COS employees, uses contractRateMonthly if provided,
- * otherwise uses salary-grade lookup (if plantilla-tracked).
+ * For JO/COS employees, uses contractRateMonthly if provided.
+ * Otherwise prefers `authorizedMonthlySalary` (resolved by the caller from
+ * the salary_grades reference table) over the static SSL lookup, so rate
+ * changes remain data-driven.
  */
 export function getEffectiveMonthlySalary(
   appointmentType: AppointmentType,
   salaryGrade: number,
   step: number,
   contractRateMonthly?: number,
+  authorizedMonthlySalary?: number,
 ): number {
   if (isJobOrderOrCOS(appointmentType) && contractRateMonthly !== undefined) {
     return contractRateMonthly;
+  }
+  if (authorizedMonthlySalary !== undefined && authorizedMonthlySalary > 0) {
+    return authorizedMonthlySalary;
   }
   return getAuthorizedSalary(salaryGrade, step);
 }

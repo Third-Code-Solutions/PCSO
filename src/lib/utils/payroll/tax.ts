@@ -191,6 +191,46 @@ export function computeWithholdingTax(
 }
 
 /**
+ * Compute withholding tax on a supplemental payment that stacks on top of the
+ * employee's regular monthly taxable compensation (BIR cumulative method).
+ *
+ * Supplemental payments (RATA excess, taxable bonuses, salary differential)
+ * must NOT be taxed from the zero bracket in isolation — doing so understates
+ * withholding because the regular salary has already consumed the lower
+ * brackets. The correct marginal tax is:
+ *   tax(regular + supplemental) - tax(regular)
+ * both evaluated against the MONTHLY brackets.
+ *
+ * @param regularMonthlyTaxable - Employee's regular monthly taxable income
+ * @param supplementalTaxable - Taxable portion of the supplemental payment
+ * @returns Withholding tax attributable to the supplemental payment
+ */
+export function computeSupplementalWithholding(
+  regularMonthlyTaxable: number,
+  supplementalTaxable: number,
+): number {
+  if (regularMonthlyTaxable < 0) {
+    throw new RangeError(
+      `computeSupplementalWithholding: regularMonthlyTaxable must be >= 0, got ${regularMonthlyTaxable}`,
+    );
+  }
+  if (supplementalTaxable < 0) {
+    throw new RangeError(
+      `computeSupplementalWithholding: supplementalTaxable must be >= 0, got ${supplementalTaxable}`,
+    );
+  }
+  const withSupplemental = computeWithholdingTax(
+    regularMonthlyTaxable + supplementalTaxable,
+    "monthly",
+  );
+  const withoutSupplemental = computeWithholdingTax(
+    regularMonthlyTaxable,
+    "monthly",
+  );
+  return roundHalfEven(withSupplemental - withoutSupplemental, 2);
+}
+
+/**
  * Compute withholding tax with full computation detail for audit reporting.
  *
  * @param taxableIncome - Taxable income for the period

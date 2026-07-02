@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/auth/guards";
 import { KpiGridSkeleton } from "@/components/common/loading-skeleton";
 import {
   AdminDashboard,
+  SystemAdminDashboard,
   PayrollAdminDashboard,
   LeaveApproverDashboard,
   EmployeeDashboard,
@@ -15,6 +16,7 @@ import {
 } from "./_client";
 import {
   getAdminDashboardKpis,
+  getSystemAdminKpis,
   getPayrollAdminKpis,
   getLeaveApproverKpis,
   getEmployeeDashboardKpis,
@@ -39,6 +41,13 @@ const ADMIN_REALTIME_TABLES = [
   "saln_submissions",
   "holidays",
   "audit_logs",
+] as const;
+
+const SYSTEM_ADMIN_REALTIME_TABLES = [
+  "system_users",
+  "audit_logs",
+  "notifications",
+  "employees",
 ] as const;
 
 const PAYROLL_REALTIME_TABLES = [
@@ -81,6 +90,11 @@ const PERSONAL_REALTIME_TABLES = [
 async function AdminKpisSection() {
   const data = await getAdminDashboardKpis();
   return <AdminDashboard data={data} />;
+}
+
+async function SystemAdminKpisSection() {
+  const data = await getSystemAdminKpis();
+  return <SystemAdminDashboard data={data} />;
 }
 
 async function PayrollKpisSection() {
@@ -141,7 +155,19 @@ function buildRoleConfig(
   officeId: string | null,
 ): RoleConfig {
   switch (role) {
+    // PRD 3.4 D7 — technical control plane, read-only over HR data.
     case "super_admin":
+      return {
+        title: "System Administration",
+        description: "Platform users, audit activity, and security events",
+        tables: SYSTEM_ADMIN_REALTIME_TABLES,
+        body: (
+          <Suspense fallback={<KpiGridSkeleton />}>
+            <SystemAdminKpisSection />
+          </Suspense>
+        ),
+      };
+
     case "hr_admin":
       return {
         title: "Dashboard",

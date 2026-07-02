@@ -8,16 +8,21 @@ import {
   signApplicantToken,
   verifyPassword,
 } from "@/lib/utils/rpm/applicant-auth";
+import { enforceRateLimit } from "@/lib/utils/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-// TODO integrator (API-005): brute-force protection — lock after N failed
-// attempts, add CAPTCHA or exponential backoff.
-
 export const runtime = "nodejs";
+
+// API-005 brute-force protection: counts every attempt (success or failure)
+// so a credential-stuffing loop is throttled regardless of outcome.
+const RATE_LIMIT = { bucket: "rpm:login", limit: 10, windowMs: 10 * 60_000 };
 
 export async function POST(request: Request) {
   try {
+    const limited = enforceRateLimit(request, RATE_LIMIT);
+    if (limited) return limited;
+
     const json: unknown = await request.json().catch(() => null);
     const parsed = applicantLoginSchema.safeParse(json);
     if (!parsed.success) {

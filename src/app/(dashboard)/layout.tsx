@@ -55,6 +55,7 @@ export default function DashboardLayout({
           sidebarOpen={sidebarOpen}
           onToggleSidebar={handleToggleSidebar}
           breadcrumbs={[{ label: "PCSO HRIS" }]}
+          role={auth.user?.role}
           user={{ name: displayName, email: displayEmail }}
           onSignOut={handleSignOut}
         />

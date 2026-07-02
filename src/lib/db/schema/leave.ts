@@ -10,6 +10,7 @@ import {
   text,
   smallint,
   index,
+  uniqueIndex,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -70,6 +71,14 @@ export const leaveCredits = pgTable(
   (t) => [
     index("leave_credits_employee_id_idx").on(t.employeeId),
     index("leave_credits_leave_type_year_idx").on(t.leaveTypeId, t.year),
+    // One ledger row per (employee, leave type, year). Source of truth for
+    // bulk-upload duplicate rejection — DB-enforced so concurrent commits
+    // cannot double-insert (F-LEAVE-UNIQUE).
+    uniqueIndex("leave_credits_employee_type_year_uniq").on(
+      t.employeeId,
+      t.leaveTypeId,
+      t.year,
+    ),
   ],
 );
 

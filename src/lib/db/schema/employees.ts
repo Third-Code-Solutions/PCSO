@@ -4,8 +4,10 @@ import {
   varchar,
   date,
   smallint,
+  boolean,
   pgEnum,
   text,
+  jsonb,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -107,6 +109,10 @@ export const employees = pgTable(
     // Status
     status: employeeStatusEnum("status").notNull().default("active"),
 
+    // RA 7277 (Magna Carta for Disabled Persons) flag — drives PAY-008
+    // magna_carta payroll run eligibility
+    isPwd: boolean("is_pwd").notNull().default(false),
+
     // Contact
     email: varchar("email", { length: 255 }),
     phone: varchar("phone", { length: 20 }),
@@ -124,6 +130,14 @@ export const employees = pgTable(
       length: 100,
     }),
     emergencyContactPhone: varchar("emergency_contact_phone", { length: 20 }),
+
+    // PDS Section 31 (CS Form 212) — Special Skills & Hobbies (EWB-005).
+    // Written by the EPM PDS-update approval path (EPM-012); read by the
+    // wellness report aggregator.
+    specialSkillsHobbies: jsonb("special_skills_hobbies").$type<{
+      skills: string[];
+      hobbies: string[];
+    }>(),
 
     ...timestamps,
     ...softDelete,

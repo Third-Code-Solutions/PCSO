@@ -69,14 +69,10 @@ export async function updateOrgProfile(formData: FormData) {
 }
 
 /**
- * Update user role and dashboard profile
+ * Update user role — the role alone determines the dashboard (PRD 3.4).
  * Super admin only
  */
-export async function updateUserRole(
-  userId: string,
-  role: SystemRole,
-  dashboardProfile?: string,
-) {
+export async function updateUserRole(userId: string, role: SystemRole) {
   const user = await requireAuth();
 
   if (!hasPermission(user.role, "admin", "edit")) {

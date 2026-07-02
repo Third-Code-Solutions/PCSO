@@ -35,6 +35,8 @@ import {
   type GsisRemittanceExportRow,
   type GsisExportMeta,
 } from "@/lib/utils/remittances/gsis-export";
+import { getOrgProfile } from "@/lib/org-profile";
+import { requireEmployerIdentifier } from "@/lib/utils/remittances/employer-identity";
 
 const REMITTANCE_LINE_INSERT_CHUNK = 200;
 
@@ -252,6 +254,14 @@ export async function exportForPortal(input: unknown) {
   const parsed = ExportForPortalSchema.parse(input);
   await requirePermission("remittances", "export");
 
+  // Fail fast if the GSIS employer number is unconfigured — the portal file
+  // must never be emitted with the seeded placeholder ID (PRD P0-003).
+  const profile = await getOrgProfile();
+  const gsisEmployerNo = requireEmployerIdentifier(
+    profile.gsisEmployerNo,
+    "GSIS employer number",
+  );
+
   // Fetch batch
   const [batch] = await db
     .select()
@@ -298,8 +308,9 @@ export async function exportForPortal(input: unknown) {
   }));
 
   const meta: GsisExportMeta = {
-    agencyName: "Philippine Charity Sweepstakes Office",
-    agencyCode: "PCSO",
+    agencyName: profile.gsisAgencyName ?? profile.agencyName,
+    // GSIS-issued employer/agency number from org profile, not the acronym.
+    agencyCode: gsisEmployerNo,
     periodLabel: period.name,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,

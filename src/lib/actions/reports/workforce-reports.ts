@@ -13,9 +13,17 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { employees, offices } from "@/lib/db/schema";
-import { eq, and, gte, lte, isNull, sql } from "drizzle-orm";
+import {
+  documentRequests,
+  employeeDocuments,
+  employees,
+  pdsUpdateRequests,
+  personnelMovementRequests,
+  trainingParticipants,
+} from "@/lib/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { requirePermission } from "@/lib/auth/guards";
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
 
@@ -120,6 +128,7 @@ export async function getRetirementEligibilityReport(
   filters: z.infer<typeof RetirementReportFiltersSchema>,
 ) {
   try {
+    await requirePermission("reports", "view");
     const validated = RetirementReportFiltersSchema.parse(filters);
 
     // Build WHERE conditions
@@ -287,6 +296,7 @@ export async function getLoyaltyAwardEligibilityReport(
   filters: z.infer<typeof LoyaltyReportFiltersSchema>,
 ) {
   try {
+    await requirePermission("reports", "view");
     const validated = LoyaltyReportFiltersSchema.parse(filters);
 
     const conditions = [eq(employees.status, "active")];
@@ -376,6 +386,7 @@ export async function getPDSSubmissionReport(
   filters: z.infer<typeof PDSReportFiltersSchema>,
 ) {
   try {
+    await requirePermission("reports", "view");
     const validated = PDSReportFiltersSchema.parse(filters);
 
     const conditions = [eq(employees.status, "active")];
@@ -395,17 +406,66 @@ export async function getPDSSubmissionReport(
       },
     });
 
-    const results: PDSSubmission[] = allEmployees.map((emp) => ({
-      id: emp.id,
-      employeeNo: emp.employeeNo,
-      fullName: `${emp.firstName} ${emp.middleName ? emp.middleName + " " : ""}${emp.lastName}${emp.suffix ? " " + emp.suffix : ""}`,
-      position: emp.positionTitle,
-      office: emp.office?.name || "N/A",
-      // TODO: Track actual PDS submission in a separate table
-      // For now, placeholder logic
-      pdsSubmitted: false,
-      lastSubmissionDate: null,
-    }));
+    // PIM-023: an employee's PDS counts as submitted when they have either
+    //   (a) an HRD-approved PDS document in their 201 file (PIM-004), or
+    //   (b) an HR-approved/processed PDS update request (EPM-012).
+    const [pdsDocRows, pdsUpdateRows] = await Promise.all([
+      db
+        .select({
+          employeeId: employeeDocuments.employeeId,
+          approvedAt: employeeDocuments.approvedAt,
+          uploadedAt: employeeDocuments.uploadedAt,
+        })
+        .from(employeeDocuments)
+        .where(
+          and(
+            eq(employeeDocuments.documentTypeCode, "PDS"),
+            eq(employeeDocuments.status, "approved"),
+          ),
+        ),
+      db
+        .select({
+          employeeId: pdsUpdateRequests.employeeId,
+          appliedAt: pdsUpdateRequests.appliedAt,
+          hrApprovedAt: pdsUpdateRequests.hrApprovedAt,
+        })
+        .from(pdsUpdateRequests)
+        .where(inArray(pdsUpdateRequests.status, ["approved", "processed"])),
+    ]);
+
+    // has entry = submitted; value = latest known submission timestamp.
+    const lastSubmissionByEmployee = new Map<string, Date | null>();
+    const noteSubmission = (employeeId: string, at: Date | null) => {
+      const current = lastSubmissionByEmployee.get(employeeId);
+      if (current === undefined) {
+        lastSubmissionByEmployee.set(employeeId, at);
+        return;
+      }
+      if (at && (current === null || at > current)) {
+        lastSubmissionByEmployee.set(employeeId, at);
+      }
+    };
+    for (const row of pdsDocRows) {
+      noteSubmission(row.employeeId, row.approvedAt ?? row.uploadedAt);
+    }
+    for (const row of pdsUpdateRows) {
+      noteSubmission(row.employeeId, row.appliedAt ?? row.hrApprovedAt);
+    }
+
+    const results: PDSSubmission[] = allEmployees.map((emp) => {
+      const submission = lastSubmissionByEmployee.get(emp.id);
+      return {
+        id: emp.id,
+        employeeNo: emp.employeeNo,
+        fullName: `${emp.firstName} ${emp.middleName ? emp.middleName + " " : ""}${emp.lastName}${emp.suffix ? " " + emp.suffix : ""}`,
+        position: emp.positionTitle,
+        office: emp.office?.name || "N/A",
+        pdsSubmitted: submission !== undefined,
+        lastSubmissionDate: submission
+          ? (submission.toISOString().split("T")[0] ?? null)
+          : null,
+      };
+    });
 
     // Apply submission status filter
     const filteredResults =
@@ -434,6 +494,7 @@ export async function getClearanceReport(
   filters: z.infer<typeof ClearanceReportFiltersSchema>,
 ) {
   try {
+    await requirePermission("reports", "view");
     const validated = ClearanceReportFiltersSchema.parse(filters);
 
     const conditions = [];
@@ -444,7 +505,7 @@ export async function getClearanceReport(
 
     // Status filter
     if (validated.status !== "all") {
-      conditions.push(eq(employees.status, validated.status as any));
+      conditions.push(eq(employees.status, validated.status));
     }
 
     const allEmployees = await db.query.employees.findMany({
@@ -458,19 +519,70 @@ export async function getClearanceReport(
       },
     });
 
-    const results: ClearanceRecord[] = allEmployees.map((emp) => {
-      // Determine clearance status
-      let clearanceStatus: "pending" | "completed" | "not_applicable" =
-        "not_applicable";
-      let dateOfSeparation: string | null = null;
+    // PIM-024: clearance state comes from CLEARANCE document requests
+    // (Section 12.4); separation date comes from approved/processed
+    // resignation and optional-retirement movement requests (EPM-011).
+    const [clearanceRequests, separationMovements] = await Promise.all([
+      db
+        .select({
+          employeeId: documentRequests.employeeId,
+          status: documentRequests.status,
+        })
+        .from(documentRequests)
+        .where(eq(documentRequests.documentType, "CLEARANCE")),
+      db
+        .select({
+          employeeId: personnelMovementRequests.employeeId,
+          effectiveDate: personnelMovementRequests.effectiveDate,
+        })
+        .from(personnelMovementRequests)
+        .where(
+          and(
+            inArray(personnelMovementRequests.movementType, [
+              "resignation",
+              "optional_retirement",
+            ]),
+            inArray(personnelMovementRequests.status, [
+              "approved",
+              "processed",
+            ]),
+          ),
+        ),
+    ]);
 
-      if (emp.status === "resigned" || emp.status === "retired") {
-        // TODO: Track actual clearance status in a separate table
-        // For now, default to pending for separated employees
-        clearanceStatus = "pending";
-        // In production, this would be the actual separation date from a movements table
-        dateOfSeparation = new Date().toISOString().split("T")[0] ?? null;
+    // A released clearance request = completed; any other non-disapproved
+    // request = clearance in progress (pending).
+    const clearanceStateByEmployee = new Map<string, "pending" | "completed">();
+    for (const req of clearanceRequests) {
+      if (req.status === "released") {
+        clearanceStateByEmployee.set(req.employeeId, "completed");
+      } else if (
+        req.status !== "disapproved" &&
+        clearanceStateByEmployee.get(req.employeeId) !== "completed"
+      ) {
+        clearanceStateByEmployee.set(req.employeeId, "pending");
       }
+    }
+
+    // Latest effective separation date per employee (date columns are
+    // ISO strings, so string comparison is chronological).
+    const separationDateByEmployee = new Map<string, string>();
+    for (const mv of separationMovements) {
+      const existing = separationDateByEmployee.get(mv.employeeId);
+      if (!existing || mv.effectiveDate > existing) {
+        separationDateByEmployee.set(mv.employeeId, mv.effectiveDate);
+      }
+    }
+
+    const results: ClearanceRecord[] = allEmployees.map((emp) => {
+      const isSeparated =
+        emp.status === "resigned" ||
+        emp.status === "retired" ||
+        emp.status === "terminated";
+
+      const trackedState = clearanceStateByEmployee.get(emp.id);
+      const clearanceStatus: "pending" | "completed" | "not_applicable" =
+        trackedState ?? (isSeparated ? "pending" : "not_applicable");
 
       return {
         id: emp.id,
@@ -480,7 +592,7 @@ export async function getClearanceReport(
         office: emp.office?.name || "N/A",
         status: emp.status,
         dateHired: emp.dateHired,
-        dateOfSeparation,
+        dateOfSeparation: separationDateByEmployee.get(emp.id) ?? null,
         clearanceStatus,
       };
     });
@@ -502,6 +614,7 @@ export async function getEmployeeQualificationsReport(
   filters: z.infer<typeof QualificationsReportFiltersSchema>,
 ) {
   try {
+    await requirePermission("reports", "view");
     const validated = QualificationsReportFiltersSchema.parse(filters);
 
     const conditions = [eq(employees.status, "active")];
@@ -521,6 +634,24 @@ export async function getEmployeeQualificationsReport(
       },
     });
 
+    // PIM-027: trainings attended come from LDM participant records.
+    // NOTE: per-employee education and eligibility records do not exist in
+    // the schema yet (only FM lookup tables + applicant-level JSONB in
+    // recruitment) — those columns stay null/empty until a 201-file
+    // education/eligibility store lands.
+    const participantRows = await db
+      .select({ employeeId: trainingParticipants.employeeId })
+      .from(trainingParticipants)
+      .where(inArray(trainingParticipants.status, ["attended", "completed"]));
+
+    const trainingCountByEmployee = new Map<string, number>();
+    for (const row of participantRows) {
+      trainingCountByEmployee.set(
+        row.employeeId,
+        (trainingCountByEmployee.get(row.employeeId) ?? 0) + 1,
+      );
+    }
+
     const today = new Date();
 
     const results: EmployeeQualification[] = allEmployees.map((emp) => {
@@ -536,20 +667,33 @@ export async function getEmployeeQualificationsReport(
         fullName: `${emp.firstName} ${emp.middleName ? emp.middleName + " " : ""}${emp.lastName}${emp.suffix ? " " + emp.suffix : ""}`,
         position: emp.positionTitle,
         office: emp.office?.name || "N/A",
-        // TODO: Link to actual education, eligibility, and training records
+        // No per-employee education/eligibility records yet — see note above.
         educationLevel: null,
         eligibilities: [],
-        trainings: 0,
+        trainings: trainingCountByEmployee.get(emp.id) ?? 0,
         yearsOfExperience,
       };
     });
 
-    // Apply education level filter if specified
-    // TODO: Implement when education records are linked
+    // Education/eligibility filters operate on the (currently null/empty)
+    // linked records so they become effective as soon as those data land.
+    const educationFilter = validated.educationLevel;
+    const eligibilityFilter = validated.eligibility;
+    let filteredResults = results;
+    if (educationFilter) {
+      filteredResults = filteredResults.filter(
+        (r) => r.educationLevel === educationFilter,
+      );
+    }
+    if (eligibilityFilter) {
+      filteredResults = filteredResults.filter((r) =>
+        r.eligibilities.includes(eligibilityFilter),
+      );
+    }
 
     return {
-      data: results,
-      total: results.length,
+      data: filteredResults,
+      total: filteredResults.length,
       filters: validated,
     };
   } catch (error) {
@@ -562,6 +706,7 @@ export async function getEmployeeQualificationsReport(
 
 export async function getOfficesForReportFilters() {
   try {
+    await requirePermission("reports", "view");
     const allOffices = await db.query.offices.findMany({
       columns: {
         id: true,

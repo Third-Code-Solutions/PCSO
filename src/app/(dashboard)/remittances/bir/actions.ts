@@ -32,20 +32,8 @@ import {
   type BirAlphalistRow,
   type BirAlphalistMeta,
 } from "@/lib/utils/remittances/bir-alphalist";
-
-// ─── Shared constants ─────────────────────────────────────────────────────────
-// Mirrors the default org_profile row. Swap for a live `getOrgProfile()` call
-// when these actions are refactored to resolve agency identity async.
-
-const AGENCY_TIN = "000-000-000-000";
-const AGENCY_NAME = "Philippine Charity Sweepstakes Office";
-const AGENCY_ADDRESS =
-  "605 Conservatory Building, Sun Plaza Complex, 1502 Shaw Boulevard, Mandaluyong City, Metro Manila";
-
-/** @deprecated Legacy SENATE_* names kept so prior imports still compile. */
-const SENATE_TIN = AGENCY_TIN;
-const SENATE_NAME = AGENCY_NAME;
-const SENATE_ADDRESS = AGENCY_ADDRESS;
+import { getOrgProfile } from "@/lib/org-profile";
+import { requireEmployerIdentifier } from "@/lib/utils/remittances/employer-identity";
 
 /**
  * TRAIN Law: 13th month pay + other benefits non-taxable ceiling = PHP 90,000
@@ -501,6 +489,14 @@ export async function generateBir1604CAnnualReturn(input: unknown) {
 export async function exportBir1604CAlphalist(batchId: string) {
   await requirePermission("remittances", "export");
 
+  // Fail fast if the agency TIN is unconfigured — a BIR alphalist must never
+  // be emitted with the seeded placeholder TIN (PRD P0-003).
+  const profile = await getOrgProfile();
+  const employerTin = requireEmployerIdentifier(
+    profile.birTin,
+    "BIR TIN (employer)",
+  );
+
   const [batch] = await db
     .select()
     .from(remittanceBatches)
@@ -535,8 +531,8 @@ export async function exportBir1604CAlphalist(batchId: string) {
   }));
 
   const meta: BirAlphalistMeta = {
-    agencyName: AGENCY_NAME,
-    employerTin: AGENCY_TIN,
+    agencyName: profile.birAgencyName ?? profile.agencyName,
+    employerTin,
     year,
     batchNo: batch.referenceNo ?? batch.id,
   };

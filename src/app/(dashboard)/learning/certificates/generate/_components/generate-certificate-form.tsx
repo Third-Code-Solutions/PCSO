@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Award, Loader2, CheckCircle2 } from "lucide-react";
-import { generateTrainingCertificate } from "@/lib/actions/learning";
+import { generateTrainingCertificate } from "@/lib/actions/ldm/certificates";
 
 interface Participant {
   participantId: string;

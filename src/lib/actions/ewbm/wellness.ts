@@ -7,11 +7,10 @@
  * employees, aggregates skill + hobby frequencies, and persists the
  * result to `wellness_reports`.
  *
- * Data source resolution (graceful degradation — NEVER fail the action):
- *   1. `employees.section31` JSONB column — preferred (fastest path).
- *   2. `employee_pds_sections` table with section_code='31' — future
- *      Agent-01 / Agent-05 wiring.
- *   3. Empty aggregate with a clear log line if neither is populated.
+ * Data source: `employees.special_skills_hobbies` JSONB — the committed
+ * PDS Section 31 store, written by the EPM PDS-update approval path
+ * (EPM-012). Missing or malformed JSON degrades to empty skills/hobbies
+ * for that employee (the report never fails on bad per-row data).
  */
 
 import { and, eq } from "drizzle-orm";
@@ -89,17 +88,6 @@ function parseSection31(raw: unknown): {
   return { skills, hobbies };
 }
 
-/**
- * Employee rows may or may not carry a `section31` JSONB column yet.
- * We access it via an optional-typed helper rather than depending on a
- * schema field that Agent 01 / Agent 05 will add later.
- */
-interface MaybeSection31Row {
-  id: string;
-  officeId: string | null;
-  section31?: unknown;
-}
-
 async function loadSection31Records(
   officeId: string | undefined,
 ): Promise<PdsSection31Record[]> {
@@ -107,13 +95,14 @@ async function loadSection31Records(
     ? and(eq(employees.status, "active"), eq(employees.officeId, officeId))
     : eq(employees.status, "active");
 
-  const rows = (await db
+  const rows = await db
     .select({
       id: employees.id,
       officeId: employees.officeId,
+      section31: employees.specialSkillsHobbies,
     })
     .from(employees)
-    .where(where)) as MaybeSection31Row[];
+    .where(where);
 
   return rows.map((r) => {
     const parsed = parseSection31(r.section31);
@@ -135,18 +124,7 @@ export async function generateReport(
     const user = await requirePermission("employees", "process");
     const parsed = generateReportSchema.parse(input);
 
-    let records: PdsSection31Record[] = [];
-    try {
-      records = await loadSection31Records(parsed.officeId);
-    } catch (loadErr) {
-      // PDS source not yet available — generate an empty report with a log.
-      console.warn(
-        "[ewbm/wellness] PDS Section 31 source unavailable; emitting empty report:",
-        loadErr,
-      );
-      records = [];
-    }
-
+    const records = await loadSection31Records(parsed.officeId);
     const agg = aggregateSkillsAndHobbies(records);
 
     const [row] = await db

@@ -234,6 +234,9 @@ export const applicants = pgTable(
     dateOfBirth: date("date_of_birth").notNull(),
     gender: varchar("gender", { length: 10 }).notNull(),
     currentAddress: text("current_address").notNull(),
+    // Applicant-editable profile (RPM-010): education, work experience,
+    // eligibility, trainings, references collected by the portal wizard.
+    profile: jsonb("profile"),
     // bcrypt hash — never plaintext
     passwordHash: varchar("password_hash", { length: 200 }).notNull(),
     status: applicantStatusEnum("status").notNull().default("registered"),

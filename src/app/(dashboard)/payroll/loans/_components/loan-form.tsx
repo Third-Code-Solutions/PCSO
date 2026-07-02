@@ -36,6 +36,7 @@ const LOAN_TYPE_OPTIONS = [
   { value: "gsis_multi_purpose", label: "GSIS Multi-Purpose" },
   { value: "pagibig_multi_purpose", label: "Pag-IBIG Multi-Purpose" },
   { value: "pcso_in_house", label: "PCSO In-House" },
+  { value: "cash_advance", label: "Cash Advance" },
 ] as const;
 
 const DEDUCTION_SCHEDULE_OPTIONS = [

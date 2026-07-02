@@ -1368,19 +1368,43 @@ export async function generatePbbList(input: unknown): Promise<{
     };
   }
 
-  // For demo purposes, we'll simulate admin case, AWOL, and SALN checks
-  // In production, these would query actual tables (admin_cases, attendance_records, saln_submissions)
+  // Rating-period bounds drive Gates 2-4 (admin case, AWOL window, SALN year)
+  const { data: period, error: periodError } = await supabase
+    .from("performance_periods")
+    .select("year, date_from, date_to")
+    .eq("id", parsed.periodId)
+    .single();
+
+  if (periodError || !period) {
+    throw new Error(
+      `Failed to fetch rating period: ${periodError?.message ?? "not found"}`,
+    );
+  }
+
   const { batchValidatePbbQualification } =
     await import("@/lib/utils/performance/pbb-qualification");
+  const { fetchPbbGateFlags } = await import("@/lib/db/pbb-gate-queries");
 
-  const employeeData = ratings.map((r: any) => ({
-    employeeId: String(r.employee_id),
-    employeeName: `${r.employees.first_name} ${r.employees.last_name}`,
-    ipcrfRating: Number(r.numerical_rating),
-    hasPendingAdminCase: false, // TODO: Query admin_cases table
-    hadAwol: false, // TODO: Query attendance_records for AWOL
-    salnFiled: true, // TODO: Query saln_submissions table
-  }));
+  const gateFlags = await fetchPbbGateFlags({
+    employeeIds: ratings.map((r: any) => String(r.employee_id)),
+    periodStart: String(period.date_from),
+    periodEnd: String(period.date_to),
+    salnYear: Number(period.year),
+  });
+
+  const employeeData = ratings.map((r: any) => {
+    const employeeId = String(r.employee_id);
+    const flags = gateFlags.get(employeeId);
+    return {
+      employeeId,
+      employeeName: `${r.employees.first_name} ${r.employees.last_name}`,
+      ipcrfRating: Number(r.numerical_rating),
+      // Fail closed on missing gate data: treat as disqualifying
+      hasPendingAdminCase: flags?.hasPendingAdminCase ?? true,
+      hadAwol: flags?.hadAwol ?? true,
+      salnFiled: flags?.salnFiled ?? false,
+    };
+  });
 
   const validationResult = batchValidatePbbQualification(employeeData);
 

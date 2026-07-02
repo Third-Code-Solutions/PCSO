@@ -78,7 +78,7 @@ export function UserRoleDialog({
         <DialogHeader>
           <DialogTitle>Update User Role</DialogTitle>
           <DialogDescription>
-            Change the system role and dashboard profile for {userEmail}
+            Change the system role for {userEmail}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">

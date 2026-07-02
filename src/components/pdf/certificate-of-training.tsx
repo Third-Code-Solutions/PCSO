@@ -2,13 +2,12 @@
  * LDM-010 — Certificate of Training PDF template.
  *
  * Landscape A4. PCSO organisational header, participant name as the focal
- * point, program metadata, signatory slots, serial bottom-left, and a QR
- * payload bottom-right that encodes a `/verify/[token]` URL.
+ * point, program metadata, signatory slots, serial bottom-left, and a
+ * scannable QR bottom-right that encodes the `/verify/[token]` URL carrying
+ * the signed HS256 JWT (PIM-017 / §6.1 QR-verified document authenticity).
  *
- * QR generation note: the `qrcode` npm package is not currently installed in
- * this worktree, so we embed an SVG placeholder that echoes the verify URL as
- * text and carries a TODO for the integrator to swap in a real QR image
- * (e.g. `await QRCode.toDataURL(verifyUrl)` rendered into `<Image src={...} />`).
+ * The QR is generated with the dependency-free encoder in
+ * `src/lib/utils/qr/qr-encoder.ts` and rendered as a single SVG path.
  */
 import React from "react";
 import {
@@ -19,7 +18,12 @@ import {
   StyleSheet,
   Svg,
   Rect,
+  Path,
 } from "@react-pdf/renderer";
+import {
+  encodeQrMatrix,
+  qrMatrixToSvgPath,
+} from "@/lib/utils/qr/qr-encoder";
 
 const NAVY = "#0B2545";
 const GOLD = "#C8A84B";
@@ -176,7 +180,7 @@ const styles = StyleSheet.create({
   qrBlock: {
     alignItems: "center",
   },
-  qrPlaceholderLabel: {
+  qrLabel: {
     fontSize: 7,
     color: BORDER,
     marginTop: 4,
@@ -211,36 +215,26 @@ function formatDate(input: string | null | Date): string {
   });
 }
 
-function QrPlaceholder({ verifyUrl }: { verifyUrl: string }) {
-  // TODO(integrator): replace with runtime QR generation.
-  //   Example using the `qrcode` package (not yet installed):
-  //     const dataUrl = await QRCode.toDataURL(verifyUrl, { margin: 0 });
-  //     <Image src={dataUrl} style={{ width: 96, height: 96 }} />
+const QR_QUIET_ZONE_MODULES = 2;
+
+function VerificationQr({ verifyUrl }: { verifyUrl: string }) {
+  // EC level M balances density and print-damage tolerance for the JWT URL.
+  const qr = encodeQrMatrix(verifyUrl, "M");
+  const viewSize = qr.size + QR_QUIET_ZONE_MODULES * 2;
+  const path = qrMatrixToSvgPath(qr, QR_QUIET_ZONE_MODULES);
   return (
     <View style={styles.qrBlock}>
-      <Svg width={96} height={96} viewBox="0 0 96 96">
+      <Svg width={96} height={96} viewBox={`0 0 ${viewSize} ${viewSize}`}>
         <Rect
           x={0}
           y={0}
-          width={96}
-          height={96}
+          width={viewSize}
+          height={viewSize}
           fill="#FFFFFF"
-          stroke={NAVY}
-          strokeWidth={2}
         />
-        <Rect x={8} y={8} width={20} height={20} fill={NAVY} />
-        <Rect x={68} y={8} width={20} height={20} fill={NAVY} />
-        <Rect x={8} y={68} width={20} height={20} fill={NAVY} />
-        <Rect x={40} y={40} width={16} height={16} fill={NAVY} />
-        <Rect x={36} y={20} width={8} height={8} fill={NAVY} />
-        <Rect x={56} y={32} width={8} height={8} fill={NAVY} />
-        <Rect x={20} y={52} width={8} height={8} fill={NAVY} />
-        <Rect x={60} y={60} width={8} height={8} fill={NAVY} />
+        <Path d={path} fill="#000000" />
       </Svg>
-      <Text style={styles.qrPlaceholderLabel}>
-        Scan to verify (placeholder QR)
-      </Text>
-      <Text style={styles.qrPlaceholderLabel}>{verifyUrl}</Text>
+      <Text style={styles.qrLabel}>Scan to verify authenticity</Text>
     </View>
   );
 }
@@ -319,7 +313,7 @@ export function CertificateOfTraining(
                 <Text style={styles.serialValue}>{serial}</Text>
                 <Text style={styles.verifyUrl}>{verifyUrl}</Text>
               </View>
-              <QrPlaceholder verifyUrl={verifyUrl} />
+              <VerificationQr verifyUrl={verifyUrl} />
             </View>
           </View>
         </View>

@@ -14,7 +14,7 @@
  *   - Process (HR): requirePermission('attendance', 'edit')
  */
 
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, eq, desc, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
@@ -23,11 +23,21 @@ import {
   dtrCorrectionRequests,
   type DtrCorrectionRequest,
 } from "@/lib/db/schema";
-import { attendanceLogs } from "@/lib/db/schema/attendance";
+import {
+  attendanceLogs,
+  employeeSchedules,
+  workSchedules,
+} from "@/lib/db/schema/attendance";
 import { employees } from "@/lib/db/schema/employees";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { notifyEmployee } from "@/lib/notifications";
+import { withTx, lockKey } from "@/lib/db/transaction";
+import { computeDailyAttendance } from "@/lib/utils/attendance/compute";
+import {
+  toComputeSchedule,
+  toTimeString,
+} from "@/lib/utils/attendance/schedule-mapping";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -264,22 +274,163 @@ export async function processDtrCorrection(
       return { error: "Request is not pending HR review" };
     }
 
-    // TODO: Apply correction to attendanceLogs when schema includes corrected/correctionReason fields
-    const attendanceRecordId: string | null = null;
+    // Audit payload for the attendance mutation, captured inside the tx.
+    let appliedLog: {
+      id: string;
+      oldValues: Record<string, unknown> | undefined;
+      newValues: Record<string, unknown>;
+    } | null = null;
 
-    // Update request
-    const [updated] = await db
-      .update(dtrCorrectionRequests)
-      .set({
-        status: decision === "approve" ? "approved" : "rejected",
-        hrReviewerId: session.employeeId!,
-        hrApprovedAt: decision === "approve" ? new Date() : null,
-        hrNotes: notes || null,
-        rejectionReason: decision === "reject" ? rejectionReason || null : null,
-        appliedToAttendanceRecordId: attendanceRecordId,
-      })
-      .where(eq(dtrCorrectionRequests.id, requestId))
-      .returning();
+    const updated = await withTx(async (tx) => {
+      // Serialize concurrent HR reviewers of the same request.
+      await lockKey(tx, `dtr_correction:${requestId}`);
+
+      const [locked] = await tx
+        .select({ status: dtrCorrectionRequests.status })
+        .from(dtrCorrectionRequests)
+        .where(eq(dtrCorrectionRequests.id, requestId))
+        .limit(1);
+
+      if (!locked || locked.status !== "pending_hr") {
+        throw new Error("REQUEST_NOT_PENDING");
+      }
+
+      let attendanceRecordId: string | null = null;
+
+      if (decision === "approve") {
+        // Resolve the schedule assigned to the employee on the attendance date;
+        // toComputeSchedule falls back to the default agency schedule.
+        const [assignment] = await tx
+          .select({ schedule: workSchedules })
+          .from(employeeSchedules)
+          .innerJoin(
+            workSchedules,
+            eq(employeeSchedules.scheduleId, workSchedules.id),
+          )
+          .where(
+            and(
+              eq(employeeSchedules.employeeId, request.employeeId),
+              lte(employeeSchedules.effectiveFrom, request.attendanceDate),
+              or(
+                isNull(employeeSchedules.effectiveTo),
+                gte(employeeSchedules.effectiveTo, request.attendanceDate),
+              ),
+            ),
+          )
+          .orderBy(desc(employeeSchedules.effectiveFrom))
+          .limit(1);
+
+        const [existing] = await tx
+          .select()
+          .from(attendanceLogs)
+          .where(
+            and(
+              eq(attendanceLogs.employeeId, request.employeeId),
+              eq(attendanceLogs.logDate, request.attendanceDate),
+            ),
+          )
+          .limit(1);
+
+        // Fields the employee did not ask to correct keep their current value.
+        const timeIn =
+          toTimeString(request.requestedTimeIn) ?? existing?.timeIn ?? null;
+        const timeOut =
+          toTimeString(request.requestedTimeOut) ?? existing?.timeOut ?? null;
+
+        const computed = computeDailyAttendance({
+          date: request.attendanceDate,
+          timeIn,
+          timeOut,
+          schedule: toComputeSchedule(assignment?.schedule ?? null),
+          approvedOvertimeMinutes: existing?.overtimeMinutes ?? 0,
+          dayType: "ordinary",
+        });
+
+        const values = {
+          employeeId: request.employeeId,
+          logDate: request.attendanceDate,
+          timeIn,
+          timeOut,
+          source: "manual_employee_request" as const,
+          sourceReference: request.id,
+          corrected: true,
+          correctionReason: request.reason,
+          isLate: computed.lateMinutes > 0,
+          lateMinutes: computed.lateMinutes,
+          undertimeMinutes: computed.undertimeMinutes,
+          overtimeMinutes: computed.overtimeMinutes,
+        };
+
+        const [upserted] = await tx
+          .insert(attendanceLogs)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [attendanceLogs.employeeId, attendanceLogs.logDate],
+            set: {
+              timeIn: values.timeIn,
+              timeOut: values.timeOut,
+              source: values.source,
+              sourceReference: values.sourceReference,
+              corrected: values.corrected,
+              correctionReason: values.correctionReason,
+              isLate: values.isLate,
+              lateMinutes: values.lateMinutes,
+              undertimeMinutes: values.undertimeMinutes,
+              overtimeMinutes: values.overtimeMinutes,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        if (!upserted) {
+          throw new Error("Failed to apply correction to attendance log");
+        }
+
+        attendanceRecordId = upserted.id;
+        appliedLog = {
+          id: upserted.id,
+          oldValues: existing
+            ? {
+                timeIn: existing.timeIn,
+                timeOut: existing.timeOut,
+                source: existing.source,
+                lateMinutes: existing.lateMinutes,
+                undertimeMinutes: existing.undertimeMinutes,
+              }
+            : undefined,
+          newValues: {
+            timeIn,
+            timeOut,
+            source: values.source,
+            sourceReference: values.sourceReference,
+            corrected: true,
+            correctionReason: values.correctionReason,
+            lateMinutes: values.lateMinutes,
+            undertimeMinutes: values.undertimeMinutes,
+          },
+        };
+      }
+
+      // Update request in the same transaction as the attendance mutation.
+      const [row] = await tx
+        .update(dtrCorrectionRequests)
+        .set({
+          status: decision === "approve" ? "approved" : "rejected",
+          hrReviewerId: session.employeeId!,
+          hrApprovedAt: decision === "approve" ? new Date() : null,
+          hrNotes: notes || null,
+          rejectionReason:
+            decision === "reject" ? rejectionReason || null : null,
+          appliedToAttendanceRecordId: attendanceRecordId,
+        })
+        .where(eq(dtrCorrectionRequests.id, requestId))
+        .returning();
+
+      if (!row) {
+        throw new Error("Failed to update DTR correction request");
+      }
+      return row;
+    });
 
     await auditLog({
       userId: session.id,
@@ -288,22 +439,41 @@ export async function processDtrCorrection(
       recordId: requestId,
     });
 
-    // Notify employee
+    if (appliedLog !== null) {
+      const applied: {
+        id: string;
+        oldValues: Record<string, unknown> | undefined;
+        newValues: Record<string, unknown>;
+      } = appliedLog;
+      await auditLog({
+        userId: session.id,
+        action: "dtr_correction.apply",
+        table: "attendance_logs",
+        recordId: applied.id,
+        oldValues: applied.oldValues,
+        newValues: applied.newValues,
+      });
+    }
+
+    // Notify employee (N-035 dtr_correction_approved on approval)
     await notifyEmployee(request.employeeId, {
-      type: "generic",
+      type: decision === "approve" ? "dtr_correction_approved" : "generic",
       title: `DTR Correction ${decision === "approve" ? "Approved" : "Rejected"}`,
       body:
         decision === "approve"
-          ? "Your DTR correction has been applied"
+          ? `Your DTR correction for ${request.attendanceDate} has been approved and applied to your attendance record`
           : `Your DTR correction was rejected by HR: ${rejectionReason || "No reason provided"}`,
       entityType: "dtr_correction_request",
       entityId: requestId,
     });
 
     revalidatePath("/portal/dtr-correction");
-    return { data: updated! };
+    return { data: updated };
   } catch (error) {
     console.error("[processDtrCorrection]", error);
+    if (error instanceof Error && error.message === "REQUEST_NOT_PENDING") {
+      return { error: "Request is not pending HR review" };
+    }
     return { error: "Failed to process DTR correction" };
   }
 }

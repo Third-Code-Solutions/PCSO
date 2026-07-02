@@ -79,11 +79,33 @@ export interface EmployeeSummary {
 
 type DbAttendanceLog = typeof attendanceLogs.$inferSelect;
 
+/**
+ * Fields mapLog actually reads — keeps projected selects (which omit columns
+ * like corrected/sourceReference) assignable alongside full-row selects.
+ */
+type MapLogInput = Pick<
+  DbAttendanceLog,
+  | "id"
+  | "employeeId"
+  | "logDate"
+  | "timeIn"
+  | "timeOut"
+  | "timeInPm"
+  | "timeOutPm"
+  | "source"
+  | "isLate"
+  | "lateMinutes"
+  | "undertimeMinutes"
+  | "overtimeMinutes"
+  | "remarks"
+  | "createdAt"
+>;
+
 function hhMM(t: string | null): string | null {
   return t ? t.slice(0, 5) : null;
 }
 
-function mapLog(row: DbAttendanceLog): AttendanceLogRow {
+function mapLog(row: MapLogInput): AttendanceLogRow {
   const deduction = (row.lateMinutes + row.undertimeMinutes) / WORKDAY_MINUTES;
   return {
     id: row.id,

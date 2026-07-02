@@ -17,11 +17,25 @@ import { documentRequests, employees } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Resend } from "resend";
 import { generateCOE } from "./coe-generator";
 import {
   generateSerialNumber,
   DOCUMENT_TYPES,
 } from "@/lib/db/serial-sequence-helpers";
+import { requireAuth, requirePermission } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
+import { auditLog } from "@/lib/audit";
+import { notifyEmployee, notifyRoles } from "@/lib/notifications";
+import { env } from "@/lib/env";
+import {
+  DocRequestUpdateEmail,
+  docRequestUpdatePlainText,
+} from "@/lib/email/templates/doc-request-update";
+import {
+  DocRequestReadyEmail,
+  docRequestReadyPlainText,
+} from "@/lib/email/templates/doc-request-ready";
 import type { DocumentRequestWithEmployee } from "@/lib/db/schema";
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
@@ -88,6 +102,138 @@ type ActionResult = {
   serialNumber?: string;
 };
 
+// ─── Notification helpers (N-018 / N-019) ────────────────────────────────────
+
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  COE: "Certificate of Employment",
+  COE_REMUNERATION: "Certificate of Employment with Remunerations",
+  SERVICE_RECORD: "Service Record",
+  PDS: "Personal Data Sheet (CS Form 212)",
+  NOSI: "Notice of Salary Step Increment",
+  NOSA: "Notice of Salary Adjustment",
+  CLEARANCE: "Office Clearance",
+  CERTIFICATE_TRAINING: "Certificate of Training",
+  AD_HOC: "Ad Hoc Certificate",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  received: "Received",
+  in_process: "In Process",
+  on_hold: "On Hold",
+  ready: "Ready for Release",
+  released: "Released",
+  disapproved: "Disapproved",
+};
+
+function getResend(): Resend | null {
+  if (!env.RESEND_API_KEY) return null;
+  return new Resend(env.RESEND_API_KEY);
+}
+
+const FROM_EMAIL = env.RESEND_FROM_EMAIL ?? "noreply@pcso.gov.ph";
+const APP_URL = env.NEXT_PUBLIC_APP_URL;
+
+/**
+ * Notify the requesting employee of a status transition via in-app
+ * notification and email (N-018 doc_request_update / N-019 doc_request_ready).
+ * Non-blocking: never throws — a notification failure must not roll back the
+ * state transition that triggered it.
+ */
+async function notifyRequestStatusChange(params: {
+  requestId: string;
+  employeeId: string;
+  documentType: string;
+  newStatus: string;
+  detail?: string;
+  serialNumber?: string;
+}): Promise<void> {
+  try {
+    const docLabel =
+      DOCUMENT_TYPE_LABELS[params.documentType] ?? params.documentType;
+    const statusLabel = STATUS_LABELS[params.newStatus] ?? params.newStatus;
+    const isReady = params.newStatus === "ready";
+
+    // In-app notification
+    await notifyEmployee(params.employeeId, {
+      type: "generic",
+      title: isReady
+        ? "Your requested document is ready"
+        : "Document request update",
+      body: isReady
+        ? `Your ${docLabel} is ready for download or pickup.`
+        : `Your ${docLabel} request is now ${statusLabel}.${
+            params.detail ? ` ${params.detail}` : ""
+          }`,
+      actionUrl: "/portal/document-requests",
+      entityType: "document_request",
+      entityId: params.requestId,
+    });
+
+    // Email notification
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, params.employeeId),
+      columns: { firstName: true, lastName: true, email: true },
+    });
+    if (!employee?.email) return;
+
+    const resend = getResend();
+    if (!resend) return; // skip in dev/test without API key
+
+    const employeeName = `${employee.firstName} ${employee.lastName}`;
+    const emailPayload = isReady
+      ? {
+          subject: `Document Ready — ${docLabel}`,
+          react: DocRequestReadyEmail({
+            employeeName,
+            documentLabel: docLabel,
+            serialNumber: params.serialNumber ?? null,
+            requestId: params.requestId,
+            appUrl: APP_URL,
+          }),
+          text: docRequestReadyPlainText({
+            employeeName,
+            documentLabel: docLabel,
+            serialNumber: params.serialNumber ?? null,
+            requestId: params.requestId,
+            appUrl: APP_URL,
+          }),
+        }
+      : {
+          subject: `Document Request ${statusLabel} — ${docLabel}`,
+          react: DocRequestUpdateEmail({
+            employeeName,
+            documentLabel: docLabel,
+            statusLabel,
+            detail: params.detail ?? null,
+            requestId: params.requestId,
+            appUrl: APP_URL,
+          }),
+          text: docRequestUpdatePlainText({
+            employeeName,
+            documentLabel: docLabel,
+            statusLabel,
+            detail: params.detail ?? null,
+            requestId: params.requestId,
+            appUrl: APP_URL,
+          }),
+        };
+
+    const { error } = await resend.emails.send({
+      from: `PCSO HRIS <${FROM_EMAIL}>`,
+      to: employee.email,
+      subject: emailPayload.subject,
+      react: emailPayload.react,
+      text: emailPayload.text,
+    });
+
+    if (error) {
+      console.error("[document-requests] Email delivery failed:", error);
+    }
+  } catch (error) {
+    console.error("[document-requests] Notification failed:", error);
+  }
+}
+
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 /**
@@ -98,7 +244,19 @@ export async function submitDocumentRequest(
   input: z.infer<typeof SubmitDocumentRequestSchema>,
 ): Promise<ActionResult> {
   try {
+    const user = await requireAuth();
     const validated = SubmitDocumentRequestSchema.parse(input);
+
+    // Own-records scope: employees may only submit requests for themselves.
+    // HR-side staff (employees.edit) may submit on behalf of any employee.
+    const isOwnRequest = user.employeeId === validated.employeeId;
+    if (!isOwnRequest && !hasPermission(user.role, "employees", "edit")) {
+      return {
+        success: false,
+        error:
+          "You do not have permission to submit a request for this employee",
+      };
+    }
 
     // Verify employee exists
     const employee = await db.query.employees.findFirst({
@@ -110,17 +268,53 @@ export async function submitDocumentRequest(
     }
 
     // Insert document request
-    await db.insert(documentRequests).values({
-      employeeId: validated.employeeId,
-      documentType: validated.documentType,
-      purpose: validated.purpose,
-      remarks: validated.remarks,
-      status: "received",
-      receivedAt: new Date(),
+    const [created] = await db
+      .insert(documentRequests)
+      .values({
+        employeeId: validated.employeeId,
+        documentType: validated.documentType,
+        purpose: validated.purpose,
+        remarks: validated.remarks,
+        status: "received",
+        receivedAt: new Date(),
+      })
+      .returning();
+
+    if (!created) {
+      return { success: false, error: "Failed to submit request" };
+    }
+
+    await auditLog({
+      userId: user.id,
+      action: "document_request.submit",
+      table: "document_requests",
+      recordId: created.id,
+      newValues: {
+        employeeId: validated.employeeId,
+        documentType: validated.documentType,
+        status: "received",
+      },
     });
 
-    // TODO: Send notification N-018 (Document request status update) to employee
-    // TODO: Send notification to HR Admin queue
+    // N-018: confirm receipt to the requesting employee (in-app + email)
+    await notifyRequestStatusChange({
+      requestId: created.id,
+      employeeId: validated.employeeId,
+      documentType: validated.documentType,
+      newStatus: "received",
+    });
+
+    // Notify the HR Admin queue of the new request
+    await notifyRoles(["super_admin", "hr_admin"], {
+      type: "generic",
+      title: "New document request",
+      body: `${employee.firstName} ${employee.lastName} requested a ${
+        DOCUMENT_TYPE_LABELS[validated.documentType] ?? validated.documentType
+      }.`,
+      actionUrl: "/employees/documents/requests",
+      entityType: "document_request",
+      entityId: created.id,
+    });
 
     revalidatePath("/employees/documents/requests");
 
@@ -147,6 +341,7 @@ export async function acceptDocumentRequest(
   input: z.infer<typeof AcceptRequestSchema>,
 ): Promise<ActionResult> {
   try {
+    const user = await requirePermission("employees", "process");
     const validated = AcceptRequestSchema.parse(input);
 
     // Verify request exists and is in RECEIVED status
@@ -165,18 +360,36 @@ export async function acceptDocumentRequest(
       };
     }
 
+    // Default assignee to the acting HR staff member (PIM-005: processor logged)
+    const assignedToId = validated.assignedToId ?? user.employeeId ?? null;
+
     // Update to IN_PROCESS
     await db
       .update(documentRequests)
       .set({
         status: "in_process",
-        assignedToId: validated.assignedToId,
+        assignedToId,
         processedAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(documentRequests.id, validated.requestId));
 
-    // TODO: Send notification N-018 to employee
+    await auditLog({
+      userId: user.id,
+      action: "document_request.accept",
+      table: "document_requests",
+      recordId: validated.requestId,
+      oldValues: { status: request.status },
+      newValues: { status: "in_process", assignedToId },
+    });
+
+    // N-018: status update to the requesting employee
+    await notifyRequestStatusChange({
+      requestId: validated.requestId,
+      employeeId: request.employeeId,
+      documentType: request.documentType,
+      newStatus: "in_process",
+    });
 
     revalidatePath("/employees/documents/requests");
     revalidatePath(`/employees/documents/requests/${validated.requestId}`);
@@ -203,6 +416,7 @@ export async function processDocumentRequest(
   input: z.infer<typeof ProcessRequestSchema>,
 ): Promise<ActionResult> {
   try {
+    const user = await requirePermission("employees", "process");
     const validated = ProcessRequestSchema.parse(input);
 
     // Fetch request
@@ -296,7 +510,23 @@ export async function processDocumentRequest(
       })
       .where(eq(documentRequests.id, validated.requestId));
 
-    // TODO: Send notification N-019 (Document ready) to employee
+    await auditLog({
+      userId: user.id,
+      action: "document_request.process",
+      table: "document_requests",
+      recordId: validated.requestId,
+      oldValues: { status: request.status },
+      newValues: { status: "ready", serialNumber },
+    });
+
+    // N-019: document ready notification to the requesting employee
+    await notifyRequestStatusChange({
+      requestId: validated.requestId,
+      employeeId: request.employeeId,
+      documentType: request.documentType,
+      newStatus: "ready",
+      serialNumber,
+    });
 
     revalidatePath("/employees/documents/requests");
     revalidatePath(`/employees/documents/requests/${validated.requestId}`);
@@ -324,6 +554,7 @@ export async function putDocumentRequestOnHold(
   input: z.infer<typeof PutOnHoldSchema>,
 ): Promise<ActionResult> {
   try {
+    const user = await requirePermission("employees", "process");
     const validated = PutOnHoldSchema.parse(input);
 
     const request = await db.query.documentRequests.findFirst({
@@ -350,7 +581,23 @@ export async function putDocumentRequestOnHold(
       })
       .where(eq(documentRequests.id, validated.requestId));
 
-    // TODO: Send notification N-018 to employee with hold reason
+    await auditLog({
+      userId: user.id,
+      action: "document_request.hold",
+      table: "document_requests",
+      recordId: validated.requestId,
+      oldValues: { status: request.status },
+      newValues: { status: "on_hold", onHoldReason: validated.reason },
+    });
+
+    // N-018: status update to the requesting employee with hold reason
+    await notifyRequestStatusChange({
+      requestId: validated.requestId,
+      employeeId: request.employeeId,
+      documentType: request.documentType,
+      newStatus: "on_hold",
+      detail: `Reason: ${validated.reason}`,
+    });
 
     revalidatePath("/employees/documents/requests");
     revalidatePath(`/employees/documents/requests/${validated.requestId}`);
@@ -379,6 +626,7 @@ export async function resumeDocumentRequest(
   input: z.infer<typeof ResumeRequestSchema>,
 ): Promise<ActionResult> {
   try {
+    const user = await requirePermission("employees", "process");
     const validated = ResumeRequestSchema.parse(input);
 
     const request = await db.query.documentRequests.findFirst({
@@ -405,7 +653,23 @@ export async function resumeDocumentRequest(
       })
       .where(eq(documentRequests.id, validated.requestId));
 
-    // TODO: Send notification N-018 to employee
+    await auditLog({
+      userId: user.id,
+      action: "document_request.resume",
+      table: "document_requests",
+      recordId: validated.requestId,
+      oldValues: { status: request.status },
+      newValues: { status: "in_process" },
+    });
+
+    // N-018: status update to the requesting employee
+    await notifyRequestStatusChange({
+      requestId: validated.requestId,
+      employeeId: request.employeeId,
+      documentType: request.documentType,
+      newStatus: "in_process",
+      detail: "Processing of your request has resumed.",
+    });
 
     revalidatePath("/employees/documents/requests");
     revalidatePath(`/employees/documents/requests/${validated.requestId}`);
@@ -432,6 +696,7 @@ export async function releaseDocument(
   input: z.infer<typeof ReleaseDocumentSchema>,
 ): Promise<ActionResult> {
   try {
+    const user = await requirePermission("employees", "process");
     const validated = ReleaseDocumentSchema.parse(input);
 
     const request = await db.query.documentRequests.findFirst({
@@ -458,6 +723,23 @@ export async function releaseDocument(
       })
       .where(eq(documentRequests.id, validated.requestId));
 
+    await auditLog({
+      userId: user.id,
+      action: "document_request.release",
+      table: "document_requests",
+      recordId: validated.requestId,
+      oldValues: { status: request.status },
+      newValues: { status: "released" },
+    });
+
+    // N-018: status update to the requesting employee
+    await notifyRequestStatusChange({
+      requestId: validated.requestId,
+      employeeId: request.employeeId,
+      documentType: request.documentType,
+      newStatus: "released",
+    });
+
     revalidatePath("/employees/documents/requests");
     revalidatePath(`/employees/documents/requests/${validated.requestId}`);
 
@@ -483,6 +765,7 @@ export async function disapproveDocumentRequest(
   input: z.infer<typeof DisapproveRequestSchema>,
 ): Promise<ActionResult> {
   try {
+    const user = await requirePermission("employees", "process");
     const validated = DisapproveRequestSchema.parse(input);
 
     const request = await db.query.documentRequests.findFirst({
@@ -510,7 +793,23 @@ export async function disapproveDocumentRequest(
       })
       .where(eq(documentRequests.id, validated.requestId));
 
-    // TODO: Send notification N-018 to employee with disapproval reason
+    await auditLog({
+      userId: user.id,
+      action: "document_request.disapprove",
+      table: "document_requests",
+      recordId: validated.requestId,
+      oldValues: { status: request.status },
+      newValues: { status: "disapproved", disapprovalReason: validated.reason },
+    });
+
+    // N-018: status update to the requesting employee with disapproval reason
+    await notifyRequestStatusChange({
+      requestId: validated.requestId,
+      employeeId: request.employeeId,
+      documentType: request.documentType,
+      newStatus: "disapproved",
+      detail: `Reason: ${validated.reason}`,
+    });
 
     revalidatePath("/employees/documents/requests");
     revalidatePath(`/employees/documents/requests/${validated.requestId}`);
@@ -540,10 +839,23 @@ export async function getDocumentRequests(filters?: {
   offset?: number;
 }) {
   try {
+    const user = await requireAuth();
+
+    // Own-records scope: employee_self_service carries the selfOnly constraint
+    // on employees.view — force the filter to the caller's own employee record.
+    const scopedEmployeeId =
+      user.role === "employee_self_service"
+        ? (user.employeeId ?? undefined)
+        : filters?.employeeId;
+
+    if (user.role === "employee_self_service" && !user.employeeId) {
+      return { data: [], total: 0 };
+    }
+
     const conditions = [];
 
-    if (filters?.employeeId) {
-      conditions.push(eq(documentRequests.employeeId, filters.employeeId));
+    if (scopedEmployeeId) {
+      conditions.push(eq(documentRequests.employeeId, scopedEmployeeId));
     }
 
     if (filters?.status) {
@@ -609,6 +921,8 @@ export async function getDocumentRequestById(requestId: string): Promise<{
   error?: string;
 }> {
   try {
+    const user = await requireAuth();
+
     const request = await db.query.documentRequests.findFirst({
       where: eq(documentRequests.id, requestId),
       with: {
@@ -636,6 +950,21 @@ export async function getDocumentRequestById(requestId: string): Promise<{
 
     if (!request) {
       return { success: false, error: "Request not found" };
+    }
+
+    // Own-records scope: employee_self_service may only view their own
+    // requests; all other roles pass through employees.view.
+    const isOwnRequest =
+      user.employeeId != null && request.employeeId === user.employeeId;
+    const canViewAll =
+      user.role !== "employee_self_service" &&
+      hasPermission(user.role, "employees", "view");
+
+    if (!isOwnRequest && !canViewAll) {
+      return {
+        success: false,
+        error: "You do not have permission to view this request",
+      };
     }
 
     return { success: true, data: request as DocumentRequestWithEmployee };

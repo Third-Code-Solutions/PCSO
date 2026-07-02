@@ -405,4 +405,19 @@ describe('getEffectiveMonthlySalary', () => {
     const salary = getEffectiveMonthlySalary('coterminous', 24, 1);
     expect(salary).toBe(getAuthorizedSalary(24, 1));
   });
+
+  it('regular employee: table-resolved salary overrides the SSL fallback', () => {
+    const salary = getEffectiveMonthlySalary('permanent', 11, 1, undefined, 26_000);
+    expect(salary).toBe(26_000);
+  });
+
+  it('JO employee: contract rate wins over table-resolved salary', () => {
+    const salary = getEffectiveMonthlySalary('job_order', 0, 1, 20_000, 26_000);
+    expect(salary).toBe(20_000);
+  });
+
+  it('regular employee: non-positive override falls back to SSL', () => {
+    const salary = getEffectiveMonthlySalary('permanent', 11, 1, undefined, 0);
+    expect(salary).toBe(25_439);
+  });
 });

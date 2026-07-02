@@ -3,14 +3,25 @@ import { and, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { applications, vacancies } from "@/lib/db/schema/recruitment";
-import { createApplicationSchema } from "@/lib/validations/recruitment";
+import { startApplicationSchema } from "@/lib/validations/recruitment";
 import { authenticateApplicantRequest } from "@/lib/utils/rpm/applicant-auth";
+import { enforceRateLimit } from "@/lib/utils/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-// TODO integrator (API-005): rate limit.
-
 export const runtime = "nodejs";
+
+// API-005 per-IP limits: reads are generous, creation is scarce.
+const LIST_RATE_LIMIT = {
+  bucket: "rpm:applications:list",
+  limit: 120,
+  windowMs: 60_000,
+};
+const CREATE_RATE_LIMIT = {
+  bucket: "rpm:applications:create",
+  limit: 10,
+  windowMs: 60 * 60_000,
+};
 
 function unauthorized() {
   return NextResponse.json(
@@ -41,6 +52,9 @@ function generateApplicationNumber(): string {
 
 export async function GET(request: Request) {
   try {
+    const limited = enforceRateLimit(request, LIST_RATE_LIMIT);
+    if (limited) return limited;
+
     const token = authenticateApplicantRequest(request);
     if (!token) return unauthorized();
 
@@ -68,16 +82,20 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const limited = enforceRateLimit(request, CREATE_RATE_LIMIT);
+    if (limited) return limited;
+
     const token = authenticateApplicantRequest(request);
     if (!token) return unauthorized();
 
     const json: unknown = await request.json().catch(() => null);
     if (!json) return problem(400, "Bad Request", "Invalid JSON body");
 
-    // createApplicationSchema requires `applicantId`; enforce that it matches
-    // the bearer token's applicantId so an authenticated applicant cannot
-    // create an application on behalf of someone else.
-    const parsed = createApplicationSchema.safeParse(json);
+    // Stub-create: the apply button only knows the vacancy. The applicant is
+    // derived SOLELY from the bearer token so an authenticated applicant can
+    // never create an application on behalf of someone else. Detail columns are
+    // seeded empty and filled by the wizard at submit time.
+    const parsed = startApplicationSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(
         {
@@ -90,14 +108,7 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
-    const input = parsed.data;
-    if (input.applicantId !== token.applicantId) {
-      return problem(
-        403,
-        "Forbidden",
-        "applicantId does not match authenticated session",
-      );
-    }
+    const { vacancyId } = parsed.data;
 
     // Vacancy must be published & still open.
     const vacancyRows = await db
@@ -107,7 +118,7 @@ export async function POST(request: Request) {
         applicationDeadline: vacancies.applicationDeadline,
       })
       .from(vacancies)
-      .where(eq(vacancies.id, input.vacancyId))
+      .where(eq(vacancies.id, vacancyId))
       .limit(1);
 
     const vacancy = vacancyRows[0];
@@ -132,7 +143,7 @@ export async function POST(request: Request) {
       .where(
         and(
           eq(applications.applicantId, token.applicantId),
-          eq(applications.vacancyId, input.vacancyId),
+          eq(applications.vacancyId, vacancyId),
         ),
       )
       .limit(1);
@@ -140,32 +151,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ data: existingRows[0] }, { status: 200 });
     }
 
-    // Narrow JSONB payloads to the DB's expected shape.
-    const toJson = (v: unknown): Record<string, unknown> =>
-      v as Record<string, unknown>;
-
     const insertedRows = await db
       .insert(applications)
       .values({
-        vacancyId: input.vacancyId,
+        vacancyId,
         applicantId: token.applicantId,
         applicationNumber: generateApplicationNumber(),
         status: "incomplete",
-        personalInfo: toJson(input.personalInfo),
-        educationalBackground: input.educationalBackground as unknown as Record<
-          string,
-          unknown
-        >[],
-        workExperience: input.workExperience as unknown as Record<
-          string,
-          unknown
-        >[],
-        eligibility: input.eligibility as unknown as Record<string, unknown>[],
-        trainings: input.trainings as unknown as Record<string, unknown>[],
-        referencesJson: input.references as unknown as Record<
-          string,
-          unknown
-        >[],
+        // Empty-but-valid defaults for the NOT NULL JSONB columns. The wizard
+        // fills these at submit (POST /api/rpm/applications/[id]).
+        personalInfo: {} as Record<string, unknown>,
+        educationalBackground: [] as Record<string, unknown>[],
+        workExperience: [] as Record<string, unknown>[],
+        eligibility: [] as Record<string, unknown>[],
+        trainings: [] as Record<string, unknown>[],
+        referencesJson: [] as Record<string, unknown>[],
       })
       .returning({
         id: applications.id,

@@ -3,18 +3,23 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { applicants } from "@/lib/db/schema/recruitment";
+import { enforceRateLimit } from "@/lib/utils/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-// TODO integrator (API-005): rate limit token verification attempts.
-
 export const runtime = "nodejs";
 
+// API-005: throttle token-guessing attempts.
+const RATE_LIMIT = { bucket: "rpm:verify", limit: 20, windowMs: 60 * 60_000 };
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   try {
+    const limited = enforceRateLimit(request, RATE_LIMIT);
+    if (limited) return limited;
+
     const { token } = await params;
     if (!token || typeof token !== "string" || token.length < 8) {
       return NextResponse.json(

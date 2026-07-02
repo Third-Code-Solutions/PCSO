@@ -29,6 +29,8 @@ import {
   type PagibigVirtualRow,
   type PagibigVirtualMeta,
 } from "@/lib/utils/remittances/pagibig-virtual";
+import { getOrgProfile } from "@/lib/org-profile";
+import { requireEmployerIdentifier } from "@/lib/utils/remittances/employer-identity";
 
 const REMITTANCE_RECORD_INSERT_CHUNK = 200;
 
@@ -210,6 +212,14 @@ export async function exportPagibigVirtual(input: unknown) {
   const parsed = ExportPagibigSchema.parse(input);
   await requirePermission("remittances", "export");
 
+  // Fail fast if the employer ID is unconfigured — a Pag-IBIG file must never
+  // be emitted with the seeded placeholder ID (PRD P0-003).
+  const profile = await getOrgProfile();
+  const pagibigEmployerNo = requireEmployerIdentifier(
+    profile.pagibigEmployerNo,
+    "Pag-IBIG employer number",
+  );
+
   const [batch] = await db
     .select()
     .from(remittanceBatches)
@@ -284,8 +294,8 @@ export async function exportPagibigVirtual(input: unknown) {
   }));
 
   const meta: PagibigVirtualMeta = {
-    agencyName: "Philippine Charity Sweepstakes Office",
-    employerId: "PAGIBIG-ER-PCSO", // TODO: replace with real Pag-IBIG employer number from org_profile
+    agencyName: profile.agencyName,
+    employerId: pagibigEmployerNo,
     periodLabel: `${batch.periodStart} to ${batch.periodEnd}`,
     periodStart: batch.periodStart,
     periodEnd: batch.periodEnd,

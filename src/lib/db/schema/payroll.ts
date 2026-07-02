@@ -37,6 +37,14 @@ export const payrollPeriodScopeEnum = pgEnum("payroll_period_scope", [
   "magna_carta", // Magna Carta benefits (PAY-008)
 ]);
 
+// PAY-005: which benefit component(s) a benefits_bonuses run pays. Prevents a
+// run from paying every bonus every time regardless of month.
+export const payrollBenefitTypeEnum = pgEnum("payroll_benefit_type", [
+  "mid_year", // Mid-Year Bonus only
+  "year_end_cash_gift", // Year-End Bonus + Cash Gift
+  "pbb", // Performance-Based Bonus (from PMM-approved list)
+]);
+
 export const payrollRecordStatusEnum = pgEnum("payroll_record_status", [
   "draft",
   "override", // has manual adjustments
@@ -64,6 +72,10 @@ export const payrollPeriods = pgTable(
 
     // PAY-007: Special payroll custom title (required when scope = 'special')
     customTitle: varchar("custom_title", { length: 255 }),
+
+    // PAY-005: Benefit component paid by a benefits_bonuses run (required when
+    // scope = 'benefits_bonuses'). Null for all other scopes.
+    benefitType: payrollBenefitTypeEnum("benefit_type"),
 
     // PAY-007: Skip mandatory deductions flag for special payroll
     skipMandatoryDeductions: boolean("skip_mandatory_deductions")
@@ -272,6 +284,9 @@ export const loanTypeEnum = pgEnum("loan_type", [
   "gsis_multi_purpose",
   "pagibig_multi_purpose",
   "pcso_in_house",
+  // PAY-004: cash advances collected exclusively by the cash_advance run;
+  // regular/jo_cos runs exclude this type so it is never double-collected.
+  "cash_advance",
 ]);
 
 export const loanDeductionScheduleEnum = pgEnum("loan_deduction_schedule", [
@@ -317,6 +332,39 @@ export const loanLedger = pgTable(
     index("loan_ledger_employee_id_idx").on(t.employeeId),
     index("loan_ledger_loan_type_idx").on(t.loanType),
     index("loan_ledger_status_idx").on(t.status),
+  ],
+);
+
+// ─── Payroll Loan Deductions (PAY-009) ───────────────────────────────────────
+// One row per loan amortization applied by a payroll run. Enables idempotent
+// re-processing: previously applied deductions are credited back to the loan
+// running balance before a period is recomputed.
+
+export const payrollLoanDeductions = pgTable(
+  "payroll_loan_deductions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => payrollPeriods.id),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    loanId: uuid("loan_id")
+      .notNull()
+      .references(() => loanLedger.id),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    balanceAfter: numeric("balance_after", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+
+    ...timestamps,
+  },
+  (t) => [
+    index("payroll_loan_deductions_period_id_idx").on(t.periodId),
+    index("payroll_loan_deductions_employee_id_idx").on(t.employeeId),
+    index("payroll_loan_deductions_loan_id_idx").on(t.loanId),
   ],
 );
 
@@ -420,12 +468,31 @@ export const payrollAdjustmentsRelations = relations(
   }),
 );
 
-export const loanLedgerRelations = relations(loanLedger, ({ one }) => ({
+export const loanLedgerRelations = relations(loanLedger, ({ one, many }) => ({
   employee: one(employees, {
     fields: [loanLedger.employeeId],
     references: [employees.id],
   }),
+  payrollDeductions: many(payrollLoanDeductions),
 }));
+
+export const payrollLoanDeductionsRelations = relations(
+  payrollLoanDeductions,
+  ({ one }) => ({
+    period: one(payrollPeriods, {
+      fields: [payrollLoanDeductions.periodId],
+      references: [payrollPeriods.id],
+    }),
+    employee: one(employees, {
+      fields: [payrollLoanDeductions.employeeId],
+      references: [employees.id],
+    }),
+    loan: one(loanLedger, {
+      fields: [payrollLoanDeductions.loanId],
+      references: [loanLedger.id],
+    }),
+  }),
+);
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -435,6 +502,8 @@ export type PayrollPeriodStatus =
   (typeof payrollPeriodStatusEnum.enumValues)[number];
 export type PayrollPeriodScope =
   (typeof payrollPeriodScopeEnum.enumValues)[number];
+export type PayrollBenefitType =
+  (typeof payrollBenefitTypeEnum.enumValues)[number];
 
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
 export type NewPayrollRecord = typeof payrollRecords.$inferInsert;
@@ -450,6 +519,9 @@ export type LoanType = (typeof loanTypeEnum.enumValues)[number];
 export type LoanDeductionSchedule =
   (typeof loanDeductionScheduleEnum.enumValues)[number];
 export type LoanStatus = (typeof loanStatusEnum.enumValues)[number];
+
+export type PayrollLoanDeduction = typeof payrollLoanDeductions.$inferSelect;
+export type NewPayrollLoanDeduction = typeof payrollLoanDeductions.$inferInsert;
 
 export type BankFileConfig = typeof bankFileConfigs.$inferSelect;
 export type NewBankFileConfig = typeof bankFileConfigs.$inferInsert;

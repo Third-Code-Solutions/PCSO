@@ -18,6 +18,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeWithholdingTax,
   computeWithholdingTaxWithDetail,
+  computeSupplementalWithholding,
   computeTaxableIncome,
   computeAnnualizedTax,
   computeMonthlyTaxFromAnnualized,
@@ -327,6 +328,56 @@ describe("semi-monthly × 2 ≈ monthly consistency", () => {
       expect(semi * 2).toBeCloseTo(monthly, 1);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// computeSupplementalWithholding (F-SUPP-TAX)
+// ---------------------------------------------------------------------------
+
+describe("computeSupplementalWithholding", () => {
+  it("taxes the supplement at the marginal rate, not from the zero bracket", () => {
+    // Regular monthly taxable already sits in bracket 3 (33,332 – 66,666).
+    // A ₱10,000 supplement stacked on 50,000 is fully in bracket 3 (20%).
+    const regular = 50_000;
+    const supplement = 10_000;
+    const stacked = computeSupplementalWithholding(regular, supplement);
+    // Marginal: tax(60,000) - tax(50,000).
+    const expected =
+      computeWithholdingTax(regular + supplement, "monthly") -
+      computeWithholdingTax(regular, "monthly");
+    expect(stacked).toBeCloseTo(expected, 2);
+    // In-bracket, this is 20% of 10,000 = 2,000 — far above what taxing the
+    // supplement alone from the zero bracket would give (0).
+    expect(stacked).toBeCloseTo(2_000, 2);
+  });
+
+  it("is strictly greater than taxing the supplement in isolation when regular income fills lower brackets", () => {
+    const regular = 40_000; // above the 20,833 zero-bracket ceiling
+    const supplement = 5_000;
+    const stacked = computeSupplementalWithholding(regular, supplement);
+    const isolated = computeWithholdingTax(supplement, "monthly"); // 0 — bug path
+    expect(stacked).toBeGreaterThan(isolated);
+  });
+
+  it("returns 0 when the supplement is 0", () => {
+    expect(computeSupplementalWithholding(50_000, 0)).toBe(0);
+  });
+
+  it("equals standalone tax when regular taxable is 0 (nothing stacked below)", () => {
+    const supplement = 30_000;
+    expect(computeSupplementalWithholding(0, supplement)).toBeCloseTo(
+      computeWithholdingTax(supplement, "monthly"),
+      2,
+    );
+  });
+
+  it("throws for a negative regular taxable", () => {
+    expect(() => computeSupplementalWithholding(-1, 100)).toThrow(RangeError);
+  });
+
+  it("throws for a negative supplemental amount", () => {
+    expect(() => computeSupplementalWithholding(100, -1)).toThrow(RangeError);
+  });
 });
 
 // ---------------------------------------------------------------------------

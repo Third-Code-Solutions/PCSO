@@ -25,6 +25,7 @@ export const attendanceSourceEnum = pgEnum("attendance_source", [
   "biometric",
   "web",
   "manual",
+  "manual_employee_request",
 ]);
 
 export const dtrStatusEnum = pgEnum("dtr_status", [
@@ -135,6 +136,10 @@ export const attendanceLogs = pgTable(
     undertimeMinutes: integer("undertime_minutes").notNull().default(0),
     overtimeMinutes: integer("overtime_minutes").notNull().default(0),
     remarks: text("remarks"),
+    // EPM-008 / PRD 14.5 — correction provenance
+    corrected: boolean("corrected").notNull().default(false),
+    correctionReason: text("correction_reason"), // Required when corrected = true
+    sourceReference: text("source_reference"), // e.g. DTR correction request ID
     ...timestamps,
   },
   (t) => [

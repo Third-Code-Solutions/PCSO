@@ -9,10 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { DocumentUpload } from "@/components/applicant-portal/document-upload";
 import { authHeaders } from "@/lib/applicant-portal/session";
 
-// TODO integrator (RPM-010): wire a PATCH /api/rpm/applicants/me endpoint to
-// persist the wizard's personal + history data on `applicants.profile`. For
-// now the wizard collects the data locally; documents upload via the existing
-// route, and the final submit call triggers match-score + status transition.
+// RPM-010: on submit the wizard first persists the personal + history data to
+// the applicant profile (PATCH /api/rpm/applicants/me), then triggers the
+// application match-score + status transition.
 
 interface ApplicationWizardProps {
   applicationId: string;
@@ -159,10 +158,87 @@ export function ApplicationWizard({ applicationId }: ApplicationWizardProps) {
     setError(null);
   }
 
+  function buildProfilePayload() {
+    const cleanString = (value: string): string | undefined => {
+      const trimmed = value.trim();
+      return trimmed ? trimmed : undefined;
+    };
+    const cleanNumber = (value: string): number | undefined => {
+      const trimmed = value.trim();
+      if (!trimmed) return undefined;
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
+    // JSON.stringify drops undefined fields, so optional blanks are omitted.
+    return {
+      firstName: personal.firstName.trim(),
+      lastName: personal.lastName.trim(),
+      middleName: cleanString(personal.middleName),
+      contactNumber: cleanString(personal.contactNumber),
+      currentAddress: cleanString(personal.address),
+      profile: {
+        education: [
+          {
+            schoolName: education.schoolName.trim(),
+            degree: cleanString(education.degree),
+            yearGraduated: cleanNumber(education.yearGraduated),
+          },
+        ],
+        workExperience: [
+          {
+            position: work.position.trim(),
+            company: work.company.trim(),
+            startDate: cleanString(work.startDate),
+            endDate: cleanString(work.endDate),
+          },
+        ],
+        eligibility: [
+          {
+            type: eligibility.type.trim(),
+            rating: cleanString(eligibility.rating),
+            dateTaken: cleanString(eligibility.dateTaken),
+          },
+        ],
+        trainings: [
+          {
+            title: training.title.trim(),
+            provider: cleanString(training.provider),
+            hours: cleanNumber(training.hours),
+            dateCompleted: cleanString(training.dateCompleted),
+          },
+        ],
+        references: [
+          {
+            name: reference.name.trim(),
+            position: cleanString(reference.position),
+            contactNumber: cleanString(reference.contactNumber),
+            email: reference.email.trim(),
+          },
+        ],
+      },
+    };
+  }
+
   async function submit() {
     setError(null);
     setSubmitting(true);
     try {
+      // Persist wizard data to the applicant profile first (RPM-010).
+      const saveRes = await fetch("/api/rpm/applicants/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(buildProfilePayload()),
+      });
+      if (!saveRes.ok) {
+        const problem = (await saveRes.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new Error(
+          problem.detail ?? `Saving your profile failed (${saveRes.status})`,
+        );
+      }
+
       const res = await fetch(`/api/rpm/applications/${applicationId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },

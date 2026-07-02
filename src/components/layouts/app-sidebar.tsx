@@ -178,6 +178,11 @@ const NAV_ITEMS: NavItem[] = [
         href: "/employees/documents/requests",
         roles: ["super_admin", "hr_admin"],
       },
+      {
+        label: "PDS Requests",
+        href: "/employees/pds-requests",
+        roles: ["super_admin", "hr_admin"],
+      },
     ],
   },
 
@@ -840,6 +845,12 @@ const NAV_ITEMS: NavItem[] = [
         roles: ["super_admin", "hr_admin", "employee_self_service"],
         selfOnly: true,
       },
+      {
+        label: "Update PDS",
+        href: "/portal/pds-update",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
     ],
   },
 
@@ -921,7 +932,7 @@ interface AppSidebarProps {
    * Employee record id linked to the current auth user (if any).
    * Required to surface self-service items (Clock In, Apply Leave, My Payslips,
    * My SALN, etc.). When null, self-service-only links are hidden.
-   * TODO(layout): wire from `useCurrentUser().user.employeeId`.
+   * Wired from `useCurrentUser().user.employeeId` in the (dashboard) layout.
    */
   employeeId?: string | null;
   onClose?: () => void;

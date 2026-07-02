@@ -3,15 +3,20 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { vacancies } from "@/lib/db/schema/recruitment";
+import { enforceRateLimit } from "@/lib/utils/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-// TODO integrator (API-005): add rate limiting to all public RPM endpoints.
-
 export const runtime = "nodejs";
+
+// API-005: public read endpoint — generous per-IP limit.
+const RATE_LIMIT = { bucket: "rpm:vacancies:list", limit: 120, windowMs: 60_000 };
 
 export async function GET(request: NextRequest) {
   try {
+    const limited = enforceRateLimit(request, RATE_LIMIT);
+    if (limited) return limited;
+
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search")?.trim() ?? "";
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));

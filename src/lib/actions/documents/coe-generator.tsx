@@ -20,6 +20,8 @@ import {
   generateSerialNumber,
   DOCUMENT_TYPES,
 } from "@/lib/db/serial-sequence-helpers";
+import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
 import {
   Document,
   Page,
@@ -121,6 +123,10 @@ export async function generateCOE(
   params: GenerateCOEParams,
 ): Promise<GenerateCOEResult> {
   try {
+    // COE issuance is an HR-side operation (document requests route through
+    // processDocumentRequest, which carries the same permission).
+    const user = await requirePermission("employees", "process");
+
     // 1. Fetch employee data
     const employee = await db.query.employees.findFirst({
       where: eq(employees.id, params.employeeId),
@@ -292,8 +298,21 @@ export async function generateCOE(
       .from("documents")
       .getPublicUrl(`coe/${fileName}`);
 
-    // 11. TODO: Log issuance in audit trail (audit_logs table)
-    // This would be done via the audit logging service
+    // 11. Log issuance in the audit trail (PIM-016 serial issuance logging)
+    await auditLog({
+      userId: user.id,
+      action: "document.coe.issue",
+      table: "serial_sequences",
+      newValues: {
+        serialNumber,
+        documentType: params.includeSalary ? "COE_REMUNERATION" : "COE",
+        employeeId: employee.id,
+        employeeNo: employee.employeeNo,
+        issuedById: user.employeeId ?? user.id,
+        requestedBy: params.requestedBy ?? null,
+        documentUrl: urlData.publicUrl,
+      },
+    });
 
     return {
       success: true,

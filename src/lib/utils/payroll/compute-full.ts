@@ -63,7 +63,13 @@ import { isJobOrderOrCOS } from './types';
  * @returns PayrollResult with complete breakdown
  */
 export function computeFullPayroll(input: PayrollInput): PayrollResult {
-  const { employee, period, attendance, otherAdjustments = [] } = input;
+  const {
+    employee,
+    period,
+    attendance,
+    otherAdjustments = [],
+    includeRata = true,
+  } = input;
   const periodType = period.type;
   const isJO = isJobOrderOrCOS(employee.appointmentType);
 
@@ -75,6 +81,7 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
     employee.salaryGrade,
     employee.step,
     employee.contractRateMonthly,
+    employee.authorizedMonthlySalary,
   );
 
   const authorizedSalary = monthlySalary;
@@ -93,10 +100,18 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
 
   // ------------------------------------------------------------------
   // 3. Allowances (regular employees only)
+  // RATA source (FM-032 single source of truth): the authoritative RATA
+  // amount is the allowances-config table resolved by the scoped PAY-003
+  // RATA run. Scoped general/regular runs pass includeRata=false so RATA is
+  // paid exclusively by the RATA run and never double-counted here. When
+  // includeRata is true (direct callers / tests), computeRata falls back to
+  // the shared static EO 77 schedule — the same util the RATA run uses as
+  // its own fallback when no allowances-config row exists.
   // ------------------------------------------------------------------
-  const rataResult = isJO
-    ? { representation: 0, transportation: 0, total: 0 }
-    : computeRata(employee.salaryGrade, periodType);
+  const rataResult =
+    isJO || !includeRata
+      ? { representation: 0, transportation: 0, total: 0 }
+      : computeRata(employee.salaryGrade, periodType);
 
   const longevityPay = isJO
     ? 0

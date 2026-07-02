@@ -8,7 +8,7 @@ import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import {
   getTrainingExpenseReport,
   getTrainingExpenseSummary,
-} from "@/lib/actions/learning";
+} from "@/lib/actions/ldm/reports";
 import type { Metadata } from "next";
 import { TrendingUp, Users, DollarSign, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,13 @@ export default async function LearningReportsPage({ searchParams }: PageProps) {
   const rawYear = Array.isArray(params["year"])
     ? params["year"][0]
     : params["year"];
-  const year = Number(rawYear) || new Date().getFullYear();
+  const parsedYear = Number(rawYear);
+  // Server actions validate 2000–2100; clamp here so bad query params fall
+  // back to the current year instead of surfacing a validation error page.
+  const year =
+    Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100
+      ? parsedYear
+      : new Date().getFullYear();
 
   // Use server actions
   const summary = await getTrainingExpenseSummary(year);

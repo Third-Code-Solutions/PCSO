@@ -18,6 +18,10 @@ import {
   computeTerminalLeave,
   formatTerminalLeavePay,
 } from "@/lib/utils/leave/terminal";
+import { getAuthorizedSalary } from "@/lib/utils/payroll/salary";
+import { db } from "@/lib/db";
+import { salaryGrades } from "@/lib/db/schema";
+import { and, desc, eq, lte } from "drizzle-orm";
 import { createServerClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -30,9 +34,56 @@ export const metadata: Metadata = {
   title: "My Leave Credits",
 };
 
-// Placeholder monthly basic salary used for terminal-leave estimate when the
-// SSL/step lookup is not yet wired in. SG-15 Step 1 ≈ ₱30,531.
-const PLACEHOLDER_MONTHLY_SALARY = 30_531;
+// Last-resort monthly basic salary for the terminal-leave estimate when the
+// employee's grade/step cannot be resolved against either salary table.
+// SG-15 Step 1 ≈ ₱30,531.
+const FALLBACK_MONTHLY_SALARY = 30_531;
+
+/**
+ * Resolve the authorized monthly basic salary for a grade/step — same rule as
+ * the payroll engine: the admin-maintained salary_grades table (latest
+ * effective row on or before today) is preferred, falling back to the static
+ * SSL V table, then to a placeholder for unresolvable legacy data.
+ */
+async function resolveMonthlyBasicSalary(
+  salaryGrade: number,
+  step: number,
+): Promise<number> {
+  if (
+    !Number.isInteger(salaryGrade) ||
+    !Number.isInteger(step) ||
+    salaryGrade < 1 ||
+    step < 1
+  ) {
+    return FALLBACK_MONTHLY_SALARY;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [row] = await db
+    .select({ monthlySalary: salaryGrades.monthlySalary })
+    .from(salaryGrades)
+    .where(
+      and(
+        eq(salaryGrades.grade, salaryGrade),
+        eq(salaryGrades.step, step),
+        lte(salaryGrades.effectiveDate, today),
+      ),
+    )
+    .orderBy(desc(salaryGrades.effectiveDate))
+    .limit(1);
+
+  if (row) {
+    const fromTable = Number(row.monthlySalary);
+    if (Number.isFinite(fromTable) && fromTable > 0) return fromTable;
+  }
+
+  try {
+    return getAuthorizedSalary(salaryGrade, step);
+  } catch {
+    // Grade/step outside SSL V bounds (legacy/non-plantilla data).
+    return FALLBACK_MONTHLY_SALARY;
+  }
+}
 
 export default async function MyLeaveCreditsPage() {
   const user = await requireAuth();
@@ -57,10 +108,16 @@ export default async function MyLeaveCreditsPage() {
   const { data: empData } = await supabase
     .from("employees")
     .select(
-      "first_name, last_name, middle_name, employee_no, position_title, date_hired, office_id",
+      "first_name, last_name, middle_name, employee_no, position_title, date_hired, office_id, salary_grade, step",
     )
     .eq("id", user.employeeId)
     .single();
+
+  // SSL/step salary lookup for the terminal-leave money value.
+  const monthlyBasicSalary = await resolveMonthlyBasicSalary(
+    Number(empData?.salary_grade ?? 0),
+    Number(empData?.step ?? 0),
+  );
 
   let officeName = "";
   if (empData?.office_id) {
@@ -76,7 +133,7 @@ export default async function MyLeaveCreditsPage() {
     ? computeTerminalLeave({
         vlBalance: creditBalance.vlBalance,
         slBalance: creditBalance.slBalance,
-        monthlyBasicSalary: PLACEHOLDER_MONTHLY_SALARY,
+        monthlyBasicSalary,
       })
     : null;
 
@@ -113,7 +170,7 @@ export default async function MyLeaveCreditsPage() {
       officeName,
       dateHired:
         typeof empData?.date_hired === "string" ? empData.date_hired : "",
-      monthlyBasicSalary: PLACEHOLDER_MONTHLY_SALARY.toLocaleString("en-PH", {
+      monthlyBasicSalary: monthlyBasicSalary.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }),

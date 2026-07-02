@@ -12,6 +12,10 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   experimental: {
+    // Tree-shake heavy barrel packages per route so Turbopack compiles only the
+    // icons/helpers a page actually imports instead of the whole package. Cuts
+    // per-route dev compile time and production bundle size on this 170+ route app.
+    optimizePackageImports: ["lucide-react", "date-fns"],
     serverActions: {
       bodySizeLimit: "10mb",
       allowedOrigins: [

@@ -18,8 +18,18 @@ import {
   Building2,
   ShieldCheck,
   FileText,
+  UserCog,
+  Bell,
+  ScrollText,
 } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import type {
   AdminKpis,
   PayrollAdminKpis,
@@ -28,6 +38,7 @@ import type {
   SupervisorKpis,
   ExecutiveKpis,
   AuditorKpis,
+  SystemAdminKpis,
 } from "./queries";
 
 // ─── Admin KPI grid (super_admin / hr_admin) ─────────────────────────────────
@@ -146,6 +157,190 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
         </Link>
       </div>
     </section>
+  );
+}
+
+// ─── System Administrator dashboard (super_admin, PRD 3.4 D7) ────────────────
+// Technical control plane: users by role, security-relevant audit activity,
+// and platform totals. Strictly read-only — no HR-record action affordances.
+
+interface SystemAdminDashboardProps {
+  data: SystemAdminKpis;
+}
+
+const SYSADMIN_ROLE_LABELS: Record<string, string> = {
+  super_admin: "Super Admin",
+  hr_admin: "HR Administrator",
+  payroll_admin: "Payroll Administrator",
+  supervisor: "Supervisor / Manager",
+  executive: "Executive / Leadership",
+  auditor: "Compliance & Audit",
+  employee_self_service: "Employee Self-Service",
+  leave_approver: "Leave Approver (legacy)",
+  viewer: "Viewer (legacy)",
+};
+
+const SECURITY_EVENT_TIME_FORMAT = new Intl.DateTimeFormat("en-PH", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Asia/Manila",
+});
+
+export function SystemAdminDashboard({ data }: SystemAdminDashboardProps) {
+  return (
+    <div className="space-y-6">
+      <section aria-label="System administration KPIs">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+          <Link
+            href="/admin/users"
+            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KpiCard
+              title="System Users"
+              value={data.totalSystemUsers}
+              detail={`${data.activeSystemUsers.toLocaleString("en-PH")} active accounts`}
+              icon={UserCog}
+              iconColorClass="bg-blue-50 text-blue-600"
+            />
+          </Link>
+
+          <Link
+            href="/employees"
+            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KpiCard
+              title="Active Employees"
+              value={data.totalEmployees}
+              detail="Employee records in the HRIS"
+              icon={Users}
+              iconColorClass="bg-emerald-50 text-emerald-600"
+            />
+          </Link>
+
+          <Link
+            href="/admin/audit-logs"
+            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KpiCard
+              title="Audit Entries (7 Days)"
+              value={data.auditEntriesLast7Days}
+              detail="All actions logged this week"
+              icon={ScrollText}
+              iconColorClass="bg-indigo-50 text-indigo-600"
+            />
+          </Link>
+
+          <Link
+            href="/admin/audit-logs"
+            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KpiCard
+              title="Security Events (7 Days)"
+              value={data.securityEventsLast7Days}
+              detail="Logins, sign-outs, deletes, exports"
+              icon={ShieldCheck}
+              iconColorClass="bg-rose-50 text-rose-600"
+              trend={
+                data.securityEventsLast7Days > 0
+                  ? {
+                      direction: "up",
+                      label: "Review in audit logs",
+                      upIsPositive: false,
+                    }
+                  : { direction: "neutral", label: "No recent events" }
+              }
+            />
+          </Link>
+
+          <KpiCard
+            title="Notifications (7 Days)"
+            value={data.notificationsLast7Days}
+            detail="In-app notifications delivered"
+            icon={Bell}
+            iconColorClass="bg-amber-50 text-amber-600"
+          />
+        </div>
+      </section>
+
+      <section
+        aria-label="User roles and security activity"
+        className="grid grid-cols-1 gap-4 xl:grid-cols-2"
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Users by Role</CardTitle>
+            <CardDescription>
+              RBAC assignment breakdown across all system accounts
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.usersByRole.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No system users found.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {data.usersByRole.map((row) => (
+                  <li
+                    key={row.role}
+                    className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
+                  >
+                    <span>{SYSADMIN_ROLE_LABELS[row.role] ?? row.role}</span>
+                    <span className="font-semibold tabular-nums">
+                      {row.count.toLocaleString("en-PH")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Recent Security Events</CardTitle>
+            <CardDescription>
+              Latest logins, sign-outs, deletes, and exports from the audit
+              trail
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.recentSecurityEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No security-relevant audit entries yet.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {data.recentSecurityEvents.map((event) => (
+                  <li
+                    key={event.id}
+                    className="rounded-md border border-border px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">
+                        {event.action}
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {event.tableName}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {SECURITY_EVENT_TIME_FORMAT.format(
+                          new Date(event.performedAt),
+                        )}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {event.performedBy}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+    </div>
   );
 }
 

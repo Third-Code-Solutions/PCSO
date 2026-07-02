@@ -6,9 +6,13 @@ import {
   payrollPeriods,
   payrollRecords,
   payrollAdjustments,
+  payrollLoanDeductions,
+  loanLedger,
+  salaryGrades,
+  allowances,
   employees,
 } from "@/lib/db/schema";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray, lte, desc, ne, sql } from "drizzle-orm";
 import {
   CreatePeriodSchema,
   OverrideRecordSchema,
@@ -22,6 +26,7 @@ import { lockKey } from "@/lib/concurrency";
 import type {
   PayrollInput,
   PayrollResult,
+  DeductionBreakdown,
   EmployeePayrollInput,
   AttendanceInput,
   AppointmentType,
@@ -35,8 +40,31 @@ import {
   computeCashGift,
   computeSalaryDifferential,
   computeDeMinimis,
-  compute13thMonth,
 } from "@/lib/utils/payroll/bonuses";
+import { computeRata } from "@/lib/utils/payroll/salary";
+import { computeSupplementalWithholding } from "@/lib/utils/payroll/tax";
+import {
+  resolveSalaryAsOf,
+  resolveEmployeeMonthlySalary,
+  resolveAllowanceMonthlyAmount,
+  computeRegularMonthlyTaxable,
+  monthsInclusive,
+  isoDayBefore,
+  computeMagnaCartaBenefit,
+} from "@/lib/utils/payroll/run-support";
+import type {
+  SalaryGradeRow,
+  AllowanceAmountConfig,
+} from "@/lib/utils/payroll/run-support";
+import {
+  computeLoanDeductions,
+  collectionWindowKey,
+} from "@/lib/utils/payroll/loans";
+import type { PayrollBenefitType } from "@/lib/db/schema";
+import type {
+  LoanForDeduction,
+  LoanDeductionEntry,
+} from "@/lib/utils/payroll/loans";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,6 +74,21 @@ import {
  * round-trip count and keeping transaction size bounded so rollback is cheap.
  */
 const PAYROLL_RECORD_INSERT_CHUNK = 200;
+
+/**
+ * Name used for the loan-amortization otherAdjustment line (PAY-009). Kept as a
+ * constant so the negative-net-pay recompute (F-LOAN-NEGNET) can strip exactly
+ * this line when a loan would drive net pay below zero.
+ */
+const LOAN_ADJUSTMENT_NAME = "Loan amortization (PAY-009)";
+
+/**
+ * Shared advisory-lock key serializing loan collection across all loan-
+ * collecting payroll scopes (regular / jo_cos / cash_advance). Different
+ * periods that touch the same loan ledger serialize on this key so running
+ * balances update atomically without lost updates (F-LOAN-RACE).
+ */
+const LOAN_COLLECT_LOCK_KEY = "payroll:loans:collect";
 
 // ─── Create Period ────────────────────────────────────────────────────────────
 
@@ -63,6 +106,7 @@ export async function createPeriod(input: unknown) {
         payDate: parsed.payDate,
         scope: parsed.scope,
         customTitle: parsed.customTitle ?? null,
+        benefitType: parsed.benefitType ?? null,
         skipMandatoryDeductions: parsed.skipMandatoryDeductions ?? false,
         notes: parsed.notes,
         status: "draft",
@@ -215,6 +259,10 @@ export async function processPayroll(periodId: string) {
           throw new Error(`Unsupported payroll scope: ${period.scope}`);
       }
 
+      // Load scope reference data (salary table, allowance configs, loans)
+      // and reverse loan amortizations applied by a prior processing run.
+      const ctx = await loadScopeContext(tx, period);
+
       const eligibleEmployees = await tx
         .select()
         .from(employees)
@@ -247,6 +295,8 @@ export async function processPayroll(periodId: string) {
       let totalNetPay = 0;
 
       const rowsToInsert: (typeof payrollRecords.$inferInsert)[] = [];
+      const loanDeductionRows: (typeof payrollLoanDeductions.$inferInsert)[] =
+        [];
 
       for (const emp of eligibleEmployees) {
         const employeeInput: EmployeePayrollInput = {
@@ -255,6 +305,14 @@ export async function processPayroll(periodId: string) {
           salaryGrade: emp.salaryGrade,
           step: emp.step,
           yearsInService: computeYearsInService(emp.dateHired),
+          // Prefer the salary_grades reference table; computeFullPayroll
+          // falls back to the static SSL table when undefined.
+          authorizedMonthlySalary: resolveSalaryAsOf(
+            ctx.salaryRows,
+            emp.salaryGrade,
+            emp.step,
+            period.periodEnd,
+          ),
         };
 
         const attendanceInput: AttendanceInput = {
@@ -264,6 +322,28 @@ export async function processPayroll(periodId: string) {
           approvedOvertimeHours: 0,
         };
 
+        // PAY-009: amortizations due this period for scopes collecting loans.
+        const loanInput = ctx.includeLoans
+          ? computeLoanDeductions(
+              ctx.loansByEmployee.get(emp.id) ?? [],
+              period.periodEnd,
+            )
+          : { entries: [] as LoanDeductionEntry[], total: 0 };
+
+        // Regular/JO-COS runs collect loan amortizations from net pay.
+        // Post-tax: otherAdjustments deductions do not reduce taxable income.
+        const loanAdjustments =
+          loanInput.total > 0 &&
+          (period.scope === "regular" || period.scope === "jo_cos")
+            ? [
+                {
+                  name: LOAN_ADJUSTMENT_NAME,
+                  amount: loanInput.total,
+                  type: "deduction" as const,
+                },
+              ]
+            : undefined;
+
         const payrollInput: PayrollInput = {
           employee: employeeInput,
           period: {
@@ -272,250 +352,52 @@ export async function processPayroll(periodId: string) {
             end: periodEndDate,
           },
           attendance: attendanceInput,
+          ...(loanAdjustments ? { otherAdjustments: loanAdjustments } : {}),
         };
 
         let computed: PayrollResult;
+        let appliedLoanEntries: LoanDeductionEntry[] = [];
         let hasException = false;
         let exceptionNotes: string | undefined;
 
         try {
-          // Compute based on payroll scope
-          switch (period.scope) {
-            case "regular":
-            case "jo_cos":
-              // Standard payroll computation
-              computed = computeFullPayroll(payrollInput);
-              break;
-
-            case "rata": {
-              // RATA payroll: regular computation + RATA earnings
-              computed = computeFullPayroll(payrollInput);
-              // Assume employee has RATA amount in a field (to be added to schema later)
-              // For now, use a placeholder - this would come from employee.rataAmount
-              const rataAmount = 0; // TODO: Add employee.rataAmount field
-              const rataResult = computeRATA(rataAmount, periodType);
-              const rataStr = roundMoney(rataResult.totalRATA);
-              computed.earnings.rata = rataStr;
-              computed.earnings.otherEarnings = roundMoney(
-                parseMoney(computed.earnings.otherEarnings) +
-                  rataResult.totalRATA,
-              );
-              computed.earnings.grossPay = roundMoney(
-                parseMoney(computed.earnings.grossPay) + rataResult.totalRATA,
-              );
-              // Taxable RATA portion is added to taxable income
-              if (rataResult.taxableRATA > 0) {
-                // This affects withholding tax - would need to recompute tax
-                // For now, this is a simplified implementation
-              }
-              computed.netPay = roundMoney(
-                parseMoney(computed.earnings.grossPay) -
-                  parseMoney(computed.deductions.totalDeductions),
-              );
-              break;
-            }
-
-            case "benefits_bonuses": {
-              // Benefits & Bonuses: Mid-Year, Year-End, Cash Gift, PBB
-              // This is a specialized payroll run for bonuses only
-              const monthlySalary = 0; // TODO: compute from salary grade/step table
-              const appointmentType = emp.appointmentType as AppointmentType;
-
-              const midYearBonus = computeMidYearBonus(
-                monthlySalary,
-                appointmentType,
-              );
-              const yearEndBonus = computeYearEndBonus(
-                monthlySalary,
-                appointmentType,
-              );
-              const cashGift = computeCashGift(appointmentType);
-              // PBB would come from performance module - placeholder for now
-              const pbbAmount = 0;
-
-              const totalBonuses =
-                midYearBonus + yearEndBonus + cashGift + pbbAmount;
-              // Apply de minimis ceiling (PHP 90,000/year tax-exempt)
-              // For simplicity, assume this is the only bonus payment this year
-              const deMinimis = computeDeMinimis(totalBonuses);
-
-              computed = {
-                input: payrollInput,
-                earnings: {
-                  authorizedSalary: roundMoney(monthlySalary),
-                  basicPay: "0.00",
-                  rata: "0.00",
-                  longevityPay: "0.00",
-                  overtimePay: "0.00",
-                  pera: "0.00",
-                  otherEarnings: roundMoney(totalBonuses),
-                  grossPay: roundMoney(totalBonuses),
-                },
-                deductions: {
-                  gsis: {
-                    personal: "0.00",
-                    employer: "0.00",
-                    lifeInsurance: "0.00",
-                  },
-                  philHealth: {
-                    personal: "0.00",
-                    employer: "0.00",
-                    total: "0.00",
-                  },
-                  pagIBIG: { personal: "0.00", employer: "0.00" },
-                  withholdingTax: roundMoney(deMinimis.taxable * 0.15), // Simplified 15% rate
-                  lateDeduction: "0.00",
-                  undertimeDeduction: "0.00",
-                  absenceDeduction: "0.00",
-                  otherDeductions: "0.00",
-                  totalDeductions: roundMoney(deMinimis.taxable * 0.15),
-                },
-                netPay: roundMoney(totalBonuses - deMinimis.taxable * 0.15),
-              };
-              break;
-            }
-
-            case "salary_differential": {
-              // Salary Differential: retroactive pay adjustment
-              // This requires additional data: old rate, new rate, number of months
-              // For now, use placeholders - these would come from a separate differential table
-              const oldRate = 0; // TODO: Get from differential request
-              const newRate = oldRate; // TODO: Get from differential request
-              const months = 1; // TODO: Get from differential request
-              const differential = computeSalaryDifferential(
-                oldRate,
-                newRate,
-                months,
-              );
-
-              computed = {
-                input: payrollInput,
-                earnings: {
-                  authorizedSalary: roundMoney(newRate),
-                  basicPay: "0.00",
-                  rata: "0.00",
-                  longevityPay: "0.00",
-                  overtimePay: "0.00",
-                  pera: "0.00",
-                  otherEarnings: roundMoney(differential),
-                  grossPay: roundMoney(differential),
-                },
-                deductions: {
-                  gsis: {
-                    personal: "0.00",
-                    employer: "0.00",
-                    lifeInsurance: "0.00",
-                  },
-                  philHealth: {
-                    personal: "0.00",
-                    employer: "0.00",
-                    total: "0.00",
-                  },
-                  pagIBIG: { personal: "0.00", employer: "0.00" },
-                  withholdingTax: roundMoney(differential * 0.15), // Simplified withholding
-                  lateDeduction: "0.00",
-                  undertimeDeduction: "0.00",
-                  absenceDeduction: "0.00",
-                  otherDeductions: "0.00",
-                  totalDeductions: roundMoney(differential * 0.15),
-                },
-                netPay: roundMoney(differential - differential * 0.15),
-              };
-              break;
-            }
-
-            case "cash_advance": {
-              // Cash Advance: only loan deductions, no earnings
-              // This would link to loan ledger for deduction schedule
-              // For now, simplified: zero earnings, only loan deductions
-              computed = {
-                input: payrollInput,
-                earnings: {
-                  authorizedSalary: "0.00",
-                  basicPay: "0.00",
-                  rata: "0.00",
-                  longevityPay: "0.00",
-                  overtimePay: "0.00",
-                  pera: "0.00",
-                  otherEarnings: "0.00",
-                  grossPay: "0.00",
-                },
-                deductions: {
-                  gsis: {
-                    personal: "0.00",
-                    employer: "0.00",
-                    lifeInsurance: "0.00",
-                  },
-                  philHealth: {
-                    personal: "0.00",
-                    employer: "0.00",
-                    total: "0.00",
-                  },
-                  pagIBIG: { personal: "0.00", employer: "0.00" },
-                  withholdingTax: "0.00",
-                  lateDeduction: "0.00",
-                  undertimeDeduction: "0.00",
-                  absenceDeduction: "0.00",
-                  otherDeductions: "0.00", // TODO: Get from loan_ledger
-                  totalDeductions: "0.00",
-                },
-                netPay: "0.00", // Cash advance nets to zero
-              };
-              break;
-            }
-
-            case "special": {
-              // Special payroll: regular computation but optionally skip mandatory deductions
-              computed = computeFullPayroll(payrollInput);
-              if (period.skipMandatoryDeductions) {
-                // Zero out mandatory deductions
-                computed.deductions.gsis = {
-                  personal: "0.00",
-                  employer: "0.00",
-                  lifeInsurance: "0.00",
-                };
-                computed.deductions.philHealth = {
-                  personal: "0.00",
-                  employer: "0.00",
-                  total: "0.00",
-                };
-                computed.deductions.pagIBIG = {
-                  personal: "0.00",
-                  employer: "0.00",
-                };
-                computed.deductions.withholdingTax = "0.00";
-                // Recalculate total deductions and net pay
-                const totalDed =
-                  parseMoney(computed.deductions.lateDeduction) +
-                  parseMoney(computed.deductions.undertimeDeduction) +
-                  parseMoney(computed.deductions.absenceDeduction) +
-                  parseMoney(computed.deductions.otherDeductions);
-                computed.deductions.totalDeductions = roundMoney(totalDed);
-                computed.netPay = roundMoney(
-                  parseMoney(computed.earnings.grossPay) - totalDed,
-                );
-              }
-              break;
-            }
-
-            case "magna_carta": {
-              // Magna Carta Benefits: RA 9710 (Women), RA 7277 (PWD)
-              // This requires gender and PWD status from employee profile
-              // For now, use regular computation with placeholder benefits
-              computed = computeFullPayroll(payrollInput);
-              // TODO: Add Magna Carta specific benefits based on employee gender/PWD status
-              // Additional benefits would be added to otherEarnings
-              break;
-            }
-
-            default:
-              throw new Error(`Unsupported payroll scope: ${period.scope}`);
-          }
+          const scoped = computeRecordForScope(emp, payrollInput, ctx, loanInput);
+          // Not covered by this run's scope (e.g., no RATA entitlement,
+          // no amortization due, no rate change) — no record produced.
+          if (scoped === null) continue;
+          computed = scoped.computed;
+          appliedLoanEntries = scoped.loanEntries;
         } catch (err) {
           hasException = true;
           exceptionNotes =
             err instanceof Error ? err.message : "Unknown computation error";
           computed = buildZeroResult(payrollInput);
+          // Never touch loan balances for failed computations.
+          appliedLoanEntries = [];
+        }
+
+        // F-LOAN-NEGNET: a loan amortization must never drive net pay below
+        // zero. If it does, recompute WITHOUT collecting the loan, do not
+        // decrement the ledger, and flag the record for manual handling.
+        if (
+          parseMoney(computed.netPay) < 0 &&
+          appliedLoanEntries.length > 0 &&
+          (period.scope === "regular" || period.scope === "jo_cos")
+        ) {
+          const inputWithoutLoan: PayrollInput = {
+            ...payrollInput,
+            otherAdjustments: (payrollInput.otherAdjustments ?? []).filter(
+              (adj) => adj.name !== LOAN_ADJUSTMENT_NAME,
+            ),
+          };
+          computed = computeFullPayroll({
+            ...inputWithoutLoan,
+            includeRata: false,
+          });
+          appliedLoanEntries = [];
+          hasException = true;
+          exceptionNotes =
+            "Loan amortization exceeds net pay — not collected; adjust schedule and re-process";
         }
 
         const netPayNum = parseMoney(computed.netPay);
@@ -567,6 +449,16 @@ export async function processPayroll(periodId: string) {
           exceptionNotes: exceptionNotes ?? null,
         });
 
+        for (const entry of appliedLoanEntries) {
+          loanDeductionRows.push({
+            periodId,
+            employeeId: emp.id,
+            loanId: entry.loanId,
+            amount: entry.amount.toFixed(2),
+            balanceAfter: entry.balanceAfter.toFixed(2),
+          });
+        }
+
         totalGrossPay += parseMoney(computed.earnings.grossPay);
         totalDeductions += parseMoney(computed.deductions.totalDeductions);
         totalNetPay += parseMoney(computed.netPay);
@@ -576,6 +468,10 @@ export async function processPayroll(periodId: string) {
       // mid-stream rolls back every chunk inserted so far.
       await chunkInsertPayrollRecords(tx, rowsToInsert);
 
+      // PAY-009: decrement loan running balances and record the per-run
+      // detail rows used to reverse them if the period is re-processed.
+      await applyLoanDeductions(tx, loanDeductionRows);
+
       // Update period totals
       const now = new Date().toISOString();
       await tx
@@ -584,7 +480,8 @@ export async function processPayroll(periodId: string) {
           totalGrossPay: roundMoney(totalGrossPay),
           totalDeductions: roundMoney(totalDeductions),
           totalNetPay: roundMoney(totalNetPay),
-          employeeCount: eligibleEmployees.length,
+          // Employees actually included in the run (scope-skipped ones excluded)
+          employeeCount: rowsToInsert.length,
           processedAt: now,
           processedBy: user.id,
           updatedAt: new Date(),
@@ -592,7 +489,7 @@ export async function processPayroll(periodId: string) {
         .where(eq(payrollPeriods.id, periodId));
 
       return {
-        employeeCount: eligibleEmployees.length,
+        employeeCount: rowsToInsert.length,
         totalGrossPay: roundMoney(totalGrossPay),
         totalDeductions: roundMoney(totalDeductions),
         totalNetPay: roundMoney(totalNetPay),
@@ -615,6 +512,8 @@ export async function processPayroll(periodId: string) {
   revalidatePath("/payroll");
   revalidatePath(`/payroll/${periodId}`);
   revalidatePath(`/payroll/${periodId}/process`);
+  // Loan running balances may have changed (PAY-009)
+  revalidatePath("/payroll/loans");
 
   return {
     employeeCount: result.employeeCount,
@@ -971,11 +870,687 @@ export async function exportRegister(input: unknown) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+type PeriodRow = typeof payrollPeriods.$inferSelect;
+type EmployeeRow = typeof employees.$inferSelect;
+
+/** Reference data resolved once per processing run. */
+interface ScopeContext {
+  scope: PeriodRow["scope"];
+  periodStart: string;
+  periodEnd: string;
+  skipMandatoryDeductions: boolean;
+  benefitType: PayrollBenefitType | null;
+  salaryRows: SalaryGradeRow[];
+  rataConfig: AllowanceAmountConfig | null;
+  magnaCartaWomen: AllowanceAmountConfig | null;
+  magnaCartaPwd: AllowanceAmountConfig | null;
+  differentialMonths: number;
+  includeLoans: boolean;
+  loansByEmployee: Map<string, LoanForDeduction[]>;
+}
+
+function toAllowanceConfig(row: {
+  amountBySg: unknown;
+  flatAmount: string | null;
+}): AllowanceAmountConfig {
+  return {
+    amountBySg: (row.amountBySg as Record<string, string> | null) ?? null,
+    flatAmount: row.flatAmount,
+  };
+}
+
+async function loadScopeContext(
+  tx: Tx,
+  period: PeriodRow,
+): Promise<ScopeContext> {
+  // Effective-dated salary table (BIR/DBM rates are data, not code).
+  const salaryRows: SalaryGradeRow[] = await tx
+    .select({
+      grade: salaryGrades.grade,
+      step: salaryGrades.step,
+      monthlySalary: salaryGrades.monthlySalary,
+      effectiveDate: salaryGrades.effectiveDate,
+    })
+    .from(salaryGrades)
+    .where(lte(salaryGrades.effectiveDate, period.periodEnd));
+
+  let rataConfig: AllowanceAmountConfig | null = null;
+  if (period.scope === "rata") {
+    const [row] = await tx
+      .select()
+      .from(allowances)
+      .where(
+        and(
+          eq(allowances.type, "rata"),
+          lte(allowances.effectiveDate, period.periodEnd),
+        ),
+      )
+      .orderBy(desc(allowances.effectiveDate))
+      .limit(1);
+    rataConfig = row ? toAllowanceConfig(row) : null;
+  }
+
+  let magnaCartaWomen: AllowanceAmountConfig | null = null;
+  let magnaCartaPwd: AllowanceAmountConfig | null = null;
+  if (period.scope === "magna_carta") {
+    const rows = await tx
+      .select()
+      .from(allowances)
+      .where(
+        and(
+          inArray(allowances.type, ["magna_carta_women", "magna_carta_pwd"]),
+          lte(allowances.effectiveDate, period.periodEnd),
+        ),
+      )
+      .orderBy(desc(allowances.effectiveDate));
+    // Rows are ordered latest-first; find() picks the latest effective config.
+    const women = rows.find((r) => r.type === "magna_carta_women");
+    const pwd = rows.find((r) => r.type === "magna_carta_pwd");
+    magnaCartaWomen = women ? toAllowanceConfig(women) : null;
+    magnaCartaPwd = pwd ? toAllowanceConfig(pwd) : null;
+    if (!magnaCartaWomen && !magnaCartaPwd) {
+      throw new Error(
+        "Magna Carta benefit amounts are not configured. Add allowance records of type 'magna_carta_women' (RA 9710) and/or 'magna_carta_pwd' (RA 7277) before processing this run.",
+      );
+    }
+  }
+
+  let differentialMonths = 0;
+  if (period.scope === "salary_differential") {
+    differentialMonths = monthsInclusive(period.periodStart, period.periodEnd);
+    if (differentialMonths > 12) {
+      throw new Error(
+        "Salary differential period cannot exceed 12 months (PAY-006). Split longer retroactive periods into multiple runs.",
+      );
+    }
+  }
+
+  // PAY-005: a benefits_bonuses run must declare which component it pays or it
+  // would pay every bonus (or, post-fix, nothing). Fail fast with a clear
+  // message rather than silently producing an empty run.
+  if (period.scope === "benefits_bonuses" && !period.benefitType) {
+    throw new Error(
+      "Benefit type is not set for this benefits and bonuses run. Recreate the period and select a benefit component (Mid-Year, Year-End + Cash Gift, or PBB).",
+    );
+  }
+
+  const includeLoans =
+    period.scope === "regular" ||
+    period.scope === "jo_cos" ||
+    period.scope === "cash_advance";
+
+  const loansByEmployee = new Map<string, LoanForDeduction[]>();
+  if (includeLoans) {
+    // Serialize loan collection across all loan-collecting scopes/periods so
+    // the shared running-balance ledger updates atomically (F-LOAN-RACE).
+    await lockKey(tx, LOAN_COLLECT_LOCK_KEY);
+
+    // Re-processing deletes draft records and recomputes: credit back any
+    // amortizations applied by a previous run of this period first, or
+    // every re-run would double-collect (PAY-009 running balance).
+    await reversePriorLoanDeductions(tx, period.id);
+
+    // Scope the loan set by type: a cash_advance run collects ONLY cash-advance
+    // loans; regular/jo_cos runs collect everything EXCEPT cash advances. This
+    // stops a cash_advance run from re-collecting loans a regular run already
+    // amortized (F-LOAN-DOUBLE).
+    const loanTypeFilter =
+      period.scope === "cash_advance"
+        ? eq(loanLedger.loanType, "cash_advance")
+        : ne(loanLedger.loanType, "cash_advance");
+
+    const activeLoans = await tx
+      .select()
+      .from(loanLedger)
+      .where(
+        and(
+          eq(loanLedger.status, "active"),
+          isNull(loanLedger.deletedAt),
+          loanTypeFilter,
+        ),
+      );
+
+    // Cross-period dedup: exclude loans already collected by ANOTHER period
+    // whose collection window overlaps this run (same calendar month for
+    // monthly loans; same half-month for semi_monthly). Prevents two distinct
+    // periods from double-collecting the same amortization (F-LOAN-DOUBLE).
+    const excludeLoanIds = await loansCollectedInWindow(
+      tx,
+      period,
+      activeLoans,
+    );
+
+    for (const loan of activeLoans) {
+      if (excludeLoanIds.has(loan.id)) continue;
+      const entry: LoanForDeduction = {
+        id: loan.id,
+        deductionSchedule: loan.deductionSchedule,
+        deductionAmount: loan.deductionAmount,
+        runningBalance: loan.runningBalance,
+        startDate: loan.startDate,
+        status: loan.status,
+      };
+      const list = loansByEmployee.get(loan.employeeId);
+      if (list) {
+        list.push(entry);
+      } else {
+        loansByEmployee.set(loan.employeeId, [entry]);
+      }
+    }
+  }
+
+  return {
+    scope: period.scope,
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
+    skipMandatoryDeductions: period.skipMandatoryDeductions,
+    benefitType: period.benefitType,
+    salaryRows,
+    rataConfig,
+    magnaCartaWomen,
+    magnaCartaPwd,
+    differentialMonths,
+    includeLoans,
+    loansByEmployee,
+  };
+}
+
+type LoanRow = typeof loanLedger.$inferSelect;
+
+/**
+ * Return the set of loan IDs that another period already collected in the same
+ * collection window as this run. A loan is excluded when a prior
+ * payroll_loan_deductions row exists for it, belonging to a DIFFERENT period
+ * whose periodEnd falls in the same collection window as this period's
+ * periodEnd (window keyed per the loan's own schedule).
+ */
+async function loansCollectedInWindow(
+  tx: Tx,
+  period: PeriodRow,
+  activeLoans: readonly LoanRow[],
+): Promise<Set<string>> {
+  const exclude = new Set<string>();
+  if (activeLoans.length === 0) return exclude;
+
+  const loanById = new Map<string, LoanRow>(
+    activeLoans.map((loan) => [loan.id, loan]),
+  );
+
+  const priorCollections = await tx
+    .select({
+      loanId: payrollLoanDeductions.loanId,
+      periodEnd: payrollPeriods.periodEnd,
+    })
+    .from(payrollLoanDeductions)
+    .innerJoin(
+      payrollPeriods,
+      eq(payrollLoanDeductions.periodId, payrollPeriods.id),
+    )
+    .where(
+      and(
+        ne(payrollLoanDeductions.periodId, period.id),
+        inArray(payrollLoanDeductions.loanId, [...loanById.keys()]),
+      ),
+    );
+
+  for (const row of priorCollections) {
+    const loan = loanById.get(row.loanId);
+    if (!loan) continue;
+    const thisWindow = collectionWindowKey(
+      loan.deductionSchedule,
+      period.periodEnd,
+    );
+    const priorWindow = collectionWindowKey(
+      loan.deductionSchedule,
+      row.periodEnd,
+    );
+    if (thisWindow === priorWindow) exclude.add(row.loanId);
+  }
+
+  return exclude;
+}
+
+/**
+ * Credit back loan balances collected by a previous processing of this
+ * period and drop the detail rows. Loans that had been fully paid by those
+ * collections are reactivated; cancelled loans stay cancelled.
+ */
+async function reversePriorLoanDeductions(
+  tx: Tx,
+  periodId: string,
+): Promise<void> {
+  const prior = await tx
+    .select()
+    .from(payrollLoanDeductions)
+    .where(eq(payrollLoanDeductions.periodId, periodId));
+  if (prior.length === 0) return;
+
+  const refundByLoan = new Map<string, number>();
+  for (const row of prior) {
+    refundByLoan.set(
+      row.loanId,
+      (refundByLoan.get(row.loanId) ?? 0) + parseMoney(row.amount),
+    );
+  }
+
+  const loans = await tx
+    .select()
+    .from(loanLedger)
+    .where(inArray(loanLedger.id, [...refundByLoan.keys()]));
+
+  for (const loan of loans) {
+    const refund = refundByLoan.get(loan.id) ?? 0;
+    await tx
+      .update(loanLedger)
+      .set({
+        runningBalance: roundMoney(parseMoney(loan.runningBalance) + refund),
+        status: loan.status === "paid_off" ? "active" : loan.status,
+        updatedAt: new Date(),
+      })
+      .where(eq(loanLedger.id, loan.id));
+  }
+
+  await tx
+    .delete(payrollLoanDeductions)
+    .where(eq(payrollLoanDeductions.periodId, periodId));
+}
+
+/**
+ * Decrement loan running balances per computed amortizations and persist
+ * the per-run detail rows (used by reversePriorLoanDeductions).
+ */
+async function applyLoanDeductions(
+  tx: Tx,
+  rows: (typeof payrollLoanDeductions.$inferInsert)[],
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  for (const row of rows) {
+    // Relative, authoritative write: decrement the CURRENT balance in-database
+    // rather than writing an absolute snapshot value. Combined with the shared
+    // advisory lock this eliminates lost updates when two periods collect the
+    // same loan (F-LOAN-RACE). Clamp at 0 and flip to paid_off when drained.
+    const amount = parseMoney(row.amount);
+    const [updated] = await tx
+      .update(loanLedger)
+      .set({
+        runningBalance: sql`greatest(${loanLedger.runningBalance} - ${amount}, 0)`,
+        updatedAt: new Date(),
+      })
+      .where(eq(loanLedger.id, row.loanId))
+      .returning({ runningBalance: loanLedger.runningBalance });
+
+    if (updated && parseMoney(updated.runningBalance) <= 0) {
+      await tx
+        .update(loanLedger)
+        .set({ status: "paid_off", updatedAt: new Date() })
+        .where(eq(loanLedger.id, row.loanId));
+    }
+  }
+
+  for (let i = 0; i < rows.length; i += PAYROLL_RECORD_INSERT_CHUNK) {
+    await tx
+      .insert(payrollLoanDeductions)
+      .values(rows.slice(i, i + PAYROLL_RECORD_INSERT_CHUNK));
+  }
+}
+
+/**
+ * Compute one employee's payroll record for the period's scope.
+ * Returns null when the employee is not covered by this run (no record).
+ * Throws on computation errors — the caller records the employee as an
+ * exception row (never a silent zero).
+ */
+function computeRecordForScope(
+  emp: EmployeeRow,
+  payrollInput: PayrollInput,
+  ctx: ScopeContext,
+  loanInput: { entries: LoanDeductionEntry[]; total: number },
+): { computed: PayrollResult; loanEntries: LoanDeductionEntry[] } | null {
+  switch (ctx.scope) {
+    case "regular":
+    case "jo_cos":
+      // Loan amortizations were passed in via otherAdjustments.
+      // includeRata=false: RATA is paid exclusively by the PAY-003 RATA run,
+      // so the general/regular run must exclude it (F-RATA-DOUBLE).
+      return {
+        computed: computeFullPayroll({ ...payrollInput, includeRata: false }),
+        loanEntries: loanInput.entries,
+      };
+
+    case "rata": {
+      // PAY-003: RATA is a distinct payroll run — the general payroll pays
+      // basic salary, so this run pays ONLY the monthly RATA entitlement.
+      // Amount source: allowances config row (type 'rata', amount by SG),
+      // falling back to the standard EO 77 schedule.
+      const rataMonthly = ctx.rataConfig
+        ? resolveAllowanceMonthlyAmount(ctx.rataConfig, emp.salaryGrade)
+        : computeRata(emp.salaryGrade, "monthly").total;
+      if (rataMonthly <= 0) return null; // position not entitled to RATA
+
+      const rataResult = computeRATA(rataMonthly, "monthly");
+      const monthlySalary = resolveEmployeeMonthlySalary(
+        ctx.salaryRows,
+        emp.salaryGrade,
+        emp.step,
+        ctx.periodEnd,
+      );
+      // Only the excess over the PHP 35,000/month ceiling is taxable, and it
+      // stacks on the regular monthly compensation — tax the marginal amount,
+      // not from the zero bracket (F-SUPP-TAX).
+      const withholding =
+        rataResult.taxableRATA > 0
+          ? computeSupplementalWithholding(
+              computeRegularMonthlyTaxable(
+                monthlySalary,
+                emp.appointmentType as AppointmentType,
+              ),
+              rataResult.taxableRATA,
+            )
+          : 0;
+
+      return {
+        computed: {
+          input: payrollInput,
+          earnings: {
+            authorizedSalary: roundMoney(monthlySalary),
+            basicPay: "0.00",
+            rata: roundMoney(rataResult.totalRATA),
+            longevityPay: "0.00",
+            overtimePay: "0.00",
+            pera: "0.00",
+            otherEarnings: "0.00",
+            grossPay: roundMoney(rataResult.totalRATA),
+          },
+          deductions: {
+            ...zeroDeductions(),
+            withholdingTax: roundMoney(withholding),
+            totalDeductions: roundMoney(withholding),
+          },
+          netPay: roundMoney(rataResult.totalRATA - withholding),
+        },
+        loanEntries: [],
+      };
+    }
+
+    case "benefits_bonuses": {
+      // PAY-005: pay ONLY the benefit component the run declares — never every
+      // bonus every run (F-BONUS-OVERPAY). benefitType is guaranteed non-null
+      // for this scope (validated + guarded in loadScopeContext).
+      const appointmentType = emp.appointmentType as AppointmentType;
+      const monthlySalary = resolveEmployeeMonthlySalary(
+        ctx.salaryRows,
+        emp.salaryGrade,
+        emp.step,
+        ctx.periodEnd,
+      );
+
+      let midYearBonus = 0;
+      let yearEndBonus = 0;
+      let cashGift = 0;
+      // PBB comes from the PMM-approved qualified list (PMM-007) — pending
+      // integration; a 'pbb' run pays nothing here until that flow lands.
+      const pbbAmount = 0;
+
+      switch (ctx.benefitType) {
+        case "mid_year":
+          midYearBonus = computeMidYearBonus(monthlySalary, appointmentType);
+          break;
+        case "year_end_cash_gift":
+          yearEndBonus = computeYearEndBonus(monthlySalary, appointmentType);
+          cashGift = computeCashGift(appointmentType);
+          break;
+        case "pbb":
+          // Intentionally zero — handled by the PBB flow.
+          break;
+        default:
+          return null;
+      }
+
+      const totalBonuses = midYearBonus + yearEndBonus + cashGift + pbbAmount;
+      if (totalBonuses <= 0) return null; // not entitled (JO/COS) or PBB stub
+
+      // TRAIN Law: bonuses over the PHP 90,000/year ceiling are taxable, and
+      // the taxable excess stacks on regular monthly compensation — tax the
+      // marginal amount, not from the zero bracket (F-SUPP-TAX).
+      const deMinimis = computeDeMinimis(totalBonuses);
+      const withholding =
+        deMinimis.taxable > 0
+          ? computeSupplementalWithholding(
+              computeRegularMonthlyTaxable(monthlySalary, appointmentType),
+              deMinimis.taxable,
+            )
+          : 0;
+
+      return {
+        computed: {
+          input: payrollInput,
+          earnings: {
+            authorizedSalary: roundMoney(monthlySalary),
+            basicPay: "0.00",
+            rata: "0.00",
+            longevityPay: "0.00",
+            overtimePay: "0.00",
+            pera: "0.00",
+            otherEarnings: roundMoney(totalBonuses),
+            grossPay: roundMoney(totalBonuses),
+          },
+          deductions: {
+            ...zeroDeductions(),
+            withholdingTax: roundMoney(withholding),
+            totalDeductions: roundMoney(withholding),
+          },
+          netPay: roundMoney(totalBonuses - withholding),
+        },
+        loanEntries: [],
+      };
+    }
+
+    case "salary_differential": {
+      // PAY-006: (new rate − old rate) × months in the retroactive window.
+      // The window is the period range selected at run creation; rates come
+      // from effective-dated salary_grades rows. The new-rate UI sets the
+      // period start = the adjustment effectivity date, and salary resolution
+      // is inclusive of effectiveDate == asOf — so the OLD rate must be
+      // resolved as of the DAY BEFORE the period start, else it picks up the
+      // new rate and the differential computes 0 (F-DIFF-BOUNDARY). Promotions
+      // that changed grade/step within the window need a manual override.
+      const oldRate = resolveEmployeeMonthlySalary(
+        ctx.salaryRows,
+        emp.salaryGrade,
+        emp.step,
+        isoDayBefore(ctx.periodStart),
+      );
+      const newRate = resolveEmployeeMonthlySalary(
+        ctx.salaryRows,
+        emp.salaryGrade,
+        emp.step,
+        ctx.periodEnd,
+      );
+      if (newRate === oldRate) return null; // no rate change in the window
+
+      // newRate < oldRate throws inside computeSalaryDifferential and the
+      // employee is recorded as an exception for manual handling.
+      const differential = computeSalaryDifferential(
+        oldRate,
+        newRate,
+        ctx.differentialMonths,
+      );
+      // Subject to BIR withholding on the differential (PAY-006). The
+      // differential stacks on the employee's current (new-rate) monthly
+      // compensation — tax the marginal amount, not from the zero bracket
+      // (F-SUPP-TAX).
+      const withholding = computeSupplementalWithholding(
+        computeRegularMonthlyTaxable(
+          newRate,
+          emp.appointmentType as AppointmentType,
+        ),
+        differential,
+      );
+
+      return {
+        computed: {
+          input: payrollInput,
+          earnings: {
+            authorizedSalary: roundMoney(newRate),
+            basicPay: "0.00",
+            rata: "0.00",
+            longevityPay: "0.00",
+            overtimePay: "0.00",
+            pera: "0.00",
+            otherEarnings: roundMoney(differential),
+            grossPay: roundMoney(differential),
+          },
+          deductions: {
+            ...zeroDeductions(),
+            withholdingTax: roundMoney(withholding),
+            totalDeductions: roundMoney(withholding),
+          },
+          netPay: roundMoney(differential - withholding),
+        },
+        loanEntries: [],
+      };
+    }
+
+    case "cash_advance": {
+      // PAY-004 / PAY-009: collection-only run — amortizations are collected
+      // against issued cash advances/loans; nothing is disbursed, so net pay
+      // is intentionally zero rather than gross − deductions.
+      if (loanInput.total <= 0) return null; // no amortization due
+
+      return {
+        computed: {
+          input: payrollInput,
+          earnings: {
+            authorizedSalary: "0.00",
+            basicPay: "0.00",
+            rata: "0.00",
+            longevityPay: "0.00",
+            overtimePay: "0.00",
+            pera: "0.00",
+            otherEarnings: "0.00",
+            grossPay: "0.00",
+          },
+          deductions: {
+            ...zeroDeductions(),
+            otherDeductions: roundMoney(loanInput.total),
+            totalDeductions: roundMoney(loanInput.total),
+          },
+          netPay: "0.00",
+        },
+        loanEntries: loanInput.entries,
+      };
+    }
+
+    case "special": {
+      // PAY-007: regular computation, optionally skipping mandatory deductions.
+      // includeRata=false: RATA is paid exclusively by the PAY-003 RATA run,
+      // never as part of a special run (F-RATA-DOUBLE).
+      const computed = computeFullPayroll({
+        ...payrollInput,
+        includeRata: false,
+      });
+      if (ctx.skipMandatoryDeductions) {
+        computed.deductions.gsis = {
+          personal: "0.00",
+          employer: "0.00",
+          lifeInsurance: "0.00",
+        };
+        computed.deductions.philHealth = {
+          personal: "0.00",
+          employer: "0.00",
+          total: "0.00",
+        };
+        computed.deductions.pagIBIG = {
+          personal: "0.00",
+          employer: "0.00",
+        };
+        computed.deductions.withholdingTax = "0.00";
+        // Recalculate total deductions and net pay
+        const totalDed =
+          parseMoney(computed.deductions.lateDeduction) +
+          parseMoney(computed.deductions.undertimeDeduction) +
+          parseMoney(computed.deductions.absenceDeduction) +
+          parseMoney(computed.deductions.otherDeductions);
+        computed.deductions.totalDeductions = roundMoney(totalDed);
+        computed.netPay = roundMoney(
+          parseMoney(computed.earnings.grossPay) - totalDed,
+        );
+      }
+      return { computed, loanEntries: [] };
+    }
+
+    case "magna_carta": {
+      // PAY-008: benefits-only run. Configured amounts (allowances table)
+      // are paid as non-taxable benefits per RA 9710 / RA 7277 provisions.
+      const benefit = computeMagnaCartaBenefit(
+        { isFemale: emp.gender === "female", isPwd: emp.isPwd },
+        {
+          womenMonthlyAmount: ctx.magnaCartaWomen
+            ? resolveAllowanceMonthlyAmount(
+                ctx.magnaCartaWomen,
+                emp.salaryGrade,
+              )
+            : 0,
+          pwdMonthlyAmount: ctx.magnaCartaPwd
+            ? resolveAllowanceMonthlyAmount(ctx.magnaCartaPwd, emp.salaryGrade)
+            : 0,
+        },
+      );
+      if (benefit.total <= 0) return null; // qualifies under neither law
+
+      const monthlySalary = resolveEmployeeMonthlySalary(
+        ctx.salaryRows,
+        emp.salaryGrade,
+        emp.step,
+        ctx.periodEnd,
+      );
+
+      return {
+        computed: {
+          input: payrollInput,
+          earnings: {
+            authorizedSalary: roundMoney(monthlySalary),
+            basicPay: "0.00",
+            rata: "0.00",
+            longevityPay: "0.00",
+            overtimePay: "0.00",
+            pera: "0.00",
+            otherEarnings: roundMoney(benefit.total),
+            grossPay: roundMoney(benefit.total),
+          },
+          deductions: zeroDeductions(),
+          netPay: roundMoney(benefit.total),
+        },
+        loanEntries: [],
+      };
+    }
+
+    default:
+      throw new Error(`Unsupported payroll scope: ${ctx.scope}`);
+  }
+}
+
 function computeYearsInService(dateHired: string): number {
   const hired = new Date(dateHired);
   const now = new Date();
   const diffMs = now.getTime() - hired.getTime();
   return Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365.25));
+}
+
+function zeroDeductions(): DeductionBreakdown {
+  const zero = "0.00";
+  return {
+    gsis: { personal: zero, employer: zero, lifeInsurance: zero },
+    philHealth: { personal: zero, employer: zero, total: zero },
+    pagIBIG: { personal: zero, employer: zero },
+    withholdingTax: zero,
+    lateDeduction: zero,
+    undertimeDeduction: zero,
+    absenceDeduction: zero,
+    otherDeductions: zero,
+    totalDeductions: zero,
+  };
 }
 
 function buildZeroResult(input: PayrollInput): PayrollResult {
@@ -992,17 +1567,7 @@ function buildZeroResult(input: PayrollInput): PayrollResult {
       otherEarnings: zero,
       grossPay: zero,
     },
-    deductions: {
-      gsis: { personal: zero, employer: zero, lifeInsurance: zero },
-      philHealth: { personal: zero, employer: zero, total: zero },
-      pagIBIG: { personal: zero, employer: zero },
-      withholdingTax: zero,
-      lateDeduction: zero,
-      undertimeDeduction: zero,
-      absenceDeduction: zero,
-      otherDeductions: zero,
-      totalDeductions: zero,
-    },
+    deductions: zeroDeductions(),
     netPay: zero,
   };
 }

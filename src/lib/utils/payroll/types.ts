@@ -62,6 +62,12 @@ export interface EmployeePayrollInput {
    * Express as monthly equivalent.
    */
   contractRateMonthly?: number;
+  /**
+   * Monthly salary resolved from the salary_grades reference table.
+   * Preferred over the static SSL fallback when provided (> 0), so rate
+   * changes stay data-driven (no code deploy for new DBM tranches).
+   */
+  authorizedMonthlySalary?: number;
 }
 
 export interface AttendanceInput {
@@ -97,6 +103,12 @@ export interface PayrollInput {
    * Defaults to the full calendar year (12).
    */
   monthsWorked?: number;
+  /**
+   * Whether to include RATA in gross earnings. Defaults to true for back-compat.
+   * Scoped payroll runs set this false for the general/regular run so RATA is
+   * paid exclusively via the dedicated PAY-003 RATA run (avoids double payment).
+   */
+  includeRata?: boolean;
   otherAdjustments?: OtherAdjustment[];
 }
 

@@ -7,21 +7,34 @@
  * before the payroll processing period begins. This action creates a
  * `praise_advance_notices` row and fans out N-032 to Payroll staff.
  *
+ * Eligibility (`getPraiseEligibleEmployees`) mirrors the loyalty run
+ * computation (EWB-001): active employees whose end-of-year service
+ * crosses an FM-019 milestone they have not yet been awarded.
+ *
  * Rejects submissions less than 30 days before `payrollPeriodStart`.
  */
 
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
+import { employees } from "@/lib/db/schema/employees";
 import {
+  loyaltyAwardees,
   praiseAdvanceNotices,
   type PraiseAdvanceNotice,
 } from "@/lib/db/schema/welfare";
+import { fmLongevityMilestones } from "@/lib/db/schema/fm-extensions";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { notifyRoles } from "@/lib/notifications";
+import {
+  milestoneFor,
+  pruneAlreadyAwarded,
+  yearsOfService,
+  type LoyaltyCandidate,
+} from "@/lib/utils/ewbm/loyalty-calc";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -65,6 +78,119 @@ const listNoticesSchema = z.object({
 const markProcessedSchema = z.object({
   noticeId: z.string().uuid(),
 });
+
+// ─── getPraiseEligibleEmployees (EWB-004) ───────────────────────────────────
+
+interface PraiseEligibleRow {
+  employeeId: string;
+  employeeNo: string;
+  firstName: string;
+  lastName: string;
+  positionTitle: string;
+  milestoneYears: number;
+  yearsOfService: number;
+}
+
+/**
+ * Resolves the PRAISE-eligible employee set: active employees whose years
+ * of service (as of Dec 31 of the current year, matching the loyalty run
+ * snapshot) cross an active FM-019 longevity milestone that has not been
+ * awarded to them in a prior loyalty run.
+ */
+export async function getPraiseEligibleEmployees(): Promise<
+  Result<PraiseEligibleRow[]>
+> {
+  try {
+    await requirePermission("employees", "process");
+
+    const milestoneRows = await db
+      .select({ years: fmLongevityMilestones.yearsOfService })
+      .from(fmLongevityMilestones)
+      .where(eq(fmLongevityMilestones.isActive, true));
+
+    const milestones = milestoneRows
+      .map((r) => r.years)
+      .filter((y): y is number => typeof y === "number")
+      .sort((a, b) => a - b);
+
+    if (milestones.length === 0) {
+      return err("No active longevity milestones configured (FM-019).");
+    }
+
+    const empRows = await db
+      .select({
+        id: employees.id,
+        employeeNo: employees.employeeNo,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        positionTitle: employees.positionTitle,
+        dateHired: employees.dateHired,
+      })
+      .from(employees)
+      .where(eq(employees.status, "active"));
+
+    // End-of-year snapshot, matching generateLoyaltyRun (EWB-001).
+    const now = new Date();
+    const asOf = new Date(Date.UTC(now.getUTCFullYear(), 11, 31));
+
+    interface Candidate extends LoyaltyCandidate {
+      row: PraiseEligibleRow;
+    }
+
+    const candidates: Candidate[] = [];
+    for (const e of empRows) {
+      if (!e.dateHired) continue;
+      const hire = new Date(e.dateHired);
+      if (Number.isNaN(hire.getTime())) continue;
+      const yos = yearsOfService(hire, asOf);
+      const m = milestoneFor(yos, milestones);
+      if (m === null) continue;
+      candidates.push({
+        employeeId: e.id,
+        milestoneYears: m,
+        row: {
+          employeeId: e.id,
+          employeeNo: e.employeeNo,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          positionTitle: e.positionTitle,
+          milestoneYears: m,
+          yearsOfService: yos,
+        },
+      });
+    }
+
+    // Skip anyone already granted THIS milestone in a prior loyalty run —
+    // the PRAISE incentive follows the same no-duplicate-award rule (EWB-002).
+    let priorAwards: { employeeId: string; milestoneYears: number }[] = [];
+    if (candidates.length > 0) {
+      priorAwards = await db
+        .select({
+          employeeId: loyaltyAwardees.employeeId,
+          milestoneYears: loyaltyAwardees.milestoneYears,
+        })
+        .from(loyaltyAwardees)
+        .where(
+          inArray(
+            loyaltyAwardees.employeeId,
+            candidates.map((c) => c.employeeId),
+          ),
+        );
+    }
+
+    const rows = pruneAlreadyAwarded(candidates, priorAwards)
+      .map((c) => c.row)
+      .sort(
+        (a, b) =>
+          b.milestoneYears - a.milestoneYears ||
+          a.lastName.localeCompare(b.lastName),
+      );
+
+    return ok(rows);
+  } catch (e) {
+    return err(toErrMsg(e));
+  }
+}
 
 // ─── sendAdvanceNotice ──────────────────────────────────────────────────────
 

@@ -10,8 +10,10 @@ import {
   type ComplianceRow,
 } from "@/components/learning/compliance-table";
 import { MandatoryComplianceGauge } from "@/components/learning/mandatory-compliance-gauge";
-import { getComplianceSummary } from "@/lib/actions/learning";
-import { listMandatoryPrograms } from "@/lib/actions/learning";
+import {
+  getComplianceSummary,
+  listMandatoryPrograms,
+} from "@/lib/actions/ldm/mandatory-compliance";
 import { db } from "@/lib/db";
 import { trainingRuns, trainingParticipants } from "@/lib/db/schema/learning";
 import { eq, sql } from "drizzle-orm";

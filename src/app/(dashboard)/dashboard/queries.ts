@@ -18,6 +18,7 @@ import {
   salnSubmissions,
   overtimeRequests,
   documentRequests,
+  notifications,
 } from "@/lib/db/schema";
 import {
   eq,
@@ -797,6 +798,17 @@ export interface AuditorKpis {
   upcomingHolidays: number;
 }
 
+export interface SystemAdminKpis {
+  totalSystemUsers: number;
+  activeSystemUsers: number;
+  usersByRole: { role: string; count: number }[];
+  totalEmployees: number;
+  auditEntriesLast7Days: number;
+  securityEventsLast7Days: number;
+  notificationsLast7Days: number;
+  recentSecurityEvents: RecentActivityRow[];
+}
+
 /**
  * Supervisor / manager dashboard KPIs.
  * When `officeId` is provided, counts are scoped to employees in that office.
@@ -986,6 +998,114 @@ export async function getAuditorKpis(): Promise<AuditorKpis> {
       auditEntriesLast7Days: 0,
       pendingLeaves: 0,
       upcomingHolidays: 0,
+    };
+  }
+}
+
+/**
+ * Audit-log actions treated as security-relevant on the SysAdmin dashboard
+ * (LOG-004): auth events, destructive changes, and data exports. There is no
+ * dedicated failed-login store yet — Supabase Auth failures never reach
+ * audit_logs — so no failed-login KPI is surfaced.
+ */
+const SECURITY_AUDIT_ACTIONS = ["login", "signout_all", "delete", "export"];
+
+/**
+ * System Administrator dashboard KPIs (PRD 3.4 D7). Read-only aggregates:
+ * user counts by role, security-relevant audit activity, and platform totals.
+ */
+export async function getSystemAdminKpis(): Promise<SystemAdminKpis> {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+
+    const [
+      roleRows,
+      activeUserRow,
+      totalEmpRow,
+      auditRow,
+      securityRow,
+      notificationRow,
+      recentSecurityRows,
+    ] = await Promise.all([
+      db
+        .select({ role: systemUsers.role, c: count() })
+        .from(systemUsers)
+        .groupBy(systemUsers.role),
+      db
+        .select({ c: count() })
+        .from(systemUsers)
+        .where(eq(systemUsers.isActive, true)),
+      db
+        .select({ c: count() })
+        .from(employees)
+        .where(
+          and(eq(employees.status, "active"), isNull(employees.deletedAt)),
+        ),
+      db
+        .select({ c: count() })
+        .from(auditLogs)
+        .where(gte(auditLogs.createdAt, sevenDaysAgo)),
+      db
+        .select({ c: count() })
+        .from(auditLogs)
+        .where(
+          and(
+            gte(auditLogs.createdAt, sevenDaysAgo),
+            inArray(auditLogs.action, SECURITY_AUDIT_ACTIONS),
+          ),
+        ),
+      db
+        .select({ c: count() })
+        .from(notifications)
+        .where(gte(notifications.createdAt, sevenDaysAgo)),
+      db
+        .select({
+          id: auditLogs.id,
+          action: auditLogs.action,
+          tableName: auditLogs.tableName,
+          recordId: auditLogs.recordId,
+          createdAt: auditLogs.createdAt,
+          userEmail: systemUsers.email,
+        })
+        .from(auditLogs)
+        .leftJoin(systemUsers, eq(auditLogs.userId, systemUsers.id))
+        .where(inArray(auditLogs.action, SECURITY_AUDIT_ACTIONS))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(5),
+    ]);
+
+    const usersByRole = roleRows
+      .map((row) => ({ role: row.role, count: Number(row.c ?? 0) }))
+      .sort((a, b) => b.count - a.count);
+    const totalSystemUsers = usersByRole.reduce((sum, r) => sum + r.count, 0);
+
+    return {
+      totalSystemUsers,
+      activeSystemUsers: Number(activeUserRow[0]?.c ?? 0),
+      usersByRole,
+      totalEmployees: Number(totalEmpRow[0]?.c ?? 0),
+      auditEntriesLast7Days: Number(auditRow[0]?.c ?? 0),
+      securityEventsLast7Days: Number(securityRow[0]?.c ?? 0),
+      notificationsLast7Days: Number(notificationRow[0]?.c ?? 0),
+      recentSecurityEvents: recentSecurityRows.map((row) => ({
+        id: row.id,
+        action: row.action,
+        tableName: row.tableName,
+        recordId: row.recordId ?? null,
+        performedBy: row.userEmail ?? "System",
+        performedAt: row.createdAt.toISOString(),
+      })),
+    };
+  } catch {
+    return {
+      totalSystemUsers: 0,
+      activeSystemUsers: 0,
+      usersByRole: [],
+      totalEmployees: 0,
+      auditEntriesLast7Days: 0,
+      securityEventsLast7Days: 0,
+      notificationsLast7Days: 0,
+      recentSecurityEvents: [],
     };
   }
 }

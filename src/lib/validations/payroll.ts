@@ -25,6 +25,10 @@ export const CreatePeriodSchema = z
       "magna_carta",
     ]),
     customTitle: z.string().max(255).optional(),
+    // PAY-005: which benefit component a benefits_bonuses run pays.
+    benefitType: z
+      .enum(["mid_year", "year_end_cash_gift", "pbb"])
+      .optional(),
     skipMandatoryDeductions: z.boolean().default(false),
     notes: z.string().max(2000).optional(),
   })
@@ -47,6 +51,19 @@ export const CreatePeriodSchema = z
     {
       message: "Custom title is required for special payroll type",
       path: ["customTitle"],
+    },
+  )
+  .refine(
+    (d) => {
+      // PAY-005: benefitType is required when scope is 'benefits_bonuses'
+      if (d.scope === "benefits_bonuses" && !d.benefitType) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Benefit type is required for benefits and bonuses payroll",
+      path: ["benefitType"],
     },
   );
 
@@ -140,6 +157,8 @@ const LoanBaseSchema = z.object({
     "gsis_multi_purpose",
     "pagibig_multi_purpose",
     "pcso_in_house",
+    // PAY-004: cash advances, collected exclusively by the cash_advance run.
+    "cash_advance",
   ]),
   principal: z
     .string()

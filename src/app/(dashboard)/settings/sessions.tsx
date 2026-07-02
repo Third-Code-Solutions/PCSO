@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Clock, Info } from 'lucide-react';
+import { LogOut, Clock, Info, MonitorSmartphone } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { signOutAllSessions } from './actions';
+import { describeUserAgent } from '@/lib/utils/user-agent';
 
 interface SessionsTabProps {
   lastSignIn: string | null;
@@ -32,6 +33,13 @@ export function SessionsTab({ lastSignIn }: SessionsTabProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
+  // Resolved in an effect (not during render) to avoid an SSR hydration
+  // mismatch — `navigator` does not exist on the server.
+  const [deviceLabel, setDeviceLabel] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setDeviceLabel(describeUserAgent(navigator.userAgent));
+  }, []);
 
   const formattedLastSignIn = lastSignIn
     ? new Intl.DateTimeFormat('en-PH', {
@@ -69,18 +77,28 @@ export function SessionsTab({ lastSignIn }: SessionsTabProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Last Sign-In
-            </p>
-            <p className="text-sm text-muted-foreground">{formattedLastSignIn}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Signed In Since
+              </p>
+              <p className="text-sm text-muted-foreground">{formattedLastSignIn}</p>
+            </div>
+
+            <div className="space-y-1">
+              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <MonitorSmartphone className="h-3.5 w-3.5" aria-hidden />
+                This Device
+              </p>
+              <p className="text-sm text-muted-foreground">{deviceLabel ?? '…'}</p>
+            </div>
           </div>
 
           <div className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 p-3 text-xs text-muted-foreground">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              Individual session tracking per device is coming soon. For now, use &ldquo;Sign out
-              of all sessions&rdquo; below to revoke access everywhere at once.
+              Only the session on this device is shown here. If you signed in on other devices,
+              use &ldquo;Sign out of all sessions&rdquo; below to revoke access everywhere at once.
             </span>
           </div>
         </CardContent>

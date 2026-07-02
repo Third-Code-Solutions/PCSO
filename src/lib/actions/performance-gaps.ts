@@ -15,9 +15,13 @@ import {
   bpcrForms,
   pbbQualifiedLists,
   performanceRatings,
+  performancePeriods,
+  performanceCycles,
 } from "@/lib/db/schema/performance";
 import { employees } from "@/lib/db/schema/employees";
 import { eq, and, gte, sql } from "drizzle-orm";
+import { fetchPbbGateFlags } from "@/lib/db/pbb-gate-queries";
+import { semesterDateRange } from "@/lib/utils/performance/pbb-qualification";
 
 // ─── DPCR Actions ─────────────────────────────────────────────────────────────
 
@@ -250,9 +254,9 @@ export async function submitBpcr(
 /**
  * Generates PBB qualified list per PRD Section 10.4.3
  * Gate 1: Rating ≥ 2.500
- * Gate 2: No pending admin case (placeholder — DB field TBD)
- * Gate 3: No AWOL (placeholder — attendance check TBD)
- * Gate 4: SALN filed (placeholder — 201 file check TBD)
+ * Gate 2: No pending admin case (admin_cases, status = pending)
+ * Gate 3: No AWOL in rating period (attendance_logs + approved leave coverage)
+ * Gate 4: SALN filed for the rating-period year (saln_submissions)
  */
 export async function generatePbbList(
   cycleId: string,
@@ -279,16 +283,59 @@ export async function generatePbbList(
         ),
       );
 
+    // Resolve rating-period bounds for Gates 2-4. The cycle ID may reference
+    // performance_periods (explicit date range) or performance_cycles
+    // (year + semester, PRD 14.6 semester convention).
+    const [period] = await db
+      .select({
+        year: performancePeriods.year,
+        dateFrom: performancePeriods.dateFrom,
+        dateTo: performancePeriods.dateTo,
+      })
+      .from(performancePeriods)
+      .where(eq(performancePeriods.id, cycleId))
+      .limit(1);
+
+    let periodYear: number;
+    let periodStart: string;
+    let periodEnd: string;
+    if (period) {
+      periodYear = period.year;
+      periodStart = period.dateFrom;
+      periodEnd = period.dateTo;
+    } else {
+      const [cycle] = await db
+        .select({
+          year: performanceCycles.year,
+          semester: performanceCycles.semester,
+        })
+        .from(performanceCycles)
+        .where(eq(performanceCycles.id, cycleId))
+        .limit(1);
+      if (!cycle) {
+        return { success: false, error: "Performance cycle not found" };
+      }
+      const range = semesterDateRange(cycle.year, cycle.semester);
+      periodYear = cycle.year;
+      periodStart = range.from;
+      periodEnd = range.to;
+    }
+
+    const gateFlags = await fetchPbbGateFlags({
+      employeeIds: ipcrfRatings.map((r) => r.employeeId),
+      periodStart,
+      periodEnd,
+      salnYear: periodYear,
+    });
+
     // For each employee, check all 4 gates
-    const qualifiedList = [];
-    for (const rating of ipcrfRatings) {
+    const qualifiedList = ipcrfRatings.map((rating) => {
       const ratingGate = parseFloat(rating.numericalRating);
-      // TODO: Query admin case table when implemented
-      const adminGate = 1; // Placeholder: 1 = passed, 0 = failed
-      // TODO: Query attendance records for AWOL
-      const attendanceGate = 1; // Placeholder
-      // TODO: Query 201 file for SALN submission
-      const salnGate = 1; // Placeholder
+      const flags = gateFlags.get(rating.employeeId);
+      // Fail closed on missing gate data: treat as disqualifying
+      const adminGate = flags && !flags.hasPendingAdminCase ? 1 : 0;
+      const attendanceGate = flags && !flags.hadAwol ? 1 : 0;
+      const salnGate = flags?.salnFiled ? 1 : 0;
 
       const qualified =
         ratingGate >= 2.5 &&
@@ -298,7 +345,7 @@ export async function generatePbbList(
           ? 1
           : 0;
 
-      qualifiedList.push({
+      return {
         performanceCycleId: cycleId,
         employeeId: rating.employeeId,
         ratingGate: ratingGate.toFixed(3),
@@ -307,8 +354,8 @@ export async function generatePbbList(
         salnGate: String(salnGate),
         qualified: String(qualified),
         generatedAt: new Date(),
-      });
-    }
+      };
+    });
 
     // Delete existing entries for this cycle
     await db

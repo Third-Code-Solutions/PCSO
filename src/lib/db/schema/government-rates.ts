@@ -25,6 +25,9 @@ export const allowanceTypeEnum = pgEnum('allowance_type', [
   'subsistence',
   'laundry',
   'longevity',
+  // PAY-008 Magna Carta benefit configuration (RA 9710 women / RA 7277 PWD)
+  'magna_carta_women',
+  'magna_carta_pwd',
 ]);
 
 // ─── Salary Grades (SSL V) ────────────────────────────────────────────────────

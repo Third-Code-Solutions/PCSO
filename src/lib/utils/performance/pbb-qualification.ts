@@ -33,6 +33,115 @@ export interface PbbQualificationResult {
  */
 export const MIN_PBB_RATING = 2.5;
 
+// ─── Rating-period date helpers (pure) ───────────────────────────────────────
+
+const DAY_MS = 86_400_000;
+
+function toUtcMs(isoDate: string): number {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (year === undefined || month === undefined || day === undefined) {
+    return Number.NaN;
+  }
+  return Date.UTC(year, month - 1, day);
+}
+
+function toIsoDate(utcMs: number): string {
+  return new Date(utcMs).toISOString().slice(0, 10);
+}
+
+/**
+ * Calendar date range for a rating semester (PRD 14.6: 1 = Jan-Jun, 2 = Jul-Dec).
+ */
+export function semesterDateRange(
+  year: number,
+  semester: number,
+): { from: string; to: string } {
+  if (semester === 1) {
+    return { from: `${year}-01-01`, to: `${year}-06-30` };
+  }
+  if (semester === 2) {
+    return { from: `${year}-07-01`, to: `${year}-12-31` };
+  }
+  throw new Error(`Invalid semester: ${semester} (expected 1 or 2)`);
+}
+
+/**
+ * Enumerates working days (ISO YYYY-MM-DD) in an inclusive date range,
+ * excluding weekends and the supplied non-working holiday dates.
+ *
+ * Returns an empty array for invalid or inverted ranges.
+ */
+export function enumerateWorkingDays(
+  dateFrom: string,
+  dateTo: string,
+  nonWorkingHolidayDates: Iterable<string>,
+): string[] {
+  const startMs = toUtcMs(dateFrom);
+  const endMs = toUtcMs(dateTo);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs > endMs) {
+    return [];
+  }
+
+  const holidaySet = new Set(nonWorkingHolidayDates);
+  const workingDays: string[] = [];
+  for (let ms = startMs; ms <= endMs; ms += DAY_MS) {
+    const dayOfWeek = new Date(ms).getUTCDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue; // weekend
+    const isoDate = toIsoDate(ms);
+    if (holidaySet.has(isoDate)) continue;
+    workingDays.push(isoDate);
+  }
+  return workingDays;
+}
+
+/** Inclusive ISO date interval (e.g., an approved leave span) */
+export interface DateInterval {
+  from: string;
+  to: string;
+}
+
+/**
+ * AWOL detection (Gate 3, PRD 10.4.3): a working day is AWOL when the employee
+ * has no attendance log for that day AND no approved leave covering it.
+ *
+ * ISO date strings compare correctly lexicographically, so interval checks
+ * (and the hire-date clamp) use plain string comparison.
+ *
+ * `activeFromDate` clamps the AWOL window: days before it (e.g. before the
+ * employee's hire date) are never counted as AWOL — the person did not yet
+ * exist in the workforce.
+ *
+ * `exemptDates` suppresses AWOL flagging for specific working days even with no
+ * log (e.g. half-day work suspensions, where a no-capture day is not AWOL).
+ *
+ * @returns The list of AWOL working days (empty = no AWOL).
+ */
+export function findAwolDays(params: {
+  workingDays: readonly string[];
+  attendanceDates: ReadonlySet<string>;
+  approvedLeaveIntervals: readonly DateInterval[];
+  /** Inclusive lower bound (ISO YYYY-MM-DD); days before it are never AWOL. */
+  activeFromDate?: string;
+  /** Working days exempt from AWOL flagging even without a log. */
+  exemptDates?: ReadonlySet<string>;
+}): string[] {
+  const {
+    workingDays,
+    attendanceDates,
+    approvedLeaveIntervals,
+    activeFromDate,
+    exemptDates,
+  } = params;
+  return workingDays.filter((day) => {
+    if (activeFromDate !== undefined && day < activeFromDate) return false;
+    if (exemptDates?.has(day)) return false;
+    if (attendanceDates.has(day)) return false;
+    return !approvedLeaveIntervals.some(
+      (interval) => interval.from <= day && day <= interval.to,
+    );
+  });
+}
+
 /**
  * Validates PBB qualification gates for a single employee.
  *

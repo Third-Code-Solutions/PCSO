@@ -20,9 +20,15 @@ import {
 } from "@/lib/db/schema";
 import { leaveBulkUploads } from "@/lib/db/schema/leave-gaps";
 import { requirePermission } from "@/lib/auth/guards";
-import { withTx } from "@/lib/db/transaction";
+import { withTx, lockKey } from "@/lib/db/transaction";
+import {
+  parseLeaveLedgerCsv,
+  validateRowsForCommit,
+  normalizeLedgerId,
+  existingLedgerKey,
+} from "@/lib/utils/leave/bulk-ledger";
 import { z } from "zod";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 // ─── Schema Validation ────────────────────────────────────────────────────
 
@@ -42,14 +48,35 @@ const AdjustLeaveCreditsSchema = z.object({
     .max(500),
 });
 
-interface BulkUploadRow {
-  employeeNo: string;
-  leaveTypeCode: string;
-  year: number;
-  balance: number;
-  totalCredits: number;
-  usedCredits: number;
-  carryOver: number;
+// Staged rows are round-tripped through a text column; re-validate on read
+// so a tampered/corrupted staging record can never reach the live ledger.
+const StagedRowSchema = z.object({
+  csvRow: z.number().int().min(2),
+  employeeNo: z.string().min(1),
+  leaveTypeCode: z.string().min(1),
+  year: z.number().int().min(2000).max(2100),
+  balance: z.number().min(0),
+  totalCredits: z.number().min(0),
+  usedCredits: z.number().min(0),
+  carryOver: z.number().min(0),
+});
+
+const StagedRowsSchema = z.array(StagedRowSchema);
+
+/**
+ * Raised inside the commit transaction when the leave_credits unique index
+ * rejects a row that a concurrent commit inserted after our pre-check ran.
+ * Not exported (a "use server" module may only export async functions); the
+ * outer action catches it and returns an all-or-nothing failure result.
+ */
+class LeaveLedgerConflictError extends Error {
+  constructor() {
+    super(
+      "One or more leave credit rows were created by a concurrent upload. " +
+        "No rows were committed — refresh and retry to review the conflicts.",
+    );
+    this.name = "LeaveLedgerConflictError";
+  }
 }
 
 // ─── Action: adjustLeaveCredits ───────────────────────────────────────────
@@ -169,123 +196,37 @@ export interface UploadLeaveLedgerCsvResult {
 }
 
 /**
- * LAM-001: Bulk upload leave ledgers via CSV with validation preview
+ * LAM-001: Bulk upload leave ledgers via CSV with validation preview.
+ * Valid rows are persisted on the staging record (staged_rows) so the commit
+ * step can re-validate and write them without re-parsing the original file.
  */
 export async function uploadLeaveLedgerCsv(
   formData: FormData,
 ): Promise<UploadLeaveLedgerCsvResult> {
   const user = await requirePermission("leave", "approve");
 
-  const file = formData.get("file") as File;
-  if (!file) {
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
     throw new Error("No file provided");
   }
 
   const fileName = file.name;
   const text = await file.text();
-  const lines = text.split("\n").filter((line) => line.trim() !== "");
 
-  if (lines.length < 2) {
-    throw new Error("CSV must have at least a header row and one data row");
-  }
+  // Throws on structural problems (no data rows, unexpected header shape).
+  const { rows, errors, dataLineCount } = parseLeaveLedgerCsv(text);
 
-  const header = lines[0]!.split(",");
-  const expectedHeaders = [
-    "employeeNo",
-    "leaveTypeCode",
-    "year",
-    "balance",
-    "totalCredits",
-    "usedCredits",
-    "carryOver",
-  ];
-
-  // Basic header validation
-  if (header.length < expectedHeaders.length) {
-    throw new Error(
-      `Invalid CSV format. Expected headers: ${expectedHeaders.join(", ")}`,
-    );
-  }
-
-  const rows: BulkUploadRow[] = [];
-  const errors: Array<{ row: number; message: string }> = [];
-
-  // Parse and validate rows
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]!;
-    const values = line.split(",");
-
-    if (values.length < expectedHeaders.length) {
-      errors.push({ row: i + 1, message: "Insufficient columns" });
-      continue;
-    }
-
-    try {
-      const row: BulkUploadRow = {
-        employeeNo: values[0]!.trim(),
-        leaveTypeCode: values[1]!.trim(),
-        year: parseInt(values[2]!.trim(), 10),
-        balance: parseFloat(values[3]!.trim()),
-        totalCredits: parseFloat(values[4]!.trim()),
-        usedCredits: parseFloat(values[5]!.trim()),
-        carryOver: parseFloat(values[6]!.trim()),
-      };
-
-      // Validation
-      if (!row.employeeNo) {
-        errors.push({ row: i + 1, message: "Employee number is required" });
-        continue;
-      }
-      if (!row.leaveTypeCode) {
-        errors.push({ row: i + 1, message: "Leave type code is required" });
-        continue;
-      }
-      if (isNaN(row.year) || row.year < 2000 || row.year > 2100) {
-        errors.push({ row: i + 1, message: "Invalid year" });
-        continue;
-      }
-      if (isNaN(row.balance) || row.balance < 0) {
-        errors.push({ row: i + 1, message: "Invalid balance" });
-        continue;
-      }
-
-      rows.push(row);
-    } catch (err) {
-      errors.push({
-        row: i + 1,
-        message: err instanceof Error ? err.message : "Parse error",
-      });
-    }
-  }
-
-  // Check for duplicates within upload
-  const seen = new Set<string>();
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]!;
-    const key = `${row.employeeNo}:${row.leaveTypeCode}:${row.year}`;
-    if (seen.has(key)) {
-      errors.push({
-        row: i + 2, // +2 because we start from row 1 (header is row 0)
-        message: `Duplicate entry for ${key}`,
-      });
-    }
-    seen.add(key);
-  }
-
-  const validCount = rows.length - errors.length;
-  const errorCount = errors.length;
-
-  // Create upload record
   const [upload] = await db
     .insert(leaveBulkUploads)
     .values({
       fileName,
-      recordCount: rows.length,
-      validCount,
-      errorCount,
+      recordCount: dataLineCount,
+      validCount: rows.length,
+      errorCount: errors.length,
       uploadedById: user.employeeId!,
-      status: errorCount === rows.length ? "rejected" : "pending",
+      status: rows.length === 0 ? "rejected" : "pending",
       validationErrors: JSON.stringify(errors),
+      stagedRows: rows.length > 0 ? JSON.stringify(rows) : null,
     })
     .returning({ id: leaveBulkUploads.id });
 
@@ -297,9 +238,9 @@ export async function uploadLeaveLedgerCsv(
 
   return {
     uploadId: String(upload.id),
-    recordCount: rows.length,
-    validCount,
-    errorCount,
+    recordCount: dataLineCount,
+    validCount: rows.length,
+    errorCount: errors.length,
     errors,
   };
 }
@@ -312,41 +253,179 @@ export interface CommitLeaveLedgerUploadResult {
 }
 
 /**
- * LAM-001: Commit validated bulk upload to database
+ * LAM-001: Commit a validated bulk upload to the live leave_credits ledger.
+ *
+ * ALL-or-NOTHING per SEC-010: staged rows are re-validated against the live
+ * database (employee/leave-type existence + duplicate detection on
+ * employee + leave type + year). Any validation error aborts with zero writes.
  */
 export async function commitLeaveLedgerUpload(
   uploadId: string,
 ): Promise<CommitLeaveLedgerUploadResult> {
+  const parsedUploadId = z.string().uuid("Invalid upload ID.").parse(uploadId);
   const user = await requirePermission("leave", "approve");
 
-  const [upload] = await db
-    .select()
-    .from(leaveBulkUploads)
-    .where(eq(leaveBulkUploads.id, uploadId))
-    .limit(1);
+  let result: CommitLeaveLedgerUploadResult;
+  try {
+    result = await withTx(async (tx) => {
+    // Serialize concurrent commits of the same upload (double-click, two tabs).
+    await lockKey(tx, `leave_bulk_upload:${parsedUploadId}`);
 
-  if (!upload) {
-    throw new Error("Upload record not found");
+    const [upload] = await tx
+      .select()
+      .from(leaveBulkUploads)
+      .where(eq(leaveBulkUploads.id, parsedUploadId))
+      .limit(1);
+
+    if (!upload) {
+      throw new Error("Upload record not found");
+    }
+    if (upload.status !== "pending") {
+      throw new Error(`Cannot commit upload in '${upload.status}' status`);
+    }
+    if (!upload.stagedRows) {
+      throw new Error(
+        "Upload has no staged rows to commit — re-upload the CSV file.",
+      );
+    }
+
+    let stagedJson: unknown;
+    try {
+      stagedJson = JSON.parse(upload.stagedRows);
+    } catch {
+      throw new Error("Staged rows are corrupted — re-upload the CSV file.");
+    }
+    const staged = StagedRowsSchema.parse(stagedJson);
+    if (staged.length === 0) {
+      throw new Error("Upload has no valid rows to commit.");
+    }
+
+    // Resolve employee numbers → ids (exact stored value; matching is
+    // case-insensitive via normalized map keys).
+    const employeeNos = [...new Set(staged.map((r) => r.employeeNo.trim()))];
+    const employeeRows = await tx
+      .select({ id: employees.id, employeeNo: employees.employeeNo })
+      .from(employees)
+      .where(inArray(employees.employeeNo, employeeNos));
+    const employeeIdByNo = new Map(
+      employeeRows.map((e) => [normalizeLedgerId(e.employeeNo), String(e.id)]),
+    );
+
+    // Leave types are a small lookup table — load all for code matching.
+    const typeRows = await tx
+      .select({ id: leaveTypes.id, code: leaveTypes.code })
+      .from(leaveTypes);
+    const leaveTypeIdByCode = new Map(
+      typeRows.map((t) => [normalizeLedgerId(t.code), String(t.id)]),
+    );
+
+    // Existing ledger rows for the affected employees/years → duplicate keys.
+    const matchedEmployeeIds = [...new Set(employeeIdByNo.values())];
+    const years = [...new Set(staged.map((r) => r.year))];
+    const existingCredits =
+      matchedEmployeeIds.length > 0
+        ? await tx
+            .select({
+              employeeId: leaveCredits.employeeId,
+              leaveTypeId: leaveCredits.leaveTypeId,
+              year: leaveCredits.year,
+            })
+            .from(leaveCredits)
+            .where(
+              and(
+                inArray(leaveCredits.employeeId, matchedEmployeeIds),
+                inArray(leaveCredits.year, years),
+              ),
+            )
+        : [];
+    const existingLedgerKeys = new Set(
+      existingCredits.map((c) =>
+        existingLedgerKey(String(c.employeeId), String(c.leaveTypeId), c.year),
+      ),
+    );
+
+    const { resolved, errors } = validateRowsForCommit(staged, {
+      employeeIdByNo,
+      leaveTypeIdByCode,
+      existingLedgerKeys,
+    });
+
+    // SEC-010: any validation failure means zero ledger writes.
+    if (errors.length > 0) {
+      return { processedCount: 0, errors };
+    }
+
+    // The SELECT-based pre-check above cannot see rows a *concurrent* commit
+    // inserts after it runs. The leave_credits unique index is the real
+    // arbiter: skip conflicting rows, then verify every intended row landed.
+    // A short insert means a race — abort the whole tx (SEC-010 all-or-nothing)
+    // rather than committing a partial batch.
+    const inserted = await tx
+      .insert(leaveCredits)
+      .values(
+        resolved.map((row) => ({
+          employeeId: row.employeeId,
+          leaveTypeId: row.leaveTypeId,
+          year: row.year,
+          totalCredits: row.totalCredits.toFixed(3),
+          usedCredits: row.usedCredits.toFixed(3),
+          balance: row.balance.toFixed(3),
+          carryOver: row.carryOver.toFixed(3),
+        })),
+      )
+      .onConflictDoNothing({
+        target: [
+          leaveCredits.employeeId,
+          leaveCredits.leaveTypeId,
+          leaveCredits.year,
+        ],
+      })
+      .returning({ id: leaveCredits.id });
+
+    if (inserted.length !== resolved.length) {
+      throw new LeaveLedgerConflictError();
+    }
+
+    await tx
+      .update(leaveBulkUploads)
+      .set({ status: "committed", updatedAt: new Date() })
+      .where(eq(leaveBulkUploads.id, parsedUploadId));
+
+    await tx.insert(auditLogs).values({
+      userId: user.id,
+      action: "commit",
+      tableName: "leave_bulk_uploads",
+      recordId: parsedUploadId,
+      oldValues: { status: "pending" },
+      newValues: {
+        status: "committed",
+        fileName: upload.fileName,
+        committedRows: resolved.length,
+      },
+    });
+
+    return {
+      processedCount: resolved.length,
+      errors: [] as Array<{ row: number; message: string }>,
+    };
+    });
+  } catch (err) {
+    // A concurrent commit won the race on a shared (employee, leave type, year)
+    // key; the unique index rolled our whole batch back. Report cleanly with
+    // zero writes rather than surfacing a raw DB error (SEC-010).
+    if (err instanceof LeaveLedgerConflictError) {
+      return { processedCount: 0, errors: [{ row: 0, message: err.message }] };
+    }
+    throw err;
   }
 
-  if (upload.status !== "pending") {
-    throw new Error(`Cannot commit upload in '${upload.status}' status`);
+  if (result.processedCount > 0) {
+    revalidatePath("/leave/bulk-upload");
+    revalidatePath("/leave/credits/admin");
+    revalidatePath("/leave/credits");
   }
 
-  // TODO: Parse the original file again and commit valid rows
-  // For now, just mark as committed
-  await db
-    .update(leaveBulkUploads)
-    .set({ status: "committed", updatedAt: new Date() })
-    .where(eq(leaveBulkUploads.id, uploadId));
-
-  revalidatePath("/leave/bulk-upload");
-  revalidatePath("/leave/credits/admin");
-
-  return {
-    processedCount: upload.validCount,
-    errors: [],
-  };
+  return result;
 }
 
 // ─── Action: getAdvancedLeaveReports ──────────────────────────────────────

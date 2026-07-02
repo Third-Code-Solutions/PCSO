@@ -34,6 +34,7 @@ export const leaveBulkUploads = pgTable("leave_bulk_uploads", {
     .references(() => employees.id),
   status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | validated | committed | rejected
   validationErrors: text("validation_errors"), // JSON stringified errors
+  stagedRows: text("staged_rows"), // JSON stringified LeaveLedgerRow[] awaiting commit (LAM-001)
   ...timestamps,
 });
 

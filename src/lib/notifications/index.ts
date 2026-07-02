@@ -14,6 +14,7 @@ export type NotificationType =
   | 'payroll_released'
   | 'payroll_approved'
   | 'attendance_anomaly'
+  | 'dtr_correction_approved'
   | 'step_increment_implemented'
   | 'saln_reminder'
   | 'employee_created'

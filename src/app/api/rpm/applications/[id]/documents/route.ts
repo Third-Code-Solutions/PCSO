@@ -9,12 +9,25 @@ import {
 } from "@/lib/db/schema/recruitment";
 import { authenticateApplicantRequest } from "@/lib/utils/rpm/applicant-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { enforceRateLimit } from "@/lib/utils/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-// TODO integrator (API-005): rate limit uploads; add virus scanning hook.
+// TODO integrator: add virus scanning hook for uploaded documents.
 
 export const runtime = "nodejs";
+
+// API-005 per-IP limits: reads are generous, uploads are scarce.
+const LIST_RATE_LIMIT = {
+  bucket: "rpm:documents:list",
+  limit: 120,
+  windowMs: 60_000,
+};
+const UPLOAD_RATE_LIMIT = {
+  bucket: "rpm:documents:upload",
+  limit: 20,
+  windowMs: 60 * 60_000,
+};
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
@@ -57,6 +70,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const limited = enforceRateLimit(request, LIST_RATE_LIMIT);
+    if (limited) return limited;
+
     const token = authenticateApplicantRequest(request);
     if (!token) return unauthorized();
     const { id } = await params;
@@ -109,6 +125,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const limited = enforceRateLimit(request, UPLOAD_RATE_LIMIT);
+    if (limited) return limited;
+
     const token = authenticateApplicantRequest(request);
     if (!token) return unauthorized();
     const { id } = await params;

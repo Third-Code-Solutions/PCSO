@@ -61,6 +61,16 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
 
+      # Hand-written incremental SQL migrations (supabase/migrations/*.sql) are
+      # applied out-of-band from the drizzle journal. All files are idempotent
+      # (guarded ADD COLUMN IF NOT EXISTS / CREATE ... IF NOT EXISTS / ADD VALUE
+      # IF NOT EXISTS), so re-running on an already-migrated database is a no-op.
+      - name: Apply incremental SQL migrations
+        shell: bash
+        run: npm run db:apply-sql supabase/migrations/2026-07-03-*.sql
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+
   deploy:
     name: Deploy to Vercel Production
     runs-on: ubuntu-latest

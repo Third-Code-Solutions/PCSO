@@ -19,9 +19,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const yearParam = searchParams.get("year");
   const officeIdParam = searchParams.get("officeId");
 
+  // Server action validates 2000–2100; fall back to the current year for
+  // out-of-range or malformed values instead of surfacing a validation error.
+  const parsedYear = yearParam && /^\d{4}$/.test(yearParam) ? Number(yearParam) : NaN;
   const year =
-    yearParam && /^\d{4}$/.test(yearParam)
-      ? Number(yearParam)
+    parsedYear >= 2000 && parsedYear <= 2100
+      ? parsedYear
       : new Date().getFullYear();
 
   try {

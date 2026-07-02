@@ -96,5 +96,25 @@ export {
   PERA_MONTHLY_AMOUNT,
 } from './bonuses';
 
+// Run-scope support (salary table resolution, allowance config, magna carta)
+export {
+  resolveSalaryAsOf,
+  resolveEmployeeMonthlySalary,
+  resolveAllowanceMonthlyAmount,
+  monthsInclusive,
+  computeMagnaCartaBenefit,
+} from './run-support';
+export type {
+  SalaryGradeRow,
+  AllowanceAmountConfig,
+  MagnaCartaEligibility,
+  MagnaCartaAmounts,
+  MagnaCartaBenefit,
+} from './run-support';
+
+// Loan ledger amortization (PAY-009)
+export { computeLoanDeductions, monthlyScheduleApplies } from './loans';
+export type { LoanForDeduction, LoanDeductionEntry } from './loans';
+
 // Full payroll orchestrator
 export { computeFullPayroll } from './compute-full';

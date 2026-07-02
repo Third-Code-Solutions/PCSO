@@ -645,6 +645,108 @@ describe('Scenario 11: SG 24 Step 1 — RATA boundary', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 13. includeRata flag (F-RATA-DOUBLE)
+// ---------------------------------------------------------------------------
+
+describe("Scenario 13: includeRata flag excludes RATA from the general run", () => {
+  it("defaults to including RATA (back-compat) for a RATA-eligible grade", () => {
+    const input = makeInput({
+      employee: {
+        id: "sg24",
+        appointmentType: "permanent",
+        salaryGrade: 24,
+        step: 1,
+        yearsInService: 0,
+      },
+    });
+    const result = computeFullPayroll(input);
+    expect(parseFloat(result.earnings.rata)).toBe(4000);
+  });
+
+  it("excludes RATA from gross when includeRata is false", () => {
+    const withRata = computeFullPayroll(
+      makeInput({
+        employee: {
+          id: "sg24",
+          appointmentType: "permanent",
+          salaryGrade: 24,
+          step: 1,
+          yearsInService: 0,
+        },
+      }),
+    );
+    const withoutRata = computeFullPayroll(
+      makeInput({
+        employee: {
+          id: "sg24",
+          appointmentType: "permanent",
+          salaryGrade: 24,
+          step: 1,
+          yearsInService: 0,
+        },
+        includeRata: false,
+      }),
+    );
+
+    expect(withoutRata.earnings.rata).toBe("0.00");
+    // Gross drops by exactly the RATA amount that was previously double-counted.
+    expect(
+      parseFloat(withRata.earnings.grossPay) -
+        parseFloat(withoutRata.earnings.grossPay),
+    ).toBeCloseTo(parseFloat(withRata.earnings.rata), 2);
+  });
+
+  it("RATA is non-taxable, so excluding it does not change withholding", () => {
+    const withRata = computeFullPayroll(
+      makeInput({
+        employee: {
+          id: "sg24",
+          appointmentType: "permanent",
+          salaryGrade: 24,
+          step: 1,
+          yearsInService: 0,
+        },
+      }),
+    );
+    const withoutRata = computeFullPayroll(
+      makeInput({
+        employee: {
+          id: "sg24",
+          appointmentType: "permanent",
+          salaryGrade: 24,
+          step: 1,
+          yearsInService: 0,
+        },
+        includeRata: false,
+      }),
+    );
+    expect(withoutRata.deductions.withholdingTax).toBe(
+      withRata.deductions.withholdingTax,
+    );
+  });
+
+  it("net pay arithmetic stays consistent with includeRata false", () => {
+    const result = computeFullPayroll(
+      makeInput({
+        employee: {
+          id: "sg33",
+          appointmentType: "permanent",
+          salaryGrade: 33,
+          step: 8,
+          yearsInService: 30,
+        },
+        includeRata: false,
+      }),
+    );
+    expect(result.earnings.rata).toBe("0.00");
+    const gross = parseFloat(result.earnings.grossPay);
+    const totalDed = parseFloat(result.deductions.totalDeductions);
+    const net = parseFloat(result.netPay);
+    expect(Math.abs(gross - totalDed - net)).toBeLessThan(0.02);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 12. Input validation (type safety — should throw for bad inputs)
 // ---------------------------------------------------------------------------
 

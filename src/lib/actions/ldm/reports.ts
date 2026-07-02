@@ -1,53 +1,58 @@
 "use server";
 
 /**
- * LDM-011 / LDM-015 — Training reports.
+ * LDM-011 / LDM-015 — Training expense + ad-hoc reports.
  *
- *   - yearlyExpenseReport: aggregates `total_budget` of completed training
- *     runs in a calendar year, optionally broken down by program, department,
- *     or L&D type.
- *   - exportYearlyExpenseCsv: the same output, rendered as CSV.
+ *   - getTrainingExpenseReport: per-program totals (runs, participants,
+ *     expense) for completed runs in a calendar year.
+ *   - getTrainingExpenseSummary: grand totals + per-L&D-type rollup.
+ *   - exportTrainingExpenseToCSV: the same output rendered as CSV
+ *     (consumed by GET /api/learning/reports/export).
  *   - adhocTrainingReport: free-form filter (office, program, date range,
  *     L&D type) producing a flat row-per-participant view.
+ *
+ * Authorization: reads require permission('learning', 'view'); the CSV export
+ * requires permission('learning', 'export').
  */
-import { sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/lib/db";
+import {
+  trainingParticipants,
+  trainingPrograms,
+  trainingRuns,
+} from "@/lib/db/schema/learning";
+import { employees } from "@/lib/db/schema/employees";
+import { requirePermission } from "@/lib/auth/guards";
 
-export type ExpenseBreakdown =
-  | "total"
-  | "per_program"
-  | "per_department"
-  | "per_lnd_type";
+// ── Types (module-local: 'use server' files export async functions only) ────
 
-export interface ExpenseBucket {
-  key: string;
-  label: string;
-  totalBudget: number;
-  runCount: number;
+interface TrainingExpenseRecord {
+  programId: string;
+  programTitle: string;
+  lndType: string;
+  totalRuns: number;
+  totalParticipants: number;
+  totalExpense: number;
 }
 
-export interface YearlyExpenseReport {
-  year: number;
-  breakdown: ExpenseBreakdown;
-  buckets: ExpenseBucket[];
-  grandTotal: number;
+interface TrainingExpenseSummary {
+  totalRuns: number;
+  totalParticipants: number;
+  totalExpense: number;
+  byType: Record<
+    string,
+    { runs: number; participants: number; expense: number }
+  >;
 }
 
-export interface AdhocReportFilter {
-  officeId?: string;
-  programId?: string;
-  startDate?: Date;
-  endDate?: Date;
-  lndType?: string;
-}
-
-export interface AdhocReportRow {
+interface AdhocReportRow {
   participantId: string;
   employeeId: string;
   employeeName: string;
   programId: string;
   programTitle: string;
-  runId: string | null;
+  runId: string;
   runStartDate: Date | null;
   runEndDate: Date | null;
   status: string;
@@ -55,14 +60,28 @@ export interface AdhocReportRow {
   cost: number | null;
 }
 
-// ── Yearly expense report ────────────────────────────────────────────────────
+const LND_TYPES = [
+  "technical",
+  "managerial",
+  "supervisory",
+  "foundational",
+  "scholarship",
+] as const;
 
-function yearBounds(year: number): { start: Date; end: Date } {
-  return {
-    start: new Date(Date.UTC(year, 0, 1)),
-    end: new Date(Date.UTC(year + 1, 0, 1)),
-  };
-}
+const expenseFilterSchema = z.object({
+  cycleYear: z.number().int().min(2000).max(2100).optional(),
+  programId: z.string().uuid().optional(),
+  officeId: z.string().uuid().optional(),
+  lndType: z.enum(LND_TYPES).optional(),
+});
+
+const adhocFilterSchema = z.object({
+  officeId: z.string().uuid().optional(),
+  programId: z.string().uuid().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  lndType: z.enum(LND_TYPES).optional(),
+});
 
 function toNumber(value: unknown): number {
   if (typeof value === "number") return value;
@@ -73,77 +92,128 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
-export async function yearlyExpenseReport(
-  year: number,
-  breakdown: ExpenseBreakdown = "total",
-): Promise<YearlyExpenseReport> {
-  const { start, end } = yearBounds(year);
+// ── Expense report (LDM-011) ─────────────────────────────────────────────────
 
-  let rows: Array<Record<string, unknown>>;
-  switch (breakdown) {
-    case "per_program":
-      rows = (await db.execute(sql`
-        SELECT tr.program_id AS key, prog.title AS label,
-               COALESCE(SUM(tr.total_budget), 0) AS total_budget,
-               COUNT(*) AS run_count
-        FROM training_runs tr
-        LEFT JOIN training_programs prog ON prog.id = tr.program_id
-        WHERE tr.status = 'completed'
-          AND tr.end_date >= ${start} AND tr.end_date < ${end}
-        GROUP BY tr.program_id, prog.title
-        ORDER BY total_budget DESC
-      `)) as unknown as Array<Record<string, unknown>>;
-      break;
-    case "per_department":
-      rows = (await db.execute(sql`
-        SELECT tr.department_id AS key, dept.name AS label,
-               COALESCE(SUM(tr.total_budget), 0) AS total_budget,
-               COUNT(*) AS run_count
-        FROM training_runs tr
-        LEFT JOIN offices dept ON dept.id = tr.department_id
-        WHERE tr.status = 'completed'
-          AND tr.end_date >= ${start} AND tr.end_date < ${end}
-        GROUP BY tr.department_id, dept.name
-        ORDER BY total_budget DESC
-      `)) as unknown as Array<Record<string, unknown>>;
-      break;
-    case "per_lnd_type":
-      rows = (await db.execute(sql`
-        SELECT tr.lnd_type AS key, tr.lnd_type AS label,
-               COALESCE(SUM(tr.total_budget), 0) AS total_budget,
-               COUNT(*) AS run_count
-        FROM training_runs tr
-        WHERE tr.status = 'completed'
-          AND tr.end_date >= ${start} AND tr.end_date < ${end}
-        GROUP BY tr.lnd_type
-        ORDER BY total_budget DESC
-      `)) as unknown as Array<Record<string, unknown>>;
-      break;
-    case "total":
-    default:
-      rows = (await db.execute(sql`
-        SELECT 'total' AS key, 'Total' AS label,
-               COALESCE(SUM(total_budget), 0) AS total_budget,
-               COUNT(*) AS run_count
-        FROM training_runs
-        WHERE status = 'completed'
-          AND end_date >= ${start} AND end_date < ${end}
-      `)) as unknown as Array<Record<string, unknown>>;
-      break;
+export async function getTrainingExpenseReport(filters?: {
+  cycleYear?: number;
+  programId?: string;
+  officeId?: string;
+  lndType?: string;
+}): Promise<TrainingExpenseRecord[]> {
+  await requirePermission("learning", "view");
+  const parsed = expenseFilterSchema.parse(filters ?? {});
+  const currentYear = parsed.cycleYear ?? new Date().getFullYear();
+
+  const runs = await db
+    .select({
+      programId: trainingRuns.programId,
+      runId: trainingRuns.id,
+      totalBudget: trainingRuns.totalBudget,
+    })
+    .from(trainingRuns)
+    .where(
+      and(
+        sql`EXTRACT(YEAR FROM ${trainingRuns.scheduledStart}) = ${currentYear}`,
+        eq(trainingRuns.status, "completed"),
+      ),
+    );
+
+  if (runs.length === 0) return [];
+
+  const participantCounts = await db
+    .select({
+      runId: trainingParticipants.runId,
+      count: sql<number>`COUNT(*)::int`,
+    })
+    .from(trainingParticipants)
+    .where(
+      inArray(
+        trainingParticipants.runId,
+        runs.map((r) => r.runId),
+      ),
+    )
+    .groupBy(trainingParticipants.runId);
+
+  const participantMap = new Map(
+    participantCounts.map((p) => [p.runId, toNumber(p.count)]),
+  );
+
+  const programExpenseMap = new Map<
+    string,
+    { totalRuns: number; totalParticipants: number; totalExpense: number }
+  >();
+  for (const run of runs) {
+    const existing = programExpenseMap.get(run.programId) ?? {
+      totalRuns: 0,
+      totalParticipants: 0,
+      totalExpense: 0,
+    };
+    programExpenseMap.set(run.programId, {
+      totalRuns: existing.totalRuns + 1,
+      totalParticipants:
+        existing.totalParticipants + (participantMap.get(run.runId) ?? 0),
+      totalExpense: existing.totalExpense + toNumber(run.totalBudget),
+    });
   }
 
-  const buckets: ExpenseBucket[] = rows.map((r) => ({
-    key: r.key == null ? "unknown" : String(r.key),
-    label:
-      typeof r.label === "string" && r.label.length > 0
-        ? r.label
-        : String(r.key ?? "Unknown"),
-    totalBudget: toNumber(r.total_budget),
-    runCount: toNumber(r.run_count),
-  }));
-  const grandTotal = buckets.reduce((acc, b) => acc + b.totalBudget, 0);
-  return { year, breakdown, buckets, grandTotal };
+  const programs = await db
+    .select({
+      id: trainingPrograms.id,
+      title: trainingPrograms.title,
+      lndType: trainingPrograms.lndType,
+    })
+    .from(trainingPrograms)
+    .where(inArray(trainingPrograms.id, Array.from(programExpenseMap.keys())));
+
+  return programs
+    .flatMap((p): TrainingExpenseRecord[] => {
+      const stats = programExpenseMap.get(p.id);
+      if (!stats) return [];
+      if (parsed.programId && p.id !== parsed.programId) return [];
+      if (parsed.lndType && p.lndType !== parsed.lndType) return [];
+      return [
+        {
+          programId: p.id,
+          programTitle: p.title,
+          lndType: p.lndType,
+          totalRuns: stats.totalRuns,
+          totalParticipants: stats.totalParticipants,
+          totalExpense: stats.totalExpense,
+        },
+      ];
+    })
+    .sort((a, b) => b.totalExpense - a.totalExpense);
 }
+
+export async function getTrainingExpenseSummary(
+  cycleYear?: number,
+): Promise<TrainingExpenseSummary> {
+  const records = await getTrainingExpenseReport({ cycleYear });
+
+  const byType: TrainingExpenseSummary["byType"] = {};
+  let totalRuns = 0;
+  let totalParticipants = 0;
+  let totalExpense = 0;
+  for (const r of records) {
+    totalRuns += r.totalRuns;
+    totalParticipants += r.totalParticipants;
+    totalExpense += r.totalExpense;
+    const bucket = byType[r.lndType] ?? {
+      runs: 0,
+      participants: 0,
+      expense: 0,
+    };
+    byType[r.lndType] = {
+      runs: bucket.runs + r.totalRuns,
+      participants: bucket.participants + r.totalParticipants,
+      expense: bucket.expense + r.totalExpense,
+    };
+  }
+
+  return { totalRuns, totalParticipants, totalExpense, byType };
+}
+
+// ── CSV export ───────────────────────────────────────────────────────────────
 
 function escapeCsv(value: string | number): string {
   const s = String(value);
@@ -153,88 +223,120 @@ function escapeCsv(value: string | number): string {
   return s;
 }
 
-export async function exportYearlyExpenseCsv(
-  year: number,
-  breakdown: ExpenseBreakdown = "total",
-): Promise<string> {
-  const report = await yearlyExpenseReport(year, breakdown);
-  const header = ["key", "label", "total_budget", "run_count"];
+export async function exportTrainingExpenseToCSV(filters?: {
+  cycleYear?: number;
+  format?: "csv";
+}): Promise<{
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
+}> {
+  await requirePermission("learning", "export");
+  const year =
+    z.number().int().min(2000).max(2100).optional().parse(filters?.cycleYear) ??
+    new Date().getFullYear();
+  const records = await getTrainingExpenseReport({ cycleYear: year });
+
+  const header = [
+    "Program Title",
+    "L&D Type",
+    "Total Runs",
+    "Total Participants",
+    "Total Expense (PHP)",
+  ];
   const lines: string[] = [header.join(",")];
-  for (const b of report.buckets) {
+  let totalRuns = 0;
+  let totalParticipants = 0;
+  let totalExpense = 0;
+  for (const r of records) {
+    totalRuns += r.totalRuns;
+    totalParticipants += r.totalParticipants;
+    totalExpense += r.totalExpense;
     lines.push(
       [
-        escapeCsv(b.key),
-        escapeCsv(b.label),
-        escapeCsv(b.totalBudget),
-        escapeCsv(b.runCount),
+        escapeCsv(r.programTitle),
+        escapeCsv(r.lndType.replace(/_/g, " ")),
+        escapeCsv(r.totalRuns),
+        escapeCsv(r.totalParticipants),
+        escapeCsv(r.totalExpense.toFixed(2)),
       ].join(","),
     );
   }
-  lines.push(["TOTAL", "", escapeCsv(report.grandTotal), ""].join(","));
-  return lines.join("\n");
+  lines.push(
+    [
+      "TOTAL",
+      "",
+      escapeCsv(totalRuns),
+      escapeCsv(totalParticipants),
+      escapeCsv(totalExpense.toFixed(2)),
+    ].join(","),
+  );
+
+  return {
+    filename: `training-expense-report-${year}.csv`,
+    contentType: "text/csv",
+    bytes: new TextEncoder().encode(lines.join("\n")),
+  };
 }
 
-// ── Ad-hoc training report ───────────────────────────────────────────────────
+// ── Ad-hoc training report (LDM-015) ────────────────────────────────────────
 
-export async function adhocTrainingReport(
-  filter: AdhocReportFilter,
-): Promise<AdhocReportRow[]> {
-  const conditions = [sql`1 = 1`];
-  if (filter.officeId) {
-    conditions.push(sql`e.office_id = ${filter.officeId}`);
-  }
-  if (filter.programId) {
-    conditions.push(sql`tp.program_id = ${filter.programId}`);
-  }
-  if (filter.startDate) {
-    conditions.push(sql`run.start_date >= ${filter.startDate}`);
-  }
-  if (filter.endDate) {
-    conditions.push(sql`run.end_date <= ${filter.endDate}`);
-  }
-  if (filter.lndType) {
-    conditions.push(sql`run.lnd_type = ${filter.lndType}`);
-  }
+export async function adhocTrainingReport(filter: {
+  officeId?: string;
+  programId?: string;
+  startDate?: Date;
+  endDate?: Date;
+  lndType?: string;
+}): Promise<AdhocReportRow[]> {
+  await requirePermission("learning", "view");
+  const parsed = adhocFilterSchema.parse(filter ?? {});
 
-  const whereClause = sql.join(conditions, sql` AND `);
-  const rows = (await db.execute(sql`
-    SELECT tp.id AS participant_id, tp.employee_id, tp.program_id, tp.run_id,
-           tp.status,
-           e.first_name, e.last_name,
-           prog.title AS program_title,
-           run.start_date, run.end_date, run.lnd_type, run.total_budget
-    FROM training_participants tp
-    LEFT JOIN employees e ON e.id = tp.employee_id
-    LEFT JOIN training_programs prog ON prog.id = tp.program_id
-    LEFT JOIN training_runs run ON run.id = tp.run_id
-    WHERE ${whereClause}
-    ORDER BY run.start_date DESC NULLS LAST
-  `)) as unknown as Array<Record<string, unknown>>;
+  const conds = [];
+  if (parsed.officeId) conds.push(eq(employees.officeId, parsed.officeId));
+  if (parsed.programId)
+    conds.push(eq(trainingRuns.programId, parsed.programId));
+  if (parsed.startDate)
+    conds.push(gte(trainingRuns.scheduledStart, parsed.startDate));
+  if (parsed.endDate)
+    conds.push(lte(trainingRuns.scheduledEnd, parsed.endDate));
+  if (parsed.lndType) conds.push(eq(trainingPrograms.lndType, parsed.lndType));
+
+  const rows = await db
+    .select({
+      participantId: trainingParticipants.id,
+      employeeId: trainingParticipants.employeeId,
+      firstName: employees.firstName,
+      lastName: employees.lastName,
+      programId: trainingRuns.programId,
+      programTitle: trainingPrograms.title,
+      runId: trainingRuns.id,
+      runStartDate: trainingRuns.scheduledStart,
+      runEndDate: trainingRuns.scheduledEnd,
+      status: trainingParticipants.status,
+      lndType: trainingPrograms.lndType,
+      totalBudget: trainingRuns.totalBudget,
+    })
+    .from(trainingParticipants)
+    .innerJoin(employees, eq(employees.id, trainingParticipants.employeeId))
+    .innerJoin(trainingRuns, eq(trainingRuns.id, trainingParticipants.runId))
+    .innerJoin(
+      trainingPrograms,
+      eq(trainingPrograms.id, trainingRuns.programId),
+    )
+    .where(conds.length > 0 ? and(...conds) : undefined)
+    .orderBy(desc(trainingRuns.scheduledStart));
 
   return rows.map((r) => ({
-    participantId: String(r.participant_id),
-    employeeId: String(r.employee_id),
-    employeeName: [r.first_name, r.last_name]
-      .filter((v): v is string => typeof v === "string" && v.length > 0)
-      .join(" ")
-      .trim(),
-    programId: String(r.program_id),
-    programTitle: typeof r.program_title === "string" ? r.program_title : "",
-    runId: r.run_id == null ? null : String(r.run_id),
-    runStartDate:
-      r.start_date instanceof Date
-        ? r.start_date
-        : r.start_date == null
-          ? null
-          : new Date(String(r.start_date)),
-    runEndDate:
-      r.end_date instanceof Date
-        ? r.end_date
-        : r.end_date == null
-          ? null
-          : new Date(String(r.end_date)),
-    status: String(r.status ?? ""),
-    lndType: typeof r.lnd_type === "string" ? r.lnd_type : null,
-    cost: r.total_budget == null ? null : toNumber(r.total_budget),
+    participantId: r.participantId,
+    employeeId: r.employeeId,
+    employeeName: `${r.firstName} ${r.lastName}`.trim(),
+    programId: r.programId,
+    programTitle: r.programTitle,
+    runId: r.runId,
+    runStartDate: r.runStartDate,
+    runEndDate: r.runEndDate,
+    status: r.status,
+    lndType: r.lndType,
+    cost: r.totalBudget === null ? null : toNumber(r.totalBudget),
   }));
 }

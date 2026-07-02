@@ -29,6 +29,8 @@ import {
   type PhilHealthEprsRow,
   type PhilHealthEprsMeta,
 } from "@/lib/utils/remittances/philhealth-eprs";
+import { getOrgProfile } from "@/lib/org-profile";
+import { requireEmployerIdentifier } from "@/lib/utils/remittances/employer-identity";
 
 const REMITTANCE_RECORD_INSERT_CHUNK = 200;
 
@@ -219,6 +221,14 @@ export async function exportPhilHealthEprs(input: unknown) {
   const parsed = ExportPhilHealthSchema.parse(input);
   await requirePermission("remittances", "export");
 
+  // Fail fast if the employer number is unconfigured — a PhilHealth file must
+  // never be emitted with the seeded placeholder ID (PRD P0-003).
+  const profile = await getOrgProfile();
+  const philhealthEmployerNo = requireEmployerIdentifier(
+    profile.philhealthEmployerNo,
+    "PhilHealth employer number",
+  );
+
   const [batch] = await db
     .select()
     .from(remittanceBatches)
@@ -298,8 +308,8 @@ export async function exportPhilHealthEprs(input: unknown) {
   });
 
   const meta: PhilHealthEprsMeta = {
-    agencyName: "Philippine Charity Sweepstakes Office",
-    employerNo: "PH-ER-0000-0001", // TODO: replace with real PhilHealth employer number from org_profile
+    agencyName: profile.agencyName,
+    employerNo: philhealthEmployerNo,
     periodLabel: `${batch.periodStart} to ${batch.periodEnd}`,
     periodStart: batch.periodStart,
     periodEnd: batch.periodEnd,

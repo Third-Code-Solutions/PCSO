@@ -48,6 +48,7 @@ export function PeriodForm({ defaultScope = "regular" }: PeriodFormProps) {
       payDate: "",
       scope: defaultScope,
       customTitle: "",
+      benefitType: undefined,
       skipMandatoryDeductions: false,
       notes: "",
     },
@@ -55,6 +56,7 @@ export function PeriodForm({ defaultScope = "regular" }: PeriodFormProps) {
 
   const scope = form.watch("scope");
   const isSpecial = scope === "special";
+  const isBenefits = scope === "benefits_bonuses";
 
   function onSubmit(values: CreatePeriodInput) {
     startTransition(async () => {
@@ -236,6 +238,55 @@ export function PeriodForm({ defaultScope = "regular" }: PeriodFormProps) {
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
+        )}
+
+        {/* Benefits & bonuses — only shown when scope === "benefits_bonuses" */}
+        {isBenefits && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-sky-800">
+              Benefits & Bonuses Options
+            </p>
+
+            <FormField
+              control={form.control}
+              name="benefitType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Benefit Component{" "}
+                    <span className="text-destructive">*</span>
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value ?? ""}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select benefit component" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="mid_year">
+                        Mid-Year Bonus (1 month basic)
+                      </SelectItem>
+                      <SelectItem value="year_end_cash_gift">
+                        Year-End Bonus + Cash Gift (₱5,000)
+                      </SelectItem>
+                      <SelectItem value="pbb">
+                        Performance-Based Bonus (PBB)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Required for benefits and bonuses runs. Only the selected
+                    component is paid — this prevents paying every bonus every
+                    run (PAY-005).
+                  </FormDescription>
+                  <FormMessage />
                 </FormItem>
               )}
             />
