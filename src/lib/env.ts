@@ -18,16 +18,47 @@ const ServerEnvSchema = z.object({
 
 export type ServerEnv = z.infer<typeof ServerEnvSchema>;
 
+function buildFallback(): ServerEnv {
+  // Best-effort object used only during `next build` when runtime secrets are
+  // absent. Downstream code does not read secret values at build time (routes
+  // are only *loaded*, not executed), so empty placeholders are safe here.
+  return {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY:
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    DATABASE_URL: process.env.DATABASE_URL,
+    JWT_SECRET: process.env.JWT_SECRET,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+    NEXT_PUBLIC_APP_URL:
+      process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    NEXT_PUBLIC_APP_NAME:
+      process.env.NEXT_PUBLIC_APP_NAME ??
+      "Philippine Charity Sweepstakes Office HRIS",
+    SENTRY_DSN: process.env.SENTRY_DSN,
+    NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  };
+}
+
 function parseEnv(): ServerEnv {
   const parsed = ServerEnvSchema.safeParse(process.env);
-  if (!parsed.success) {
-    console.error(
-      "Invalid environment variables:",
-      parsed.error.flatten().fieldErrors,
-    );
-    throw new Error("Invalid environment variables. See .env.example.");
-  }
-  return parsed.data;
+  if (parsed.success) return parsed.data;
+
+  // During `next build` the runtime secrets may not be present on the build
+  // host (e.g. Railway builds before env vars are injected). Don't fail the
+  // build — validation still runs at request time in production. An explicit
+  // SKIP_ENV_VALIDATION=1 provides the same escape hatch for other tooling.
+  const isBuildPhase =
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.SKIP_ENV_VALIDATION === "1";
+  if (isBuildPhase) return buildFallback();
+
+  console.error(
+    "Invalid environment variables:",
+    parsed.error.flatten().fieldErrors,
+  );
+  throw new Error("Invalid environment variables. See .env.example.");
 }
 
 export const env = parseEnv();

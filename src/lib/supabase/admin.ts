@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * SERVER-ONLY Supabase admin client using the service role key.
@@ -17,19 +17,32 @@ if (typeof window !== 'undefined') {
   );
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Lazily created on first use so importing this module never fails the
+// production build (`next build` loads route modules without runtime secrets).
+// Env is validated at first actual use, not at module load.
+let cached: SupabaseClient | null = null;
 
-if (!supabaseUrl) {
-  throw new Error('Missing env: NEXT_PUBLIC_SUPABASE_URL');
-}
-if (!serviceRoleKey) {
-  throw new Error('Missing env: SUPABASE_SERVICE_ROLE_KEY');
+function getSupabaseAdmin(): SupabaseClient {
+  if (cached) return cached;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl) {
+    throw new Error('Missing env: NEXT_PUBLIC_SUPABASE_URL');
+  }
+  if (!serviceRoleKey) {
+    throw new Error('Missing env: SUPABASE_SERVICE_ROLE_KEY');
+  }
+  cached = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  return cached;
 }
 
-export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
+export const supabaseAdmin = new Proxy({} as SupabaseClient, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getSupabaseAdmin(), prop, receiver);
   },
 });
