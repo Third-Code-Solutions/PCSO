@@ -8,6 +8,23 @@
 6 Compliance & Audit audit@pcso.gov.ph PCSO-auditor-l36e_poM auditor COA, CSC, DPA logs, SALN tracking, RA 6713, DPO (read-only)
 7 System Administrator sysadmin@pcso.gov.ph PCSO-super-admin-vAs45Fhn super_admin User provisioning, RBAC, health, integrations, security logs
 
+## Platform / Operations tier (principal-level, read-only oversight)
+
+These roles operate and assure the platform; they observe/audit read-only and do not perform HR data entry. Technical roles land on the System-Admin control-plane dashboard; QA on the Audit dashboard; the rest on the Executive read-only analytics dashboard.
+
+8 Project / Program Manager pm@pcso.gov.ph PCSO-project-manager-Qm7xL2Pa project_manager Delivery oversight — org-wide read analytics
+9 Solutions Architect architect@pcso.gov.ph PCSO-solutions-architect-Zr4vN9Kd solutions_architect System design review — org-wide read
+10 Technical Lead (Backend) backend-lead@pcso.gov.ph PCSO-backend-lead-Wt6bH3Mq backend_lead Backend oversight — org-wide read
+11 QA Lead qa-lead@pcso.gov.ph PCSO-qa-lead-Yp2cF8Rn qa_lead Quality assurance — audit/compliance read
+12 DevOps / Platform Lead devops@pcso.gov.ph PCSO-devops-lead-Ld9kT4Bs devops_lead Control plane — health, integrations, security logs (read)
+13 UX / UI Designer ux@pcso.gov.ph PCSO-ux-designer-Vx3mQ7Jw ux_ui_designer Experience review — org-wide read
+14 Technical Writer techwriter@pcso.gov.ph PCSO-tech-writer-Ns8dR5Gh technical_writer Documentation — org-wide read
+15 Foundation & Platform Engineer platform-eng@pcso.gov.ph PCSO-platform-eng-Kc6wP2Ft platform_engineer Control plane — integrations, health (read)
+16 Integration Engineer integration@pcso.gov.ph PCSO-integration-eng-Hb4nZ9Lx integration_engineer Integrations/API — control plane read
+17 QA Engineer qa-eng@pcso.gov.ph PCSO-qa-engineer-Dg7sM3Vq qa_engineer Test verification — audit/compliance read
+18 Maintenance Engineer maintenance@pcso.gov.ph PCSO-maintenance-eng-Rf5tW8Cn maintenance_engineer Upkeep — control plane read
+19 DevOps / Security & Hosting Ops secops@pcso.gov.ph PCSO-security-ops-Jq2xB6Kp security_ops_engineer Security & hosting — control plane, security logs (read)
+
 ---
 
 # M9 & M10 Implementation Status

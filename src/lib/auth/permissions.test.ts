@@ -454,6 +454,87 @@ describe("SELF_ONLY constant", () => {
   });
 });
 
+// ─── Platform / Operations oversight tier — read-only invariants ─────────────
+
+const PLATFORM_OPS_ROLES: Role[] = [
+  "project_manager",
+  "solutions_architect",
+  "backend_lead",
+  "qa_lead",
+  "devops_lead",
+  "ux_ui_designer",
+  "technical_writer",
+  "platform_engineer",
+  "integration_engineer",
+  "qa_engineer",
+  "maintenance_engineer",
+  "security_ops_engineer",
+];
+
+describe("platform/operations oversight tier", () => {
+  const writeActions: Action[] = [
+    "create",
+    "edit",
+    "delete",
+    "approve",
+    "process",
+  ];
+
+  it("grants NO write/approve/delete/process access on any resource", () => {
+    for (const role of PLATFORM_OPS_ROLES) {
+      for (const resource of ALL_RESOURCES) {
+        for (const action of writeActions) {
+          expect(
+            hasPermission(role, resource, action),
+            `${role} should NOT be able to ${action} on ${resource}`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("inherits the viewer read tier (employees/leave/attendance/payroll/performance/reports)", () => {
+    const viewableByViewer: Resource[] = [
+      "employees",
+      "plantilla",
+      "attendance",
+      "leave",
+      "performance",
+      "payroll",
+      "reports",
+      "saln",
+    ];
+    for (const role of PLATFORM_OPS_ROLES) {
+      for (const resource of viewableByViewer) {
+        expect(
+          hasPermission(role, resource, "view"),
+          `${role} should be able to view ${resource} via viewer alias`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("inherits viewer's audit-log view access (admin.view)", () => {
+    for (const role of PLATFORM_OPS_ROLES) {
+      expect(hasPermission(role, "admin", "view")).toBe(true);
+    }
+  });
+
+  it("inherits viewer read routes but is blocked from write routes", () => {
+    for (const role of PLATFORM_OPS_ROLES) {
+      // Read routes granted to viewer are reachable.
+      expect(isRouteAllowed(role, "/dashboard")).toBe(true);
+      expect(isRouteAllowed(role, "/employees")).toBe(true);
+      expect(isRouteAllowed(role, "/payroll/payslips")).toBe(true);
+      expect(isRouteAllowed(role, "/reports")).toBe(true);
+      // Write routes remain gated away from the read-only tier.
+      expect(isRouteAllowed(role, "/employees/new")).toBe(false);
+      expect(isRouteAllowed(role, "/payroll/new")).toBe(false);
+      expect(isRouteAllowed(role, "/admin")).toBe(false);
+    }
+  });
+});
+
 // ─── isRouteAllowed — ESS security invariants ────────────────────────────────
 
 describe("isRouteAllowed() — employee_self_service security gates", () => {

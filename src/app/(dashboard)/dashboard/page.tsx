@@ -156,6 +156,13 @@ function buildRoleConfig(
 ): RoleConfig {
   switch (role) {
     // PRD 3.4 D7 — technical control plane, read-only over HR data.
+    // Platform Ops technical tier mirrors super_admin's SysAdmin dashboard
+    // (platform health, users, audit) but stays read-only via the viewer alias.
+    case "devops_lead":
+    case "security_ops_engineer":
+    case "platform_engineer":
+    case "integration_engineer":
+    case "maintenance_engineer":
     case "super_admin":
       return {
         title: "System Administration",
@@ -217,6 +224,12 @@ function buildRoleConfig(
         ),
       };
 
+    // Platform Ops delivery tier mirrors the executive read-only analytics view.
+    case "project_manager":
+    case "solutions_architect":
+    case "backend_lead":
+    case "ux_ui_designer":
+    case "technical_writer":
     case "executive":
       return {
         title: "Leadership Dashboard",
@@ -229,6 +242,9 @@ function buildRoleConfig(
         ),
       };
 
+    // Platform Ops QA tier mirrors the auditor compliance/audit read view.
+    case "qa_lead":
+    case "qa_engineer":
     case "auditor":
       return {
         title: "Compliance & Audit Dashboard",

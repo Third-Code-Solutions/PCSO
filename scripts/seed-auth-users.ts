@@ -115,6 +115,19 @@ const AUTH_USERS: AuthUserConfig[] = [
     officeCode: null,
     employeeNo: null,
   },
+  // ── Platform / Operations tier (read-only oversight; principal-level) ──────────
+  { email: "pm@pcso.gov.ph", password: "PCSO-project-manager-Qm7xL2Pa", role: "project_manager", officeCode: null, employeeNo: null },
+  { email: "architect@pcso.gov.ph", password: "PCSO-solutions-architect-Zr4vN9Kd", role: "solutions_architect", officeCode: null, employeeNo: null },
+  { email: "backend-lead@pcso.gov.ph", password: "PCSO-backend-lead-Wt6bH3Mq", role: "backend_lead", officeCode: null, employeeNo: null },
+  { email: "qa-lead@pcso.gov.ph", password: "PCSO-qa-lead-Yp2cF8Rn", role: "qa_lead", officeCode: null, employeeNo: null },
+  { email: "devops@pcso.gov.ph", password: "PCSO-devops-lead-Ld9kT4Bs", role: "devops_lead", officeCode: null, employeeNo: null },
+  { email: "ux@pcso.gov.ph", password: "PCSO-ux-designer-Vx3mQ7Jw", role: "ux_ui_designer", officeCode: null, employeeNo: null },
+  { email: "techwriter@pcso.gov.ph", password: "PCSO-tech-writer-Ns8dR5Gh", role: "technical_writer", officeCode: null, employeeNo: null },
+  { email: "platform-eng@pcso.gov.ph", password: "PCSO-platform-eng-Kc6wP2Ft", role: "platform_engineer", officeCode: null, employeeNo: null },
+  { email: "integration@pcso.gov.ph", password: "PCSO-integration-eng-Hb4nZ9Lx", role: "integration_engineer", officeCode: null, employeeNo: null },
+  { email: "qa-eng@pcso.gov.ph", password: "PCSO-qa-engineer-Dg7sM3Vq", role: "qa_engineer", officeCode: null, employeeNo: null },
+  { email: "maintenance@pcso.gov.ph", password: "PCSO-maintenance-eng-Rf5tW8Cn", role: "maintenance_engineer", officeCode: null, employeeNo: null },
+  { email: "secops@pcso.gov.ph", password: "PCSO-security-ops-Jq2xB6Kp", role: "security_ops_engineer", officeCode: null, employeeNo: null },
 ];
 
 // ─── Seed Function ─────────────────────────────────────────────────────────────

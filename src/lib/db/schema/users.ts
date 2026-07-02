@@ -33,6 +33,21 @@ export const systemRoleEnum = pgEnum("system_role", [
   "supervisor",
   "executive",
   "auditor",
+  // Platform / Operations oversight tier — 12 principal-level roles that
+  // observe/audit the platform. READ-ONLY: they inherit the `viewer` read
+  // tier via ROLE_ALIASES in permissions.ts and hold no HR-data write access.
+  "project_manager",
+  "solutions_architect",
+  "backend_lead",
+  "qa_lead",
+  "devops_lead",
+  "ux_ui_designer",
+  "technical_writer",
+  "platform_engineer",
+  "integration_engineer",
+  "qa_engineer",
+  "maintenance_engineer",
+  "security_ops_engineer",
 ]);
 
 // ─── Table ───────────────────────────────────────────────────────────────────
