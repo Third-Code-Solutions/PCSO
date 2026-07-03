@@ -1,44 +1,33 @@
-import { Skeleton } from '@/components/ui/skeleton';
-import { KpiGridSkeleton } from '@/components/common/loading-skeleton';
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatTileSkeleton } from "@/components/dashboard/stat-tile";
 
 /**
- * Dashboard home loading skeleton. Streams while KPIs and activity feeds
- * are being resolved server-side.
+ * Dashboard home loading skeleton. Mirrors the redesigned layout:
+ * hero band → quick-action chips → section heading → stat tile grid.
  */
 export default function DashboardLoading() {
   return (
     <div className="space-y-6" aria-busy="true" aria-label="Loading dashboard">
-      {/* Header */}
-      <div className="space-y-2">
-        <Skeleton className="h-3 w-48" />
-        <Skeleton className="h-7 w-40" />
-        <Skeleton className="h-4 w-72" />
+      {/* Hero band */}
+      <div className="rounded-xl border border-border bg-card px-6 py-6 sm:px-8 sm:py-7">
+        <Skeleton className="h-4 w-64" />
+        <Skeleton className="mt-2.5 h-8 w-72" />
+        <Skeleton className="mt-2.5 h-4 w-96 max-w-full" />
       </div>
 
-      {/* KPI row */}
-      <KpiGridSkeleton />
+      {/* Quick actions */}
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-36 rounded-lg" />
+        ))}
+      </div>
 
-      {/* Activity + cutoffs */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-lg border border-border bg-card p-5 space-y-4 xl:col-span-2">
-          <Skeleton className="h-5 w-40" />
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <Skeleton className="mt-1.5 h-2 w-2 rounded-full" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/3" />
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-          <Skeleton className="h-5 w-40" />
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="space-y-1.5 pb-3 border-b border-border/60 last:border-0">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-3 w-2/3" />
-            </div>
+      {/* Section heading + stat grid */}
+      <div>
+        <Skeleton className="mb-3 h-3 w-28" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <StatTileSkeleton key={i} />
           ))}
         </div>
       </div>

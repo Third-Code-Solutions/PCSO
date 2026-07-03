@@ -1,5 +1,4 @@
 import * as React from "react";
-import Link from "next/link";
 import {
   Users,
   CalendarCheck,
@@ -9,11 +8,9 @@ import {
   ClipboardCheck,
   Wallet,
   Landmark,
-  CheckCircle2,
-  Palmtree,
-  Stethoscope,
-  Receipt,
   ClipboardList,
+  Palmtree,
+  Receipt,
   PartyPopper,
   Building2,
   ShieldCheck,
@@ -21,8 +18,11 @@ import {
   UserCog,
   Bell,
   ScrollText,
+  CheckCircle2,
+  Fingerprint,
 } from "lucide-react";
-import { KpiCard } from "@/components/dashboard/kpi-card";
+import { StatTile, StatGrid } from "@/components/dashboard/stat-tile";
+import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import {
   Card,
   CardContent,
@@ -41,7 +41,7 @@ import type {
   SystemAdminKpis,
 } from "./queries";
 
-// ─── Admin KPI grid (super_admin / hr_admin) ─────────────────────────────────
+// ─── HR Administrator dashboard (hr_admin) ───────────────────────────────────
 
 interface AdminDashboardProps {
   data: AdminKpis;
@@ -49,114 +49,73 @@ interface AdminDashboardProps {
 
 export function AdminDashboard({ data }: AdminDashboardProps) {
   return (
-    <section aria-label="System KPIs">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <Link
-          href="/employees"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Total Employees"
-            value={data.totalEmployees}
-            detail="Active headcount"
-            icon={Users}
-            iconColorClass="bg-blue-50 text-blue-600"
-          />
-        </Link>
-
-        <Link
-          href="/leave/approvals"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+    <div className="space-y-8">
+      <DashboardSection
+        title="Action queue"
+        action={{ label: "Open approvals", href: "/leave/approvals" }}
+      >
+        <StatGrid>
+          <StatTile
             title="Pending Leaves"
             value={data.pendingLeaves}
             detail="Applications awaiting approval"
             icon={CalendarCheck}
-            iconColorClass="bg-purple-50 text-purple-600"
-            trend={
-              data.pendingLeaves > 0
-                ? {
-                    direction: "up",
-                    label: `${data.pendingLeaves} for review`,
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "Queue clear" }
-            }
+            href="/leave/approvals"
+            tone={data.pendingLeaves > 0 ? "attention" : "default"}
+            pill={data.pendingLeaves > 0 ? "Needs review" : "Clear"}
           />
-        </Link>
-
-        <Link
-          href="/attendance/overtime"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+          <StatTile
             title="Pending Overtimes"
             value={data.pendingOvertimes}
             detail="OT requests awaiting approval"
             icon={Clock}
-            iconColorClass="bg-amber-50 text-amber-600"
-            trend={
-              data.pendingOvertimes > 0
-                ? {
-                    direction: "up",
-                    label: "Needs review",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "No pending OT" }
-            }
+            href="/attendance/overtime"
+            tone={data.pendingOvertimes > 0 ? "attention" : "default"}
+            pill={data.pendingOvertimes > 0 ? "Needs review" : "Clear"}
           />
-        </Link>
-
-        <Link
-          href="/attendance/timesheets"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+          <StatTile
             title="DTR Approvals"
             value={data.pendingDtrApprovals}
             detail="Submitted timesheets"
             icon={ClipboardCheck}
-            iconColorClass="bg-emerald-50 text-emerald-600"
+            href="/attendance/timesheets"
+            tone={data.pendingDtrApprovals > 0 ? "attention" : "default"}
+            pill={data.pendingDtrApprovals > 0 ? "Needs review" : "Clear"}
           />
-        </Link>
-
-        <Link
-          href="/saln/admin"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+          <StatTile
             title="SALN Non-filers"
             value={data.salnNonFilers}
             detail="Employees without filed SALN"
             icon={FileWarning}
-            iconColorClass="bg-rose-50 text-rose-600"
-            trend={
-              data.salnNonFilers > 0
-                ? {
-                    direction: "up",
-                    label: "Action required",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "All compliant" }
-            }
+            href="/saln/admin"
+            tone={data.salnNonFilers > 0 ? "critical" : "positive"}
+            pill={data.salnNonFilers > 0 ? "Action needed" : "Compliant"}
           />
-        </Link>
+        </StatGrid>
+      </DashboardSection>
 
-        <Link
-          href="/admin/holidays"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+      <DashboardSection
+        title="Workforce"
+        action={{ label: "All employees", href: "/employees" }}
+      >
+        <StatGrid>
+          <StatTile
+            title="Total Employees"
+            value={data.totalEmployees}
+            detail="Active headcount"
+            icon={Users}
+            href="/employees"
+          />
+          <StatTile
             title="Upcoming Holidays"
             value={data.upcomingHolidays}
             detail="Next 90 days"
             icon={CalendarDays}
-            iconColorClass="bg-indigo-50 text-indigo-600"
+            href="/admin/holidays"
           />
-        </Link>
-      </div>
-    </section>
+        </StatGrid>
+      </DashboardSection>
+    </div>
   );
 }
 
@@ -187,164 +146,147 @@ const SECURITY_EVENT_TIME_FORMAT = new Intl.DateTimeFormat("en-PH", {
 });
 
 export function SystemAdminDashboard({ data }: SystemAdminDashboardProps) {
+  const maxRoleCount = Math.max(1, ...data.usersByRole.map((row) => row.count));
+
   return (
-    <div className="space-y-6">
-      <section aria-label="System administration KPIs">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-          <Link
+    <div className="space-y-8">
+      <DashboardSection title="Platform">
+        <StatGrid className="2xl:grid-cols-5">
+          <StatTile
+            title="System Users"
+            value={data.totalSystemUsers}
+            detail={`${data.activeSystemUsers.toLocaleString("en-PH")} active accounts`}
+            icon={UserCog}
             href="/admin/users"
-            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <KpiCard
-              title="System Users"
-              value={data.totalSystemUsers}
-              detail={`${data.activeSystemUsers.toLocaleString("en-PH")} active accounts`}
-              icon={UserCog}
-              iconColorClass="bg-blue-50 text-blue-600"
-            />
-          </Link>
-
-          <Link
-            href="/employees"
-            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <KpiCard
-              title="Active Employees"
-              value={data.totalEmployees}
-              detail="Employee records in the HRIS"
-              icon={Users}
-              iconColorClass="bg-emerald-50 text-emerald-600"
-            />
-          </Link>
-
-          <Link
-            href="/admin/audit-logs"
-            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <KpiCard
-              title="Audit Entries (7 Days)"
-              value={data.auditEntriesLast7Days}
-              detail="All actions logged this week"
-              icon={ScrollText}
-              iconColorClass="bg-indigo-50 text-indigo-600"
-            />
-          </Link>
-
-          <Link
-            href="/admin/audit-logs"
-            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <KpiCard
-              title="Security Events (7 Days)"
-              value={data.securityEventsLast7Days}
-              detail="Logins, sign-outs, deletes, exports"
-              icon={ShieldCheck}
-              iconColorClass="bg-rose-50 text-rose-600"
-              trend={
-                data.securityEventsLast7Days > 0
-                  ? {
-                      direction: "up",
-                      label: "Review in audit logs",
-                      upIsPositive: false,
-                    }
-                  : { direction: "neutral", label: "No recent events" }
-              }
-            />
-          </Link>
-
-          <KpiCard
-            title="Notifications (7 Days)"
-            value={data.notificationsLast7Days}
-            detail="In-app notifications delivered"
-            icon={Bell}
-            iconColorClass="bg-amber-50 text-amber-600"
           />
-        </div>
-      </section>
+          <StatTile
+            title="Active Employees"
+            value={data.totalEmployees}
+            detail="Employee records in the HRIS"
+            icon={Users}
+            href="/employees"
+          />
+          <StatTile
+            title="Audit Entries"
+            value={data.auditEntriesLast7Days}
+            detail="All actions logged, last 7 days"
+            icon={ScrollText}
+            href="/admin/audit-logs"
+          />
+          <StatTile
+            title="Security Events"
+            value={data.securityEventsLast7Days}
+            detail="Logins, sign-outs, deletes, exports"
+            icon={Fingerprint}
+            href="/admin/audit-logs"
+            tone={data.securityEventsLast7Days > 0 ? "attention" : "default"}
+            pill={data.securityEventsLast7Days > 0 ? "Review" : "Quiet"}
+          />
+          <StatTile
+            title="Notifications"
+            value={data.notificationsLast7Days}
+            detail="Delivered in-app, last 7 days"
+            icon={Bell}
+          />
+        </StatGrid>
+      </DashboardSection>
 
-      <section
-        aria-label="User roles and security activity"
-        className="grid grid-cols-1 gap-4 xl:grid-cols-2"
+      <DashboardSection
+        title="Access & security"
+        action={{ label: "Audit logs", href: "/admin/audit-logs" }}
       >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Users by Role</CardTitle>
-            <CardDescription>
-              RBAC assignment breakdown across all system accounts
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {data.usersByRole.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No system users found.
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {data.usersByRole.map((row) => (
-                  <li
-                    key={row.role}
-                    className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
-                  >
-                    <span>{SYSADMIN_ROLE_LABELS[row.role] ?? row.role}</span>
-                    <span className="font-semibold tabular-nums">
-                      {row.count.toLocaleString("en-PH")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent Security Events</CardTitle>
-            <CardDescription>
-              Latest logins, sign-outs, deletes, and exports from the audit
-              trail
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {data.recentSecurityEvents.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No security-relevant audit entries yet.
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {data.recentSecurityEvents.map((event) => (
-                  <li
-                    key={event.id}
-                    className="rounded-md border border-border px-3 py-2 text-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">
-                        {event.action}
-                        <span className="text-muted-foreground">
-                          {" "}
-                          · {event.tableName}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <Card className="rounded-xl">
+            <CardHeader>
+              <CardTitle className="text-base">Users by Role</CardTitle>
+              <CardDescription>
+                RBAC assignment breakdown across all system accounts
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {data.usersByRole.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No system users found.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {data.usersByRole.map((row) => (
+                    <li key={row.role}>
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate">
+                          {SYSADMIN_ROLE_LABELS[row.role] ?? row.role}
                         </span>
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {SECURITY_EVENT_TIME_FORMAT.format(
-                          new Date(event.performedAt),
-                        )}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {event.performedBy}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+                        <span className="font-semibold tabular-nums">
+                          {row.count.toLocaleString("en-PH")}
+                        </span>
+                      </div>
+                      <div
+                        className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-primary/10"
+                        aria-hidden
+                      >
+                        <div
+                          className="h-full rounded-full bg-primary/60"
+                          style={{
+                            width: `${Math.round((row.count / maxRoleCount) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl">
+            <CardHeader>
+              <CardTitle className="text-base">
+                Recent Security Events
+              </CardTitle>
+              <CardDescription>
+                Latest logins, sign-outs, deletes, and exports from the audit
+                trail
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {data.recentSecurityEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No security-relevant audit entries yet.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border/70">
+                  {data.recentSecurityEvents.map((event) => (
+                    <li key={event.id} className="py-2.5 first:pt-0 last:pb-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate text-sm font-medium">
+                          {event.action}
+                          <span className="font-normal text-muted-foreground">
+                            {" "}
+                            · {event.tableName}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                          {SECURITY_EVENT_TIME_FORMAT.format(
+                            new Date(event.performedAt),
+                          )}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {event.performedBy}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </DashboardSection>
     </div>
   );
 }
 
-// ─── Payroll-admin KPI grid ──────────────────────────────────────────────────
+// ─── Payroll & Compensation dashboard (payroll_admin) ────────────────────────
 
 interface PayrollAdminDashboardProps {
   data: PayrollAdminKpis;
@@ -356,78 +298,55 @@ export function PayrollAdminDashboard({ data }: PayrollAdminDashboardProps) {
     : "/payroll";
 
   return (
-    <section aria-label="Payroll KPIs">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Link
+    <DashboardSection
+      title="Current period"
+      action={{ label: "All periods", href: "/payroll" }}
+    >
+      <StatGrid className="xl:grid-cols-4 2xl:grid-cols-4">
+        <StatTile
+          title="Active Payroll Period"
+          value={data.activePayrollPeriodName ?? "None"}
+          detail={
+            data.activePayrollPeriodId
+              ? "Open the current period"
+              : "No open periods"
+          }
+          icon={Wallet}
           href={activePeriodHref}
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Active Payroll Period"
-            value={data.activePayrollPeriodName ?? "None"}
-            detail={
-              data.activePayrollPeriodId
-                ? "Click to open the current period"
-                : "No open periods"
-            }
-            icon={Wallet}
-            iconColorClass="bg-emerald-50 text-emerald-600"
-          />
-        </Link>
-
-        <Link
+        />
+        <StatTile
+          title="Pending Entries"
+          value={data.pendingPayrollEntries}
+          detail="Records not yet paid"
+          icon={ClipboardList}
           href={activePeriodHref}
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Pending Entries"
-            value={data.pendingPayrollEntries}
-            detail="Records not yet paid"
-            icon={ClipboardList}
-            iconColorClass="bg-amber-50 text-amber-600"
-            trend={
-              data.pendingPayrollEntries > 0
-                ? {
-                    direction: "up",
-                    label: "Awaiting processing",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "Period complete" }
-            }
-          />
-        </Link>
-
-        <Link
+          tone={data.pendingPayrollEntries > 0 ? "attention" : "positive"}
+          pill={
+            data.pendingPayrollEntries > 0 ? "Awaiting processing" : "Complete"
+          }
+        />
+        <StatTile
+          title="Remittance Deadlines"
+          value={data.remittanceDeadlines}
+          detail="Batches not yet remitted"
+          icon={Landmark}
           href="/remittances"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Remittance Deadlines"
-            value={data.remittanceDeadlines}
-            detail="Batches not yet remitted"
-            icon={Landmark}
-            iconColorClass="bg-rose-50 text-rose-600"
-          />
-        </Link>
-
-        <Link
+          tone={data.remittanceDeadlines > 0 ? "attention" : "default"}
+          pill={data.remittanceDeadlines > 0 ? "Due" : "Clear"}
+        />
+        <StatTile
+          title="Employees to Run"
+          value={data.payrollEmployeeCount}
+          detail="Active headcount"
+          icon={Users}
           href="/employees"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Employees to Run"
-            value={data.payrollEmployeeCount}
-            detail="Active headcount"
-            icon={Users}
-            iconColorClass="bg-blue-50 text-blue-600"
-          />
-        </Link>
-      </div>
-    </section>
+        />
+      </StatGrid>
+    </DashboardSection>
   );
 }
 
-// ─── Leave-approver KPI grid ─────────────────────────────────────────────────
+// ─── Leave-approver dashboard ─────────────────────────────────────────────────
 
 interface LeaveApproverDashboardProps {
   data: LeaveApproverKpis;
@@ -435,57 +354,37 @@ interface LeaveApproverDashboardProps {
 
 export function LeaveApproverDashboard({ data }: LeaveApproverDashboardProps) {
   return (
-    <section aria-label="Leave approver queue">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <Link
+    <DashboardSection
+      title="Approval queue"
+      action={{ label: "Leave calendar", href: "/leave/calendar" }}
+    >
+      <StatGrid className="xl:grid-cols-3 2xl:grid-cols-3">
+        <StatTile
+          title="Pending My Approval"
+          value={data.pendingMyApprovals}
+          detail="Leaves waiting on you"
+          icon={CalendarCheck}
           href="/leave/approvals"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Pending My Approval"
-            value={data.pendingMyApprovals}
-            detail="Leaves waiting on you"
-            icon={CalendarCheck}
-            iconColorClass="bg-purple-50 text-purple-600"
-            trend={
-              data.pendingMyApprovals > 0
-                ? {
-                    direction: "up",
-                    label: "Review now",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "Queue clear" }
-            }
-          />
-        </Link>
-
-        <Link
+          tone={data.pendingMyApprovals > 0 ? "attention" : "default"}
+          pill={data.pendingMyApprovals > 0 ? "Review now" : "Clear"}
+        />
+        <StatTile
+          title="Approved Today"
+          value={data.approvedLeavesToday}
+          detail="Approvals issued today"
+          icon={CheckCircle2}
           href="/leave/calendar"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Approved Today"
-            value={data.approvedLeavesToday}
-            detail="Approvals issued today"
-            icon={CheckCircle2}
-            iconColorClass="bg-emerald-50 text-emerald-600"
-          />
-        </Link>
-
-        <Link
+          tone={data.approvedLeavesToday > 0 ? "positive" : "default"}
+        />
+        <StatTile
+          title="Team on Leave Today"
+          value={data.teamOnLeaveToday}
+          detail="Employees out today"
+          icon={Palmtree}
           href="/leave/calendar"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Team on Leave Today"
-            value={data.teamOnLeaveToday}
-            detail="Employees out today"
-            icon={Palmtree}
-            iconColorClass="bg-blue-50 text-blue-600"
-          />
-        </Link>
-      </div>
-    </section>
+        />
+      </StatGrid>
+    </DashboardSection>
   );
 }
 
@@ -497,9 +396,6 @@ interface EmployeeDashboardProps {
 
 export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
   const totalBalance = data.vlBalance + data.slBalance;
-  const payslipHref = data.latestPayslipPeriodId
-    ? `/payroll/payslips`
-    : "/payroll/payslips";
 
   const dtrLabel =
     data.dtrTodayStatus === "present"
@@ -508,112 +404,79 @@ export function EmployeeDashboard({ data }: EmployeeDashboardProps) {
         ? "Incomplete"
         : "Not logged";
 
-  const dtrColor =
+  const dtrTone =
     data.dtrTodayStatus === "present"
-      ? "bg-emerald-50 text-emerald-600"
+      ? "positive"
       : data.dtrTodayStatus === "incomplete"
-        ? "bg-amber-50 text-amber-600"
-        : "bg-rose-50 text-rose-600";
+        ? "attention"
+        : "critical";
 
   return (
-    <section aria-label="My dashboard">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <Link
-          href="/leave/credits"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Leave Balance"
-            value={totalBalance.toFixed(2)}
-            detail={`VL ${data.vlBalance.toFixed(2)} · SL ${data.slBalance.toFixed(2)}`}
-            icon={Palmtree}
-            iconColorClass="bg-emerald-50 text-emerald-600"
-          />
-        </Link>
-
-        <Link
-          href={payslipHref}
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Latest Payslip"
-            value={data.latestPayslipPeriodName ?? "None"}
-            detail={
-              data.latestPayslipPeriodName
-                ? "Click to view payslips"
-                : "No paid payslips yet"
-            }
-            icon={Receipt}
-            iconColorClass="bg-blue-50 text-blue-600"
-          />
-        </Link>
-
-        <Link
-          href="/attendance/dtr"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+    <div className="space-y-8">
+      <DashboardSection title="Today">
+        <StatGrid>
+          <StatTile
             title="Today's DTR"
             value={dtrLabel}
             detail="Daily time record status"
-            icon={Stethoscope}
-            iconColorClass={dtrColor}
+            icon={Clock}
+            href="/attendance/dtr"
+            tone={dtrTone}
+            pill={dtrLabel}
           />
-        </Link>
-
-        <Link
-          href="/saln"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="SALN Deadline"
-            value={data.salnDeadline ?? "—"}
-            detail="Annual filing (RA 6713)"
-            icon={FileWarning}
-            iconColorClass="bg-rose-50 text-rose-600"
-          />
-        </Link>
-
-        <Link
-          href="/leave/calendar"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+          <StatTile
             title="Next Holiday"
             value={data.nextHolidayName ?? "None"}
             detail={data.nextHolidayDate ?? "No upcoming holidays"}
             icon={PartyPopper}
-            iconColorClass="bg-indigo-50 text-indigo-600"
+            href="/leave/calendar"
           />
-        </Link>
+        </StatGrid>
+      </DashboardSection>
 
-        <Link
-          href="/portal/document-requests"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+      <DashboardSection title="My records">
+        <StatGrid>
+          <StatTile
+            title="Leave Balance"
+            value={totalBalance.toFixed(2)}
+            detail={`VL ${data.vlBalance.toFixed(2)} · SL ${data.slBalance.toFixed(2)}`}
+            icon={Palmtree}
+            href="/leave/credits"
+          />
+          <StatTile
+            title="Latest Payslip"
+            value={data.latestPayslipPeriodName ?? "None"}
+            detail={
+              data.latestPayslipPeriodName
+                ? "View your payslips"
+                : "No paid payslips yet"
+            }
+            icon={Receipt}
+            href="/payroll/payslips"
+          />
+          <StatTile
+            title="SALN Deadline"
+            value={data.salnDeadline ?? "—"}
+            detail="Annual filing (RA 6713)"
+            icon={FileWarning}
+            href="/saln"
+          />
+          <StatTile
             title="Document Requests"
             value={data.pendingDocRequests}
             detail="Active requests pending HR"
             icon={FileText}
-            iconColorClass="bg-violet-50 text-violet-600"
-            trend={
-              data.pendingDocRequests > 0
-                ? {
-                    direction: "up",
-                    label: "In progress",
-                    upIsPositive: true,
-                  }
-                : { direction: "neutral", label: "No active requests" }
-            }
+            href="/portal/document-requests"
+            tone={data.pendingDocRequests > 0 ? "attention" : "default"}
+            pill={data.pendingDocRequests > 0 ? "In progress" : "None active"}
           />
-        </Link>
-      </div>
-    </section>
+        </StatGrid>
+      </DashboardSection>
+    </div>
   );
 }
 
-// ─── Supervisor / Manager KPI grid ───────────────────────────────────────────
+// ─── Supervisor / Manager dashboard ──────────────────────────────────────────
 
 interface SupervisorDashboardProps {
   data: SupervisorKpis;
@@ -621,79 +484,56 @@ interface SupervisorDashboardProps {
 
 export function SupervisorDashboard({ data }: SupervisorDashboardProps) {
   return (
-    <section aria-label="Team KPIs">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Link
-          href="/leave/approvals"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+    <div className="space-y-8">
+      <DashboardSection
+        title="Team queue"
+        action={{ label: "Open approvals", href: "/leave/approvals" }}
+      >
+        <StatGrid>
+          <StatTile
             title="Pending Leave Requests"
             value={data.pendingTeamLeaves}
             detail="Team applications awaiting approval"
             icon={CalendarCheck}
-            iconColorClass="bg-purple-50 text-purple-600"
-            trend={
-              data.pendingTeamLeaves > 0
-                ? { direction: "up", label: "Review now", upIsPositive: false }
-                : { direction: "neutral", label: "Queue clear" }
-            }
+            href="/leave/approvals"
+            tone={data.pendingTeamLeaves > 0 ? "attention" : "default"}
+            pill={data.pendingTeamLeaves > 0 ? "Review now" : "Clear"}
           />
-        </Link>
-
-        <Link
-          href="/leave/calendar"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Team on Leave Today"
-            value={data.teamOnLeaveToday}
-            detail="Approved leaves active today"
-            icon={Palmtree}
-            iconColorClass="bg-blue-50 text-blue-600"
-          />
-        </Link>
-
-        <Link
-          href="/attendance/overtime"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+          <StatTile
             title="Pending OT Approvals"
             value={data.pendingOtApprovals}
             detail="Overtime requests awaiting action"
             icon={Clock}
-            iconColorClass="bg-amber-50 text-amber-600"
-            trend={
-              data.pendingOtApprovals > 0
-                ? {
-                    direction: "up",
-                    label: "Needs review",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "No pending OT" }
-            }
+            href="/attendance/overtime"
+            tone={data.pendingOtApprovals > 0 ? "attention" : "default"}
+            pill={data.pendingOtApprovals > 0 ? "Review now" : "Clear"}
           />
-        </Link>
+        </StatGrid>
+      </DashboardSection>
 
-        <Link
-          href="/leave/calendar"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
+      <DashboardSection title="Team overview">
+        <StatGrid>
+          <StatTile
+            title="Team on Leave Today"
+            value={data.teamOnLeaveToday}
+            detail="Approved leaves active today"
+            icon={Palmtree}
+            href="/leave/calendar"
+          />
+          <StatTile
             title="Upcoming Holidays"
             value={data.upcomingHolidays}
             detail="Next 90 days"
             icon={CalendarDays}
-            iconColorClass="bg-indigo-50 text-indigo-600"
+            href="/leave/calendar"
           />
-        </Link>
-      </div>
-    </section>
+        </StatGrid>
+      </DashboardSection>
+    </div>
   );
 }
 
-// ─── Executive / Leadership KPI grid (read-only) ─────────────────────────────
+// ─── Executive / Leadership dashboard (read-only) ────────────────────────────
 
 interface ExecutiveDashboardProps {
   data: ExecutiveKpis;
@@ -701,83 +541,49 @@ interface ExecutiveDashboardProps {
 
 export function ExecutiveDashboard({ data }: ExecutiveDashboardProps) {
   return (
-    <section aria-label="Leadership KPIs">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Link
+    <DashboardSection
+      title="Workforce overview"
+      action={{ label: "All employees", href: "/employees" }}
+    >
+      <StatGrid className="xl:grid-cols-4 2xl:grid-cols-4">
+        <StatTile
+          title="Total Active Employees"
+          value={data.totalEmployees}
+          detail="Org-wide headcount"
+          icon={Users}
           href="/employees"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Total Active Employees"
-            value={data.totalEmployees}
-            detail="Org-wide headcount"
-            icon={Users}
-            iconColorClass="bg-blue-50 text-blue-600"
-          />
-        </Link>
-
-        <Link
+        />
+        <StatTile
+          title="Vacant Positions"
+          value={data.vacantPositions}
+          detail="Unfilled plantilla items"
+          icon={Building2}
           href="/plantilla/vacancies"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Vacant Positions"
-            value={data.vacantPositions}
-            detail="Unfilled plantilla items"
-            icon={Building2}
-            iconColorClass="bg-amber-50 text-amber-600"
-            trend={
-              data.vacantPositions > 0
-                ? {
-                    direction: "up",
-                    label: "Recruitment needed",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "Fully staffed" }
-            }
-          />
-        </Link>
-
-        <Link
+          tone={data.vacantPositions > 0 ? "attention" : "positive"}
+          pill={data.vacantPositions > 0 ? "Recruitment" : "Fully staffed"}
+        />
+        <StatTile
+          title="SALN Non-Filers"
+          value={data.salnNonFilers}
+          detail="Employees without filed SALN"
+          icon={FileWarning}
           href="/saln/admin"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="SALN Non-Filers"
-            value={data.salnNonFilers}
-            detail="Employees without filed SALN"
-            icon={FileWarning}
-            iconColorClass="bg-rose-50 text-rose-600"
-            trend={
-              data.salnNonFilers > 0
-                ? {
-                    direction: "up",
-                    label: "Action required",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "All compliant" }
-            }
-          />
-        </Link>
-
-        <Link
+          tone={data.salnNonFilers > 0 ? "critical" : "positive"}
+          pill={data.salnNonFilers > 0 ? "Action needed" : "Compliant"}
+        />
+        <StatTile
+          title="Upcoming Holidays"
+          value={data.upcomingHolidays}
+          detail="Next 90 days"
+          icon={CalendarDays}
           href="/leave/calendar"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Upcoming Holidays"
-            value={data.upcomingHolidays}
-            detail="Next 90 days"
-            icon={CalendarDays}
-            iconColorClass="bg-indigo-50 text-indigo-600"
-          />
-        </Link>
-      </div>
-    </section>
+        />
+      </StatGrid>
+    </DashboardSection>
   );
 }
 
-// ─── Compliance / Audit KPI grid (read-only) ─────────────────────────────────
+// ─── Compliance / Audit dashboard (read-only) ────────────────────────────────
 
 interface AuditorDashboardProps {
   data: AuditorKpis;
@@ -785,69 +591,42 @@ interface AuditorDashboardProps {
 
 export function AuditorDashboard({ data }: AuditorDashboardProps) {
   return (
-    <section aria-label="Compliance KPIs">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Link
+    <DashboardSection
+      title="Compliance overview"
+      action={{ label: "Audit logs", href: "/admin/audit-logs" }}
+    >
+      <StatGrid className="xl:grid-cols-4 2xl:grid-cols-4">
+        <StatTile
+          title="SALN Non-Filers"
+          value={data.salnNonFilers}
+          detail="Employees without filed SALN"
+          icon={FileWarning}
           href="/saln/admin"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="SALN Non-Filers"
-            value={data.salnNonFilers}
-            detail="Employees without filed SALN"
-            icon={FileWarning}
-            iconColorClass="bg-rose-50 text-rose-600"
-            trend={
-              data.salnNonFilers > 0
-                ? {
-                    direction: "up",
-                    label: "Non-compliant",
-                    upIsPositive: false,
-                  }
-                : { direction: "neutral", label: "All compliant" }
-            }
-          />
-        </Link>
-
-        <Link
+          tone={data.salnNonFilers > 0 ? "critical" : "positive"}
+          pill={data.salnNonFilers > 0 ? "Non-compliant" : "Compliant"}
+        />
+        <StatTile
+          title="Audit Entries"
+          value={data.auditEntriesLast7Days}
+          detail="System actions logged, last 7 days"
+          icon={ShieldCheck}
           href="/admin/audit-logs"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Audit Entries (7 Days)"
-            value={data.auditEntriesLast7Days}
-            detail="System actions logged this week"
-            icon={ShieldCheck}
-            iconColorClass="bg-indigo-50 text-indigo-600"
-          />
-        </Link>
-
-        <Link
-          href="/leave/applications"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Pending Leave Applications"
-            value={data.pendingLeaves}
-            detail="Org-wide queue"
-            icon={CalendarCheck}
-            iconColorClass="bg-purple-50 text-purple-600"
-          />
-        </Link>
-
-        <Link
+        />
+        <StatTile
+          title="Pending Leave Applications"
+          value={data.pendingLeaves}
+          detail="Org-wide queue"
+          icon={CalendarCheck}
+          href="/leave"
+        />
+        <StatTile
+          title="Upcoming Holidays"
+          value={data.upcomingHolidays}
+          detail="Next 90 days"
+          icon={CalendarDays}
           href="/leave/calendar"
-          className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <KpiCard
-            title="Upcoming Holidays"
-            value={data.upcomingHolidays}
-            detail="Next 90 days"
-            icon={CalendarDays}
-            iconColorClass="bg-emerald-50 text-emerald-600"
-          />
-        </Link>
-      </div>
-    </section>
+        />
+      </StatGrid>
+    </DashboardSection>
   );
 }

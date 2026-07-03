@@ -26,22 +26,7 @@ export type Role =
   | "employee_self_service"
   // Legacy aliases — still valid in DB, auto-mapped at permission check time.
   | "leave_approver"
-  | "viewer"
-  // Platform / Operations oversight tier — 12 principal-level roles. READ-ONLY:
-  // each aliases to `viewer` (see ROLE_ALIASES) so it inherits the read-everywhere
-  // tier and holds NO write/approve/delete/process access anywhere.
-  | "project_manager"
-  | "solutions_architect"
-  | "backend_lead"
-  | "qa_lead"
-  | "devops_lead"
-  | "ux_ui_designer"
-  | "technical_writer"
-  | "platform_engineer"
-  | "integration_engineer"
-  | "qa_engineer"
-  | "maintenance_engineer"
-  | "security_ops_engineer";
+  | "viewer";
 
 /**
  * Role aliasing map. When a user carries a legacy role, permission checks
@@ -62,21 +47,6 @@ const ROLE_ALIASES: Readonly<Record<Role, readonly Role[]>> = {
   employee_self_service: ["employee_self_service"],
   leave_approver: ["leave_approver", "supervisor"],
   viewer: ["viewer", "executive", "auditor"],
-  // Platform / Operations oversight tier — each inherits the `viewer` read tier
-  // (employees/leave/attendance/payroll/performance/learning/welfare/saln READ +
-  // audit.view) and NOTHING else. No write/approve/delete/process access.
-  project_manager: ["project_manager", "viewer"],
-  solutions_architect: ["solutions_architect", "viewer"],
-  backend_lead: ["backend_lead", "viewer"],
-  qa_lead: ["qa_lead", "viewer"],
-  devops_lead: ["devops_lead", "viewer"],
-  ux_ui_designer: ["ux_ui_designer", "viewer"],
-  technical_writer: ["technical_writer", "viewer"],
-  platform_engineer: ["platform_engineer", "viewer"],
-  integration_engineer: ["integration_engineer", "viewer"],
-  qa_engineer: ["qa_engineer", "viewer"],
-  maintenance_engineer: ["maintenance_engineer", "viewer"],
-  security_ops_engineer: ["security_ops_engineer", "viewer"],
 };
 
 export function effectiveRolesOf(role: Role): readonly Role[] {

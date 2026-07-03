@@ -34,55 +34,6 @@ const ROLE_SCOPE_BADGES: Record<Role, { label: string; scope: string }> = {
   employee_self_service: { label: "Employee", scope: "Own Records" },
   leave_approver: { label: "Leave Approver", scope: "Own Unit" },
   viewer: { label: "Viewer", scope: "All Units · Read-only" },
-  // Platform / Operations oversight tier — read-only principals.
-  project_manager: {
-    label: "Project Manager — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  solutions_architect: {
-    label: "Solutions Architect — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  backend_lead: {
-    label: "Backend Lead — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  qa_lead: {
-    label: "QA Lead — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  devops_lead: {
-    label: "DevOps Lead — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  ux_ui_designer: {
-    label: "UX/UI Designer — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  technical_writer: {
-    label: "Technical Writer — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  platform_engineer: {
-    label: "Platform Engineer — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  integration_engineer: {
-    label: "Integration Engineer — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  qa_engineer: {
-    label: "QA Engineer — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  maintenance_engineer: {
-    label: "Maintenance Engineer — Platform Ops",
-    scope: "All Units · Read-only",
-  },
-  security_ops_engineer: {
-    label: "Security Ops Engineer — Platform Ops",
-    scope: "All Units · Read-only",
-  },
 };
 
 interface TopNavProps {
