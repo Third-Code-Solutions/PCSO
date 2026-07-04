@@ -12,6 +12,7 @@ import {
   index,
   uniqueIndex,
   timestamp,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { timestamps } from "./_shared";
@@ -102,6 +103,12 @@ export const leaveApplications = pgTable(
     remarks: text("remarks"),
     autoApproved: boolean("auto_approved").notNull().default(false),
     autoApprovedAt: timestamp("auto_approved_at", { withTimezone: true }),
+    /**
+     * LAM-008 (TOR 1.4.9): Supabase Storage object paths for supporting
+     * documents (medical certificates, etc.). Mirrors
+     * overtime_requests.attachment_paths. Array of strings.
+     */
+    attachmentPaths: jsonb("attachment_paths"),
     ...timestamps,
   },
   (t) => [

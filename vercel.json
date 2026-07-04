@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/monthly-accrual",
+      "schedule": "0 1 1 * *"
+    },
+    {
+      "path": "/api/cron/sick-leave-auto-approve",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/year-end-forced-leave",
+      "schedule": "55 15 31 12 *"
+    },
+    {
+      "path": "/api/cron/annual-retirement-notices",
+      "schedule": "0 1 1 1 *"
+    }
+  ]
+}

@@ -30,7 +30,15 @@ import {
   auditLogs,
 } from "@/lib/db/schema";
 import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requirePermission, requireAuth } from "@/lib/auth/guards";
+import {
+  EMPLOYEE_DOCUMENTS_BUCKET,
+  LEAVE_ATTACHMENTS_PREFIX,
+  LEAVE_ATTACHMENT_MAX_BYTES,
+  LEAVE_ATTACHMENT_MAX_FILES,
+  LEAVE_ATTACHMENT_ALLOWED_MIME_TYPES,
+} from "@/lib/constants/storage";
 import { withTx, withRetry, type Tx } from "@/lib/db/transaction";
 import { lockKey } from "@/lib/concurrency";
 import {
@@ -312,6 +320,12 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           noOfDays: String(parsed.workingDays),
           reason: parsed.reason ?? null,
           status: "pending",
+          // LAM-008: storage paths of supporting documents (uploaded via
+          // uploadLeaveAttachments before this action is called).
+          attachmentPaths:
+            parsed.attachmentPaths && parsed.attachmentPaths.length > 0
+              ? parsed.attachmentPaths
+              : null,
         })
         .returning({ id: leaveApplications.id });
 
@@ -332,6 +346,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           endDate: parsed.endDate,
           workingDays: parsed.workingDays,
           status: "pending",
+          attachmentCount: parsed.attachmentPaths?.length ?? 0,
         },
       });
 
@@ -446,6 +461,101 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
   revalidateLeavePaths();
 
   return { leaveApplicationId: result.leaveApplicationId };
+}
+
+// ---------------------------------------------------------------------------
+// Action: uploadLeaveAttachments (LAM-008 / TOR 1.4.9)
+// ---------------------------------------------------------------------------
+
+export interface UploadLeaveAttachmentsResult {
+  /** Storage object paths to pass to applyLeave as `attachmentPaths`. */
+  paths: string[];
+}
+
+/**
+ * Uploads leave supporting documents (medical certificates, etc.) to Supabase
+ * Storage ahead of applyLeave. Mirrors the employee-documents upload
+ * convention (see employees/actions.ts uploadDocument).
+ *
+ * Guarantees:
+ *  - Only authenticated users with `leave.create` may upload.
+ *  - Files land under the caller's OWN employee prefix — a user can never
+ *    write into another employee's folder.
+ *  - SEC-010 all-or-nothing: every file is validated (type + size) BEFORE the
+ *    first storage write; a mid-batch failure removes already-uploaded files.
+ */
+export async function uploadLeaveAttachments(
+  formData: FormData,
+): Promise<UploadLeaveAttachmentsResult> {
+  const user = await requirePermission("leave", "create");
+  if (!user.employeeId) {
+    throw new Error("Your account is not linked to an employee record.");
+  }
+
+  const files = formData
+    .getAll("files")
+    .filter((entry): entry is File => entry instanceof File);
+
+  if (files.length === 0) {
+    throw new Error("No files provided.");
+  }
+  if (files.length > LEAVE_ATTACHMENT_MAX_FILES) {
+    throw new Error(
+      `A maximum of ${LEAVE_ATTACHMENT_MAX_FILES} attachments is allowed per application.`,
+    );
+  }
+
+  // Validate the whole batch before writing anything (SEC-010).
+  for (const file of files) {
+    if (file.size === 0) {
+      throw new Error(`"${file.name}" is empty.`);
+    }
+    if (file.size > LEAVE_ATTACHMENT_MAX_BYTES) {
+      throw new Error(
+        `"${file.name}" exceeds the ${Math.floor(
+          LEAVE_ATTACHMENT_MAX_BYTES / (1024 * 1024),
+        )}MB limit.`,
+      );
+    }
+    if (!LEAVE_ATTACHMENT_ALLOWED_MIME_TYPES.includes(file.type)) {
+      throw new Error(
+        `"${file.name}" has an unsupported type. Allowed: PDF, JPG, PNG.`,
+      );
+    }
+  }
+
+  const storage = supabaseAdmin.storage.from(EMPLOYEE_DOCUMENTS_BUCKET);
+  const uploadedPaths: string[] = [];
+
+  for (const [index, file] of files.entries()) {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `${LEAVE_ATTACHMENTS_PREFIX}/${user.employeeId}/${Date.now()}_${index}_${safeName}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+
+    const { error } = await storage.upload(storagePath, bytes, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+    if (error) {
+      // Best-effort cleanup so a failed batch leaves no orphaned objects.
+      if (uploadedPaths.length > 0) {
+        try {
+          await storage.remove(uploadedPaths);
+        } catch (cleanupErr) {
+          console.error(
+            "[leave/actions] attachment cleanup after failed upload:",
+            cleanupErr,
+          );
+        }
+      }
+      throw new Error(`Attachment upload failed: ${error.message}`);
+    }
+
+    uploadedPaths.push(storagePath);
+  }
+
+  return { paths: uploadedPaths };
 }
 
 // ---------------------------------------------------------------------------

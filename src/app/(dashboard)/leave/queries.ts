@@ -14,6 +14,10 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { LEAVE_TYPES, LEAVE_TYPE_CODES } from "@/lib/constants/leave-types";
 import type { LeaveTypeCode } from "@/lib/constants/leave-types";
+import {
+  EMPLOYEE_DOCUMENTS_BUCKET,
+  LEAVE_ATTACHMENT_SIGNED_URL_TTL_SECONDS,
+} from "@/lib/constants/storage";
 
 // Known leave type codes we surface across the module. Used to defensively
 // filter out any junk rows the DB might have from pre-migration seed scripts.
@@ -95,6 +99,41 @@ function toLeaveCreditBalance(
     slCarryOver: Number(row["sl_carry_over"] ?? 0),
     vlForfeited: Number(row["vl_forfeited"] ?? 0),
   };
+}
+
+/**
+ * LAM-008: convert stored attachment storage paths into short-lived signed
+ * URLs. Tolerates legacy rows that stored absolute URLs (passed through) and
+ * falls back to the raw path when signing fails, so the UI never breaks.
+ */
+async function resolveAttachmentUrls(
+  storagePaths: string[] | null,
+): Promise<string[] | null> {
+  if (!storagePaths || storagePaths.length === 0) return storagePaths;
+
+  const resolved = await Promise.all(
+    storagePaths.map(async (path) => {
+      if (/^https?:\/\//i.test(path)) return path;
+      try {
+        const { data, error } = await supabaseAdmin.storage
+          .from(EMPLOYEE_DOCUMENTS_BUCKET)
+          .createSignedUrl(path, LEAVE_ATTACHMENT_SIGNED_URL_TTL_SECONDS);
+        if (error || !data?.signedUrl) {
+          console.error(
+            "[leave/queries] resolveAttachmentUrls sign failed:",
+            error?.message ?? "no url",
+          );
+          return path;
+        }
+        return data.signedUrl;
+      } catch (err) {
+        console.error("[leave/queries] resolveAttachmentUrls:", err);
+        return path;
+      }
+    }),
+  );
+
+  return resolved;
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +412,7 @@ export async function getLeaveApplicationDetail(
       status,
       approved_by,
       remarks,
+      attachment_paths,
       created_at,
       leave_types ( code, name ),
       employees ( id, first_name, last_name, employee_no, office_id )
@@ -404,8 +444,13 @@ export async function getLeaveApplicationDetail(
     no_of_days: data.no_of_days,
   });
 
+  // LAM-008: attachment_paths stores storage object paths. Resolve them to
+  // short-lived signed URLs so the approval UI can link to the documents.
+  const attachmentPaths = await resolveAttachmentUrls(base.attachmentPaths);
+
   return {
     ...base,
+    attachmentPaths,
     employee: {
       id: String(employeeData?.id ?? data.employee_id),
       firstName: String(employeeData?.first_name ?? ""),

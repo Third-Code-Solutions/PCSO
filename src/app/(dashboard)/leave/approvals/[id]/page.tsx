@@ -38,6 +38,21 @@ function formatDate(isoDate: string) {
   });
 }
 
+/**
+ * Derive a human-friendly file name from a signed storage URL or raw path.
+ * Upload paths look like leave-attachments/{employeeId}/{ts}_{i}_{name}.
+ */
+function attachmentLabel(pathOrUrl: string): string {
+  try {
+    const pathname = new URL(pathOrUrl, "https://storage.local").pathname;
+    const baseName = decodeURIComponent(pathname.split("/").pop() ?? "");
+    if (!baseName) return pathOrUrl;
+    return baseName.replace(/^\d+_\d+_/, "").replace(/^\d+_/, "");
+  } catch {
+    return pathOrUrl;
+  }
+}
+
 export default async function LeaveApprovalDetailPage({ params }: PageProps) {
   await requirePermission("leave", "approve");
 
@@ -206,7 +221,7 @@ export default async function LeaveApprovalDetailPage({ params }: PageProps) {
                     className="flex items-center justify-between px-5 py-3"
                   >
                     <span className="truncate text-sm text-muted-foreground">
-                      {path}
+                      {attachmentLabel(path)}
                     </span>
                     <Button variant="ghost" size="sm" asChild>
                       <a href={path} target="_blank" rel="noopener noreferrer">

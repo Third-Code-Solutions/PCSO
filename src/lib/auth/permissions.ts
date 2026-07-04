@@ -64,6 +64,7 @@ export type Resource =
   | "performance"
   | "saln"
   | "reports"
+  | "file_maintenance"
   | "admin";
 
 export type Action =
@@ -288,6 +289,19 @@ export const permissionMatrix: PermissionMatrix = {
   // ── admin (system config, user management) ────────────────────────────────
   // hr_admin and auditor are granted view access for audit log visibility;
   // all write operations remain super_admin-only.
+  // ── file_maintenance ──────────────────────────────────────────────────────
+  // TOR §1.1 / PRD Section 11: FM lookups — Super Admin + HR Admin full,
+  // oversight roles read-only. Delete = deactivate (FM-031, soft only).
+  file_maintenance: {
+    view: ["super_admin", "hr_admin", "viewer", "executive", "auditor"],
+    create: ["super_admin", "hr_admin"],
+    edit: ["super_admin", "hr_admin"],
+    delete: ["super_admin", "hr_admin"],
+    approve: ["super_admin", "hr_admin"],
+    export: ["super_admin", "hr_admin", "viewer", "executive", "auditor"],
+    process: ["super_admin", "hr_admin"],
+  },
+
   admin: {
     view: ["super_admin", "hr_admin", "viewer", "auditor"],
     create: ["super_admin"],
@@ -391,6 +405,13 @@ const ALWAYS_AUTHENTICATED: ReadonlyArray<string> = [
 export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   // ── Admin panel ───────────────────────────────────────────────────────────
   "/admin/audit-logs": ["super_admin", "hr_admin", "viewer", "auditor"],
+  "/admin/file-maintenance": [
+    "super_admin",
+    "hr_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/admin": ["super_admin"],
 
   // ── Payroll ───────────────────────────────────────────────────────────────
@@ -620,6 +641,14 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
 
   // ── Attendance ────────────────────────────────────────────────────────────
   "/attendance/admin": ["super_admin", "hr_admin"],
+  "/attendance/approvals": [
+    "super_admin",
+    "hr_admin",
+    "supervisor",
+    "leave_approver",
+  ],
+  "/attendance/dtr-corrections": ["super_admin", "hr_admin"],
+  "/attendance/shift-changes": ["super_admin", "hr_admin"],
   "/attendance/import": ["super_admin", "hr_admin"],
   "/attendance/schedules/new": ["super_admin", "hr_admin"],
   "/attendance/schedules": ["super_admin", "hr_admin"],

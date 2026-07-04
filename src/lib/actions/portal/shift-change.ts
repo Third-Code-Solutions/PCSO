@@ -14,7 +14,7 @@
  *   - Process (HR): requirePermission('employees', 'edit')
  */
 
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, asc, eq, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
@@ -23,6 +23,7 @@ import {
   shiftChangeRequests,
   type ShiftChangeRequest,
   type NewShiftChangeRequest,
+  type WorkSchedule,
   employeeSchedules,
   workSchedules,
 } from "@/lib/db/schema";
@@ -390,6 +391,121 @@ export async function getPendingShiftChangeRequestsForSupervisor(): Promise<
   } catch (error) {
     console.error("[getPendingShiftChangeRequestsForSupervisor]", error);
     return { error: "Failed to fetch pending requests" };
+  }
+}
+
+/**
+ * Form context for the employee shift-change page (EPM-007).
+ * Returns the selectable active work schedules plus the employee's current
+ * schedule assignment (null when no assignment exists — submit will fail
+ * until HR assigns a schedule, and the UI surfaces that state).
+ */
+export async function getShiftChangeFormContext(): Promise<
+  Result<{ schedules: WorkSchedule[]; currentSchedule: WorkSchedule | null }>
+> {
+  const session = await requireAuth();
+
+  if (!session.employeeId) {
+    return { error: "No employee record is linked to your account" };
+  }
+
+  try {
+    const schedules = await db.query.workSchedules.findMany({
+      where: and(
+        eq(workSchedules.isActive, true),
+        sql`${workSchedules.deletedAt} IS NULL`,
+      ),
+      orderBy: asc(workSchedules.name),
+    });
+
+    const currentAssignment = await db.query.employeeSchedules.findFirst({
+      where: and(
+        eq(employeeSchedules.employeeId, session.employeeId),
+        sql`${employeeSchedules.effectiveTo} IS NULL`,
+      ),
+      orderBy: desc(employeeSchedules.effectiveFrom),
+    });
+
+    let currentSchedule: WorkSchedule | null = null;
+    if (currentAssignment) {
+      currentSchedule =
+        (await db.query.workSchedules.findFirst({
+          where: eq(workSchedules.id, currentAssignment.scheduleId),
+        })) ?? null;
+    }
+
+    return { data: { schedules, currentSchedule } };
+  } catch (error) {
+    console.error("[getShiftChangeFormContext]", error);
+    return { error: "Failed to load schedule options" };
+  }
+}
+
+/**
+ * Employee cancels their own shift change request.
+ * Only allowed while the request is still awaiting supervisor review
+ * (status = 'submitted'). Endorsed/processed requests cannot be withdrawn.
+ */
+export async function cancelMyShiftChangeRequest(
+  requestId: string,
+): Promise<Result<ShiftChangeRequest>> {
+  const session = await requireAuth();
+  const parsed = z.string().uuid().safeParse(requestId);
+  if (!parsed.success) {
+    return { error: "Invalid request id" };
+  }
+
+  try {
+    const request = await db.query.shiftChangeRequests.findFirst({
+      where: and(
+        eq(shiftChangeRequests.id, parsed.data),
+        sql`${shiftChangeRequests.deletedAt} IS NULL`,
+      ),
+    });
+
+    if (!request) {
+      return { error: "Request not found" };
+    }
+
+    if (!session.employeeId || request.employeeId !== session.employeeId) {
+      return { error: "Unauthorized: Not your request" };
+    }
+
+    if (request.status !== "submitted") {
+      return {
+        error: "Only requests awaiting supervisor review can be cancelled",
+      };
+    }
+
+    // Status guard in the WHERE clause protects against a concurrent
+    // supervisor decision between the read above and this update.
+    const [updated] = await db
+      .update(shiftChangeRequests)
+      .set({ status: "cancelled" })
+      .where(
+        and(
+          eq(shiftChangeRequests.id, parsed.data),
+          eq(shiftChangeRequests.status, "submitted"),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      return { error: "Request is no longer pending and cannot be cancelled" };
+    }
+
+    await auditLog({
+      userId: session.id,
+      action: "shift_change.cancel",
+      table: "shift_change_requests",
+      recordId: updated.id,
+    });
+
+    revalidatePath("/portal/shift-change");
+    return { data: updated };
+  } catch (error) {
+    console.error("[cancelMyShiftChangeRequest]", error);
+    return { error: "Failed to cancel shift change request" };
   }
 }
 

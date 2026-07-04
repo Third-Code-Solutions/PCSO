@@ -53,6 +53,7 @@ export * from "./notifications";
 
 // File Maintenance extensions (depends on _shared only)
 export * from "./fm-extensions";
+export * from "./fm-additions";
 
 // Serial number sequences (no FK dependencies)
 export * from "./serial-sequences";

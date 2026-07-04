@@ -25,6 +25,12 @@ import {
 } from "@/lib/constants/leave-types";
 import type { LeaveTypeDefinition } from "@/lib/constants/leave-types";
 import { CreditBalanceCard } from "@/components/leave/credit-balance-card";
+import { uploadLeaveAttachments } from "@/app/(dashboard)/leave/actions";
+import {
+  LEAVE_ATTACHMENT_MAX_BYTES,
+  LEAVE_ATTACHMENT_MAX_FILES,
+  LEAVE_ATTACHMENT_ALLOWED_MIME_TYPES,
+} from "@/lib/constants/storage";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -128,12 +134,61 @@ export function LeaveApplyForm({
   const pendingVlDeduction = isVLLeave ? workingDays : 0;
   const pendingSlDeduction = isSLLeave ? workingDays : 0;
 
+  /**
+   * Reflect selected files in form state so the ApplyLeaveSchema document
+   * requirements (SL > 3 days, ML/PL/etc.) validate against the selection.
+   * The placeholder file names are replaced with real storage paths after
+   * upload in onValid — they never reach the server as-is.
+   */
+  function handleFileChange(files: FileList | null) {
+    setSelectedFiles(files);
+    setValue(
+      "attachmentPaths",
+      files && files.length > 0
+        ? Array.from(files).map((file) => file.name)
+        : [],
+      { shouldValidate: true },
+    );
+  }
+
+  /** Client-side pre-check mirroring the server-side upload validation. */
+  function validateFiles(files: File[]): string | null {
+    if (files.length > LEAVE_ATTACHMENT_MAX_FILES) {
+      return `A maximum of ${LEAVE_ATTACHMENT_MAX_FILES} attachments is allowed.`;
+    }
+    for (const file of files) {
+      if (file.size > LEAVE_ATTACHMENT_MAX_BYTES) {
+        return `"${file.name}" exceeds the 10MB limit.`;
+      }
+      if (!LEAVE_ATTACHMENT_ALLOWED_MIME_TYPES.includes(file.type)) {
+        return `"${file.name}" has an unsupported type. Allowed: PDF, JPG, PNG.`;
+      }
+    }
+    return null;
+  }
+
   function onValid(data: ApplyLeaveInput) {
     startTransition(async () => {
       try {
-        // In production, files would be uploaded to Supabase Storage first
-        // and the paths would be passed to the server action.
-        const result = await onSubmit({ ...data, attachmentPaths: [] });
+        // LAM-008: upload supporting documents to Supabase Storage first,
+        // then pass the storage paths to the applyLeave server action.
+        let attachmentPaths: string[] = [];
+        const files = selectedFiles ? Array.from(selectedFiles) : [];
+        if (files.length > 0) {
+          const validationError = validateFiles(files);
+          if (validationError) {
+            toast.error(validationError);
+            return;
+          }
+          const formData = new FormData();
+          for (const file of files) {
+            formData.append("files", file);
+          }
+          const uploaded = await uploadLeaveAttachments(formData);
+          attachmentPaths = uploaded.paths;
+        }
+
+        const result = await onSubmit({ ...data, attachmentPaths });
         toast.success("Leave application submitted successfully.", {
           description: `Application ID: ${result.leaveApplicationId.slice(0, 8).toUpperCase()}`,
         });
@@ -342,7 +397,7 @@ export function LeaveApplyForm({
                 multiple
                 accept=".pdf,.jpg,.jpeg,.png"
                 className="sr-only"
-                onChange={(e) => setSelectedFiles(e.target.files)}
+                onChange={(e) => handleFileChange(e.target.files)}
               />
             </div>
           ) : (
@@ -353,7 +408,7 @@ export function LeaveApplyForm({
                 multiple
                 accept=".pdf,.jpg,.jpeg,.png"
                 className="block w-full text-sm file:mr-3 file:rounded file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-muted/80"
-                onChange={(e) => setSelectedFiles(e.target.files)}
+                onChange={(e) => handleFileChange(e.target.files)}
               />
             </div>
           )}

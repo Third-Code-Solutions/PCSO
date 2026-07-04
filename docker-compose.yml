@@ -1,0 +1,29 @@
+# PCSO HRIS — Docker Compose (TOR 3.1.2)
+#
+# Usage (from repo root, with a populated .env.local):
+#
+#   docker compose --env-file .env.local up --build
+#
+# The --env-file flag makes .env.local the source for the ${...} build-arg
+# interpolation below. NEXT_PUBLIC_* values must be present at BUILD time
+# because `next build` inlines them into the client bundle; everything else
+# (service-role key, DATABASE_URL, JWT_SECRET, RESEND_*, CRON_SECRET, Sentry
+# DSNs) is injected at RUNTIME via env_file.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:8080}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-PCSO HRIS}
+    env_file:
+      - .env.local
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+    restart: unless-stopped

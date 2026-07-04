@@ -45,6 +45,13 @@ export default async function BulkUploadPage() {
           <p className="text-xs text-blue-700 mt-2">
             Example: PCSO-2024-0001,VL,2024,15.000,15.000,0.000,0.000
           </p>
+          <a
+            href="/api/templates/leave-ledger"
+            download
+            className="mt-2 inline-block text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
+          >
+            Download CSV template
+          </a>
         </div>
 
         <BulkUploadForm />

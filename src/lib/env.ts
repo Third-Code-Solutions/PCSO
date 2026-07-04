@@ -14,6 +14,8 @@ const ServerEnvSchema = z.object({
     .default("Philippine Charity Sweepstakes Office HRIS"),
   SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
+  /** Shared secret for /api/cron/* endpoints (Vercel Cron sends it as `Authorization: Bearer`). */
+  CRON_SECRET: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof ServerEnvSchema>;
@@ -38,6 +40,7 @@ function buildFallback(): ServerEnv {
       "Philippine Charity Sweepstakes Office HRIS",
     SENTRY_DSN: process.env.SENTRY_DSN,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    CRON_SECRET: process.env.CRON_SECRET,
   };
 }
 

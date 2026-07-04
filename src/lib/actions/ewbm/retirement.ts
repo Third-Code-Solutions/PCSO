@@ -23,8 +23,7 @@ import {
 } from "@/lib/db/schema/welfare";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
-import { notifyRoles } from "@/lib/notifications";
-import { monthsUntilEligible } from "@/lib/utils/ewbm/retirement-calc";
+import { generateAnnualNoticesCore } from "@/lib/utils/ewbm/annual-notices";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -75,68 +74,9 @@ export async function generateAnnualNotices(
     const user = await requirePermission("employees", "process");
     const parsed = generateAnnualNoticesSchema.parse(input);
 
-    const asOf = new Date(Date.UTC(parsed.year, 0, 1));
-
-    const empRows = await db
-      .select({
-        id: employees.id,
-        dateHired: employees.dateHired,
-        birthDate: employees.birthDate,
-      })
-      .from(employees)
-      .where(eq(employees.status, "active"));
-
-    interface PendingNotice {
-      employeeId: string;
-      retirementType: "optional" | "compulsory";
-      eligibleDate: string;
-      monthsUntilEligible: number;
-    }
-
-    const toInsert: PendingNotice[] = [];
-    for (const e of empRows) {
-      if (!e.dateHired || !e.birthDate) continue;
-      const dob = new Date(e.birthDate);
-      const hire = new Date(e.dateHired);
-      if (Number.isNaN(dob.getTime()) || Number.isNaN(hire.getTime())) continue;
-
-      const proj = monthsUntilEligible(dob, hire, asOf);
-      if (proj.type === "none" || !proj.eligibleDate) continue;
-      if (proj.months > 12) continue;
-
-      toInsert.push({
-        employeeId: e.id,
-        retirementType: proj.type,
-        eligibleDate: proj.eligibleDate.toISOString().slice(0, 10),
-        monthsUntilEligible: proj.months,
-      });
-    }
-
-    let generated = 0;
-    if (toInsert.length > 0) {
-      // Unique index (for_year, employee_id, retirement_type) makes this
-      // idempotent — re-running the job for the same year is safe.
-      const inserted = await db
-        .insert(retirementNotices)
-        .values(
-          toInsert.map((n) => ({
-            forYear: parsed.year,
-            employeeId: n.employeeId,
-            retirementType: n.retirementType,
-            eligibleDate: n.eligibleDate,
-            monthsUntilEligible: n.monthsUntilEligible,
-          })),
-        )
-        .onConflictDoNothing({
-          target: [
-            retirementNotices.forYear,
-            retirementNotices.employeeId,
-            retirementNotices.retirementType,
-          ],
-        })
-        .returning({ id: retirementNotices.id });
-      generated = inserted.length;
-    }
+    // Core scan/insert/notify logic is shared with the Jan-1 cron endpoint
+    // (/api/cron/annual-retirement-notices) via annual-notices.ts.
+    const { generated } = await generateAnnualNoticesCore(parsed.year);
 
     await auditLog({
       userId: user.id,
@@ -144,16 +84,6 @@ export async function generateAnnualNotices(
       table: "retirement_notices",
       newValues: { forYear: parsed.year, generated },
     });
-
-    if (generated > 0) {
-      // N-031 — one aggregate notification to HRD managers.
-      await notifyRoles(["hr_admin", "super_admin"], {
-        type: "generic",
-        title: `Annual retirement notices — ${parsed.year}`,
-        body: `${generated} employee(s) reach retirement eligibility within 12 months.`,
-        entityType: "retirement_notice_batch",
-      });
-    }
 
     revalidatePath("/welfare/retirement");
     return ok({ generated });

@@ -242,6 +242,21 @@ const NAV_ITEMS: NavItem[] = [
         roles: ["super_admin", "hr_admin", "leave_approver"],
       },
       {
+        label: "Pending Approvals",
+        href: "/attendance/approvals",
+        roles: ["super_admin", "hr_admin", "supervisor", "leave_approver"],
+      },
+      {
+        label: "DTR Corrections",
+        href: "/attendance/dtr-corrections",
+        roles: ["super_admin", "hr_admin"],
+      },
+      {
+        label: "Shift Change Requests",
+        href: "/attendance/shift-changes",
+        roles: ["super_admin", "hr_admin"],
+      },
+      {
         label: "Import Biometric",
         href: "/attendance/import",
         roles: ["super_admin", "hr_admin"],
@@ -851,6 +866,18 @@ const NAV_ITEMS: NavItem[] = [
         roles: ["super_admin", "hr_admin", "employee_self_service"],
         selfOnly: true,
       },
+      {
+        label: "Shift Change",
+        href: "/portal/shift-change",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
+      {
+        label: "DTR Correction",
+        href: "/portal/dtr-correction",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
     ],
   },
 
@@ -861,6 +888,11 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
     children: [
       { label: "Users", href: "/admin/users", roles: ["super_admin"] },
+      {
+        label: "File Maintenance",
+        href: "/admin/file-maintenance",
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
+      },
       {
         label: "Salary Grades",
         href: "/admin/salary-grades",

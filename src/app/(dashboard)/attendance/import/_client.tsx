@@ -166,6 +166,13 @@ SEN-0042,2025-03-01,08:00,17:00`}
           the employee UUID or their employee number. Leave time_in or time_out
           blank if missing.
         </p>
+        <a
+          href="/api/templates/attendance-import"
+          download
+          className="mt-2 inline-block text-xs font-semibold text-[#0B2545] underline underline-offset-2 hover:text-[#13315C]"
+        >
+          Download template CSV
+        </a>
       </div>
 
       {/* Upload form */}
