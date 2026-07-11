@@ -19,6 +19,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Resend } from "resend";
 import { generateCOE } from "./coe-generator";
+import { generateServiceRecord } from "./service-record-generator";
+import { generatePds } from "./pds-generator";
+import { generateAdhocCertificate } from "./adhoc-generator";
 import {
   generateSerialNumber,
   DOCUMENT_TYPES,
@@ -67,6 +70,7 @@ const ProcessRequestSchema = z.object({
   includeSalary: z.boolean().optional(), // For COE with remunerations
   documentType: z.string().optional(),
   employeeId: z.string().uuid().optional(),
+  certificateTemplateId: z.string().uuid().optional(), // For AD_HOC certificates
 });
 
 const PutOnHoldSchema = z.object({
@@ -488,6 +492,51 @@ export async function processDocumentRequest(
         return {
           success: false,
           error: generated.error || "COE generation failed",
+        };
+      }
+      serialNumber = generated.serialNumber!;
+      documentUrl = generated.documentUrl;
+    } else if (request.documentType === "SERVICE_RECORD") {
+      const generated = await generateServiceRecord({
+        employeeId: request.employeeId,
+      });
+      if (!generated.success) {
+        return {
+          success: false,
+          error: generated.error || "Service Record generation failed",
+        };
+      }
+      serialNumber = generated.serialNumber!;
+      documentUrl = generated.documentUrl;
+    } else if (request.documentType === "PDS") {
+      const generated = await generatePds({
+        employeeId: request.employeeId,
+      });
+      if (!generated.success) {
+        return {
+          success: false,
+          error: generated.error || "PDS generation failed",
+        };
+      }
+      serialNumber = generated.serialNumber!;
+      documentUrl = generated.documentUrl;
+    } else if (request.documentType === "AD_HOC") {
+      if (!validated.certificateTemplateId) {
+        return {
+          success: false,
+          error:
+            "Select a certificate template before generating an ad hoc certificate.",
+        };
+      }
+      const generated = await generateAdhocCertificate({
+        employeeId: request.employeeId,
+        templateId: validated.certificateTemplateId,
+        purpose: request.purpose || undefined,
+      });
+      if (!generated.success) {
+        return {
+          success: false,
+          error: generated.error || "Ad hoc certificate generation failed",
         };
       }
       serialNumber = generated.serialNumber!;

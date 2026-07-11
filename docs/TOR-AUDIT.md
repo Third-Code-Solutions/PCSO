@@ -290,6 +290,43 @@ Structural finding: 34 `fm_*` tables defined (`src/lib/db/schema/fm-extensions.t
 
 **New infra:** `file_maintenance` RBAC resource (Super Admin + HR Admin full, oversight read-only) · 4 Vercel crons behind CRON_SECRET · CSP/HSTS headers · migrations 2026-07-04-01/02/03/14 · +35 unit tests (971 total, all green; production build verified).
 
+## Iteration 2 Results (2026-07-11)
+
+**Payroll batch (TOR 1.8):**
+
+- **1.8.1 income/deduction bulk upload → IMPL (backend + compute).** `payroll_employee_inputs` committed rows are now consumed by `processPayroll` (injected as post-tax `otherAdjustments`) and survive re-processing. Parse/validate/stage/commit chain (`bulk-inputs.ts`, `payroll-gaps.ts`) with SEC-010 all-or-nothing + advisory lock. _Deferred: upload/preview UI page + include/exclude toggle UI._
+- **1.8.2 Confidential Agents payroll type → IMPL.** `confidential_agents` scope now handled in `computeRecordForScope` (was falling through to `default: throw` — every employee errored). Computed with JO/COS deduction rules; no in-run loan collection.
+- **1.8.4 include/exclude tagging → IMPL (enforced).** `setRecordInclusion` action + `included`/`exclusion_reason` columns. Excluded records are now omitted from the **bank hash file** (was a payment bug — excluded staff still got paid), the **register**, and **period totals**; kept visible in the record list for re-inclusion. _Note: remittance (BIR/GSIS/PhilHealth/Pag-IBIG) + journal-entry exports still omit the `included` filter — latent only (no exclude-UI caller of `setRecordInclusion` ships this release); MUST be added in the same PR as the include/exclude UI._
+- **1.8.6 register signatories → IMPL.** Configurable chain (`fm_document_signatories`, FM-maintained) resolved server-side and rendered as a Prepared/Certified/Approved signature band on the register PDF.
+- **1.8.15 payroll ad-hoc report → PARTIAL (backend ready).** `getPayrollAdHocReport` + `report-builder` column catalog complete/tested. _Deferred: reports UI page._
+
+**PIMM document generators (TOR 1.3):**
+
+- **1.3.8 Service Record → IMPL.** `service-record-generator` wired into `processDocumentRequest` (serial `SR-…`, `buildServiceHistory`, PDF, storage, audit).
+- **1.3.11 PDS CS-212 → IMPL (data-backed sections).** `pds-generator` wired (serial `PDS-…`). Family/education/eligibility/voluntary sections render blank pending the 201-file expansion (Iter 3).
+- **1.3.12 ad-hoc certificate → IMPL.** `adhoc-generator` (template-driven, refuses on unresolved placeholders) + template picker in the process-request form + `getActiveCertificateTemplates`.
+- Fixed misleading state: SERVICE_RECORD/PDS/AD_HOC previously marked "ready" with a null document URL yet notified the employee — now produce real PDFs.
+
+**Correctness / fail-safe:**
+
+- `payroll/types.ts` `isRegularEmployee` inverted to an **allowlist** (organic types) with `isJobOrderOrCOS` derived as its complement — future non-organic enum values fail SAFE (no benefits). Regression-guarded by `types.test.ts`.
+- Step-increment eligibility (`getEligibleEmployeesForStepIncrement`) gained the organic allowlist (TOR §10.5 cond. 3 — JO/COS/consultant/confidential excluded).
+- `implementStepIncrement` now resets `employees.date_last_increment` (CSC 3-year clock, §10.5).
+- `nosi_document_url` schema/migration type drift aligned to `text`.
+
+**Deploy pipeline fix (was silently orphaning migrations):**
+
+- `deploy-production.yml` / `deploy-staging.yml` `db:apply-sql` glob widened `2026-07-03-*` → `2026-07-*` so the `2026-07-04-*` (Iter 1) and `2026-07-05-*` (Iter 2) dated migrations reach the gated pipeline (previously only `2026-07-03-*` was applied; Iter-1 tables reached prod only via manual application).
+
+**Verified:** type-check clean · lint · production build (exit 0) · 1036/1036 unit tests (+4 new). Prod DB probe confirmed the 6 `2026-07-05-*` migrations are additive/backward-compatible (enum ADD VALUE + new tables/columns) and applied ahead of the code deploy.
+
+**Deferred to Iter 2b / Iter 3 (schema/PDF scaffolding ships as safe unused code):**
+
+- NOSA generator + salary-adjustment workflow/UI (1.8.11/1.8.12/1.8.13) — `salary_adjustments` table + `SalaryAdjustmentNoticePdf` present but no actions/UI.
+- NOSI PDF wiring (1.3.9 / PIM-014) — `StepIncrementNoticePdf` + `nosi_serial`/`nosi_document_url` columns present but the PDF is not yet generated (avoids adding non-atomic multi-step writes to the Supabase-client step-increment path).
+- Payroll income/deduction upload UI, include/exclude toggle UI, payroll reports UI.
+- Remittance/journal `included` filter (see 1.8.4 note).
+
 ## Remediation iterations (loop plan)
 
 - **Iter 1:** FM module (generic CRUD + seeds + new lookups) · cron scheduler (accrual/sick-auto-approve/year-end/retirement) · CSP+HSTS · audit-log field expansion + transaction log · leave attachments · LWOP + advanced leave reports · portal UIs (shift-change, DTR-correction) · Docker · upload templates

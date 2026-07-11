@@ -8,24 +8,41 @@
 // ---------------------------------------------------------------------------
 
 export type AppointmentType =
-  | 'permanent'
-  | 'temporary'
-  | 'coterminous'
-  | 'casual'
-  | 'job_order'
-  | 'contract_of_service';
+  | "permanent"
+  | "temporary"
+  | "coterminous"
+  | "casual"
+  | "job_order"
+  | "contract_of_service"
+  | "confidential_agent";
 
-/** JO and COS employees have different rules (no mandatory benefit deductions). */
-export function isJobOrderOrCOS(appointmentType: AppointmentType): boolean {
+/**
+ * Organic (SSL "regular") appointment types. This is the SOURCE-OF-TRUTH
+ * ALLOWLIST for benefit eligibility. Only permanent, temporary, coterminous,
+ * and casual are organic and entitled to mandatory-benefit deductions,
+ * PERA/RATA/longevity, and government bonuses.
+ */
+export function isRegularEmployee(appointmentType: AppointmentType): boolean {
   return (
-    appointmentType === 'job_order' ||
-    appointmentType === 'contract_of_service'
+    appointmentType === "permanent" ||
+    appointmentType === "temporary" ||
+    appointmentType === "coterminous" ||
+    appointmentType === "casual"
   );
 }
 
-/** Permanent, temporary, coterminous, and casual are "regular" for SSL purposes. */
-export function isRegularEmployee(appointmentType: AppointmentType): boolean {
-  return !isJobOrderOrCOS(appointmentType);
+/**
+ * Non-organic personnel follow JO/COS rules (no mandatory benefit deductions,
+ * no PERA/RATA/longevity, no government bonuses). Job Order, Contract of Service,
+ * and Confidential Agents are non-organic per TOR 1.8.2 / PRD §14.1.
+ *
+ * Derived as the COMPLEMENT of the organic allowlist so that any newly-added
+ * non-organic enum value (e.g. consultant, cti) FAILS SAFE — it is treated as
+ * non-organic and receives no benefits by default until explicitly whitelisted.
+ * See appointment-type-fail-open denylist guidance.
+ */
+export function isJobOrderOrCOS(appointmentType: AppointmentType): boolean {
+  return !isRegularEmployee(appointmentType);
 }
 
 // ---------------------------------------------------------------------------
@@ -33,16 +50,16 @@ export function isRegularEmployee(appointmentType: AppointmentType): boolean {
 // ---------------------------------------------------------------------------
 
 export type OvertimeType =
-  | 'regular_day'    // normal working day OT
-  | 'rest_day'       // OT on scheduled rest day
-  | 'special_holiday'
-  | 'regular_holiday';
+  | "regular_day" // normal working day OT
+  | "rest_day" // OT on scheduled rest day
+  | "special_holiday"
+  | "regular_holiday";
 
 // ---------------------------------------------------------------------------
 // Period type
 // ---------------------------------------------------------------------------
 
-export type PeriodType = 'semi-monthly' | 'monthly';
+export type PeriodType = "semi-monthly" | "monthly";
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -82,7 +99,7 @@ export interface AttendanceInput {
 export interface OtherAdjustment {
   name: string;
   amount: number;
-  type: 'earning' | 'deduction';
+  type: "earning" | "deduction";
 }
 
 export interface PayrollInput {

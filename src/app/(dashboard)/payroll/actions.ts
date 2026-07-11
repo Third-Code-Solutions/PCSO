@@ -7,6 +7,7 @@ import {
   payrollRecords,
   payrollAdjustments,
   payrollLoanDeductions,
+  payrollEmployeeInputs,
   loanLedger,
   salaryGrades,
   allowances,
@@ -30,6 +31,7 @@ import type {
   EmployeePayrollInput,
   AttendanceInput,
   AppointmentType,
+  OtherAdjustment,
 } from "@/lib/utils/payroll/types";
 import { computeFullPayroll } from "@/lib/utils/payroll";
 import { roundMoney, parseMoney } from "@/lib/utils/payroll/rounding";
@@ -81,6 +83,10 @@ const PAYROLL_RECORD_INSERT_CHUNK = 200;
  * this line when a loan would drive net pay below zero.
  */
 const LOAN_ADJUSTMENT_NAME = "Loan amortization (PAY-009)";
+// TOR 1.8.1 / PAY-014 — committed income/deduction bulk-upload line items,
+// applied as post-tax otherAdjustments during computation.
+const BULK_INPUT_INCOME_NAME = "Other income (bulk upload, PAY-014)";
+const BULK_INPUT_DEDUCTION_NAME = "Other deduction (bulk upload, PAY-014)";
 
 /**
  * Shared advisory-lock key serializing loan collection across all loan-
@@ -236,6 +242,11 @@ export async function processPayroll(periodId: string) {
         case "jo_cos":
           eligibleTypes = ["job_order", "contract_of_service"];
           break;
+        case "confidential_agents":
+          // TOR 1.8.2 — Confidential Agents run: non-organic, JO/COS-style
+          // deduction rules (applied in computeFullPayroll via isJobOrderOrCOS).
+          eligibleTypes = ["confidential_agent"];
+          break;
         case "regular":
         case "rata":
         case "benefits_bonuses":
@@ -273,6 +284,19 @@ export async function processPayroll(periodId: string) {
             inArray(employees.appointmentType, eligibleTypes),
           ),
         );
+
+      // TOR 1.8.1: committed income/deduction inputs for this period, applied
+      // as otherAdjustments during computation. Re-read every run so values
+      // survive re-processing (idempotent — one row per employee per period).
+      const inputRows = await tx
+        .select({
+          employeeId: payrollEmployeeInputs.employeeId,
+          otherIncome: payrollEmployeeInputs.otherIncome,
+          otherDeductions: payrollEmployeeInputs.otherDeductions,
+        })
+        .from(payrollEmployeeInputs)
+        .where(eq(payrollEmployeeInputs.periodId, periodId));
+      const inputsByEmployee = new Map(inputRows.map((r) => [r.employeeId, r]));
 
       const periodStartDate = new Date(period.periodStart);
       const periodEndDate = new Date(period.periodEnd);
@@ -332,17 +356,45 @@ export async function processPayroll(periodId: string) {
 
         // Regular/JO-COS runs collect loan amortizations from net pay.
         // Post-tax: otherAdjustments deductions do not reduce taxable income.
-        const loanAdjustments =
+        const loanAdjustments: OtherAdjustment[] =
           loanInput.total > 0 &&
           (period.scope === "regular" || period.scope === "jo_cos")
             ? [
                 {
                   name: LOAN_ADJUSTMENT_NAME,
                   amount: loanInput.total,
-                  type: "deduction" as const,
+                  type: "deduction",
                 },
               ]
-            : undefined;
+            : [];
+
+        // TOR 1.8.1 / PAY-014: committed income/deduction inputs uploaded for
+        // this employee become post-tax otherAdjustments. Only BULK_INPUT_SCOPES
+        // compute via computeFullPayroll (which consumes otherAdjustments); the
+        // upload action rejects other scopes, so non-accepting runs have no rows.
+        const inputRow = inputsByEmployee.get(emp.id);
+        const inputAdjustments: OtherAdjustment[] = [];
+        if (inputRow) {
+          const inc = parseMoney(inputRow.otherIncome);
+          const ded = parseMoney(inputRow.otherDeductions);
+          if (inc > 0)
+            inputAdjustments.push({
+              name: BULK_INPUT_INCOME_NAME,
+              amount: inc,
+              type: "earning",
+            });
+          if (ded > 0)
+            inputAdjustments.push({
+              name: BULK_INPUT_DEDUCTION_NAME,
+              amount: ded,
+              type: "deduction",
+            });
+        }
+
+        const combinedAdjustments: OtherAdjustment[] = [
+          ...loanAdjustments,
+          ...inputAdjustments,
+        ];
 
         const payrollInput: PayrollInput = {
           employee: employeeInput,
@@ -352,7 +404,9 @@ export async function processPayroll(periodId: string) {
             end: periodEndDate,
           },
           attendance: attendanceInput,
-          ...(loanAdjustments ? { otherAdjustments: loanAdjustments } : {}),
+          ...(combinedAdjustments.length > 0
+            ? { otherAdjustments: combinedAdjustments }
+            : {}),
         };
 
         let computed: PayrollResult;
@@ -361,7 +415,12 @@ export async function processPayroll(periodId: string) {
         let exceptionNotes: string | undefined;
 
         try {
-          const scoped = computeRecordForScope(emp, payrollInput, ctx, loanInput);
+          const scoped = computeRecordForScope(
+            emp,
+            payrollInput,
+            ctx,
+            loanInput,
+          );
           // Not covered by this run's scope (e.g., no RATA entitlement,
           // no amortization due, no rate change) — no record produced.
           if (scoped === null) continue;
@@ -1525,6 +1584,17 @@ function computeRecordForScope(
         loanEntries: [],
       };
     }
+
+    case "confidential_agents":
+      // TOR 1.8.2 — Confidential Agents run: non-organic personnel computed
+      // with JO/COS deduction rules (isJobOrderOrCOS ⇒ no mandatory
+      // deductions, no RATA/PERA/longevity/bonuses). No in-run loan collection,
+      // so no loan entries are returned (ledger is untouched). Committed
+      // income/deduction inputs (BULK_INPUT_SCOPES) flow via otherAdjustments.
+      return {
+        computed: computeFullPayroll({ ...payrollInput, includeRata: false }),
+        loanEntries: [],
+      };
 
     default:
       throw new Error(`Unsupported payroll scope: ${ctx.scope}`);

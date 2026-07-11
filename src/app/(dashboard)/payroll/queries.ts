@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+import { db } from "@/lib/db";
 import {
   payrollPeriods,
   payrollRecords,
@@ -10,8 +10,8 @@ import {
   type PayrollAdjustment,
   type PayrollPeriodStatus,
   type PayrollPeriodScope,
-} from '@/lib/db/schema';
-import { eq, desc, and, isNull, sql } from 'drizzle-orm';
+} from "@/lib/db/schema";
+import { eq, desc, and, isNull, sql } from "drizzle-orm";
 
 // ─── Period Queries ───────────────────────────────────────────────────────────
 
@@ -209,15 +209,24 @@ export async function getPeriodTotals(periodId: string): Promise<PeriodTotals> {
       exceptionCount: sql<number>`count(*) filter (where ${payrollRecords.hasException} = true)::int`,
     })
     .from(payrollRecords)
-    .where(eq(payrollRecords.periodId, periodId));
+    // TOR 1.8.4: excluded records are zeroed from period totals (kept visible
+    // for audit in the record list, but not counted here or on the register).
+    .where(
+      and(
+        eq(payrollRecords.periodId, periodId),
+        eq(payrollRecords.included, true),
+      ),
+    );
 
-  return row ?? {
-    employeeCount: 0,
-    totalGrossPay: '0.00',
-    totalDeductions: '0.00',
-    totalNetPay: '0.00',
-    exceptionCount: 0,
-  };
+  return (
+    row ?? {
+      employeeCount: 0,
+      totalGrossPay: "0.00",
+      totalDeductions: "0.00",
+      totalNetPay: "0.00",
+      exceptionCount: 0,
+    }
+  );
 }
 
 // ─── My Payslips (self-service) ───────────────────────────────────────────────
@@ -260,7 +269,7 @@ export async function getMyPayslips(employeeId: string): Promise<MyPayslip[]> {
     .where(
       and(
         eq(payrollRecords.employeeId, employeeId),
-        eq(payrollRecords.status, 'paid'),
+        eq(payrollRecords.status, "paid"),
       ),
     )
     .orderBy(desc(payrollPeriods.periodStart));
@@ -282,10 +291,17 @@ export type RegisterData = {
   records: PayrollRecordWithEmployee[];
 };
 
-export async function getRegisterData(periodId: string): Promise<RegisterData | null> {
+export async function getRegisterData(
+  periodId: string,
+): Promise<RegisterData | null> {
   const period = await getPayrollPeriodById(periodId);
   if (!period) return null;
 
-  const records = await getPayrollRecordsByPeriod(periodId);
+  // TOR 1.8.4: the official register omits records tagged for exclusion. The
+  // full list (incl. excluded, flagged) remains available via
+  // getPayrollRecordsByPeriod for HR to review / re-include.
+  const records = (await getPayrollRecordsByPeriod(periodId)).filter(
+    (r) => r.included !== false,
+  );
   return { period, records };
 }

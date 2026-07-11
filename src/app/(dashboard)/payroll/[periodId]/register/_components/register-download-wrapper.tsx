@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import type { PayrollPeriod } from "@/lib/db/schema";
 import type { PayrollRecordWithEmployee } from "@/app/(dashboard)/payroll/queries";
+import type { SignatoryBlock } from "@/lib/utils/payroll/signatories";
 
 const RegisterDownloadButton = dynamic(
   () =>
@@ -15,8 +16,19 @@ const RegisterDownloadButton = dynamic(
 interface Props {
   period: PayrollPeriod;
   records: PayrollRecordWithEmployee[];
+  signatories?: SignatoryBlock[];
 }
 
-export function RegisterDownloadWrapper({ period, records }: Props) {
-  return <RegisterDownloadButton period={period} records={records} />;
+export function RegisterDownloadWrapper({
+  period,
+  records,
+  signatories,
+}: Props) {
+  return (
+    <RegisterDownloadButton
+      period={period}
+      records={records}
+      signatories={signatories}
+    />
+  );
 }

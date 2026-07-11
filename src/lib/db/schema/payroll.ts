@@ -35,6 +35,7 @@ export const payrollPeriodScopeEnum = pgEnum("payroll_period_scope", [
   "salary_differential", // Salary Differential payroll (PAY-006)
   "special", // Special payroll, configurable title (PAY-007)
   "magna_carta", // Magna Carta benefits (PAY-008)
+  "confidential_agents", // Confidential Agents payroll (TOR 1.8.2) — JO/COS-style rules
 ]);
 
 // PAY-005: which benefit component(s) a benefits_bonuses run pays. Prevents a
@@ -222,6 +223,12 @@ export const payrollRecords = pgTable(
     hasException: boolean("has_exception").notNull().default(false),
     exceptionNotes: text("exception_notes"),
 
+    // TOR 1.8.4 (PAY-013): per-run inclusion/exclusion tagging. Excluded
+    // records remain visible for audit but are zeroed from period totals and
+    // skipped in the register / bank hash file.
+    included: boolean("included").notNull().default(true),
+    exclusionReason: text("exclusion_reason"),
+
     // Payslip
     payslipGeneratedAt: varchar("payslip_generated_at", { length: 50 }),
     payslipEmailedAt: varchar("payslip_emailed_at", { length: 50 }),
@@ -233,6 +240,73 @@ export const payrollRecords = pgTable(
     index("payroll_records_employee_id_idx").on(t.employeeId),
     index("payroll_records_status_idx").on(t.status),
     index("payroll_records_has_exception_idx").on(t.hasException),
+    index("payroll_records_period_included_idx").on(t.periodId, t.included),
+  ],
+);
+
+// ─── Payroll Bulk Uploads (TOR 1.8.1 staging) ────────────────────────────────
+// Staging header for the income/deduction CSV import. Mirrors
+// leave_bulk_uploads: parsed valid rows are persisted on the staging record so
+// the commit step can re-validate and write payroll_employee_inputs without
+// re-parsing the original file (which is never stored server-side).
+
+export const payrollBulkUploads = pgTable(
+  "payroll_bulk_uploads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => payrollPeriods.id),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    recordCount: integer("record_count").notNull().default(0),
+    validCount: integer("valid_count").notNull().default(0),
+    errorCount: integer("error_count").notNull().default(0),
+    uploadedById: uuid("uploaded_by_id")
+      .notNull()
+      .references(() => employees.id),
+    /** pending | committed | rejected */
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    validationErrors: text("validation_errors"), // JSON stringified errors
+    stagedRows: text("staged_rows"), // JSON stringified PayrollInputRow[] awaiting commit
+    ...timestamps,
+  },
+  (t) => [
+    index("payroll_bulk_uploads_period_idx").on(t.periodId),
+    index("payroll_bulk_uploads_status_idx").on(t.status),
+  ],
+);
+
+// ─── Payroll Employee Inputs (TOR 1.8.1 committed values) ────────────────────
+// One row per (period, employee): the committed other_income /
+// other_deductions applied at computation time as otherAdjustments. Values
+// survive re-processing because processPayroll re-reads this table each run.
+
+export const payrollEmployeeInputs = pgTable(
+  "payroll_employee_inputs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => payrollPeriods.id),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    otherIncome: numeric("other_income", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    otherDeductions: numeric("other_deductions", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    remarks: text("remarks"),
+    uploadId: uuid("upload_id").references(() => payrollBulkUploads.id),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("payroll_employee_inputs_period_employee_idx").on(
+      t.periodId,
+      t.employeeId,
+    ),
+    index("payroll_employee_inputs_employee_idx").on(t.employeeId),
   ],
 );
 
@@ -494,6 +568,39 @@ export const payrollLoanDeductionsRelations = relations(
   }),
 );
 
+export const payrollBulkUploadsRelations = relations(
+  payrollBulkUploads,
+  ({ one, many }) => ({
+    period: one(payrollPeriods, {
+      fields: [payrollBulkUploads.periodId],
+      references: [payrollPeriods.id],
+    }),
+    uploadedBy: one(employees, {
+      fields: [payrollBulkUploads.uploadedById],
+      references: [employees.id],
+    }),
+    committedInputs: many(payrollEmployeeInputs),
+  }),
+);
+
+export const payrollEmployeeInputsRelations = relations(
+  payrollEmployeeInputs,
+  ({ one }) => ({
+    period: one(payrollPeriods, {
+      fields: [payrollEmployeeInputs.periodId],
+      references: [payrollPeriods.id],
+    }),
+    employee: one(employees, {
+      fields: [payrollEmployeeInputs.employeeId],
+      references: [employees.id],
+    }),
+    upload: one(payrollBulkUploads, {
+      fields: [payrollEmployeeInputs.uploadId],
+      references: [payrollBulkUploads.id],
+    }),
+  }),
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type PayrollPeriod = typeof payrollPeriods.$inferSelect;
@@ -528,3 +635,9 @@ export type NewBankFileConfig = typeof bankFileConfigs.$inferInsert;
 
 export type BankHashFile = typeof bankHashFiles.$inferSelect;
 export type NewBankHashFile = typeof bankHashFiles.$inferInsert;
+
+export type PayrollBulkUpload = typeof payrollBulkUploads.$inferSelect;
+export type NewPayrollBulkUpload = typeof payrollBulkUploads.$inferInsert;
+
+export type PayrollEmployeeInput = typeof payrollEmployeeInputs.$inferSelect;
+export type NewPayrollEmployeeInput = typeof payrollEmployeeInputs.$inferInsert;

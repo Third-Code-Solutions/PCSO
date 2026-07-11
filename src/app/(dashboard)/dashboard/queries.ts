@@ -118,7 +118,7 @@ export async function getKpiCounts(): Promise<KpiCounts> {
         ),
       ),
 
-    // Job Order + Contract of Service
+    // Non-organic (Job Order + Contract of Service + Confidential Agent)
     db
       .select({ c: count() })
       .from(employees)
@@ -129,6 +129,7 @@ export async function getKpiCounts(): Promise<KpiCounts> {
           inArray(employees.appointmentType, [
             "job_order",
             "contract_of_service",
+            "confidential_agent",
           ]),
         ),
       ),

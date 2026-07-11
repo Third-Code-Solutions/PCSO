@@ -220,6 +220,9 @@ export async function generateBankHashFile(input: unknown) {
       and(
         eq(payrollRecords.periodId, parsed.periodId),
         eq(payrollRecords.status, "approved"),
+        // TOR 1.8.4 (PAY-013): employees tagged for exclusion must never be
+        // paid — skip them from the bank hash file.
+        eq(payrollRecords.included, true),
       ),
     );
 

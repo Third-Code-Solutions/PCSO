@@ -15,7 +15,7 @@
  *    re-runs never double-credit.
  */
 
-import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   auditLogs,
@@ -94,9 +94,14 @@ export async function runMonthlyAccrual(options?: {
       and(
         eq(employees.status, "active"),
         isNull(employees.deletedAt),
-        notInArray(employees.appointmentType, [
-          "job_order",
-          "contract_of_service",
+        // Only organic personnel accrue CSC leave credits (PRD §10.1.1).
+        // Allowlist so a new non-organic type (e.g. confidential_agent) is
+        // excluded by default rather than silently accruing credits.
+        inArray(employees.appointmentType, [
+          "permanent",
+          "temporary",
+          "coterminous",
+          "casual",
         ]),
       ),
     );

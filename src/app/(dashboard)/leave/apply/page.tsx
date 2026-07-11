@@ -45,7 +45,8 @@ type AppointmentType =
   | "casual"
   | "coterminous"
   | "job_order"
-  | "contract_of_service";
+  | "contract_of_service"
+  | "confidential_agent";
 
 export default async function ApplyLeavePage() {
   // `view` is the minimum permission to see the apply shell; the server
@@ -126,11 +127,14 @@ async function ApplyFormLoader({ employeeId }: { employeeId: string }) {
   const appointmentType =
     (emp.appointment_type as AppointmentType) ?? "permanent";
 
-  // Job-order / contract-of-service personnel aren't entitled to CSC leaves
-  // under IRR §47. Guard at the page so we don't render a broken form.
+  // Non-organic personnel (JO / COS / Confidential Agent) aren't entitled to
+  // CSC leaves under IRR §47 / PRD §10.1.1. Allowlist organic types so a guard
+  // gap can't render a broken form for a non-organic appointment.
   if (
-    appointmentType === "job_order" ||
-    appointmentType === "contract_of_service"
+    appointmentType !== "permanent" &&
+    appointmentType !== "temporary" &&
+    appointmentType !== "coterminous" &&
+    appointmentType !== "casual"
   ) {
     return (
       <EmptyState

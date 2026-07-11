@@ -18,8 +18,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -50,8 +50,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -67,7 +67,7 @@ jobs:
       # IF NOT EXISTS), so re-running on an already-migrated database is a no-op.
       - name: Apply incremental SQL migrations
         shell: bash
-        run: npm run db:apply-sql supabase/migrations/2026-07-03-*.sql
+        run: npm run db:apply-sql supabase/migrations/2026-07-*.sql
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
 
@@ -85,5 +85,5 @@ jobs:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
+          vercel-args: "--prod"
           scope: ${{ secrets.VERCEL_ORG_ID }}

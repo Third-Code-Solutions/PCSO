@@ -1,19 +1,25 @@
-'use client';
+"use client";
 
-import { Download } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PDFDownloadLink } from '@react-pdf/renderer';
-import { PayrollRegisterDocument } from '@/components/pdf/payroll-register';
-import type { PayrollPeriod } from '@/lib/db/schema';
-import type { PayrollRecordWithEmployee } from '@/app/(dashboard)/payroll/queries';
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PDFDownloadLink } from "@react-pdf/renderer";
+import { PayrollRegisterDocument } from "@/components/pdf/payroll-register";
+import type { PayrollPeriod } from "@/lib/db/schema";
+import type { PayrollRecordWithEmployee } from "@/app/(dashboard)/payroll/queries";
+import type { SignatoryBlock } from "@/lib/utils/payroll/signatories";
 
 interface RegisterDownloadButtonProps {
   period: PayrollPeriod;
   records: PayrollRecordWithEmployee[];
+  signatories?: SignatoryBlock[];
 }
 
-export function RegisterDownloadButton({ period, records }: RegisterDownloadButtonProps) {
-  const fileName = `payroll-register-${period.name.toLowerCase().replace(/\s+/g, '-')}.pdf`;
+export function RegisterDownloadButton({
+  period,
+  records,
+  signatories,
+}: RegisterDownloadButtonProps) {
+  const fileName = `payroll-register-${period.name.toLowerCase().replace(/\s+/g, "-")}.pdf`;
 
   return (
     <PDFDownloadLink
@@ -22,6 +28,7 @@ export function RegisterDownloadButton({ period, records }: RegisterDownloadButt
           period={period}
           records={records}
           generatedAt={new Date().toISOString()}
+          signatories={signatories}
         />
       }
       fileName={fileName}
@@ -33,7 +40,7 @@ export function RegisterDownloadButton({ period, records }: RegisterDownloadButt
           disabled={loading}
         >
           <Download className="mr-2 h-4 w-4" />
-          {loading ? 'Generating...' : 'Download PDF'}
+          {loading ? "Generating..." : "Download PDF"}
         </Button>
       )}
     </PDFDownloadLink>

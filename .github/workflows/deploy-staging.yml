@@ -17,8 +17,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -46,8 +46,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -62,7 +62,7 @@ jobs:
       # so re-running on an already-migrated database is a no-op.
       - name: Apply incremental SQL migrations
         shell: bash
-        run: npm run db:apply-sql supabase/migrations/2026-07-03-*.sql
+        run: npm run db:apply-sql supabase/migrations/2026-07-*.sql
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
 

@@ -6,6 +6,7 @@ import {
   pgEnum,
   numeric,
   varchar,
+  text,
   jsonb,
   index,
   uniqueIndex,
@@ -162,6 +163,9 @@ export const stepIncrements = pgTable(
     status: stepIncrementStatusEnum("status").notNull().default("pending"),
     approvedBy: uuid("approved_by"),
     remarks: varchar("remarks", { length: 500 }),
+    /** NOSI artifact (PIM-014): serial NOSI-YYYY-NNNNNN + stored PDF. */
+    nosiSerial: varchar("nosi_serial", { length: 50 }),
+    nosiDocumentUrl: text("nosi_document_url"),
     ...timestamps,
   },
   (t) => [

@@ -1299,7 +1299,15 @@ export async function accrueMonthlyCredits(
     .select("id, date_hired, appointment_type")
     .eq("status", "active")
     .is("deleted_at", null)
-    .not("appointment_type", "in", '("job_order","contract_of_service")');
+    // Only organic personnel accrue CSC leave credits (PRD §10.1.1). Allowlist
+    // organic types so non-organic appointments (JO / COS / confidential_agent)
+    // never accrue credits.
+    .in("appointment_type", [
+      "permanent",
+      "temporary",
+      "coterminous",
+      "casual",
+    ]);
 
   if (parsed.employeeIds && parsed.employeeIds.length > 0) {
     employeeQuery = employeeQuery.in("id", parsed.employeeIds);

@@ -785,11 +785,14 @@ export async function implementStepIncrement(input: unknown): Promise<void> {
     throw new Error("Only approved step increments can be implemented.");
   }
 
-  // Update the employee's step in their record
+  // Update the employee's step in their record, and reset the CSC 3-year
+  // step-increment clock to this increment's effectivity date (TOR §10.5:
+  // "reset reference date to NOSI issuance date").
   const { error: empError } = await supabase
     .from("employees")
     .update({
       step: increment.to_step,
+      date_last_increment: increment.effectivity_date,
       updated_at: new Date().toISOString(),
     })
     .eq("id", String(increment.employee_id));

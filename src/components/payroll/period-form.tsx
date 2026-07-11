@@ -162,6 +162,9 @@ export function PeriodForm({ defaultScope = "regular" }: PeriodFormProps) {
                   <SelectItem value="jo_cos">
                     JO / COS (Job Order / Contract of Service)
                   </SelectItem>
+                  <SelectItem value="confidential_agents">
+                    Confidential Agents (TOR 1.8.2)
+                  </SelectItem>
                   <SelectItem value="rata">
                     RATA (Representation and Transportation Allowance)
                   </SelectItem>

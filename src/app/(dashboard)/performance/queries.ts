@@ -620,6 +620,10 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<
     `,
     )
     .eq("status", "active")
+    // TOR §10.5 condition 3: JO, COS, consultant, and confidential agents are
+    // NOT eligible for step increment. Organic-type ALLOWLIST (fail-safe: any
+    // future non-organic appointment type is excluded by default).
+    .in("appointment_type", ["permanent", "temporary", "coterminous", "casual"])
     .is("deleted_at", null)
     .order("last_name");
 

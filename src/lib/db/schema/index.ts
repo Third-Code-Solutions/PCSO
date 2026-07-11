@@ -18,6 +18,7 @@ export * from "./employees";
 // Depend on offices + employees
 export * from "./plantilla";
 export * from "./appointments";
+export * from "./salary-adjustments";
 export * from "./attendance";
 export * from "./leave";
 export * from "./leave-gaps";
@@ -57,6 +58,9 @@ export * from "./fm-additions";
 
 // Serial number sequences (no FK dependencies)
 export * from "./serial-sequences";
+
+// Ad hoc certificate templates (PIM-018, no FK dependencies)
+export * from "./certificate-templates";
 
 // Recruitment module (depends on employees, offices, fm-extensions)
 // Note: excludes 'appointments', 'appointmentsRelations', 'Appointment', 'NewAppointment',

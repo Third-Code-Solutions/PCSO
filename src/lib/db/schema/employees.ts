@@ -38,6 +38,7 @@ export const appointmentTypeEnum = pgEnum("appointment_type", [
   "casual",
   "job_order",
   "contract_of_service",
+  "confidential_agent", // TOR 1.8.2 — non-organic; JO/COS-style payroll rules
 ]);
 
 export const employeeStatusEnum = pgEnum("employee_status", [
@@ -105,6 +106,12 @@ export const employees = pgTable(
     // Employment dates
     dateHired: date("date_hired").notNull(),
     dateRegularized: date("date_regularized"),
+    /**
+     * Date of the last implemented salary step increment (PIM-014).
+     * Written by the NOSI implementation flow; resets the CSC MC 6 s. 2012
+     * 3-year step-increment eligibility clock.
+     */
+    dateLastIncrement: date("date_last_increment"),
 
     // Status
     status: employeeStatusEnum("status").notNull().default("active"),

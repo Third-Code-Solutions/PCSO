@@ -23,12 +23,11 @@ export const CreatePeriodSchema = z
       "salary_differential",
       "special",
       "magna_carta",
+      "confidential_agents",
     ]),
     customTitle: z.string().max(255).optional(),
     // PAY-005: which benefit component a benefits_bonuses run pays.
-    benefitType: z
-      .enum(["mid_year", "year_end_cash_gift", "pbb"])
-      .optional(),
+    benefitType: z.enum(["mid_year", "year_end_cash_gift", "pbb"]).optional(),
     skipMandatoryDeductions: z.boolean().default(false),
     notes: z.string().max(2000).optional(),
   })
@@ -244,4 +243,97 @@ export const GenerateBankHashFileSchema = z.object({
 
 export type GenerateBankHashFileInput = z.infer<
   typeof GenerateBankHashFileSchema
+>;
+
+// ─── Include/Exclude Tagging (TOR 1.8.4 / PAY-013) ────────────────────────────
+
+export const SetRecordInclusionSchema = z
+  .object({
+    recordId: z.string().uuid("Invalid record ID"),
+    included: z.boolean(),
+    /** Required (min 5 chars) when excluding; ignored when re-including. */
+    reason: z.string().max(500).optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (!d.included && (!d.reason || d.reason.trim().length < 5)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "An exclusion reason (at least 5 characters) is required when excluding an employee.",
+        path: ["reason"],
+      });
+    }
+  });
+
+export type SetRecordInclusionInput = z.infer<typeof SetRecordInclusionSchema>;
+
+// ─── Ad Hoc Payroll Reports (TOR 1.8.15 / PAY-017) ────────────────────────────
+
+/** Turn empty-string filter values (unset UI selects) into undefined. */
+const emptyToUndefined = (value: unknown) =>
+  typeof value === "string" && value.trim() === "" ? undefined : value;
+
+export const PayrollReportFiltersSchema = z
+  .object({
+    periodStart: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a date (YYYY-MM-DD)")
+        .optional(),
+    ),
+    periodEnd: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be a date (YYYY-MM-DD)")
+        .optional(),
+    ),
+    scope: z.preprocess(
+      emptyToUndefined,
+      z
+        .enum([
+          "regular",
+          "jo_cos",
+          "rata",
+          "cash_advance",
+          "benefits_bonuses",
+          "salary_differential",
+          "special",
+          "magna_carta",
+          "confidential_agents",
+        ])
+        .optional(),
+    ),
+    officeId: z.preprocess(
+      emptyToUndefined,
+      z.string().uuid("Invalid office ID").optional(),
+    ),
+    appointmentType: z.preprocess(
+      emptyToUndefined,
+      z
+        .enum([
+          "permanent",
+          "temporary",
+          "coterminous",
+          "casual",
+          "job_order",
+          "contract_of_service",
+          "confidential_agent",
+        ])
+        .optional(),
+    ),
+    /** When true, only approved/paid (finalized) runs are included. */
+    finalizedOnly: z.boolean().default(false),
+  })
+  .refine(
+    (d) => !d.periodStart || !d.periodEnd || d.periodStart <= d.periodEnd,
+    {
+      message: "Period start must be on or before period end",
+      path: ["periodEnd"],
+    },
+  );
+
+export type PayrollReportFiltersInput = z.input<
+  typeof PayrollReportFiltersSchema
 >;

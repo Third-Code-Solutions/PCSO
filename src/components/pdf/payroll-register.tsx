@@ -6,6 +6,7 @@ import React from "react";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { PayrollPeriod } from "@/lib/db/schema";
 import type { PayrollRecordWithEmployee } from "@/app/(dashboard)/payroll/queries";
+import type { SignatoryBlock } from "@/lib/utils/payroll/signatories";
 
 const NAVY = "#0B2545";
 const GOLD = "#C8A84B";
@@ -110,6 +111,29 @@ const styles = StyleSheet.create({
     fontSize: 7.5,
     textAlign: "right",
   },
+  // Signatory band (TOR 1.8.6)
+  signatories: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 32,
+    paddingHorizontal: 4,
+  },
+  sigBlock: { width: "30%" },
+  sigCaption: {
+    fontSize: 7.5,
+    color: GRAY,
+    marginBottom: 24,
+  },
+  sigLine: {
+    borderTopWidth: 1,
+    borderTopColor: "#111827",
+    paddingTop: 3,
+  },
+  sigTitle: {
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    color: "#111827",
+  },
   footer: {
     position: "absolute",
     bottom: 20,
@@ -151,12 +175,15 @@ interface PayrollRegisterDocumentProps {
   period: PayrollPeriod;
   records: PayrollRecordWithEmployee[];
   generatedAt?: string;
+  /** TOR 1.8.6 — configurable signatory chain (Prepared/Certified/Approved). */
+  signatories?: SignatoryBlock[];
 }
 
 export function PayrollRegisterDocument({
   period,
   records,
   generatedAt,
+  signatories,
 }: PayrollRegisterDocumentProps) {
   const totalGross = records.reduce((s, r) => s + parseFloat(r.grossPay), 0);
   const totalDed = records.reduce(
@@ -284,6 +311,23 @@ export function PayrollRegisterDocument({
           </Text>
           <Text style={[styles.totalLabel, styles.colStatus]} />
         </View>
+
+        {/* Signatories (TOR 1.8.6) */}
+        {signatories && signatories.length > 0 && (
+          <View style={styles.signatories} wrap={false}>
+            {signatories.map((s) => (
+              <View
+                key={`${s.role}-${s.sequenceOrder}`}
+                style={styles.sigBlock}
+              >
+                <Text style={styles.sigCaption}>{s.caption}:</Text>
+                <View style={styles.sigLine}>
+                  <Text style={styles.sigTitle}>{s.title}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Footer */}
         <View style={styles.footer} fixed>

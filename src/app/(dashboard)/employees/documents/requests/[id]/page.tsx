@@ -34,6 +34,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { getDocumentRequestById } from "@/lib/actions/documents";
+import { getActiveCertificateTemplates } from "@/lib/actions/documents/certificate-templates";
 import { AcceptRequestForm } from "./accept-request-form";
 import { ProcessRequestForm } from "./process-request-form";
 import { HoldRequestForm } from "./hold-request-form";
@@ -102,6 +103,12 @@ async function RequestDetailContent({ id }: { id: string }) {
   const request = result.data;
   const config = statusConfig[request.status as keyof typeof statusConfig];
   const StatusIcon = config.icon;
+
+  // Ad hoc certificates require a template selection at processing time.
+  const certificateTemplates =
+    request.status === "in_process" && request.documentType === "AD_HOC"
+      ? await getActiveCertificateTemplates()
+      : [];
 
   return (
     <div className="space-y-6">
@@ -395,6 +402,7 @@ async function RequestDetailContent({ id }: { id: string }) {
             requestId={request.id}
             documentType={request.documentType}
             employeeId={request.employeeId}
+            certificateTemplates={certificateTemplates}
           />
           <HoldRequestForm requestId={request.id} />
         </div>

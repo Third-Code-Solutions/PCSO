@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/layouts/page-header";
 import { requirePermission } from "@/lib/auth/guards";
+import {
+  getPayrollSignatories,
+  PAYROLL_REGISTER_DOC_TYPE,
+} from "@/lib/utils/payroll/signatories";
 import { getRegisterData } from "../../queries";
 import { RegisterDownloadWrapper } from "./_components/register-download-wrapper";
 
@@ -22,6 +26,9 @@ export default async function RegisterPage({ params }: Props) {
   if (!data) notFound();
 
   const { period, records } = data;
+  // TOR 1.8.6 — resolve the configurable signatory chain server-side (the DB
+  // loader is server-only); pass it as serializable props to the client PDF.
+  const signatories = await getPayrollSignatories(PAYROLL_REGISTER_DOC_TYPE);
 
   return (
     <main className="space-y-6">
@@ -55,7 +62,11 @@ export default async function RegisterPage({ params }: Props) {
             payroll records for this period, formatted for COA audit submission.
           </p>
           <div className="mt-6">
-            <RegisterDownloadWrapper period={period} records={records} />
+            <RegisterDownloadWrapper
+              period={period}
+              records={records}
+              signatories={signatories}
+            />
           </div>
           <p className="mt-4 text-xs text-muted-foreground">
             PDF is generated in your browser · {records.length} record

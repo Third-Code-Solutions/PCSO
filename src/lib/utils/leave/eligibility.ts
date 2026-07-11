@@ -39,7 +39,8 @@ export type AppointmentType =
   | "coterminous"
   | "casual"
   | "job_order"
-  | "contract_of_service";
+  | "contract_of_service"
+  | "confidential_agent";
 
 export interface EmployeeLeaveProfile {
   /** Employee's gender. */
@@ -83,10 +84,18 @@ export interface LeaveEligibilityResult {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** JO and COS employees are ineligible for most statutory leave benefits. */
+/**
+ * Non-organic personnel (JO, COS, Confidential Agent) are ineligible for most
+ * statutory leave benefits (CSC Omnibus Rules; PRD §10.1.1). Allowlist the
+ * organic appointment types so a newly added non-organic type fails safe
+ * (ineligible) instead of silently inheriting leave benefits.
+ */
 function isRegularAppointment(appointmentType: AppointmentType): boolean {
   return (
-    appointmentType !== "job_order" && appointmentType !== "contract_of_service"
+    appointmentType === "permanent" ||
+    appointmentType === "temporary" ||
+    appointmentType === "coterminous" ||
+    appointmentType === "casual"
   );
 }
 
