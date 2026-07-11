@@ -52,14 +52,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run database migrations
-        run: npm run db:migrate
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-
-      # Hand-written incremental SQL migrations (supabase/migrations/*.sql) are
-      # applied out-of-band from the drizzle journal. All files are idempotent,
-      # so re-running on an already-migrated database is a no-op.
+      # See deploy-production.yml: dated supabase/migrations/*.sql are the schema
+      # source of truth (not the drizzle journal); drizzle `db:migrate` removed.
+      # STAGING_DATABASE_URL must be the IPv4 pooler host (direct host is
+      # IPv6-only and unreachable from the runner). NOTE: the `staging`
+      # GitHub environment / STAGING_DATABASE_URL secret is not yet configured.
       - name: Apply incremental SQL migrations
         shell: bash
         run: npm run db:apply-sql supabase/migrations/2026-07-*.sql

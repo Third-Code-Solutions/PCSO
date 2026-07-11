@@ -56,15 +56,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run database migrations
-        run: npm run db:migrate
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-
-      # Hand-written incremental SQL migrations (supabase/migrations/*.sql) are
-      # applied out-of-band from the drizzle journal. All files are idempotent
-      # (guarded ADD COLUMN IF NOT EXISTS / CREATE ... IF NOT EXISTS / ADD VALUE
-      # IF NOT EXISTS), so re-running on an already-migrated database is a no-op.
+      # NOTE: the hand-written dated SQL files under supabase/migrations/ are the
+      # source of truth for prod schema changes — NOT the drizzle journal (prod
+      # was provisioned via db:push/export, so `drizzle-kit migrate` would try to
+      # re-apply base migrations onto an already-provisioned schema and fail
+      # "already exists"). The drizzle `db:migrate` step was therefore removed.
+      # All SQL files are idempotent (ADD COLUMN/CREATE ... IF NOT EXISTS,
+      # ADD VALUE IF NOT EXISTS), so re-running on an already-migrated DB is a
+      # no-op. DATABASE_URL must be the IPv4 pooler host (the direct
+      # db.<ref>.supabase.co host is IPv6-only and unreachable from the runner).
       - name: Apply incremental SQL migrations
         shell: bash
         run: npm run db:apply-sql supabase/migrations/2026-07-*.sql
