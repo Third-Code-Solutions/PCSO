@@ -70,20 +70,10 @@ jobs:
         run: npm run db:apply-sql supabase/migrations/2026-07-*.sql
         env:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-
-  deploy:
-    name: Deploy to Vercel Production
-    runs-on: ubuntu-latest
-    needs: migrate
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Vercel production
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: "--prod"
-          scope: ${{ secrets.VERCEL_ORG_ID }}
+# Deployment to Vercel production is performed out-of-band via the
+# `vercel deploy --prod` CLI (the reliable path for this project), not from this
+# workflow. The previous amondnet/vercel-action deploy job required
+# VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets that are not
+# provisioned, so it failed every run and was removed to keep this pipeline
+# (CI + production migrations) green. Re-add a deploy job here once dedicated
+# scoped Vercel CI credentials are configured as environment secrets.
