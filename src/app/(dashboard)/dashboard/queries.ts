@@ -19,7 +19,13 @@ import {
   overtimeRequests,
   documentRequests,
   notifications,
+  offices,
+  fmWorkSuspensions,
 } from "@/lib/db/schema";
+import {
+  enumerateWorkingDays,
+  findUnauthorizedAbsences,
+} from "@/lib/utils/attendance/tam-adhoc";
 import {
   eq,
   and,
@@ -29,6 +35,7 @@ import {
   desc,
   gte,
   lte,
+  ne,
   inArray,
   notInArray,
 } from "drizzle-orm";
@@ -1240,4 +1247,276 @@ export async function getEmployeeDashboardKpis(
     nextHolidayDate: nextHol?.date ?? null,
     pendingDocRequests: Number(docRequestRow[0]?.c ?? 0),
   };
+}
+
+// ─── TAM analytics KPIs (TOR 1.5.15 role dashboards) ─────────────────────────
+
+export interface TamKpis {
+  /** Active employees in scope. */
+  headcount: number;
+  /** Employees with an attendance log (time-in evidence) today. */
+  presentToday: number;
+  /** Tardiness instances month-to-date. */
+  tardinessCountMtd: number;
+  /** Unauthorized absence employee-days month-to-date (completed days only). */
+  absenceDaysMtd: number;
+  /** Overtime hours month-to-date (from approved OT minutes on logs). */
+  overtimeHoursMtd: number;
+}
+
+export interface TamOfficeRow {
+  officeId: string;
+  officeName: string;
+  headcount: number;
+  presentToday: number;
+  tardinessCountMtd: number;
+  overtimeHoursMtd: number;
+}
+
+const EMPTY_TAM_KPIS: TamKpis = {
+  headcount: 0,
+  presentToday: 0,
+  tardinessCountMtd: 0,
+  absenceDaysMtd: 0,
+  overtimeHoursMtd: 0,
+};
+
+/**
+ * Office-scoped TAM analytics for the role dashboards (TOR 1.5.15).
+ * Pass `officeId` to scope to one unit (supervisor); omit for org-wide
+ * (hr_admin / executive). Returns zeros on any failure — safe to render.
+ */
+export async function getTamKpis(officeId?: string | null): Promise<TamKpis> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const yesterday = new Date(Date.now() - 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+
+    const empConditions = [
+      eq(employees.status, "active"),
+      isNull(employees.deletedAt),
+    ];
+    if (officeId) empConditions.push(eq(employees.officeId, officeId));
+
+    const employeeRows = await db
+      .select({ id: employees.id, dateHired: employees.dateHired })
+      .from(employees)
+      .where(and(...empConditions));
+
+    const ids = employeeRows.map((r) => r.id);
+    if (ids.length === 0) return EMPTY_TAM_KPIS;
+
+    const [monthLogs, holidayRows, suspensionRows, leaveRows] =
+      await Promise.all([
+        db
+          .select({
+            employeeId: attendanceLogs.employeeId,
+            logDate: attendanceLogs.logDate,
+            timeIn: attendanceLogs.timeIn,
+            timeInPm: attendanceLogs.timeInPm,
+            lateMinutes: attendanceLogs.lateMinutes,
+            overtimeMinutes: attendanceLogs.overtimeMinutes,
+          })
+          .from(attendanceLogs)
+          .where(
+            and(
+              inArray(attendanceLogs.employeeId, ids),
+              gte(attendanceLogs.logDate, monthStart),
+              lte(attendanceLogs.logDate, today),
+            ),
+          ),
+        db
+          .select({ date: holidays.holidayDate })
+          .from(holidays)
+          .where(
+            and(
+              gte(holidays.holidayDate, monthStart),
+              lte(holidays.holidayDate, today),
+              ne(holidays.type, "special_working"),
+            ),
+          ),
+        db
+          .select({ date: fmWorkSuspensions.applicableDate })
+          .from(fmWorkSuspensions)
+          .where(
+            and(
+              gte(fmWorkSuspensions.applicableDate, monthStart),
+              lte(fmWorkSuspensions.applicableDate, today),
+              eq(fmWorkSuspensions.applicableHours, "full"),
+              eq(fmWorkSuspensions.isActive, true),
+              isNull(fmWorkSuspensions.deletedAt),
+            ),
+          ),
+        db
+          .select({
+            employeeId: leaveApplications.employeeId,
+            dateFrom: leaveApplications.dateFrom,
+            dateTo: leaveApplications.dateTo,
+          })
+          .from(leaveApplications)
+          .where(
+            and(
+              inArray(leaveApplications.employeeId, ids),
+              inArray(leaveApplications.status, [
+                "approved",
+                "cancellation_requested",
+                "consumed",
+                "consumed_auto",
+              ]),
+              lte(leaveApplications.dateFrom, today),
+              gte(leaveApplications.dateTo, monthStart),
+            ),
+          ),
+      ]);
+
+    let presentToday = 0;
+    let tardinessCountMtd = 0;
+    let overtimeMinutesMtd = 0;
+    const presentDates = new Map<string, Set<string>>();
+
+    for (const log of monthLogs) {
+      const hasTimeIn = log.timeIn !== null || log.timeInPm !== null;
+      if (hasTimeIn) {
+        if (log.logDate === today) presentToday += 1;
+        let set = presentDates.get(log.employeeId);
+        if (!set) {
+          set = new Set<string>();
+          presentDates.set(log.employeeId, set);
+        }
+        set.add(log.logDate);
+      }
+      if ((log.lateMinutes ?? 0) > 0) tardinessCountMtd += 1;
+      overtimeMinutesMtd += log.overtimeMinutes ?? 0;
+    }
+
+    // Unauthorized absences only over fully-completed working days.
+    let absenceDaysMtd = 0;
+    if (yesterday >= monthStart) {
+      const workingDays = enumerateWorkingDays({
+        start: monthStart,
+        end: yesterday,
+        holidayDates: holidayRows.map((h) => h.date),
+        suspendedDates: suspensionRows.map((s) => s.date),
+      });
+      const leaveIntervals = new Map<string, { from: string; to: string }[]>();
+      for (const leave of leaveRows) {
+        const list = leaveIntervals.get(leave.employeeId) ?? [];
+        list.push({ from: leave.dateFrom, to: leave.dateTo });
+        leaveIntervals.set(leave.employeeId, list);
+      }
+      for (const emp of employeeRows) {
+        absenceDaysMtd += findUnauthorizedAbsences({
+          workingDays,
+          presentDates: presentDates.get(emp.id) ?? new Set<string>(),
+          leaveIntervals: leaveIntervals.get(emp.id) ?? [],
+          employedFrom: emp.dateHired,
+        }).length;
+      }
+    }
+
+    return {
+      headcount: ids.length,
+      presentToday,
+      tardinessCountMtd,
+      absenceDaysMtd,
+      overtimeHoursMtd: Math.round((overtimeMinutesMtd / 60) * 10) / 10,
+    };
+  } catch {
+    return EMPTY_TAM_KPIS;
+  }
+}
+
+/**
+ * Per-office TAM comparison (executive dashboard — branch compare per
+ * TOR 1.5.15). Org-wide only; light aggregates (no absence math).
+ * Returns [] on any failure — safe to render.
+ */
+export async function getTamOfficeBreakdown(): Promise<TamOfficeRow[]> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = `${today.slice(0, 7)}-01`;
+
+    const [employeeRows, officeRows, monthLogs] = await Promise.all([
+      db
+        .select({ id: employees.id, officeId: employees.officeId })
+        .from(employees)
+        .where(
+          and(eq(employees.status, "active"), isNull(employees.deletedAt)),
+        ),
+      db
+        .select({ id: offices.id, name: offices.name })
+        .from(offices)
+        .where(isNull(offices.deletedAt)),
+      db
+        .select({
+          employeeId: attendanceLogs.employeeId,
+          logDate: attendanceLogs.logDate,
+          timeIn: attendanceLogs.timeIn,
+          timeInPm: attendanceLogs.timeInPm,
+          lateMinutes: attendanceLogs.lateMinutes,
+          overtimeMinutes: attendanceLogs.overtimeMinutes,
+        })
+        .from(attendanceLogs)
+        .where(
+          and(
+            gte(attendanceLogs.logDate, monthStart),
+            lte(attendanceLogs.logDate, today),
+          ),
+        ),
+    ]);
+
+    const officeNameById = new Map(officeRows.map((o) => [o.id, o.name]));
+    const officeByEmployee = new Map(
+      employeeRows.map((e) => [e.id, e.officeId ?? "unassigned"]),
+    );
+
+    const buckets = new Map<string, TamOfficeRow>();
+    const bucketFor = (key: string): TamOfficeRow => {
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = {
+          officeId: key,
+          officeName: officeNameById.get(key) ?? "Unassigned",
+          headcount: 0,
+          presentToday: 0,
+          tardinessCountMtd: 0,
+          overtimeHoursMtd: 0,
+        };
+        buckets.set(key, bucket);
+      }
+      return bucket;
+    };
+
+    for (const emp of employeeRows) {
+      bucketFor(emp.officeId ?? "unassigned").headcount += 1;
+    }
+
+    const otMinutes = new Map<string, number>();
+    for (const log of monthLogs) {
+      const key = officeByEmployee.get(log.employeeId);
+      if (!key) continue; // inactive / out-of-scope employee
+      const bucket = bucketFor(key);
+      if (
+        log.logDate === today &&
+        (log.timeIn !== null || log.timeInPm !== null)
+      ) {
+        bucket.presentToday += 1;
+      }
+      if ((log.lateMinutes ?? 0) > 0) bucket.tardinessCountMtd += 1;
+      otMinutes.set(
+        key,
+        (otMinutes.get(key) ?? 0) + (log.overtimeMinutes ?? 0),
+      );
+    }
+
+    for (const [key, minutes] of otMinutes) {
+      bucketFor(key).overtimeHoursMtd = Math.round((minutes / 60) * 10) / 10;
+    }
+
+    return [...buckets.values()].sort((a, b) => b.headcount - a.headcount);
+  } catch {
+    return [];
+  }
 }

@@ -250,6 +250,33 @@ export const applicants = pgTable(
 
 // ─── applications ────────────────────────────────────────────────────────────
 
+// ─── interviewSchedules (TOR 1.2.20 — screening/interview scheduling) ────────
+
+export const interviewSchedules = pgTable(
+  "interview_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    vacancyId: uuid("vacancy_id")
+      .notNull()
+      .references(() => vacancies.id),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    venue: varchar("venue", { length: 255 }).notNull(),
+    // in_person | online | phone
+    mode: varchar("mode", { length: 20 }).notNull().default("in_person"),
+    panel: text("panel"), // free-text panel composition
+    notes: text("notes"),
+    createdBy: uuid("created_by").notNull(), // auth.users id
+    // Set when applicant notifications (email + portal) have been dispatched
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    index("interview_schedules_vacancy_idx").on(t.vacancyId),
+    index("interview_schedules_scheduled_at_idx").on(t.scheduledAt),
+  ],
+);
+
 export const applications = pgTable(
   "applications",
   {
@@ -281,6 +308,10 @@ export const applications = pgTable(
     // was filed by a current PCSO employee via the Employee Portal. HRD sees
     // the internal tag; the applicant record is auto-provisioned from 201 data.
     employeeId: uuid("employee_id").references(() => employees.id),
+    // TOR 1.2.20 — assigned screening/interview batch (nullable)
+    interviewScheduleId: uuid("interview_schedule_id").references(
+      () => interviewSchedules.id,
+    ),
     ...timestamps,
     ...softDelete,
   },

@@ -129,6 +129,11 @@ const ROUTE_PERMISSIONS: ReadonlyArray<RouteRule> = [
     prefix: "/attendance/import",
     permission: { resource: "attendance", action: "edit" },
   },
+  // Biometric device registry (TOR 1.5.2) — HR/system config surface.
+  {
+    prefix: "/attendance/biometric/devices",
+    permission: { resource: "attendance", action: "edit" },
+  },
   // Overtime: /new is any-auth (employees file), base is view-only.
   { prefix: "/attendance/overtime/new", permission: null },
   {

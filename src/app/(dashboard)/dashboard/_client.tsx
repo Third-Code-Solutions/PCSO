@@ -20,6 +20,10 @@ import {
   ScrollText,
   CheckCircle2,
   Fingerprint,
+  UserCheck,
+  ClockAlert,
+  CalendarX2,
+  Timer,
 } from "lucide-react";
 import { StatTile, StatGrid } from "@/components/dashboard/stat-tile";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
@@ -39,6 +43,8 @@ import type {
   ExecutiveKpis,
   AuditorKpis,
   SystemAdminKpis,
+  TamKpis,
+  TamOfficeRow,
 } from "./queries";
 
 // ─── HR Administrator dashboard (hr_admin) ───────────────────────────────────
@@ -579,6 +585,135 @@ export function ExecutiveDashboard({ data }: ExecutiveDashboardProps) {
           href="/leave/calendar"
         />
       </StatGrid>
+    </DashboardSection>
+  );
+}
+
+// ─── TAM analytics block (TOR 1.5.15 role-scoped attendance KPIs) ────────────
+// Rendered on the supervisor (own office), HR admin (org-wide), and
+// executive (org-wide + per-office compare) dashboards.
+
+interface TamAnalyticsBlockProps {
+  data: TamKpis;
+  /** Per-office comparison rows — executive view only. */
+  offices?: TamOfficeRow[] | null;
+  /** Scope label shown in the section title, e.g. "own office". */
+  scopeLabel?: string;
+}
+
+export function TamAnalyticsBlock({
+  data,
+  offices,
+  scopeLabel,
+}: TamAnalyticsBlockProps) {
+  return (
+    <DashboardSection
+      title={
+        scopeLabel
+          ? `Attendance analytics · ${scopeLabel}`
+          : "Attendance analytics"
+      }
+      action={{ label: "Attendance reports", href: "/attendance/reports" }}
+    >
+      <div className="space-y-4">
+        <StatGrid className="xl:grid-cols-4 2xl:grid-cols-4">
+          <StatTile
+            title="Present Today"
+            value={`${data.presentToday} / ${data.headcount}`}
+            detail="Employees with a time-in log today"
+            icon={UserCheck}
+            href="/attendance"
+            tone={
+              data.headcount > 0 && data.presentToday === 0
+                ? "attention"
+                : "default"
+            }
+          />
+          <StatTile
+            title="Tardiness (MTD)"
+            value={data.tardinessCountMtd}
+            detail="Late instances this month"
+            icon={ClockAlert}
+            href="/attendance/reports/tardiness"
+            tone={data.tardinessCountMtd > 0 ? "attention" : "positive"}
+            pill={data.tardinessCountMtd > 0 ? "Review" : "Clear"}
+          />
+          <StatTile
+            title="Absences (MTD)"
+            value={data.absenceDaysMtd}
+            detail="Unauthorized absence days this month"
+            icon={CalendarX2}
+            href="/attendance/reports/unauthorized-absences"
+            tone={data.absenceDaysMtd > 0 ? "critical" : "positive"}
+            pill={data.absenceDaysMtd > 0 ? "Needs action" : "Clear"}
+          />
+          <StatTile
+            title="Overtime (MTD)"
+            value={`${data.overtimeHoursMtd.toLocaleString("en-PH")} hrs`}
+            detail="Approved OT hours this month"
+            icon={Timer}
+            href="/attendance/overtime"
+          />
+        </StatGrid>
+
+        {offices && offices.length > 0 && (
+          <Card className="rounded-xl">
+            <CardHeader>
+              <CardTitle className="text-base">Per-Office Comparison</CardTitle>
+              <CardDescription>
+                Headcount, presence, tardiness, and overtime by office this
+                month
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b bg-muted/40">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Office
+                      </th>
+                      <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Headcount
+                      </th>
+                      <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Present Today
+                      </th>
+                      <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Tardiness (MTD)
+                      </th>
+                      <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        OT Hours (MTD)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {offices.map((office) => (
+                      <tr key={office.officeId} className="hover:bg-muted/20">
+                        <td className="px-4 py-2.5 font-medium">
+                          {office.officeName}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {office.headcount.toLocaleString("en-PH")}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {office.presentToday.toLocaleString("en-PH")}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {office.tardinessCountMtd.toLocaleString("en-PH")}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          {office.overtimeHoursMtd.toLocaleString("en-PH")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </DashboardSection>
   );
 }

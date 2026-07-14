@@ -41,6 +41,7 @@ import {
   SupervisorDashboard,
   ExecutiveDashboard,
   AuditorDashboard,
+  TamAnalyticsBlock,
 } from "./_client";
 import {
   getAdminDashboardKpis,
@@ -51,6 +52,8 @@ import {
   getSupervisorKpis,
   getExecutiveKpis,
   getAuditorKpis,
+  getTamKpis,
+  getTamOfficeBreakdown,
 } from "./queries";
 
 export const metadata: Metadata = {
@@ -164,6 +167,32 @@ async function ExecutiveKpisSection() {
 async function AuditorKpisSection() {
   const data = await getAuditorKpis();
   return <AuditorDashboard data={data} />;
+}
+
+/**
+ * TAM analytics block (TOR 1.5.15) — office-scoped for supervisors, org-wide
+ * for HR admins, org-wide with per-office comparison for executives.
+ */
+async function TamKpisSection({
+  officeId,
+  withBreakdown = false,
+  scopeLabel,
+}: {
+  officeId?: string | null;
+  withBreakdown?: boolean;
+  scopeLabel?: string;
+}) {
+  const [kpis, breakdown] = await Promise.all([
+    getTamKpis(officeId ?? null),
+    withBreakdown ? getTamOfficeBreakdown() : Promise.resolve(null),
+  ]);
+  return (
+    <TamAnalyticsBlock
+      data={kpis}
+      offices={breakdown}
+      scopeLabel={scopeLabel}
+    />
+  );
 }
 
 // ─── Scope helpers ───────────────────────────────────────────────────────────
@@ -304,9 +333,15 @@ function buildRoleConfig(
         tables: ADMIN_REALTIME_TABLES,
         skeletonTiles: 4,
         body: (
-          <Suspense fallback={<StatGridSkeleton tiles={4} />}>
-            <AdminKpisSection />
-          </Suspense>
+          <>
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <AdminKpisSection />
+            </Suspense>
+            {/* TOR 1.5.15 — org-wide TAM analytics for HR administration */}
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <TamKpisSection scopeLabel="All Units" />
+            </Suspense>
+          </>
         ),
       };
 
@@ -353,9 +388,15 @@ function buildRoleConfig(
         tables: SUPERVISOR_REALTIME_TABLES,
         skeletonTiles: 4,
         body: (
-          <Suspense fallback={<StatGridSkeleton tiles={4} />}>
-            <SupervisorKpisSection userId={userId} officeId={officeId} />
-          </Suspense>
+          <>
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <SupervisorKpisSection userId={userId} officeId={officeId} />
+            </Suspense>
+            {/* TOR 1.5.15 — TAM analytics scoped to the supervisor's unit */}
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <TamKpisSection officeId={officeId} scopeLabel={unitScope} />
+            </Suspense>
+          </>
         ),
       };
 
@@ -369,9 +410,15 @@ function buildRoleConfig(
         tables: EXECUTIVE_REALTIME_TABLES,
         skeletonTiles: 4,
         body: (
-          <Suspense fallback={<StatGridSkeleton tiles={4} />}>
-            <ExecutiveKpisSection />
-          </Suspense>
+          <>
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <ExecutiveKpisSection />
+            </Suspense>
+            {/* TOR 1.5.15 — org-wide TAM analytics + per-branch comparison */}
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <TamKpisSection withBreakdown scopeLabel="All Units" />
+            </Suspense>
+          </>
         ),
       };
 
@@ -401,9 +448,15 @@ function buildRoleConfig(
         tables: EXECUTIVE_REALTIME_TABLES,
         skeletonTiles: 4,
         body: (
-          <Suspense fallback={<StatGridSkeleton tiles={4} />}>
-            <ExecutiveKpisSection />
-          </Suspense>
+          <>
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <ExecutiveKpisSection />
+            </Suspense>
+            {/* TOR 1.5.15 — org-wide TAM analytics + per-branch comparison */}
+            <Suspense fallback={<StatGridSkeleton tiles={4} />}>
+              <TamKpisSection withBreakdown scopeLabel="All Units" />
+            </Suspense>
+          </>
         ),
       };
 

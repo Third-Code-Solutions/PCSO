@@ -16,6 +16,14 @@
     {
       "path": "/api/cron/annual-retirement-notices",
       "schedule": "0 1 1 1 *"
+    },
+    {
+      "path": "/api/cron/attendance-notifications",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/biometric-pull",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

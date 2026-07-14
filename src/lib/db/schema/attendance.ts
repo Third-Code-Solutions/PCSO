@@ -3,6 +3,7 @@ import {
   uuid,
   date,
   time,
+  timestamp,
   integer,
   boolean,
   pgEnum,
@@ -33,6 +34,18 @@ export const dtrStatusEnum = pgEnum("dtr_status", [
   "submitted",
   "approved",
   "rejected",
+]);
+
+export const biometricDeviceModeEnum = pgEnum("biometric_device_mode", [
+  "push", // device POSTs records to /api/attendance/biometric/push
+  "pull", // system polls the device endpoint on a schedule
+  "manual", // authorized-user triggered pull only
+]);
+
+export const biometricPayloadFormatEnum = pgEnum("biometric_payload_format", [
+  "csv",
+  "json",
+  "xml",
 ]);
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
@@ -136,6 +149,16 @@ export const attendanceLogs = pgTable(
     undertimeMinutes: integer("undertime_minutes").notNull().default(0),
     overtimeMinutes: integer("overtime_minutes").notNull().default(0),
     remarks: text("remarks"),
+    // ── Day context (TOR 1.5.4 / 1.5.9 / PRD 14.5) — resolved at ingest ──────
+    // DayType key from utils/attendance/types (ordinary, regular_holiday, …)
+    dayType: varchar("day_type", { length: 40 }).notNull().default("ordinary"),
+    // True when the date/hours fall under an fm_work_suspensions entry
+    isSuspended: boolean("is_suspended").notNull().default(false),
+    // Schedule applied on this date (employee → office → agency default)
+    scheduleId: uuid("schedule_id").references(() => workSchedules.id),
+    // Approved leave covering this date (FK added at the SQL layer to avoid a
+    // schema-file import cycle with leave.ts)
+    leaveApplicationId: uuid("leave_application_id"),
     // EPM-008 / PRD 14.5 — correction provenance
     corrected: boolean("corrected").notNull().default(false),
     correctionReason: text("correction_reason"), // Required when corrected = true
@@ -266,6 +289,44 @@ export const biometricRawRecords = pgTable(
     index("biometric_raw_records_badge_idx").on(t.badgeId),
     index("biometric_raw_records_employee_idx").on(t.employeeId),
     index("biometric_raw_records_matched_idx").on(t.matched),
+  ],
+);
+
+/**
+ * Biometric Device Registry — TOR 1.5.2 (TAM-004)
+ *
+ * One row per BFR device. Push devices authenticate to
+ * /api/attendance/biometric/push with their API key (stored hashed);
+ * pull devices are polled by the biometric-pull cron (or a manual trigger)
+ * at `pullUrl`, parsing `payloadFormat` (CSV / JSON / XML).
+ */
+export const biometricDevices = pgTable(
+  "biometric_devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: varchar("name", { length: 200 }).notNull(),
+    vendor: varchar("vendor", { length: 200 }),
+    serialNumber: varchar("serial_number", { length: 100 }),
+    officeId: uuid("office_id").references(() => offices.id),
+    mode: biometricDeviceModeEnum("mode").notNull().default("manual"),
+    payloadFormat: biometricPayloadFormatEnum("payload_format")
+      .notNull()
+      .default("csv"),
+    // SHA-256 hex of the device API key (push auth / pull endpoint auth)
+    apiKeyHash: varchar("api_key_hash", { length: 64 }),
+    pullUrl: text("pull_url"),
+    pollIntervalMinutes: integer("poll_interval_minutes").notNull().default(60),
+    isActive: boolean("is_active").notNull().default(true),
+    lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+    lastPullStatus: varchar("last_pull_status", { length: 30 }),
+    lastPullMessage: text("last_pull_message"),
+    ...timestamps,
+    ...softDelete,
+  },
+  (t) => [
+    index("biometric_devices_office_idx").on(t.officeId),
+    index("biometric_devices_active_idx").on(t.isActive),
+    index("biometric_devices_mode_idx").on(t.mode),
   ],
 );
 

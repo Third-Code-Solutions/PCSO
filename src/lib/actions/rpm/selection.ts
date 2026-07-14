@@ -33,7 +33,6 @@ import {
   assessmentScores,
   rpmStatusHistory,
   vacancies,
-  type Application,
   type Vacancy,
 } from "@/lib/db/schema/recruitment";
 import { employees } from "@/lib/db/schema/employees";
@@ -41,6 +40,17 @@ import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import { systemUsers } from "@/lib/db/schema/users";
 import { notifications } from "@/lib/db/schema/notifications";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
+import { getOrgProfile } from "@/lib/org-profile";
+import {
+  applicantStatusUrl,
+  applicationResultPlainText,
+  examSchedulePlainText,
+  mapStatusToResultOutcome,
+  sendApplicantEmail,
+} from "@/lib/email/applicant-mailer";
+import { RpmApplicationResultEmail } from "@/lib/email/templates/rpm-application-result";
+import { RpmExamScheduleEmail } from "@/lib/email/templates/rpm-exam-schedule";
 import {
   rankApplications,
   topN,
@@ -60,6 +70,10 @@ import {
   BoardRecommendation,
   type BoardRecommendationEntry,
 } from "@/components/pdf/board-recommendation";
+import {
+  RpmSummaryOfRatings,
+  type SummaryOfRatingsRow,
+} from "@/components/pdf/rpm-summary-of-ratings";
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -165,36 +179,107 @@ interface SerialSequenceRow {
 }
 
 /**
- * Allocate ASSESS-YYYY-NNNNNN. Falls back to a UUID-derived identifier if the
- * shared `public.serial_sequences` table is absent in this environment.
+ * Allocate <PREFIX>-YYYY-NNNNNN from the shared `public.serial_sequences`
+ * table. Falls back to a UUID-derived identifier if the table is absent in
+ * this environment.
  */
-async function nextAssessmentSerial(): Promise<string> {
+async function nextRpmSerial(
+  documentType: string,
+  prefix: string,
+): Promise<string> {
   const year = new Date().getUTCFullYear();
   try {
     return await withTx(async (tx) => {
       await tx.execute(sql`
         insert into public.serial_sequences (document_type, year, last_sequence)
-        values ('assessment', ${year}, 0)
+        values (${documentType}, ${year}, 0)
         on conflict (document_type, year) do nothing
       `);
       const rows = (await tx.execute(sql`
         update public.serial_sequences
         set last_sequence = last_sequence + 1,
             updated_at = now()
-        where document_type = 'assessment' and year = ${year}
+        where document_type = ${documentType} and year = ${year}
         returning last_sequence
       `)) as unknown as SerialSequenceRow[];
       const seq = rows[0]?.last_sequence;
       if (!seq) throw new Error("no-sequence");
-      return `ASSESS-${year}-${seq.toString().padStart(6, "0")}`;
+      return `${prefix}-${year}-${seq.toString().padStart(6, "0")}`;
     });
   } catch {
     const fallback = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`)
       .replace(/-/g, "")
       .slice(0, 10)
       .toUpperCase();
-    return `ASSESS-${year}-${fallback}`;
+    return `${prefix}-${year}-${fallback}`;
   }
+}
+
+/** Allocate ASSESS-YYYY-NNNNNN (assessment-family documents). */
+async function nextAssessmentSerial(): Promise<string> {
+  return nextRpmSerial("assessment", "ASSESS");
+}
+
+// ── Applicant email fan-out (TOR 1.2.15 / 1.2.18 / 1.2.24) ──────────────────
+
+interface ApplicantEmailRecipient {
+  applicationId: string;
+  email: string;
+  name: string;
+}
+
+interface BuiltApplicantEmail {
+  subject: string;
+  react: React.ReactElement;
+  text: string;
+}
+
+/**
+ * Best-effort bulk email dispatch to applicants. Never throws. Writes a single
+ * audit summary row (severity "warn" when any recipient failed) so email
+ * outages are traceable without breaking the triggering action.
+ *
+ * NOTE: dispatch happens AFTER the triggering transaction commits, so a retry
+ * of the surrounding action may re-send. That is acceptable per TOR — the
+ * email is informational and idempotence is not guaranteed by Resend anyway.
+ */
+async function dispatchApplicantEmails(params: {
+  actorUserId: string;
+  vacancyId: string;
+  subModule: string;
+  recipients: ReadonlyArray<ApplicantEmailRecipient>;
+  build: (recipient: ApplicantEmailRecipient) => BuiltApplicantEmail;
+}): Promise<{ sent: number; failed: number }> {
+  let sent = 0;
+  const failures: string[] = [];
+  for (const recipient of params.recipients) {
+    if (!recipient.email) continue;
+    const message = params.build(recipient);
+    const result = await sendApplicantEmail({
+      to: recipient.email,
+      subject: message.subject,
+      react: message.react,
+      text: message.text,
+    });
+    if (result.sent) sent += 1;
+    else failures.push(`${recipient.email}: ${result.reason}`);
+  }
+  await auditLog({
+    userId: params.actorUserId,
+    action: "notify",
+    table: "vacancies",
+    recordId: params.vacancyId,
+    module: "RPM",
+    subModule: params.subModule,
+    outcome: failures.length > 0 && sent === 0 ? "failure" : "success",
+    severity: failures.length > 0 ? "warn" : "info",
+    reason:
+      failures.length > 0
+        ? `Applicant emails failed (${failures.length}/${params.recipients.length}): ${failures.slice(0, 5).join("; ")}`
+        : undefined,
+    newValues: { sent, failed: failures.length },
+  });
+  return { sent, failed: failures.length };
 }
 
 // ── createAssessment ─────────────────────────────────────────────────────────
@@ -210,7 +295,7 @@ export interface CreateAssessmentInput {
 export async function createAssessment(
   input: CreateAssessmentInput,
 ): Promise<SelectionResult<{ assessmentId: string }>> {
-  await requirePermission("employees", "process");
+  const user = await requirePermission("employees", "process");
   const { vacancyId, examDate, venue, dimensions } = input;
   if (dimensions.length === 0) {
     return {
@@ -226,9 +311,16 @@ export async function createAssessment(
   const employeeId = await currentEmployeeId();
   if (!employeeId) return { ok: false, error: "Not authenticated" };
 
-  return withConcurrentGuard(`rpm:selection:${vacancyId}`, async (tx) => {
+  // Captured inside the tx; consumed for email dispatch after commit.
+  let examRecipients: ApplicantEmailRecipient[] = [];
+  let positionTitle = "";
+
+  const result = await withConcurrentGuard<
+    SelectionResult<{ assessmentId: string }>
+  >(`rpm:selection:${vacancyId}`, async (tx) => {
     const ctx = await loadVacancyContext(vacancyId, tx);
     if (!ctx) return { ok: false, error: "Vacancy not found" };
+    positionTitle = ctx.positionTitle;
 
     const [inserted] = await tx
       .insert(assessments)
@@ -259,14 +351,27 @@ export async function createAssessment(
 
     // Notify qualified applicants (best-effort, inside tx).
     const qualified = await tx
-      .select({ applicantId: applications.applicantId })
+      .select({
+        applicationId: applications.id,
+        applicantId: applications.applicantId,
+        email: applicants.email,
+        firstName: applicants.firstName,
+        lastName: applicants.lastName,
+      })
       .from(applications)
+      .innerJoin(applicants, eq(applicants.id, applications.applicantId))
       .where(
         and(
           eq(applications.vacancyId, vacancyId),
           eq(applications.status, "qualified"),
         ),
       );
+
+    examRecipients = qualified.map((q) => ({
+      applicationId: q.applicationId,
+      email: q.email,
+      name: `${q.firstName} ${q.lastName}`.trim(),
+    }));
 
     if (qualified.length > 0) {
       const users = await tx
@@ -300,6 +405,41 @@ export async function createAssessment(
 
     return { ok: true, data: { assessmentId: inserted.id } };
   });
+
+  // TOR 1.2.15 / N-026 — email each qualified applicant AFTER the tx commits
+  // (email is a non-transactional side effect; failures never roll back).
+  if (result.ok && examRecipients.length > 0) {
+    await dispatchApplicantEmails({
+      actorUserId: user.id,
+      vacancyId,
+      subModule: "exam_schedule",
+      recipients: examRecipients,
+      build: (recipient) => {
+        const statusUrl = applicantStatusUrl(recipient.applicationId);
+        return {
+          subject: `Assessment Schedule — ${positionTitle}`,
+          react: RpmExamScheduleEmail({
+            applicantName: recipient.name,
+            positionTitle,
+            assessmentType: "written_exam",
+            scheduledAt: examDate.toISOString(),
+            venue,
+            statusUrl,
+          }),
+          text: examSchedulePlainText({
+            applicantName: recipient.name,
+            positionTitle,
+            assessmentLabel: "Written Examination",
+            scheduledAt: examDate.toISOString(),
+            venue,
+            statusUrl,
+          }),
+        };
+      },
+    });
+  }
+
+  return result;
 }
 
 // ── recordAssessmentScore ────────────────────────────────────────────────────
@@ -769,7 +909,7 @@ export async function shortlistTop5(
 export async function recommendForBoard(
   applicationIds: string[],
 ): Promise<SelectionResult<{ pdf: Buffer; serial: string }>> {
-  await requirePermission("employees", "process");
+  const user = await requirePermission("employees", "process");
   const firstId = applicationIds[0];
   if (applicationIds.length === 0 || !firstId) {
     return { ok: false, error: "No applications selected" };
@@ -785,9 +925,16 @@ export async function recommendForBoard(
   if (!anyApp) return { ok: false, error: "Application not found" };
   const vacancyId = anyApp.vacancyId;
 
-  return withConcurrentGuard(`rpm:selection:${vacancyId}`, async (tx) => {
+  // Captured inside the tx; consumed for email dispatch after commit.
+  let boardRecipients: ApplicantEmailRecipient[] = [];
+  let positionTitle = "";
+
+  const result = await withConcurrentGuard<
+    SelectionResult<{ pdf: Buffer; serial: string }>
+  >(`rpm:selection:${vacancyId}`, async (tx) => {
     const ctx = await loadVacancyContext(vacancyId, tx);
     if (!ctx) return { ok: false, error: "Vacancy not found" };
+    positionTitle = ctx.positionTitle;
 
     await tx
       .update(applications)
@@ -819,11 +966,18 @@ export async function recommendForBoard(
         matchScore: applications.matchScore,
         firstName: applicants.firstName,
         lastName: applicants.lastName,
+        email: applicants.email,
         eligibility: applications.eligibility,
       })
       .from(applications)
       .innerJoin(applicants, eq(applications.applicantId, applicants.id))
       .where(inArray(applications.id, applicationIds));
+
+    boardRecipients = rows.map((r) => ({
+      applicationId: r.id,
+      email: r.email,
+      name: `${r.firstName} ${r.lastName}`.trim(),
+    }));
 
     const ranked = rankApplications(
       rows.map((r) => ({
@@ -875,28 +1029,76 @@ export async function recommendForBoard(
 
     return { ok: true, data: { pdf: bytes, serial } };
   });
+
+  // TOR 1.2.24 / N-027 — email each recommended applicant AFTER commit.
+  if (result.ok && boardRecipients.length > 0) {
+    const remarks =
+      "Your application has been recommended to the PCSO Board of Directors for confirmation. You will be notified of the final result.";
+    await dispatchApplicantEmails({
+      actorUserId: user.id,
+      vacancyId,
+      subModule: "board_recommendation",
+      recipients: boardRecipients,
+      build: (recipient) => {
+        const statusUrl = applicantStatusUrl(recipient.applicationId);
+        return {
+          subject: `Application Update — ${positionTitle}`,
+          react: RpmApplicationResultEmail({
+            applicantName: recipient.name,
+            positionTitle,
+            outcome: "shortlisted",
+            remarks,
+            statusUrl,
+          }),
+          text: applicationResultPlainText({
+            applicantName: recipient.name,
+            positionTitle,
+            remarks,
+            statusUrl,
+          }),
+        };
+      },
+    });
+  }
+
+  return result;
 }
 
 // ── notifyExamResults ────────────────────────────────────────────────────────
 
+/**
+ * TOR 1.2.18 / RPM-016 / N-027 — release assessment results to every
+ * applicant of the vacancy via email + in-app notification.
+ *
+ * Re-invoking this action re-sends the notifications (there is no dedupe
+ * column on `applications` for result releases); HRD triggers it explicitly
+ * from the selection console, so a deliberate second click is treated as a
+ * deliberate re-notification.
+ */
 export async function notifyExamResults(
   vacancyId: string,
 ): Promise<SelectionResult<{ notified: number }>> {
-  await requirePermission("employees", "process");
+  const user = await requirePermission("employees", "process");
   const ctx = await loadVacancyContext(vacancyId);
   if (!ctx) return { ok: false, error: "Vacancy not found" };
 
   const rows = await db
     .select({
+      applicationId: applications.id,
       applicantId: applications.applicantId,
       status: applications.status,
       matchScore: applications.matchScore,
+      email: applicants.email,
+      firstName: applicants.firstName,
+      lastName: applicants.lastName,
     })
     .from(applications)
+    .innerJoin(applicants, eq(applicants.id, applications.applicantId))
     .where(eq(applications.vacancyId, vacancyId));
 
   if (rows.length === 0) return { ok: true, data: { notified: 0 } };
 
+  // In-app notifications for applicants that map to active portal users.
   const recipients = await db
     .select({ userId: systemUsers.id, employeeId: systemUsers.employeeId })
     .from(systemUsers)
@@ -910,22 +1112,306 @@ export async function notifyExamResults(
       ),
     );
 
-  if (recipients.length === 0) return { ok: true, data: { notified: 0 } };
+  if (recipients.length > 0) {
+    const scoreByApplicant = new Map(rows.map((r) => [r.applicantId, r]));
+    await db.insert(notifications).values(
+      recipients.map((r) => {
+        const row = scoreByApplicant.get(r.employeeId ?? "");
+        const status = row?.status ?? "unknown";
+        return {
+          userId: r.userId,
+          type: "generic" as const,
+          title: "Assessment results released",
+          body: `Your assessment result for ${ctx.positionTitle} is ${status}. Score: ${row?.matchScore ?? "n/a"}.`,
+          entityType: "vacancy",
+          entityId: vacancyId,
+        };
+      }),
+    );
+  }
 
-  const scoreByApplicant = new Map(rows.map((r) => [r.applicantId, r]));
-  await db.insert(notifications).values(
-    recipients.map((r) => {
-      const row = scoreByApplicant.get(r.employeeId ?? "");
+  // Email every applicant their own result (N-027).
+  const byApplication = new Map(rows.map((r) => [r.applicationId, r]));
+  const { sent } = await dispatchApplicantEmails({
+    actorUserId: user.id,
+    vacancyId,
+    subModule: "exam_results",
+    recipients: rows.map((r) => ({
+      applicationId: r.applicationId,
+      email: r.email,
+      name: `${r.firstName} ${r.lastName}`.trim(),
+    })),
+    build: (recipient) => {
+      const row = byApplication.get(recipient.applicationId);
       const status = row?.status ?? "unknown";
+      const remarks = `Assessment result: ${status.replaceAll("_", " ")}. Score: ${row?.matchScore ?? "n/a"}.`;
+      const statusUrl = applicantStatusUrl(recipient.applicationId);
       return {
-        userId: r.userId,
-        type: "generic" as const,
-        title: "Assessment results released",
-        body: `Your assessment result for ${ctx.positionTitle} is ${status}. Score: ${row?.matchScore ?? "n/a"}.`,
-        entityType: "vacancy",
-        entityId: vacancyId,
+        subject: `Assessment Results — ${ctx.positionTitle}`,
+        react: RpmApplicationResultEmail({
+          applicantName: recipient.name,
+          positionTitle: ctx.positionTitle,
+          outcome: mapStatusToResultOutcome(status),
+          remarks,
+          statusUrl,
+        }),
+        text: applicationResultPlainText({
+          applicantName: recipient.name,
+          positionTitle: ctx.positionTitle,
+          remarks,
+          statusUrl,
+        }),
       };
-    }),
+    },
+  });
+
+  return {
+    ok: true,
+    data: { notified: Math.max(sent, recipients.length) },
+  };
+}
+
+// ── Summary of Ratings (TOR 1.2.21) ──────────────────────────────────────────
+
+/**
+ * Advisory descriptive rating bands for the 0–100 weighted composite.
+ * These are NOT the CSC MC 13 s. 1999 performance bands (those apply to the
+ * 1.00–5.00 IPCRF scale); they are a screening aid printed as "advisory" on
+ * the report so the Board reads ranked scores with a qualitative cue.
+ */
+function adjectivalFor(score: number): string {
+  if (!Number.isFinite(score)) return "—";
+  if (score >= 90) return "Outstanding";
+  if (score >= 85) return "Very Satisfactory";
+  if (score >= 80) return "Satisfactory";
+  if (score >= 70) return "Fair";
+  return "Poor";
+}
+
+interface SummaryBreakdownShape {
+  perDimension?: Array<{
+    dimension: string;
+    score: number;
+    maxScore: number;
+  }>;
+}
+
+async function loadSummaryOfRatings(vacancyId: string): Promise<
+  SelectionResult<{
+    vacancyId: string;
+    positionTitle: string;
+    itemNumber: string;
+    examDate: string | null;
+    generatedAt: string;
+    dimensionNames: string[];
+    rows: SummaryOfRatingsRow[];
+  }>
+> {
+  const ctx = await loadVacancyContext(vacancyId);
+  if (!ctx) return { ok: false, error: "Vacancy not found" };
+
+  const [assessment] = await db
+    .select()
+    .from(assessments)
+    .where(eq(assessments.vacancyId, vacancyId))
+    .limit(1);
+
+  const rows = await db
+    .select({
+      id: applications.id,
+      applicationNumber: applications.applicationNumber,
+      status: applications.status,
+      matchScore: applications.matchScore,
+      matchBreakdown: applications.matchBreakdown,
+      employeeId: applications.employeeId,
+      firstName: applicants.firstName,
+      lastName: applicants.lastName,
+    })
+    .from(applications)
+    .innerJoin(applicants, eq(applications.applicantId, applicants.id))
+    .where(eq(applications.vacancyId, vacancyId));
+
+  // "Rated" = has a persisted composite and is still in the running.
+  const rated = rows.filter(
+    (r) =>
+      r.matchScore !== null &&
+      r.status !== "incomplete" &&
+      r.status !== "withdrawn",
   );
-  return { ok: true, data: { notified: recipients.length } };
+  if (rated.length === 0) {
+    return { ok: false, error: "No rated applicants for this vacancy" };
+  }
+
+  const ranked = rankApplications(
+    rated.map((r) => ({
+      id: r.id,
+      totalWeightedScore: Number(r.matchScore ?? 0),
+    })),
+  );
+  const byId = new Map(rated.map((r) => [r.id, r]));
+
+  const summaryRows: SummaryOfRatingsRow[] = ranked.map((r) => {
+    const base = byId.get(r.id);
+    const breakdown =
+      (base?.matchBreakdown as SummaryBreakdownShape | null | undefined) ??
+      null;
+    return {
+      rank: r.rank,
+      referenceNo: base?.applicationNumber ?? "",
+      applicantName: `${base?.firstName ?? ""} ${base?.lastName ?? ""}`.trim(),
+      isInternal: Boolean(base?.employeeId),
+      perDimension: breakdown?.perDimension ?? [],
+      totalWeightedScore: r.score,
+      adjectival: adjectivalFor(r.score),
+      status: base?.status ?? "",
+    };
+  });
+
+  // Ordered dimension column names: assessment config first, then any extras
+  // found on rows (defensive against historical data).
+  const dimensionNames: string[] = [];
+  if (assessment) {
+    for (const d of assessment.dimensions as unknown as StoredDimension[]) {
+      dimensionNames.push(d.key);
+    }
+  }
+  for (const row of summaryRows) {
+    for (const d of row.perDimension) {
+      if (!dimensionNames.includes(d.dimension)) {
+        dimensionNames.push(d.dimension);
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      vacancyId,
+      positionTitle: ctx.positionTitle,
+      itemNumber: ctx.itemNumber,
+      examDate: assessment ? assessment.examDate.toISOString() : null,
+      generatedAt: formatGenerated(),
+      dimensionNames,
+      rows: summaryRows,
+    },
+  };
+}
+
+/**
+ * TOR 1.2.21 — Summary of Ratings: all rated applicants ranked by total
+ * weighted score with per-dimension breakdown, rank numbers, advisory
+ * descriptive rating, internal-applicant tag, and current status. Distinct
+ * from the Rating Sheet (which is the raw score-encoding output).
+ */
+export async function getSummaryOfRatings(vacancyId: string): Promise<
+  SelectionResult<{
+    vacancyId: string;
+    positionTitle: string;
+    itemNumber: string;
+    examDate: string | null;
+    generatedAt: string;
+    dimensionNames: string[];
+    rows: SummaryOfRatingsRow[];
+  }>
+> {
+  await requirePermission("employees", "view");
+  return loadSummaryOfRatings(vacancyId);
+}
+
+function csvCell(value: string | number | boolean): string {
+  const s = String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+  return s;
+}
+
+/** CSV export of the Summary of Ratings (TOR 1.2.21). */
+export async function generateSummaryOfRatingsCsv(
+  vacancyId: string,
+): Promise<SelectionResult<{ csv: string; filename: string }>> {
+  await requirePermission("employees", "view");
+  const summary = await loadSummaryOfRatings(vacancyId);
+  if (!summary.ok) return summary;
+
+  const { dimensionNames, rows, itemNumber } = summary.data;
+  const header = [
+    "Rank",
+    "Reference No",
+    "Applicant",
+    "Internal Applicant",
+    ...dimensionNames.map((n) => `${n} (score/max)`),
+    "Total Weighted Score",
+    "Descriptive Rating (advisory)",
+    "Status",
+  ];
+  const lines = [header.map(csvCell).join(",")];
+  for (const row of rows) {
+    const dims = dimensionNames.map((name) => {
+      const d = row.perDimension.find((x) => x.dimension === name);
+      return d ? `${d.score}/${d.maxScore}` : "";
+    });
+    lines.push(
+      [
+        row.rank,
+        row.referenceNo,
+        row.applicantName,
+        row.isInternal ? "Yes" : "No",
+        ...dims,
+        row.totalWeightedScore.toFixed(2),
+        row.adjectival,
+        row.status,
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+
+  return {
+    ok: true,
+    data: {
+      csv: lines.join("\r\n"),
+      filename: `summary-of-ratings-${itemNumber || vacancyId.slice(0, 8)}.csv`,
+    },
+  };
+}
+
+/**
+ * Printable PDF export of the Summary of Ratings (TOR 1.2.21). Header uses
+ * the org-profile agency identity like the other PCSO document generators.
+ * Serial: SOR-YYYY-NNNNNN from the shared serial_sequences table.
+ */
+export async function generateSummaryOfRatingsPdf(
+  vacancyId: string,
+): Promise<
+  SelectionResult<{ pdfBase64: string; serial: string; filename: string }>
+> {
+  await requirePermission("employees", "view");
+  const summary = await loadSummaryOfRatings(vacancyId);
+  if (!summary.ok) return summary;
+
+  const org = await getOrgProfile();
+  const serial = await nextRpmSerial("rpm_summary_of_ratings", "SOR");
+
+  const bytes = (await renderToBuffer(
+    asPdfRoot(
+      React.createElement(RpmSummaryOfRatings, {
+        serial,
+        agencyName: org.agencyName,
+        vacancyTitle: summary.data.positionTitle,
+        itemNumber: summary.data.itemNumber,
+        examDate: summary.data.examDate,
+        dimensionNames: summary.data.dimensionNames,
+        rows: summary.data.rows,
+        generatedAt: summary.data.generatedAt,
+      }),
+    ),
+  )) as unknown as Buffer;
+
+  return {
+    ok: true,
+    data: {
+      pdfBase64: bytes.toString("base64"),
+      serial,
+      filename: `summary-of-ratings-${summary.data.itemNumber || vacancyId.slice(0, 8)}.pdf`,
+    },
+  };
 }

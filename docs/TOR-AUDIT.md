@@ -357,6 +357,30 @@ Structural finding: 34 `fm_*` tables defined (`src/lib/db/schema/fm-extensions.t
 
 **Verified:** type-check clean · lint clean · production build (all 18 new routes) · **1100/1100 unit tests** (+64: pds-mapper 18, adhoc-report 24, salary-adjustment 22). Migration `2026-07-15-01` (additive: 2 enum values, 16 columns, 7 tables + RLS, 1 FK column) applied to prod ahead of deploy.
 
+## Iteration 4 Results (2026-07-15)
+
+**Attendance engine (TOR 1.5):**
+
+- **1.5.4 + 1.5.9 → IMPL.** Ingest pipeline now resolves per-(employee,date): applicable schedule (employee→office→agency-default with effective ranges), day type (holidays × rest days × suspensions, reusing the DayType union), suspension half/full, and covering approved leave — persisted on `attendance_logs` (`day_type`, `is_suspended`, `schedule_id`, `leave_application_id`) and used for tardiness/undertime computation (no tardiness on holidays/suspended/leave days). Pure utils `day-context.ts` + `schedule-resolution.ts` (40 tests).
+- **1.5.2 → IMPL.** Biometric device API: registry table + admin UI (`/attendance/biometric/devices`, one-time API key reveal), push endpoint `/api/attendance/biometric/push` (Bearer key, sha256 timing-safe, JSON/CSV/XML w/ DTD+ENTITY rejection per SEC 3.2.9, RFC 7807 errors), scheduled pull cron `/api/cron/biometric-pull` (per-device isolation), manual pull-now action. Shared `biometric-ingest` pipeline.
+- **1.5.3 → IMPL (full).** XLSX import via exceljs; 4-punch lunch TITO columns (1.5.6) mapped to `time_in/time_out/time_in_pm/time_out_pm`; late lunch return adds undertime (TAM-003).
+- **1.5.11 + 1.4.6 → IMPL.** Daily cron `/api/cron/attendance-notifications`: tardiness notices, NFL (no-filed-leave) absence notices to employee + email + payroll_admin aggregate, habitual-tardiness (≥10/month CSC) flags to HR. Dedupe-guarded; mass-absence (>50%) suppression guard.
+- **1.5.12 + 1.5.14 → IMPL.** Reports: unauthorized absences (2.5-day/month flag), tardiness frequency (week/month, habitual flag), DTR tabulation (office/status/position filters), monthly per-office summary, TAM ad-hoc column builder (20 tests) — hub + 4 UIs under `/attendance/reports`, CSV export.
+- **1.5.13 → IMPL (full).** `exportDtrPdf` renders official CSC Form 48 PDF (CSV fallback param retained).
+- **1.4.11 → IMPL (full).** Filled CSC Form 6 PDF per leave application (own-or-`leave.view` authz) + download buttons in applications UI.
+- **1.5.15 → IMPL.** Dashboard TAM analytics block: supervisor = own office, HR/executive = org-wide + per-office/branch comparison (present today, tardiness, absences, OT MTD).
+- **1.5.1 → IMPL.** Date-ranged employee/office schedule assignments now actually drive computation (previously modeled but unused by compute).
+
+**RPM notifications (TOR 1.2):**
+
+- **1.2.15/1.2.16/1.2.18/1.2.24 → IMPL.** Applicant emails wired (Resend) alongside in-app: exam schedule, not-qualified w/ specific reason, exam results, board-recommendation/status results (`notifyApplicant` implemented). Email failure never breaks the action (audit-warned).
+- **1.2.20 → IMPL.** `interview_schedules` entity + create/list/cancel actions, applicant email template + portal surface (application status page shows schedule), selection UI section. `applications.interview_schedule_id` link.
+- **1.2.21 → IMPL.** Summary of Ratings distinct report (ranked, per-dimension breakdown, serial SOR-YYYY-NNNNNN) w/ CSV + landscape PDF.
+
+**Verified:** type-check clean · lint 0 errors · production build green (new routes: biometric devices/push/pull-cron, attendance-notifications cron, 5 attendance report pages) · **1190/1190 unit tests** (+90: day-context 24, schedule-resolution 16, biometric-payload 23, tam-adhoc 20, applicant-mailer 7). Migration `2026-07-15-02` (attendance day-context columns, biometric_devices, interview_schedules) applied to prod ahead of deploy. Two new Vercel crons registered.
+
+**Known follow-ups:** `biometric_imports.imported_by_id` NOT NULL blocks archive rows for unauthenticated push/cron pulls (they transaction-log instead) — schema relax queued for Iter 5. Consultant payroll exclusion documented (contract-billed).
+
 ## Remediation iterations (loop plan)
 
 - **Iter 1:** FM module (generic CRUD + seeds + new lookups) · cron scheduler (accrual/sick-auto-approve/year-end/retirement) · CSP+HSTS · audit-log field expansion + transaction log · leave attachments · LWOP + advanced leave reports · portal UIs (shift-change, DTR-correction) · Docker · upload templates

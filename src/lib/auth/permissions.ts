@@ -650,6 +650,8 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   "/attendance/dtr-corrections": ["super_admin", "hr_admin"],
   "/attendance/shift-changes": ["super_admin", "hr_admin"],
   "/attendance/import": ["super_admin", "hr_admin"],
+  "/attendance/biometric/devices": ["super_admin", "hr_admin"],
+  "/attendance/biometric": ["super_admin", "hr_admin"],
   "/attendance/schedules/new": ["super_admin", "hr_admin"],
   "/attendance/schedules": ["super_admin", "hr_admin"],
   "/attendance/timesheets": [

@@ -25,11 +25,23 @@ import { db } from "@/lib/db";
 import {
   applicants,
   applications,
+  assessments,
   vacancies,
 } from "@/lib/db/schema/recruitment";
+import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import type { Action, Resource } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
+import { notifyEmployee } from "@/lib/notifications";
+import {
+  applicantStatusUrl,
+  applicationResultPlainText,
+  examSchedulePlainText,
+  mapStatusToResultOutcome,
+  sendApplicantEmail,
+} from "@/lib/email/applicant-mailer";
+import { RpmApplicationResultEmail } from "@/lib/email/templates/rpm-application-result";
+import { RpmExamScheduleEmail } from "@/lib/email/templates/rpm-exam-schedule";
 import {
   computeMatchScore,
   type ApplicantProfile,
@@ -249,6 +261,11 @@ export type QualifyDecision = "qualified" | "not_qualified";
 /**
  * Qualify or disqualify an application. Computes the 4-dimension match score
  * on the fly if one isn't already persisted.
+ *
+ * TOR 1.2.16 / RPM-012: a "not_qualified" decision notifies the applicant via
+ * email and the applicant portal with the specific disqualification reason.
+ * Notification failures never roll back the decision — they are audit-logged
+ * with severity "warn" instead.
  */
 export async function qualifyApplication(
   id: string,
@@ -263,15 +280,26 @@ export async function qualifyApplication(
         id: applications.id,
         applicantId: applications.applicantId,
         vacancyId: applications.vacancyId,
+        status: applications.status,
+        employeeId: applications.employeeId,
         matchScore: applications.matchScore,
         educationalBackground: applications.educationalBackground,
         workExperience: applications.workExperience,
         eligibility: applications.eligibility,
         trainings: applications.trainings,
         vacancyStandards: vacancies.qualificationStandards,
+        positionTitle: plantillaPositions.positionTitle,
+        applicantEmail: applicants.email,
+        applicantFirstName: applicants.firstName,
+        applicantLastName: applicants.lastName,
       })
       .from(applications)
       .innerJoin(vacancies, eq(vacancies.id, applications.vacancyId))
+      .innerJoin(
+        plantillaPositions,
+        eq(plantillaPositions.id, vacancies.positionId),
+      )
+      .innerJoin(applicants, eq(applicants.id, applications.applicantId))
       .where(eq(applications.id, id))
       .limit(1);
 
@@ -316,6 +344,61 @@ export async function qualifyApplication(
         reason: reason ?? null,
       },
     });
+
+    // TOR 1.2.16 — notify the disqualified applicant with the specific reason.
+    // Guard: only on an actual transition (re-clicking an already-decided
+    // application does not re-send).
+    if (decision === "not_qualified" && row.status !== "not_qualified") {
+      const applicantName =
+        `${row.applicantFirstName} ${row.applicantLastName}`.trim();
+      const remarks = reason
+        ? `Reason for disqualification: ${reason}`
+        : "Your application did not meet the qualification standards for this position.";
+      const statusUrl = applicantStatusUrl(id);
+      const emailResult = await sendApplicantEmail({
+        to: row.applicantEmail,
+        subject: `Application Update — ${row.positionTitle}`,
+        react: RpmApplicationResultEmail({
+          applicantName,
+          positionTitle: row.positionTitle,
+          outcome: "not_selected",
+          remarks,
+          statusUrl,
+        }),
+        text: applicationResultPlainText({
+          applicantName,
+          positionTitle: row.positionTitle,
+          remarks,
+          statusUrl,
+        }),
+      });
+      if (!emailResult.sent) {
+        await auditLog({
+          userId: user.id,
+          action: "notify",
+          table: "applications",
+          recordId: id,
+          outcome: "failure",
+          severity: "warn",
+          module: "RPM",
+          subModule: "applicant_screening",
+          reason: `Disqualification email failed: ${emailResult.reason}`,
+        });
+      }
+      // Portal notification: the applicant portal status page surfaces the
+      // status + disqualification reason. Internal promotion applicants
+      // (applications.employeeId) additionally get an in-app notification.
+      if (row.employeeId) {
+        await notifyEmployee(row.employeeId, {
+          type: "generic",
+          title: "Application update",
+          body: `Your application for ${row.positionTitle} was marked not qualified.${reason ? ` Reason: ${reason}` : ""}`,
+          actionUrl: `/applicant/applications/${id}`,
+          entityType: "application",
+          entityId: id,
+        });
+      }
+    }
 
     revalidatePath("/recruitment/applications");
 
@@ -371,10 +454,14 @@ export async function shortlistApplication(
 }
 
 /**
- * Notify an applicant via the shared notifications helper.
- * TODO integrator (N-026 / N-027): wire `templateId` → Resend template
- * rendering once Agent 14 lands the applicant-facing templates. For now we
- * audit-log the intent so the handoff is traceable.
+ * Notify an applicant by email (N-026 rpf_exam_schedule / N-027 rpf_result).
+ *
+ * TOR 1.2.24: `rpf_result` derives the outcome (appointed / shortlisted /
+ * not selected / withdrawn) from the application's CURRENT status, so it can
+ * be triggered after any final status transition — board recommendation,
+ * appointment issuance, or rejection. `rpf_exam_schedule` re-sends the
+ * vacancy's exam schedule (latest assessment). Failures never throw; they are
+ * audit-logged and reported in the ActionResult.
  */
 export async function notifyApplicant(
   id: string,
@@ -387,23 +474,112 @@ export async function notifyApplicant(
       .select({
         applicationId: applications.id,
         applicantId: applications.applicantId,
+        vacancyId: applications.vacancyId,
+        status: applications.status,
+        disqualificationReason: applications.disqualificationReason,
         email: applicants.email,
+        firstName: applicants.firstName,
+        lastName: applicants.lastName,
+        positionTitle: plantillaPositions.positionTitle,
       })
       .from(applications)
       .innerJoin(applicants, eq(applicants.id, applications.applicantId))
+      .innerJoin(vacancies, eq(vacancies.id, applications.vacancyId))
+      .innerJoin(
+        plantillaPositions,
+        eq(plantillaPositions.id, vacancies.positionId),
+      )
       .where(eq(applications.id, id))
       .limit(1);
 
     const row = rows[0];
     if (!row) return { ok: false, error: "Application not found" };
 
+    const applicantName = `${row.firstName} ${row.lastName}`.trim();
+    const statusUrl = applicantStatusUrl(id);
+
+    let emailResult: { sent: boolean; reason?: string };
+
+    if (templateId === "rpf_exam_schedule") {
+      const [assessment] = await db
+        .select({
+          examDate: assessments.examDate,
+          venue: assessments.venue,
+        })
+        .from(assessments)
+        .where(eq(assessments.vacancyId, row.vacancyId))
+        .orderBy(desc(assessments.createdAt))
+        .limit(1);
+      if (!assessment) {
+        return { ok: false, error: "No assessment scheduled for this vacancy" };
+      }
+      emailResult = await sendApplicantEmail({
+        to: row.email,
+        subject: `Assessment Schedule — ${row.positionTitle}`,
+        react: RpmExamScheduleEmail({
+          applicantName,
+          positionTitle: row.positionTitle,
+          assessmentType: "written_exam",
+          scheduledAt: assessment.examDate.toISOString(),
+          venue: assessment.venue,
+          statusUrl,
+        }),
+        text: examSchedulePlainText({
+          applicantName,
+          positionTitle: row.positionTitle,
+          assessmentLabel: "Written Examination",
+          scheduledAt: assessment.examDate.toISOString(),
+          venue: assessment.venue,
+          statusUrl,
+        }),
+      });
+    } else {
+      // Default: N-027 result notification driven by current status.
+      const outcome = mapStatusToResultOutcome(row.status);
+      const remarks =
+        row.status === "not_qualified" && row.disqualificationReason
+          ? `Reason for disqualification: ${row.disqualificationReason}`
+          : `Current application status: ${row.status.replaceAll("_", " ")}.`;
+      emailResult = await sendApplicantEmail({
+        to: row.email,
+        subject: `Application Update — ${row.positionTitle}`,
+        react: RpmApplicationResultEmail({
+          applicantName,
+          positionTitle: row.positionTitle,
+          outcome,
+          remarks,
+          statusUrl,
+        }),
+        text: applicationResultPlainText({
+          applicantName,
+          positionTitle: row.positionTitle,
+          remarks,
+          statusUrl,
+        }),
+      });
+    }
+
     await auditLog({
       userId: user.id,
       action: "notify",
       table: "applications",
       recordId: id,
+      module: "RPM",
+      subModule: "applicant_notification",
+      outcome: emailResult.sent ? "success" : "failure",
+      severity: emailResult.sent ? "info" : "warn",
+      reason: emailResult.sent
+        ? undefined
+        : `Email failed: ${emailResult.reason ?? "unknown"}`,
       newValues: { templateId, recipient: row.email },
     });
+
+    if (!emailResult.sent) {
+      return {
+        ok: false,
+        error: `Email delivery failed: ${emailResult.reason ?? "unknown"}`,
+      };
+    }
 
     return { ok: true, data: { id, templateId } };
   } catch (error: unknown) {

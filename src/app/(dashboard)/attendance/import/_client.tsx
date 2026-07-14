@@ -1,12 +1,16 @@
 "use client";
 
 /**
- * /attendance/import — Biometric CSV import
+ * /attendance/import — Biometric file import (CSV + XLSX)
  *
  * Two-phase UX:
  *  1. Upload + Dry Run: server parses, validates (Zod per row), resolves
  *     employee IDs, and returns a preview with sample + errors.
- *  2. Confirm Commit: server re-reads the same CSV, upserts in chunks of 500.
+ *  2. Confirm Commit: server re-reads the same file, upserts in chunks of 500.
+ *
+ * CSV files are sent as text; .xlsx files are sent base64-encoded and parsed
+ * server-side with exceljs (TOR 1.5.3). Optional lunch TITO columns
+ * time_out_am / time_in_pm enable 4-punch capture (TOR 1.5.6).
  *
  * Per-row errors are surfaced before any write, giving admins a chance to
  * fix the upstream export before committing bad data.
@@ -20,39 +24,55 @@ import {
   type ImportResult,
 } from "./actions";
 
+interface LoadedFile {
+  content: string;
+  fileName: string;
+}
+
 export function ImportBiometricClient() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
-  const [csvText, setCsvText] = useState<string | null>(null);
+  const [loadedFile, setLoadedFile] = useState<LoadedFile | null>(null);
 
-  function readFile(): Promise<string | null> {
+  function readFile(): Promise<LoadedFile | null> {
     return new Promise((resolve) => {
       const file = fileRef.current?.files?.[0];
       if (!file) {
-        toast.error("Please select a CSV file.");
+        toast.error("Please select a CSV or Excel (.xlsx) file.");
         resolve(null);
         return;
       }
+      const isXlsx = /\.xlsx$/i.test(file.name);
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const text = ev.target?.result;
-        resolve(typeof text === "string" ? text : null);
+        const raw = ev.target?.result;
+        if (typeof raw !== "string") {
+          resolve(null);
+          return;
+        }
+        // Data-URL → strip the "data:...;base64," prefix for xlsx uploads.
+        const content = isXlsx ? (raw.split(",")[1] ?? "") : raw;
+        resolve(content ? { content, fileName: file.name } : null);
       };
       reader.onerror = () => {
         toast.error("Failed to read file.");
         resolve(null);
       };
-      reader.readAsText(file);
+      if (isXlsx) {
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsText(file);
+      }
     });
   }
 
   function handleDryRun(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    void readFile().then((text) => {
-      if (!text) return;
-      setCsvText(text);
+    void readFile().then((loaded) => {
+      if (!loaded) return;
+      setLoadedFile(loaded);
       setResult(null);
 
       startTransition(async () => {
@@ -64,8 +84,8 @@ export function ImportBiometricClient() {
               timeInColumn: "time_in",
               timeOutColumn: "time_out",
             },
-            text,
-            { dryRun: true },
+            loaded.content,
+            { dryRun: true, fileName: loaded.fileName },
           );
           if (res.dryRun) {
             setPreview(res);
@@ -85,7 +105,7 @@ export function ImportBiometricClient() {
   }
 
   function handleCommit() {
-    if (!csvText || !preview || preview.validRows === 0) return;
+    if (!loadedFile || !preview || preview.validRows === 0) return;
     startTransition(async () => {
       try {
         const res = await importBiometric(
@@ -95,8 +115,8 @@ export function ImportBiometricClient() {
             timeInColumn: "time_in",
             timeOutColumn: "time_out",
           },
-          csvText,
-          { dryRun: false },
+          loadedFile.content,
+          { dryRun: false, fileName: loadedFile.fileName },
         );
         if (!res.dryRun) {
           setResult(res);
@@ -118,7 +138,7 @@ export function ImportBiometricClient() {
   function handleReset() {
     setPreview(null);
     setResult(null);
-    setCsvText(null);
+    setLoadedFile(null);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -129,8 +149,8 @@ export function ImportBiometricClient() {
           Import Biometric Data
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Upload a CSV export from your biometric device. The file must contain
-          columns:
+          Upload a CSV or Excel (.xlsx) export from your biometric device. The
+          file must contain columns:
           <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 text-xs">
             employee_id
           </code>
@@ -164,7 +184,16 @@ SEN-0042,2025-03-01,08:00,17:00`}
         <p className="mt-2 text-xs text-gray-500">
           Dates must be YYYY-MM-DD. Times must be HH:MM (24-hour). Use either
           the employee UUID or their employee number. Leave time_in or time_out
-          blank if missing.
+          blank if missing. Devices that capture lunch time-in/time-out may add
+          optional
+          <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 text-xs">
+            time_out_am
+          </code>
+          and
+          <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 text-xs">
+            time_in_pm
+          </code>
+          columns for 4-punch capture.
         </p>
         <a
           href="/api/templates/attendance-import"
@@ -182,13 +211,13 @@ SEN-0042,2025-03-01,08:00,17:00`}
             htmlFor="csv-file"
             className="block text-sm font-medium text-[#0B2545]"
           >
-            CSV File
+            CSV or Excel File
           </label>
           <input
             id="csv-file"
             ref={fileRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             required
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm file:mr-4 file:rounded file:border-0 file:bg-[#0B2545] file:px-3 file:py-1 file:text-xs file:font-medium file:text-[#FAF4E6] hover:file:bg-[#13315C]"
           />

@@ -290,9 +290,26 @@ const NAV_ITEMS: NavItem[] = [
         selfOnly: true,
       },
       {
-        label: "Biometric Devices",
+        label: "Biometric Import",
         href: "/attendance/biometric",
         roles: ["super_admin", "hr_admin"],
+      },
+      {
+        label: "Biometric Devices",
+        href: "/attendance/biometric/devices",
+        roles: ["super_admin", "hr_admin"],
+      },
+      {
+        label: "Attendance Reports",
+        href: "/attendance/reports",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "payroll_admin",
+          "leave_approver",
+          "executive",
+          "viewer",
+        ],
       },
     ],
   },

@@ -29,6 +29,8 @@ import {
 import { db } from "@/lib/db";
 import { assessments } from "@/lib/db/schema/recruitment";
 import { unwrap } from "@/components/recruitment/_result";
+import { InterviewSection } from "./interview-section";
+import { SummaryOfRatingsButtons } from "./summary-of-ratings-buttons";
 
 export const metadata: Metadata = {
   title: "Score Encoding",
@@ -200,9 +202,12 @@ export default async function SelectionDetailPage({
             </section>
 
             <section>
-              <h2 className="mb-3 text-sm font-semibold uppercase text-muted-foreground">
-                Ranking
-              </h2>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold uppercase text-muted-foreground">
+                  Ranking
+                </h2>
+                <SummaryOfRatingsButtons vacancyId={vacancy.id} />
+              </div>
               <RankingTable
                 vacancyId={vacancy.id}
                 rows={ranking}
@@ -220,6 +225,13 @@ export default async function SelectionDetailPage({
             </section>
           </>
         )}
+
+        <section>
+          <InterviewSection
+            vacancyId={vacancyId}
+            canManage={role === "super_admin" || role === "hr_admin"}
+          />
+        </section>
       </div>
     </div>
   );

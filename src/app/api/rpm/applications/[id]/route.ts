@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { applicants, applications, vacancies } from "@/lib/db/schema/recruitment";
+import {
+  applicants,
+  applications,
+  interviewSchedules,
+  vacancies,
+} from "@/lib/db/schema/recruitment";
 import { authenticateApplicantRequest } from "@/lib/utils/rpm/applicant-auth";
 import {
   computeMatchScore,
@@ -74,8 +79,20 @@ export async function GET(
         applicationNumber: applications.applicationNumber,
         submittedAt: applications.submittedAt,
         createdAt: applications.createdAt,
+        disqualificationReason: applications.disqualificationReason,
+        interviewScheduledAt: interviewSchedules.scheduledAt,
+        interviewVenue: interviewSchedules.venue,
+        interviewMode: interviewSchedules.mode,
+        interviewNotes: interviewSchedules.notes,
       })
       .from(applications)
+      .leftJoin(
+        interviewSchedules,
+        and(
+          eq(applications.interviewScheduleId, interviewSchedules.id),
+          isNull(interviewSchedules.deletedAt),
+        ),
+      )
       .where(
         and(
           eq(applications.id, id),
@@ -86,7 +103,29 @@ export async function GET(
 
     const row = rows[0];
     if (!row) return notFound();
-    return NextResponse.json({ data: row });
+
+    const {
+      interviewScheduledAt,
+      interviewVenue,
+      interviewMode,
+      interviewNotes,
+      ...application
+    } = row;
+
+    return NextResponse.json({
+      data: {
+        ...application,
+        // TOR 1.2.20 — surface the assigned interview batch to the applicant.
+        interview: interviewScheduledAt
+          ? {
+              scheduledAt: interviewScheduledAt,
+              venue: interviewVenue,
+              mode: interviewMode,
+              notes: interviewNotes,
+            }
+          : null,
+      },
+    });
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : "unknown";
     return NextResponse.json(

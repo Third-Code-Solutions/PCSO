@@ -36,6 +36,7 @@ import {
   SearchIcon,
 } from "lucide-react";
 import { cancelLeaveApplication, bulkApprove, exportCsv } from "./actions";
+import { Form6DownloadButton } from "./_form6-button";
 import type {
   LeaveApplicationRow,
   LeaveApplicationRowEnriched,
@@ -702,18 +703,21 @@ export function MyApplicationsTable({
             {fmtDate(app.createdAt)}
           </td>
           <td className="px-4 py-3">
-            {["pending", "approved"].includes(app.status) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => handleCancel(app.id)}
-                disabled={isPending}
-              >
-                <XIcon className="mr-1 h-3.5 w-3.5" />
-                Cancel
-              </Button>
-            )}
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <Form6DownloadButton leaveApplicationId={app.id} />
+              {["pending", "approved"].includes(app.status) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => handleCancel(app.id)}
+                  disabled={isPending}
+                >
+                  <XIcon className="mr-1 h-3.5 w-3.5" />
+                  Cancel
+                </Button>
+              )}
+            </div>
           </td>
         </tr>
       ))}
@@ -1078,6 +1082,7 @@ export function AllApplicationsTable({
     "Approver",
     "Approved At",
     "Filed On",
+    "",
   ];
 
   return (
@@ -1151,6 +1156,9 @@ export function AllApplicationsTable({
             </td>
             <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
               {fmtDate(app.createdAt)}
+            </td>
+            <td className="px-4 py-3 whitespace-nowrap">
+              <Form6DownloadButton leaveApplicationId={app.id} />
             </td>
           </tr>
         ))}
