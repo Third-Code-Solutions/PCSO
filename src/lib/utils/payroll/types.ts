@@ -12,33 +12,39 @@ export type AppointmentType =
   | "temporary"
   | "coterminous"
   | "casual"
+  | "cti"
   | "job_order"
   | "contract_of_service"
+  | "consultant"
   | "confidential_agent";
 
 /**
  * Organic (SSL "regular") appointment types. This is the SOURCE-OF-TRUTH
  * ALLOWLIST for benefit eligibility. Only permanent, temporary, coterminous,
- * and casual are organic and entitled to mandatory-benefit deductions,
- * PERA/RATA/longevity, and government bonuses.
+ * casual, and CTI (Co-Terminus with the Incumbent, TOR 1.3.3) are organic and
+ * entitled to mandatory-benefit deductions, PERA/RATA/longevity, and
+ * government bonuses.
  */
 export function isRegularEmployee(appointmentType: AppointmentType): boolean {
   return (
     appointmentType === "permanent" ||
     appointmentType === "temporary" ||
     appointmentType === "coterminous" ||
-    appointmentType === "casual"
+    appointmentType === "casual" ||
+    appointmentType === "cti"
   );
 }
 
 /**
  * Non-organic personnel follow JO/COS rules (no mandatory benefit deductions,
- * no PERA/RATA/longevity, no government bonuses). Job Order, Contract of Service,
- * and Confidential Agents are non-organic per TOR 1.8.2 / PRD §14.1.
+ * no PERA/RATA/longevity, no government bonuses). Job Order, Contract of
+ * Service, Consultants, and Confidential Agents are non-organic per TOR 1.8.2
+ * / TOR 1.3.3 / PRD §14.1. Consultants are additionally excluded from every
+ * payroll scope (contract-billed, not payrolled).
  *
  * Derived as the COMPLEMENT of the organic allowlist so that any newly-added
- * non-organic enum value (e.g. consultant, cti) FAILS SAFE — it is treated as
- * non-organic and receives no benefits by default until explicitly whitelisted.
+ * non-organic enum value FAILS SAFE — it is treated as non-organic and
+ * receives no benefits by default until explicitly whitelisted.
  * See appointment-type-fail-open denylist guidance.
  */
 export function isJobOrderOrCOS(appointmentType: AppointmentType): boolean {

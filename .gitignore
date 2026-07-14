@@ -56,3 +56,4 @@ tmp/
 
 # Test/debug screenshots (root-level PNGs from E2E runs)
 /*.png
+.obsidian/

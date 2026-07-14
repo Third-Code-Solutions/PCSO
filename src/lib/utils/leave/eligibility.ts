@@ -38,8 +38,10 @@ export type AppointmentType =
   | "temporary"
   | "coterminous"
   | "casual"
+  | "cti"
   | "job_order"
   | "contract_of_service"
+  | "consultant"
   | "confidential_agent";
 
 export interface EmployeeLeaveProfile {
@@ -95,7 +97,8 @@ function isRegularAppointment(appointmentType: AppointmentType): boolean {
     appointmentType === "permanent" ||
     appointmentType === "temporary" ||
     appointmentType === "coterminous" ||
-    appointmentType === "casual"
+    appointmentType === "casual" ||
+    appointmentType === "cti"
   );
 }
 

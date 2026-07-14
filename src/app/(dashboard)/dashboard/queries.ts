@@ -101,7 +101,8 @@ export async function getKpiCounts(): Promise<KpiCounts> {
       .from(employees)
       .where(and(eq(employees.status, "active"), isNull(employees.deletedAt))),
 
-    // Permanent / temporary / coterminous / casual (non-JO/COS)
+    // Organic personnel (TOR 1.3.3): permanent / temporary / coterminous /
+    // casual / CTI
     db
       .select({ c: count() })
       .from(employees)
@@ -114,11 +115,13 @@ export async function getKpiCounts(): Promise<KpiCounts> {
             "temporary",
             "coterminous",
             "casual",
+            "cti",
           ]),
         ),
       ),
 
-    // Non-organic (Job Order + Contract of Service + Confidential Agent)
+    // Non-organic (Job Order + Contract of Service + Consultant +
+    // Confidential Agent — TOR 1.3.3)
     db
       .select({ c: count() })
       .from(employees)
@@ -129,6 +132,7 @@ export async function getKpiCounts(): Promise<KpiCounts> {
           inArray(employees.appointmentType, [
             "job_order",
             "contract_of_service",
+            "consultant",
             "confidential_agent",
           ]),
         ),

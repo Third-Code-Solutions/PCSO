@@ -18,6 +18,7 @@ export * from "./employees";
 // Depend on offices + employees
 export * from "./plantilla";
 export * from "./appointments";
+export * from "./employee-201";
 export * from "./salary-adjustments";
 export * from "./attendance";
 export * from "./leave";

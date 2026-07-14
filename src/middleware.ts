@@ -145,6 +145,11 @@ const ROUTE_PERMISSIONS: ReadonlyArray<RouteRule> = [
     prefix: "/employees/new",
     permission: { resource: "employees", action: "create" },
   },
+  // 201 self-upload validation queue (TOR 1.9.7) — HR write surface.
+  {
+    prefix: "/employees/document-validation",
+    permission: { resource: "employees", action: "edit" },
+  },
   {
     prefix: "/employees",
     permission: { resource: "employees", action: "view" },

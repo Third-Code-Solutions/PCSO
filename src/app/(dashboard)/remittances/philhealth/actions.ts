@@ -123,6 +123,8 @@ export async function generatePhilHealthBatch(input: unknown) {
         .where(
           and(
             eq(payrollRecords.periodId, parsed.periodId),
+            // TOR 1.8.4: excluded (PAY-013) records are not remitted.
+            eq(payrollRecords.included, true),
             isNull(employees.deletedAt),
           ),
         )
@@ -285,7 +287,13 @@ export async function exportPhilHealthEprs(input: unknown) {
         authorizedSalary: payrollRecords.authorizedSalary,
       })
       .from(payrollRecords)
-      .where(eq(payrollRecords.periodId, periodId));
+      .where(
+        and(
+          eq(payrollRecords.periodId, periodId),
+          // TOR 1.8.4: excluded (PAY-013) records are not remitted.
+          eq(payrollRecords.included, true),
+        ),
+      );
 
     for (const sr of salaryRows) {
       salaryMap.set(sr.employeeId, sr.authorizedSalary);

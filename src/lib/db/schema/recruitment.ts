@@ -277,6 +277,10 @@ export const applications = pgTable(
     matchBreakdown: jsonb("match_breakdown"),
     disqualificationReason: text("disqualification_reason"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    // TOR 1.9.13 — internal promotion applications: set when the application
+    // was filed by a current PCSO employee via the Employee Portal. HRD sees
+    // the internal tag; the applicant record is auto-provisioned from 201 data.
+    employeeId: uuid("employee_id").references(() => employees.id),
     ...timestamps,
     ...softDelete,
   },

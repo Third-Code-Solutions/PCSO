@@ -44,8 +44,10 @@ type AppointmentType =
   | "temporary"
   | "casual"
   | "coterminous"
+  | "cti"
   | "job_order"
   | "contract_of_service"
+  | "consultant"
   | "confidential_agent";
 
 export default async function ApplyLeavePage() {

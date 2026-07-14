@@ -233,7 +233,12 @@ const styles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 function formatDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString("en-PH", {
+  // Blank-form rendering (EPM-015) passes empty strings — print nothing
+  // instead of "Invalid Date".
+  if (!isoDate) return "";
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-PH", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -368,7 +373,9 @@ export function LeaveForm6({
                   ? "Whole Day"
                   : application.period === "am"
                     ? "AM"
-                    : "PM"}
+                    : application.period === "pm"
+                      ? "PM"
+                      : ""}
               </Text>
             </View>
           </View>

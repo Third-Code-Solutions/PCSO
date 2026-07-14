@@ -253,7 +253,15 @@ export async function processPayroll(periodId: string) {
         case "salary_differential":
         case "special":
         case "magna_carta":
-          eligibleTypes = ["permanent", "temporary", "coterminous", "casual"];
+          // Organic allowlist (TOR 1.3.3). Consultants are deliberately in NO
+          // payroll scope — they are contract-billed, not payrolled.
+          eligibleTypes = [
+            "permanent",
+            "temporary",
+            "coterminous",
+            "casual",
+            "cti",
+          ];
           break;
         case "cash_advance":
           // Cash advance can apply to any active employee with loans
@@ -262,6 +270,7 @@ export async function processPayroll(periodId: string) {
             "temporary",
             "coterminous",
             "casual",
+            "cti",
             "job_order",
             "contract_of_service",
           ];

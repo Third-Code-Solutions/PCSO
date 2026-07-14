@@ -13,8 +13,18 @@
  */
 
 import { revalidatePath } from "next/cache";
+import { createElement, type ReactElement } from "react";
+import { pdf, type DocumentProps } from "@react-pdf/renderer";
 import { createServerClient } from "@/lib/supabase/server";
 import { requirePermission, requireAuth } from "@/lib/auth/guards";
+import {
+  generateSerialNumber,
+  DOCUMENT_TYPES,
+} from "@/lib/db/serial-sequence-helpers";
+import { getPayrollSignatories } from "@/lib/utils/payroll/signatories";
+import { StepIncrementNoticePdf } from "@/components/pdf/step-increment-notice";
+import { notifyEmployee } from "@/lib/notifications";
+import { auditLog } from "@/lib/audit";
 import {
   CreatePerformancePeriodSchema,
   UpdatePeriodStatusSchema,
@@ -769,14 +779,29 @@ export async function approveStepIncrement(input: unknown): Promise<void> {
   );
 }
 
-export async function implementStepIncrement(input: unknown): Promise<void> {
+export interface ImplementStepIncrementResult {
+  /** Serial of the issued NOSI, e.g. "NOSI-2026-000001". Null when issuance failed. */
+  nosiSerial: string | null;
+  /**
+   * Non-fatal warning when the increment was implemented but the NOSI PDF
+   * could not be generated/attached. The increment itself is never rolled
+   * back for a document failure (PIM-014).
+   */
+  nosiWarning: string | null;
+}
+
+export async function implementStepIncrement(
+  input: unknown,
+): Promise<ImplementStepIncrementResult> {
   const parsed = ImplementStepIncrementSchema.parse(input);
   const user = await requirePermission("performance", "process");
   const supabase = await createServerClient();
 
   const { data: increment, error: fetchError } = await supabase
     .from("step_increments")
-    .select("id, employee_id, status, from_step, to_step, effectivity_date")
+    .select(
+      "id, employee_id, status, from_step, to_step, effectivity_date, basis_period_ids",
+    )
     .eq("id", parsed.stepIncrementId)
     .single();
 
@@ -841,11 +866,250 @@ export async function implementStepIncrement(input: unknown): Promise<void> {
     newValues: { step: increment.to_step },
   });
 
+  // ── NOSI issuance (PIM-014 / TOR 1.3.9) ────────────────────────────────────
+  // Follow-up write with its own error handling: the increment above is
+  // already committed, and a PDF/storage failure must never corrupt or roll
+  // it back. On failure we log + return a warning so HR can re-issue.
+  let nosiSerial: string | null = null;
+  let nosiWarning: string | null = null;
+  try {
+    const issued = await issueNosiForIncrement(supabase, {
+      stepIncrementId: parsed.stepIncrementId,
+      employeeId: String(increment.employee_id),
+      fromStep: Number(increment.from_step),
+      toStep: Number(increment.to_step),
+      effectivityDate: String(increment.effectivity_date),
+      basisPeriodIds: Array.isArray(increment.basis_period_ids)
+        ? (increment.basis_period_ids as string[])
+        : [],
+      actorUserId: user.id,
+      actorEmployeeId: user.employeeId,
+    });
+    nosiSerial = issued.serialNumber;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    nosiWarning =
+      `Step increment implemented, but the NOSI document could not be issued: ${message}. ` +
+      "The increment is in effect — re-run implementation support or contact the administrator to re-issue the NOSI.";
+    console.error(
+      `[step-increment] NOSI issuance failed for increment ${parsed.stepIncrementId}:`,
+      err,
+    );
+    // Non-throwing audit writer — a failed audit write must not mask the
+    // already-successful increment either.
+    void auditLog({
+      userId: user.id,
+      action: "document.nosi.issue",
+      table: "step_increments",
+      recordId: parsed.stepIncrementId,
+      outcome: "failure",
+      reason: message,
+      module: "PMM",
+      subModule: "step_increment",
+      severity: "warn",
+    });
+  }
+
   revalidatePath("/performance/step-increments");
   revalidatePath(
     `/performance/step-increments/${String(increment.employee_id)}`,
   );
   revalidatePath("/employees");
+
+  return { nosiSerial, nosiWarning };
+}
+
+// ─── NOSI document issuance (PIM-014) ────────────────────────────────────────
+
+interface NosiIssuanceParams {
+  stepIncrementId: string;
+  employeeId: string;
+  fromStep: number;
+  toStep: number;
+  effectivityDate: string;
+  /** performance_periods ids recorded as the CSC 3-year basis. */
+  basisPeriodIds: string[];
+  actorUserId: string;
+  actorEmployeeId: string | null;
+}
+
+/**
+ * Generate the Notice of Salary Step Increment PDF for an implemented
+ * increment: serial from the centralized sequence (NOSI-YYYY-NNNNNN), PDF
+ * rendered via StepIncrementNoticePdf, stored in the "documents" bucket, and
+ * the serial + URL attached to the step_increments row. Mirrors the COE
+ * generator storage pattern. Signatory title comes from the FM-022 chain
+ * (fm_document_signatories, doc type "NOSI") with the standard fallback.
+ *
+ * Throws on any failure — the caller decides how to degrade.
+ */
+async function issueNosiForIncrement(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  params: NosiIssuanceParams,
+): Promise<{ serialNumber: string; documentUrl: string }> {
+  // 1. Employee + office details for the document face
+  const { data: emp, error: empError } = await supabase
+    .from("employees")
+    .select(
+      "id, employee_no, first_name, middle_name, last_name, suffix, position_title, salary_grade, offices ( name )",
+    )
+    .eq("id", params.employeeId)
+    .single();
+
+  if (empError || !emp) {
+    throw new Error(
+      `Employee lookup failed: ${empError?.message ?? "not found"}`,
+    );
+  }
+
+  const fullName = [
+    String(emp.first_name),
+    emp.middle_name ? `${String(emp.middle_name).charAt(0)}.` : "",
+    String(emp.last_name),
+    emp.suffix ? String(emp.suffix) : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const officeData = emp.offices as { name?: string } | null;
+
+  // 2. Basis performance ratings (approved IPCRFs on the recorded periods)
+  let basisPeriods: Array<{
+    label: string;
+    adjectival: string;
+    numerical: number;
+  }> = [];
+  if (params.basisPeriodIds.length > 0) {
+    const { data: ratings } = await supabase
+      .from("performance_ratings")
+      .select(
+        "numerical_rating, adjectival_rating, performance_periods ( year, semester )",
+      )
+      .eq("employee_id", params.employeeId)
+      .eq("rating_type", "ipcrf")
+      .in("period_id", params.basisPeriodIds);
+
+    basisPeriods = (ratings ?? []).map((r) => {
+      const period = r.performance_periods as {
+        year?: number;
+        semester?: string;
+      } | null;
+      const label = period
+        ? `${period.year}-${String(period.semester) === "1" ? "S1" : "S2"}`
+        : "Unknown period";
+      return {
+        label,
+        adjectival: String(r.adjectival_rating ?? ""),
+        numerical: Number(r.numerical_rating ?? 0),
+      };
+    });
+  }
+
+  // 3. Issued-by block from the configurable FM-022 signatory chain
+  const chain = await getPayrollSignatories("NOSI");
+  const issuedBlock =
+    chain.find((b) => b.role === "approved_by") ?? chain[chain.length - 1];
+
+  let issuedByName = "Human Resource Department";
+  if (params.actorEmployeeId) {
+    const { data: actor } = await supabase
+      .from("employees")
+      .select("first_name, last_name")
+      .eq("id", params.actorEmployeeId)
+      .single();
+    if (actor) {
+      issuedByName = `${String(actor.first_name)} ${String(actor.last_name)}`;
+    }
+  }
+
+  // 4. Serial + PDF render + storage upload (mirrors coe-generator)
+  const serialNumber = await generateSerialNumber(DOCUMENT_TYPES.NOSI);
+  const issuedDate = new Date().toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  // Root of StepIncrementNoticePdf is a react-pdf <Document>, so the cast to
+  // the DocumentProps element type pdf() expects is sound (JSX callers get
+  // the same widening implicitly).
+  const element = createElement(StepIncrementNoticePdf, {
+    noticeNumber: serialNumber,
+    employee: {
+      fullName,
+      employeeNo: String(emp.employee_no),
+      positionTitle: String(emp.position_title),
+      officeName: officeData?.name ?? "Unassigned",
+      salaryGrade: Number(emp.salary_grade),
+    },
+    fromStep: params.fromStep,
+    toStep: params.toStep,
+    effectivityDate: params.effectivityDate,
+    basisPeriods,
+    issuedByName,
+    issuedByTitle: issuedBlock?.title ?? "Approving Authority",
+    issuedDate,
+  }) as unknown as ReactElement<DocumentProps>;
+
+  const blob = await pdf(element).toBlob();
+
+  const storagePath = `nosi/${serialNumber}.pdf`;
+  const { error: uploadError } = await supabase.storage
+    .from("documents")
+    .upload(storagePath, blob, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
+  if (uploadError) {
+    throw new Error(`Failed to store NOSI PDF: ${uploadError.message}`);
+  }
+
+  const { data: urlData } = supabase.storage
+    .from("documents")
+    .getPublicUrl(storagePath);
+  const documentUrl = urlData.publicUrl;
+
+  // 5. Attach the artifact to the increment record (nosi_serial / nosi_document_url)
+  const { error: attachError } = await supabase
+    .from("step_increments")
+    .update({
+      nosi_serial: serialNumber,
+      nosi_document_url: documentUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.stepIncrementId);
+  if (attachError) {
+    throw new Error(`Failed to save NOSI reference: ${attachError.message}`);
+  }
+
+  // 6. Notify the employee + audit the issuance (both non-throwing)
+  await notifyEmployee(params.employeeId, {
+    type: "step_increment_implemented",
+    title: `Notice of Salary Step Increment issued (${serialNumber})`,
+    body: `Your step increment from Step ${params.fromStep} to Step ${params.toStep} is effective ${params.effectivityDate}. Your NOSI document is available for download.`,
+    actionUrl: documentUrl,
+    entityType: "step_increment",
+    entityId: params.stepIncrementId,
+  });
+
+  void auditLog({
+    userId: params.actorUserId,
+    action: "document.nosi.issue",
+    table: "step_increments",
+    recordId: params.stepIncrementId,
+    newValues: {
+      serialNumber,
+      documentUrl,
+      employeeId: params.employeeId,
+      fromStep: params.fromStep,
+      toStep: params.toStep,
+      effectivityDate: params.effectivityDate,
+    },
+    module: "PMM",
+    subModule: "step_increment",
+  });
+
+  return { serialNumber, documentUrl };
 }
 
 export async function cancelStepIncrement(input: unknown): Promise<void> {

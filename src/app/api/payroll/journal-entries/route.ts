@@ -78,6 +78,9 @@ export async function GET(request: NextRequest) {
         and(
           eq(payrollRecords.periodId, periodId),
           inArray(payrollRecords.status, ["approved", "paid"]),
+          // TOR 1.8.4: excluded (PAY-013) records are not part of the
+          // accounting journal — they were never disbursed.
+          eq(payrollRecords.included, true),
         ),
       );
 

@@ -317,8 +317,10 @@ export const PayrollReportFiltersSchema = z
           "temporary",
           "coterminous",
           "casual",
+          "cti",
           "job_order",
           "contract_of_service",
+          "consultant",
           "confidential_agent",
         ])
         .optional(),

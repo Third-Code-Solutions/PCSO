@@ -1,50 +1,57 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { Play, FileBarChart, AlertTriangle, DollarSign } from 'lucide-react';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PeriodStatusBadge } from '@/components/payroll/period-status-badge';
-import { RecordsTable } from '@/components/payroll/records-table';
-import { ExceptionReport } from '@/components/payroll/exception-report';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { requirePermission } from '@/lib/auth/guards';
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import {
+  Play,
+  FileBarChart,
+  FileUp,
+  AlertTriangle,
+  DollarSign,
+} from "lucide-react";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PeriodStatusBadge } from "@/components/payroll/period-status-badge";
+import { RecordsTable } from "@/components/payroll/records-table";
+import { ExceptionReport } from "@/components/payroll/exception-report";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { requirePermission } from "@/lib/auth/guards";
 import {
   getPayrollPeriodById,
   getPayrollRecordsByPeriod,
   getExceptionRecords,
   getPeriodTotals,
-} from '../queries';
-import { PeriodActionsBar } from './_components/period-actions-bar';
+} from "../queries";
+import { PeriodActionsBar } from "./_components/period-actions-bar";
 
 interface Props {
   params: Promise<{ periodId: string }>;
 }
 
 function formatPeso(value: string | null | undefined): string {
-  if (!value) return '₱0.00';
+  if (!value) return "₱0.00";
   const num = parseFloat(value);
-  return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(d: string): string {
-  return new Date(d).toLocaleDateString('en-PH', {
-    weekday: 'short',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
+  return new Date(d).toLocaleDateString("en-PH", {
+    weekday: "short",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
   });
 }
 
 // RFC 4122 v1–v5 UUID format
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function PayrollPeriodPage({ params }: Props) {
   const { periodId } = await params;
   // Guard against route collisions like /payroll/regular hitting [periodId]
   if (!UUID_RE.test(periodId)) notFound();
-  await requirePermission('payroll', 'view');
+  await requirePermission("payroll", "view");
 
   const [period, records, exceptions, totals] = await Promise.all([
     getPayrollPeriodById(periodId),
@@ -57,18 +64,24 @@ export default async function PayrollPeriodPage({ params }: Props) {
 
   return (
     <main className="space-y-6">
-      <RealtimeBoundary tables={['payroll_periods', 'payroll_records']} />
+      <RealtimeBoundary tables={["payroll_periods", "payroll_records"]} />
       <PageHeader
         title={period.name}
         description={`${formatDate(period.periodStart)} – ${formatDate(period.periodEnd)} · Pay Date: ${formatDate(period.payDate)}`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Payroll', href: '/payroll' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Payroll", href: "/payroll" },
           { label: period.name },
         ]}
         actions={
           <div className="flex items-center gap-2">
             <PeriodStatusBadge status={period.status} />
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/payroll/${periodId}/inputs`}>
+                <FileUp className="mr-2 h-4 w-4" />
+                Inputs
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" asChild>
               <Link href={`/payroll/${periodId}/register`}>
                 <FileBarChart className="mr-2 h-4 w-4" />
@@ -87,23 +100,23 @@ export default async function PayrollPeriodPage({ params }: Props) {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
             {
-              label: 'Employees',
+              label: "Employees",
               value: totals.employeeCount.toString(),
               icon: DollarSign,
             },
             {
-              label: 'Gross Pay',
+              label: "Gross Pay",
               value: formatPeso(totals.totalGrossPay),
               icon: DollarSign,
             },
             {
-              label: 'Deductions',
+              label: "Deductions",
               value: formatPeso(totals.totalDeductions),
               icon: DollarSign,
               negative: true,
             },
             {
-              label: 'Net Pay',
+              label: "Net Pay",
               value: formatPeso(totals.totalNetPay),
               icon: DollarSign,
               highlight: true,
@@ -111,17 +124,17 @@ export default async function PayrollPeriodPage({ params }: Props) {
           ].map(({ label, value, icon: Icon, negative, highlight }) => (
             <Card
               key={label}
-              className={highlight ? 'border-[#C8A84B] bg-[#FAF4E6]' : ''}
+              className={highlight ? "border-[#C8A84B] bg-[#FAF4E6]" : ""}
             >
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground">{label}</p>
                 <p
                   className={`mt-1 text-lg font-bold ${
                     highlight
-                      ? 'text-[#0B2545]'
+                      ? "text-[#0B2545]"
                       : negative
-                        ? 'text-red-600'
-                        : 'text-foreground'
+                        ? "text-red-600"
+                        : "text-foreground"
                   }`}
                 >
                   {value}
@@ -138,7 +151,9 @@ export default async function PayrollPeriodPage({ params }: Props) {
           <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
           <div className="flex flex-1 items-center justify-between">
             <p className="text-sm text-amber-800">
-              <strong>{exceptions.length} record{exceptions.length !== 1 ? 's' : ''}</strong>{' '}
+              <strong>
+                {exceptions.length} record{exceptions.length !== 1 ? "s" : ""}
+              </strong>{" "}
               have exceptions and need review before approval.
             </p>
             <Link
@@ -154,9 +169,7 @@ export default async function PayrollPeriodPage({ params }: Props) {
       {/* Tabs: Records / Exceptions */}
       <Tabs defaultValue="records">
         <TabsList>
-          <TabsTrigger value="records">
-            Records ({records.length})
-          </TabsTrigger>
+          <TabsTrigger value="records">Records ({records.length})</TabsTrigger>
           <TabsTrigger value="exceptions">
             Exceptions
             {exceptions.length > 0 && (
@@ -171,15 +184,21 @@ export default async function PayrollPeriodPage({ params }: Props) {
           {records.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
               <Play className="mb-3 h-10 w-10 text-muted-foreground/40" />
-              <p className="font-medium text-muted-foreground">No records yet</p>
+              <p className="font-medium text-muted-foreground">
+                No records yet
+              </p>
               <p className="mt-1 text-sm text-muted-foreground/70">
-                {period.status === 'draft'
+                {period.status === "draft"
                   ? 'Lock this period, then run "Process Payroll" to generate records.'
-                  : 'Process the payroll to generate employee records.'}
+                  : "Process the payroll to generate employee records."}
               </p>
             </div>
           ) : (
-            <RecordsTable records={records} periodId={periodId} />
+            <RecordsTable
+              records={records}
+              periodId={periodId}
+              periodStatus={period.status}
+            />
           )}
         </TabsContent>
 

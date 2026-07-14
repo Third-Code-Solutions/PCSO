@@ -2,23 +2,28 @@
  * Personal Data Sheet (CS Form No. 212, Revised 2017) PDF — React-PDF.
  *
  * TOR 1.3.11 / PIM-013 — all 4 pages of the official CSC form shape,
- * auto-populated from the employee 201 file where the schema holds data.
+ * auto-populated from the employee 201 file. With the 201-expansion tables
+ * in place, every section is now data-backed:
+ *   I    Personal Information  → employees table (incl. PDS profile extras)
+ *   II   Family Background     → employee_family_members
+ *   III  Educational Background → employee_education
+ *   IV   Civil Service Eligibility → employee_eligibilities
+ *   V    Work Experience       → employee_work_experiences + appointments
+ *   VI   Voluntary Work        → employee_voluntary_works
+ *   VII  Learning & Development → employee_external_trainings + LDM records
+ *   VIII Other Information     → skills/hobbies, distinctions, memberships
+ *   34–40 Questions            → employees.pds_questionnaire
+ *   Government-issued ID block → employees.government_issued_id
  *
- * 201-EXPANSION NOTE (data audit): the current employees schema does NOT yet
- * store family background (spouse/parents/children), educational background,
- * civil service eligibility, voluntary work, or references. Those sections
- * render the official form shape with blank rows (fill-by-hand fallback)
- * until the 201-expansion iteration lands. Sections that ARE data-backed:
- *   I  Personal Information  → employees table
- *   V  Work Experience       → appointments history + current appointment
- *   VII Learning & Development → training participation (completed runs)
- *   VIII Other Information   → employees.special_skills_hobbies (Section 31)
+ * Section 41 (character references) remains unmodeled and renders blank rows.
  *
- * Use with `renderToBuffer(<PdsFormPdf ... />)`.
+ * Props are produced by `buildPdsFormProps()` in
+ * `src/lib/utils/pimm/pds-mapper.ts`. Use with `renderToBuffer(<PdsFormPdf />)`.
  */
 
 import React from "react";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { PDS_QUESTIONS } from "@/lib/utils/pimm/pds-questions";
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -128,6 +133,12 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     paddingHorizontal: 4,
   },
+  questionDetails: {
+    fontSize: 6,
+    fontFamily: "Helvetica-Oblique",
+    color: GRAY,
+    marginTop: 1,
+  },
   declaration: {
     fontSize: 7,
     lineHeight: 1.6,
@@ -150,6 +161,12 @@ const styles = StyleSheet.create({
     height: 28,
     alignSelf: "stretch",
     marginBottom: 3,
+  },
+  sigValue: {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
+    marginBottom: 2,
   },
   sigLabel: {
     fontSize: 6,
@@ -208,6 +225,65 @@ export interface PdsTrainingRow {
   conductedBy: string | null;
 }
 
+export interface PdsSpouseInfo {
+  fullName: string;
+  occupation: string | null;
+  employerName: string | null;
+  employerAddress: string | null;
+  telephoneNo: string | null;
+}
+
+export interface PdsChildRow {
+  fullName: string;
+  /** ISO date or null. */
+  birthDate: string | null;
+}
+
+export interface PdsEducationRow {
+  /** Display label, e.g. "Elementary", "Graduate Studies". */
+  level: string;
+  schoolName: string | null;
+  degreeCourse: string | null;
+  attendanceFrom: string | null;
+  attendanceTo: string | null;
+  unitsEarned: string | null;
+  yearGraduated: string | null;
+  honorsReceived: string | null;
+}
+
+export interface PdsEligibilityRow {
+  name: string;
+  rating: string | null;
+  /** ISO date or null. */
+  examDate: string | null;
+  examPlace: string | null;
+  licenseNo: string | null;
+  /** ISO date or null. */
+  licenseValidity: string | null;
+}
+
+export interface PdsVoluntaryWorkRow {
+  organization: string;
+  address: string | null;
+  from: string | null;
+  to: string | null;
+  hours: number | null;
+  position: string | null;
+}
+
+export interface PdsQuestionAnswer {
+  /** null = not answered (renders empty parentheses for hand fill-in). */
+  answer: boolean | null;
+  details: string | null;
+}
+
+export interface PdsGovernmentIdInfo {
+  idType: string | null;
+  idNo: string | null;
+  dateIssued: string | null;
+  placeIssued: string | null;
+}
+
 export interface PdsFormPdfProps {
   serialNumber: string;
   agencyName: string;
@@ -217,28 +293,51 @@ export interface PdsFormPdfProps {
     middleName?: string | null;
     suffix?: string | null;
     birthDate?: string | null;
+    placeOfBirth?: string | null;
     gender?: string | null;
     civilStatus?: string | null;
     nationality?: string | null;
+    /** Pre-formatted citizenship incl. dual-citizenship detail. */
+    citizenshipDisplay?: string | null;
     religion?: string | null;
     bloodType?: string | null;
+    heightM?: string | null;
+    weightKg?: string | null;
     tin?: string | null;
     gsisNo?: string | null;
     philhealthNo?: string | null;
     pagibigNo?: string | null;
+    sssNo?: string | null;
     employeeNo: string;
     email?: string | null;
     phone?: string | null;
+    telephoneNo?: string | null;
     addressStreet?: string | null;
     addressBarangay?: string | null;
     addressCity?: string | null;
     addressProvince?: string | null;
     addressZipCode?: string | null;
+    permanentAddressStreet?: string | null;
+    permanentAddressBarangay?: string | null;
+    permanentAddressCity?: string | null;
+    permanentAddressProvince?: string | null;
+    permanentAddressZipCode?: string | null;
   };
+  spouse?: PdsSpouseInfo | null;
+  fatherName?: string | null;
+  motherName?: string | null;
+  children?: PdsChildRow[];
+  education?: PdsEducationRow[];
+  eligibilities?: PdsEligibilityRow[];
   workExperience: PdsWorkExperienceRow[];
+  voluntaryWorks?: PdsVoluntaryWorkRow[];
   trainings: PdsTrainingRow[];
   skills: string[];
   hobbies: string[];
+  distinctions?: string[];
+  memberships?: string[];
+  questionnaire?: Record<string, PdsQuestionAnswer>;
+  governmentId?: PdsGovernmentIdInfo | null;
   generatedAt?: string;
 }
 
@@ -266,6 +365,10 @@ function money(value: number | null): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function joinParts(parts: (string | null | undefined)[]): string {
+  return parts.filter(Boolean).join(", ");
 }
 
 interface FieldProps {
@@ -315,6 +418,35 @@ function BlankRows({
         </View>
       ))}
     </>
+  );
+}
+
+/** One data row: cells rendered in order, last cell borderless. */
+function DataRow({
+  widths,
+  cells,
+  centered = [],
+}: {
+  widths: (string | number)[];
+  cells: (string | number | null | undefined)[];
+  centered?: number[];
+}) {
+  return (
+    <View style={styles.row} wrap={false}>
+      {cells.map((cell, i) => (
+        <View
+          key={i}
+          style={[
+            styles.td,
+            centered.includes(i) ? styles.tdCenter : {},
+            { width: widths[i] },
+            i === cells.length - 1 ? styles.cellLast : {},
+          ]}
+        >
+          <Text>{cell == null || cell === "" ? " " : String(cell)}</Text>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -389,8 +521,13 @@ function PageFooter({
   );
 }
 
-const PENDING_201 =
-  "Data not yet encoded in the 201 file — to be accomplished by hand pending the 201-expansion iteration.";
+const EDUCATION_LEVEL_LABELS = [
+  "Elementary",
+  "Secondary",
+  "Vocational / Trade Course",
+  "College",
+  "Graduate Studies",
+];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -398,25 +535,83 @@ export function PdsFormPdf({
   serialNumber,
   agencyName,
   employee,
+  spouse = null,
+  fatherName = null,
+  motherName = null,
+  children = [],
+  education = [],
+  eligibilities = [],
   workExperience,
+  voluntaryWorks = [],
   trainings,
   skills,
   hobbies,
+  distinctions = [],
+  memberships = [],
+  questionnaire = {},
+  governmentId = null,
   generatedAt,
 }: PdsFormPdfProps) {
-  const residential = [
+  const residential = joinParts([
     employee.addressStreet,
     employee.addressBarangay,
     employee.addressCity,
     employee.addressProvince,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  ]);
+  const permanent = joinParts([
+    employee.permanentAddressStreet,
+    employee.permanentAddressBarangay,
+    employee.permanentAddressCity,
+    employee.permanentAddressProvince,
+  ]);
+
+  const spouseEmployment = spouse
+    ? joinParts([
+        spouse.occupation,
+        spouse.employerName,
+        spouse.employerAddress,
+        spouse.telephoneNo,
+      ])
+    : "";
 
   const weWidths = ["11%", "11%", "26%", "20%", "10%", "8%", "10%", "4%"];
   const ldWidths = ["40%", "12%", "12%", "8%", "28%"];
-  const eduWidths = ["16%", "30%", "24%", "10%", "10%", "10%"];
+  const eduWidths = ["14%", "24%", "21%", "13%", "9%", "9%", "10%"];
   const eligWidths = ["30%", "12%", "14%", "24%", "20%"];
+  const volWidths = ["40%", "14%", "14%", "10%", "22%"];
+
+  const educationRows =
+    education.length > 0
+      ? education
+      : EDUCATION_LEVEL_LABELS.map((level) => ({
+          level,
+          schoolName: null,
+          degreeCourse: null,
+          attendanceFrom: null,
+          attendanceTo: null,
+          unitsEarned: null,
+          yearGraduated: null,
+          honorsReceived: null,
+        }));
+
+  const otherInfoRowCount = Math.max(
+    4,
+    skills.length + hobbies.length,
+    distinctions.length,
+    memberships.length,
+  );
+  const combinedSkills = [...skills, ...hobbies];
+
+  const govIdSummary = governmentId
+    ? joinParts([
+        governmentId.idType,
+        governmentId.idNo,
+        governmentId.dateIssued
+          ? `Issued: ${fmtDate(governmentId.dateIssued)}`
+          : null,
+        governmentId.placeIssued,
+      ])
+    : "";
 
   return (
     <Document
@@ -450,7 +645,11 @@ export function PdsFormPdf({
               value={fmtDate(employee.birthDate)}
               width="25%"
             />
-            <Field label="4. Place of Birth" value="" width="25%" />
+            <Field
+              label="4. Place of Birth"
+              value={employee.placeOfBirth ?? ""}
+              width="25%"
+            />
             <Field
               label="5. Sex"
               value={titleCase(employee.gender)}
@@ -464,8 +663,16 @@ export function PdsFormPdf({
             />
           </View>
           <View style={styles.row}>
-            <Field label="7. Height (m)" value="" width="25%" />
-            <Field label="8. Weight (kg)" value="" width="25%" />
+            <Field
+              label="7. Height (m)"
+              value={employee.heightM ?? ""}
+              width="25%"
+            />
+            <Field
+              label="8. Weight (kg)"
+              value={employee.weightKg ?? ""}
+              width="25%"
+            />
             <Field
               label="9. Blood Type"
               value={employee.bloodType ?? ""}
@@ -473,7 +680,7 @@ export function PdsFormPdf({
             />
             <Field
               label="16. Citizenship"
-              value={employee.nationality ?? ""}
+              value={employee.citizenshipDisplay ?? employee.nationality ?? ""}
               width="25%"
               last
             />
@@ -502,7 +709,11 @@ export function PdsFormPdf({
             />
           </View>
           <View style={styles.row}>
-            <Field label="13. SSS No." value="" width="25%" />
+            <Field
+              label="13. SSS No."
+              value={employee.sssNo ?? ""}
+              width="25%"
+            />
             <Field
               label="15. Agency Employee No."
               value={employee.employeeNo}
@@ -529,14 +740,28 @@ export function PdsFormPdf({
             />
           </View>
           <View style={styles.row}>
-            <Field label="18. Permanent Address" value="" width="75%" />
-            <Field label="Zip Code" value="" width="25%" last />
+            <Field
+              label="18. Permanent Address"
+              value={permanent}
+              width="75%"
+            />
+            <Field
+              label="Zip Code"
+              value={employee.permanentAddressZipCode ?? ""}
+              width="25%"
+              last
+            />
           </View>
           <View style={styles.row}>
             <Field
-              label="19. Telephone / 20. Mobile No."
+              label="19. Telephone No."
+              value={employee.telephoneNo ?? ""}
+              width="25%"
+            />
+            <Field
+              label="20. Mobile No."
               value={employee.phone ?? ""}
-              width="50%"
+              width="25%"
             />
             <Field
               label="21. E-mail Address (if any)"
@@ -549,17 +774,24 @@ export function PdsFormPdf({
 
         <SectionHeader>II. FAMILY BACKGROUND</SectionHeader>
         <View style={styles.grid}>
-          <Text style={styles.pendingNote}>{PENDING_201}</Text>
           <HeaderCells
             widths={["25%", "25%", "25%", "25%"]}
             labels={[
-              "22. Spouse's Surname / First / Middle Name",
-              "Occupation / Employer",
+              "22. Spouse's Full Name",
+              "Occupation / Employer / Business Address / Tel.",
               "24. Father's Full Name",
               "25. Mother's Maiden Name",
             ]}
           />
-          <BlankRows widths={["25%", "25%", "25%", "25%"]} count={2} />
+          <DataRow
+            widths={["25%", "25%", "25%", "25%"]}
+            cells={[
+              spouse?.fullName ?? "",
+              spouseEmployment,
+              fatherName ?? "",
+              motherName ?? "",
+            ]}
+          />
           <HeaderCells
             widths={["60%", "40%"]}
             labels={[
@@ -567,12 +799,22 @@ export function PdsFormPdf({
               "Date of Birth (mm/dd/yyyy)",
             ]}
           />
-          <BlankRows widths={["60%", "40%"]} count={4} />
+          {children.map((child, idx) => (
+            <DataRow
+              key={idx}
+              widths={["60%", "40%"]}
+              cells={[child.fullName, fmtDate(child.birthDate)]}
+              centered={[1]}
+            />
+          ))}
+          <BlankRows
+            widths={["60%", "40%"]}
+            count={Math.max(0, 4 - children.length)}
+          />
         </View>
 
         <SectionHeader>III. EDUCATIONAL BACKGROUND</SectionHeader>
         <View style={styles.grid}>
-          <Text style={styles.pendingNote}>{PENDING_201}</Text>
           <HeaderCells
             widths={eduWidths}
             labels={[
@@ -582,32 +824,26 @@ export function PdsFormPdf({
               "Period From-To",
               "Units Earned",
               "Year Graduated",
+              "Honors Received",
             ]}
           />
-          {[
-            "Elementary",
-            "Secondary",
-            "Vocational",
-            "College",
-            "Graduate Studies",
-          ].map((level) => (
-            <View key={level} style={styles.row}>
-              <View style={[styles.td, { width: eduWidths[0] }]}>
-                <Text>{level}</Text>
-              </View>
-              {eduWidths.slice(1).map((w, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.td,
-                    { width: w },
-                    i === eduWidths.length - 2 ? styles.cellLast : {},
-                  ]}
-                >
-                  <Text> </Text>
-                </View>
-              ))}
-            </View>
+          {educationRows.map((row, idx) => (
+            <DataRow
+              key={idx}
+              widths={eduWidths}
+              cells={[
+                row.level,
+                row.schoolName,
+                row.degreeCourse,
+                [row.attendanceFrom, row.attendanceTo]
+                  .filter(Boolean)
+                  .join(" - "),
+                row.unitsEarned,
+                row.yearGraduated,
+                row.honorsReceived,
+              ]}
+              centered={[3, 4, 5]}
+            />
           ))}
         </View>
 
@@ -620,7 +856,6 @@ export function PdsFormPdf({
 
         <SectionHeader>IV. CIVIL SERVICE ELIGIBILITY</SectionHeader>
         <View style={styles.grid}>
-          <Text style={styles.pendingNote}>{PENDING_201}</Text>
           <HeaderCells
             widths={eligWidths}
             labels={[
@@ -631,7 +866,26 @@ export function PdsFormPdf({
               "License No. / Validity",
             ]}
           />
-          <BlankRows widths={eligWidths} count={4} />
+          {eligibilities.map((row, idx) => (
+            <DataRow
+              key={idx}
+              widths={eligWidths}
+              cells={[
+                row.name,
+                row.rating,
+                fmtDate(row.examDate),
+                row.examPlace,
+                [row.licenseNo, fmtDate(row.licenseValidity)]
+                  .filter(Boolean)
+                  .join(" / "),
+              ]}
+              centered={[1, 2]}
+            />
+          ))}
+          <BlankRows
+            widths={eligWidths}
+            count={Math.max(0, 4 - eligibilities.length)}
+          />
         </View>
 
         <SectionHeader>
@@ -653,49 +907,21 @@ export function PdsFormPdf({
             ]}
           />
           {workExperience.map((row, idx) => (
-            <View key={idx} style={styles.row} wrap={false}>
-              <View
-                style={[styles.td, styles.tdCenter, { width: weWidths[0] }]}
-              >
-                <Text>{fmtDate(row.from)}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.tdCenter, { width: weWidths[1] }]}
-              >
-                <Text>{row.to ? fmtDate(row.to) : "Present"}</Text>
-              </View>
-              <View style={[styles.td, { width: weWidths[2] }]}>
-                <Text>{row.positionTitle}</Text>
-              </View>
-              <View style={[styles.td, { width: weWidths[3] }]}>
-                <Text>{row.agency}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.tdCenter, { width: weWidths[4] }]}
-              >
-                <Text>{money(row.monthlySalary)}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.tdCenter, { width: weWidths[5] }]}
-              >
-                <Text>{row.gradeStep ?? ""}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.tdCenter, { width: weWidths[6] }]}
-              >
-                <Text>{row.statusOfAppointment}</Text>
-              </View>
-              <View
-                style={[
-                  styles.td,
-                  styles.tdCenter,
-                  styles.cellLast,
-                  { width: weWidths[7] },
-                ]}
-              >
-                <Text>{row.isGovService ? "Y" : "N"}</Text>
-              </View>
-            </View>
+            <DataRow
+              key={idx}
+              widths={weWidths}
+              cells={[
+                fmtDate(row.from),
+                row.to ? fmtDate(row.to) : "Present",
+                row.positionTitle,
+                row.agency,
+                money(row.monthlySalary),
+                row.gradeStep ?? "",
+                row.statusOfAppointment,
+                row.isGovService ? "Y" : "N",
+              ]}
+              centered={[0, 1, 4, 5, 6, 7]}
+            />
           ))}
           <BlankRows
             widths={weWidths}
@@ -715,9 +941,8 @@ export function PdsFormPdf({
           VOLUNTARY ORGANIZATION/S
         </SectionHeader>
         <View style={styles.grid}>
-          <Text style={styles.pendingNote}>{PENDING_201}</Text>
           <HeaderCells
-            widths={["40%", "14%", "14%", "10%", "22%"]}
+            widths={volWidths}
             labels={[
               "29. Name & Address of Organization",
               "From",
@@ -726,7 +951,24 @@ export function PdsFormPdf({
               "Position / Nature of Work",
             ]}
           />
-          <BlankRows widths={["40%", "14%", "14%", "10%", "22%"]} count={3} />
+          {voluntaryWorks.map((row, idx) => (
+            <DataRow
+              key={idx}
+              widths={volWidths}
+              cells={[
+                joinParts([row.organization, row.address]),
+                fmtDate(row.from),
+                fmtDate(row.to),
+                row.hours,
+                row.position,
+              ]}
+              centered={[1, 2, 3]}
+            />
+          ))}
+          <BlankRows
+            widths={volWidths}
+            count={Math.max(0, 3 - voluntaryWorks.length)}
+          />
         </View>
 
         <SectionHeader>
@@ -745,31 +987,18 @@ export function PdsFormPdf({
             ]}
           />
           {trainings.map((t, idx) => (
-            <View key={idx} style={styles.row} wrap={false}>
-              <View style={[styles.td, { width: ldWidths[0] }]}>
-                <Text>{t.title}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.tdCenter, { width: ldWidths[1] }]}
-              >
-                <Text>{fmtDate(t.from)}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.tdCenter, { width: ldWidths[2] }]}
-              >
-                <Text>{fmtDate(t.to)}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.tdCenter, { width: ldWidths[3] }]}
-              >
-                <Text>{t.hours ?? ""}</Text>
-              </View>
-              <View
-                style={[styles.td, styles.cellLast, { width: ldWidths[4] }]}
-              >
-                <Text>{t.conductedBy ?? ""}</Text>
-              </View>
-            </View>
+            <DataRow
+              key={idx}
+              widths={ldWidths}
+              cells={[
+                t.title,
+                fmtDate(t.from),
+                fmtDate(t.to),
+                t.hours,
+                t.conductedBy,
+              ]}
+              centered={[1, 2, 3]}
+            />
           ))}
           <BlankRows
             widths={ldWidths}
@@ -787,24 +1016,13 @@ export function PdsFormPdf({
               "33. Membership in Association / Organization",
             ]}
           />
-          {Array.from({
-            length: Math.max(4, skills.length + hobbies.length),
-          }).map((_, idx) => {
-            const combined = [...skills, ...hobbies];
-            return (
-              <View key={idx} style={styles.row}>
-                <View style={[styles.td, { width: "34%" }]}>
-                  <Text>{combined[idx] ?? " "}</Text>
-                </View>
-                <View style={[styles.td, { width: "33%" }]}>
-                  <Text> </Text>
-                </View>
-                <View style={[styles.td, styles.cellLast, { width: "33%" }]}>
-                  <Text> </Text>
-                </View>
-              </View>
-            );
-          })}
+          {Array.from({ length: otherInfoRowCount }).map((_, idx) => (
+            <DataRow
+              key={idx}
+              widths={["34%", "33%", "33%"]}
+              cells={[combinedSkills[idx], distinctions[idx], memberships[idx]]}
+            />
+          ))}
         </View>
 
         <PageFooter serialNumber={serialNumber} generatedAt={generatedAt} />
@@ -816,38 +1034,40 @@ export function PdsFormPdf({
 
         <SectionHeader>34–40. QUESTIONS</SectionHeader>
         <View style={styles.grid}>
-          <Text style={styles.pendingNote}>
-            To be answered and initialed by the employee upon signing (data not
-            captured by the system yet).
-          </Text>
-          {[
-            "34. Are you related by consanguinity or affinity to the appointing or recommending authority, or to the chief of bureau or office, or to the person who has immediate supervision over you in the Office, Bureau or Department where you will be appointed?",
-            "35. a. Have you ever been found guilty of any administrative offense? b. Have you been criminally charged before any court?",
-            "36. Have you ever been convicted of any crime or violation of any law, decree, ordinance or regulation by any court or tribunal?",
-            "37. Have you ever been separated from the service in any of the following modes: resignation, retirement, dropped from the rolls, dismissal, termination, end of term, finished contract or phased out (abolition) in the public or private sector?",
-            "38. a. Have you ever been a candidate in a national or local election held within the last year? b. Have you resigned from the government service during the three (3)-month period before the last election?",
-            "39. Have you acquired the status of an immigrant or permanent resident of another country?",
-            "40. Pursuant to: (a) Indigenous People's Act (RA 8371); (b) Magna Carta for Disabled Persons (RA 7277); and (c) Solo Parents Welfare Act of 2000 (RA 8972), please answer the following items:",
-          ].map((q, idx) => (
-            <View key={idx} style={styles.row}>
-              <View style={[styles.td, { width: "78%" }]}>
-                <Text>{q}</Text>
+          {PDS_QUESTIONS.map((q) => {
+            const entry = questionnaire[q.key];
+            const answer = entry?.answer ?? null;
+            const details = entry?.details ?? null;
+            return (
+              <View key={q.key} style={styles.row} wrap={false}>
+                <View style={[styles.td, { width: "78%" }]}>
+                  <Text>{q.label}</Text>
+                  {details ? (
+                    <Text style={styles.questionDetails}>
+                      {q.detailsPrompt}: {details}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={[styles.td, styles.tdCenter, { width: "11%" }]}>
+                  <Text style={styles.label}>
+                    Yes ({answer === true ? "X" : " "})
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.td,
+                    styles.tdCenter,
+                    styles.cellLast,
+                    { width: "11%" },
+                  ]}
+                >
+                  <Text style={styles.label}>
+                    No ({answer === false ? "X" : " "})
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.td, styles.tdCenter, { width: "11%" }]}>
-                <Text style={styles.label}>Yes ( )</Text>
-              </View>
-              <View
-                style={[
-                  styles.td,
-                  styles.tdCenter,
-                  styles.cellLast,
-                  { width: "11%" },
-                ]}
-              >
-                <Text style={styles.label}>No ( )</Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         <SectionHeader>
@@ -855,7 +1075,10 @@ export function PdsFormPdf({
           applicant / appointee)
         </SectionHeader>
         <View style={styles.grid}>
-          <Text style={styles.pendingNote}>{PENDING_201}</Text>
+          <Text style={styles.pendingNote}>
+            To be accomplished by hand — character references are not captured
+            by the system.
+          </Text>
           <HeaderCells
             widths={["40%", "40%", "20%"]}
             labels={["Name", "Address", "Tel. No."]}
@@ -876,7 +1099,11 @@ export function PdsFormPdf({
 
         <View style={styles.sigRow}>
           <View style={styles.sigBlock}>
-            <View style={styles.sigLine} />
+            {govIdSummary ? (
+              <Text style={styles.sigValue}>{govIdSummary}</Text>
+            ) : (
+              <View style={styles.sigLine} />
+            )}
             <Text style={styles.sigLabel}>
               Government Issued ID (i.e. Passport, GSIS, SSS, PRC, Driver's
               License, etc.) — ID/License/Passport No. & Date of Issuance

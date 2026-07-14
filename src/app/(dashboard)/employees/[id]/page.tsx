@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Pencil } from "lucide-react";
+import { ChevronLeft, FileText, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -162,38 +162,46 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
 
       {/* Tabs */}
       <Tabs defaultValue="profile">
-        <TabsList className="bg-pcso-navy/5">
-          <TabsTrigger
-            value="profile"
-            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
-          >
-            Profile
-          </TabsTrigger>
-          <TabsTrigger
-            value="employment"
-            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
-          >
-            Employment History
-          </TabsTrigger>
-          <TabsTrigger
-            value="leave"
-            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
-          >
-            Leave Credits
-          </TabsTrigger>
-          <TabsTrigger
-            value="payroll"
-            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
-          >
-            Payroll History
-          </TabsTrigger>
-          <TabsTrigger
-            value="documents"
-            className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
-          >
-            Documents
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList className="bg-pcso-navy/5">
+            <TabsTrigger
+              value="profile"
+              className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
+            >
+              Profile
+            </TabsTrigger>
+            <TabsTrigger
+              value="employment"
+              className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
+            >
+              Employment History
+            </TabsTrigger>
+            <TabsTrigger
+              value="leave"
+              className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
+            >
+              Leave Credits
+            </TabsTrigger>
+            <TabsTrigger
+              value="payroll"
+              className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
+            >
+              Payroll History
+            </TabsTrigger>
+            <TabsTrigger
+              value="documents"
+              className="data-[state=active]:bg-pcso-navy data-[state=active]:text-white"
+            >
+              Documents
+            </TabsTrigger>
+          </TabsList>
+          <Button asChild size="sm" variant="outline" className="gap-1.5">
+            <Link href={`/employees/${employee.id}/201`}>
+              <FileText className="h-3.5 w-3.5" />
+              201 File / PDS Data
+            </Link>
+          </Button>
+        </div>
 
         {/* Profile tab */}
         <TabsContent value="profile">

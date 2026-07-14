@@ -114,6 +114,8 @@ export async function generatePagibigBatch(input: unknown) {
         .where(
           and(
             eq(payrollRecords.periodId, parsed.periodId),
+            // TOR 1.8.4: excluded (PAY-013) records are not remitted.
+            eq(payrollRecords.included, true),
             isNull(employees.deletedAt),
           ),
         )
@@ -274,7 +276,13 @@ export async function exportPagibigVirtual(input: unknown) {
         authorizedSalary: payrollRecords.authorizedSalary,
       })
       .from(payrollRecords)
-      .where(eq(payrollRecords.periodId, periodResult[0].id));
+      .where(
+        and(
+          eq(payrollRecords.periodId, periodResult[0].id),
+          // TOR 1.8.4: excluded (PAY-013) records are not remitted.
+          eq(payrollRecords.included, true),
+        ),
+      );
 
     for (const sr of salaryRows) {
       salaryMap.set(sr.employeeId, sr.authorizedSalary);

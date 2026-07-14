@@ -1,34 +1,34 @@
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
-import { PageHeader } from '@/components/layouts/page-header';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PeriodStatusBadge } from '@/components/payroll/period-status-badge';
-import { RecordsTable } from '@/components/payroll/records-table';
-import { ExceptionReport } from '@/components/payroll/exception-report';
-import { requirePermission } from '@/lib/auth/guards';
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { PageHeader } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PeriodStatusBadge } from "@/components/payroll/period-status-badge";
+import { RecordsTable } from "@/components/payroll/records-table";
+import { ExceptionReport } from "@/components/payroll/exception-report";
+import { requirePermission } from "@/lib/auth/guards";
 import {
   getPayrollPeriodById,
   getPayrollRecordsByPeriod,
   getExceptionRecords,
   getPeriodTotals,
-} from '../../queries';
-import { PeriodActionsBar } from '../_components/period-actions-bar';
+} from "../../queries";
+import { PeriodActionsBar } from "../_components/period-actions-bar";
 
 interface Props {
   params: Promise<{ periodId: string }>;
 }
 
 function formatPeso(value: string | null | undefined): string {
-  if (!value) return '₱0.00';
+  if (!value) return "₱0.00";
   const num = parseFloat(value);
-  return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export default async function ProcessPayrollPage({ params }: Props) {
   const { periodId } = await params;
-  await requirePermission('payroll', 'process');
+  await requirePermission("payroll", "process");
 
   const [period, records, exceptions, totals] = await Promise.all([
     getPayrollPeriodById(periodId),
@@ -45,10 +45,10 @@ export default async function ProcessPayrollPage({ params }: Props) {
         title="Process Payroll"
         description={`Review computed records for ${period.name} before approval.`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Payroll', href: '/payroll' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Payroll", href: "/payroll" },
           { label: period.name, href: `/payroll/${periodId}` },
-          { label: 'Process' },
+          { label: "Process" },
         ]}
         actions={
           <div className="flex items-center gap-2">
@@ -69,10 +69,10 @@ export default async function ProcessPayrollPage({ params }: Props) {
       {/* Summary stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
-          { label: 'Total Records', value: totals.employeeCount.toString() },
-          { label: 'Gross Pay', value: formatPeso(totals.totalGrossPay) },
-          { label: 'Deductions', value: formatPeso(totals.totalDeductions) },
-          { label: 'Net Pay', value: formatPeso(totals.totalNetPay) },
+          { label: "Total Records", value: totals.employeeCount.toString() },
+          { label: "Gross Pay", value: formatPeso(totals.totalGrossPay) },
+          { label: "Deductions", value: formatPeso(totals.totalDeductions) },
+          { label: "Net Pay", value: formatPeso(totals.totalNetPay) },
         ].map(({ label, value }) => (
           <Card key={label}>
             <CardContent className="p-4">
@@ -88,7 +88,8 @@ export default async function ProcessPayrollPage({ params }: Props) {
         <Card className="border-amber-200 bg-amber-50">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-amber-800">
-              Exception Report — {exceptions.length} Record{exceptions.length !== 1 ? 's' : ''} Need Attention
+              Exception Report — {exceptions.length} Record
+              {exceptions.length !== 1 ? "s" : ""} Need Attention
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -105,7 +106,11 @@ export default async function ProcessPayrollPage({ params }: Props) {
         >
           All Payroll Records
         </h2>
-        <RecordsTable records={records} periodId={periodId} />
+        <RecordsTable
+          records={records}
+          periodId={periodId}
+          periodStatus={period.status}
+        />
       </section>
     </main>
   );

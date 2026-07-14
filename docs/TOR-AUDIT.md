@@ -327,6 +327,36 @@ Structural finding: 34 `fm_*` tables defined (`src/lib/db/schema/fm-extensions.t
 - Payroll income/deduction upload UI, include/exclude toggle UI, payroll reports UI.
 - Remittance/journal `included` filter (see 1.8.4 note).
 
+## Iteration 3 Results (2026-07-15)
+
+**201-file expansion (TOR 1.3):**
+
+- **1.3.1 → IMPL.** 7 new child tables (`employee_family_members`, `employee_education`, `employee_eligibilities`, `employee_work_experiences`, `employee_voluntary_works`, `employee_external_trainings`, `employee_designations`) + 16 CS Form 212 columns on `employees` (place of birth, height/weight, SSS, telephone, permanent address, dual citizenship, distinctions/memberships, page-4 questionnaire, gov't ID). 29 CRUD server actions (`pimm/employee-201.ts`), profile UI at `/employees/[id]/201`. Migration `2026-07-15-01`.
+- **1.3.3 → IMPL.** `cti` + `consultant` appointment types added; ORGANIC/NON_ORGANIC allowlists centralized (`constants/appointment-types.ts`) and applied at all 11 gate sites (leave accrual/eligibility, payroll scopes, dashboard counts) — fail-safe posture regression-tested. Personnel Categories report + UI.
+- **1.3.11 → IMPL (full).** PDS generator now renders Sections I–VIII + page-4 questionnaire from real data via pure `pds-mapper` (18 tests).
+- **1.3.15/1.3.19/1.3.21/1.3.24 → IMPL.** Step-increment report surface, NAP archival, Personnel Complement (male/female, plantilla filled/vacant, HO-vs-branch), HR accomplishment (per-processor statistics) — actions + UIs + CSV.
+- **1.3.25 → IMPL.** `employee_designations` history written on movement effect; designation CRUD in profile.
+- **1.3.26 + 1.2.29 → IMPL.** Employee + Applications ad-hoc report builders (pure column catalog, 24 tests) + tabbed UI.
+- **1.3.22 → IMPL.** FM-maintained signatory chains (`fm_document_signatories`, FM CRUD) now consumed by NOSA/NOSI issuance; payroll register already wired (Iter 2).
+
+**Employee Portal (TOR 1.9):**
+
+- **1.9.7 → IMPL.** 201 self-upload (`/portal/document-upload`, 7MB cap) + HR validation queue (`/employees/document-validation`) committing into `employee_documents`.
+- **1.9.9 → IMPL.** Personnel movement submit/cancel + supervisor endorse + HR decide; on effect updates `employees.officeId` + designation history. (Separation status changes remain in HR module per §12.5.)
+- **1.9.12 → IMPL.** ID requests (FM sizes) + HR processing queue.
+- **1.9.13 → IMPL.** Internal promotion applications: `applications.employee_id` link, portal lists published vacancies, 201-prefilled application.
+- **1.9.10 → IMPL.** Blank HR forms pack (PDS, Form 6, SALN, Office Clearance, Pass-Out, OB, PES) as server-rendered PDFs.
+- **1.9.1 → IMPL.** `/portal/my-documents` (own committed 201 docs, signed URLs); loans/payslips already ESS-accessible.
+
+**Payroll deferrals (TOR 1.8):**
+
+- **1.8.11/1.8.12/1.8.13 + 1.3.10 → IMPL.** Salary adjustment workflow (create→approve/disapprove→effected) w/ NOSA serial + PDF + 201 grade/step update in one tx + notification; UI at `/payroll/salary-adjustments`. NOSI PDF now issued on step-increment implementation (serial + storage + notify; increment never rolled back on PDF failure).
+- **1.8.1 → IMPL (full).** Inputs upload UI (`/payroll/[periodId]/inputs`): CSV template, staged preview, all-or-nothing commit.
+- **1.8.4 → IMPL (full).** Include/exclude toggle UI w/ reason dialog; `included=true` filter added to ALL remittance queries (BIR 1601-C/2316, GSIS, PhilHealth, Pag-IBIG) + journal-entries API — closing the Iter-2 latent gap.
+- **1.8.15 → IMPL (full).** Payroll ad-hoc reports UI (`/payroll/reports`).
+
+**Verified:** type-check clean · lint clean · production build (all 18 new routes) · **1100/1100 unit tests** (+64: pds-mapper 18, adhoc-report 24, salary-adjustment 22). Migration `2026-07-15-01` (additive: 2 enum values, 16 columns, 7 tables + RLS, 1 FK column) applied to prod ahead of deploy.
+
 ## Remediation iterations (loop plan)
 
 - **Iter 1:** FM module (generic CRUD + seeds + new lookups) · cron scheduler (accrual/sick-auto-approve/year-end/retirement) · CSP+HSTS · audit-log field expansion + transaction log · leave attachments · LWOP + advanced leave reports · portal UIs (shift-change, DTR-correction) · Docker · upload templates

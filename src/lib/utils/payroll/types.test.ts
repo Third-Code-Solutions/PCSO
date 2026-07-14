@@ -11,21 +11,23 @@ describe("appointment-type benefit gates (fail-safe allowlist)", () => {
     "temporary",
     "coterminous",
     "casual",
+    "cti",
   ];
   const NON_ORGANIC: AppointmentType[] = [
     "job_order",
     "contract_of_service",
+    "consultant",
     "confidential_agent",
   ];
 
-  it("treats the four organic types as regular (benefit-eligible)", () => {
+  it("treats the five organic types as regular (benefit-eligible)", () => {
     for (const t of ORGANIC) {
       expect(isRegularEmployee(t)).toBe(true);
       expect(isJobOrderOrCOS(t)).toBe(false);
     }
   });
 
-  it("treats JO / COS / confidential agent as non-organic (no benefits)", () => {
+  it("treats JO / COS / consultant / confidential agent as non-organic (no benefits)", () => {
     for (const t of NON_ORGANIC) {
       expect(isRegularEmployee(t)).toBe(false);
       expect(isJobOrderOrCOS(t)).toBe(true);
@@ -35,7 +37,7 @@ describe("appointment-type benefit gates (fail-safe allowlist)", () => {
   it("fails SAFE for any future non-organic enum value (allowlist, not denylist)", () => {
     // A newly-added enum value not yet whitelisted must be treated as
     // non-organic (no mandatory-benefit deductions, bonuses, RATA, etc.).
-    const future = "consultant" as AppointmentType;
+    const future = "board_member" as AppointmentType;
     expect(isRegularEmployee(future)).toBe(false);
     expect(isJobOrderOrCOS(future)).toBe(true);
   });

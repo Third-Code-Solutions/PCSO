@@ -120,6 +120,8 @@ export async function generateBir1601CBatch(input: unknown) {
         .where(
           and(
             sql`${payrollRecords.periodId} = ANY(${sql.raw(`ARRAY['${periodIds.join("','")}']::uuid[]`)})`,
+            // TOR 1.8.4: excluded (PAY-013) records are not part of any remittance.
+            eq(payrollRecords.included, true),
             isNull(employees.deletedAt),
           ),
         )
@@ -305,14 +307,17 @@ export async function getBir2316Data(input: unknown) {
   const periodIdsLiteral = periodIds.map((id) => `'${id}'`).join(",");
 
   // Base query conditions
+  // TOR 1.8.4: excluded (PAY-013) records are not part of any remittance.
   const baseWhere = parsed.employeeId
     ? and(
         sql`${payrollRecords.periodId} IN (${sql.raw(periodIdsLiteral)})`,
         eq(payrollRecords.employeeId, parsed.employeeId),
+        eq(payrollRecords.included, true),
         isNull(employees.deletedAt),
       )
     : and(
         sql`${payrollRecords.periodId} IN (${sql.raw(periodIdsLiteral)})`,
+        eq(payrollRecords.included, true),
         isNull(employees.deletedAt),
       );
 

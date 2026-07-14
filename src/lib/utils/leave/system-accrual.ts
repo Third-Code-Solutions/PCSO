@@ -95,13 +95,14 @@ export async function runMonthlyAccrual(options?: {
         eq(employees.status, "active"),
         isNull(employees.deletedAt),
         // Only organic personnel accrue CSC leave credits (PRD §10.1.1).
-        // Allowlist so a new non-organic type (e.g. confidential_agent) is
+        // Allowlist so a new non-organic type (e.g. consultant) is
         // excluded by default rather than silently accruing credits.
         inArray(employees.appointmentType, [
           "permanent",
           "temporary",
           "coterminous",
           "casual",
+          "cti",
         ]),
       ),
     );

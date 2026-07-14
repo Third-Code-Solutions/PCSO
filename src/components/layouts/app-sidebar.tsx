@@ -183,6 +183,11 @@ const NAV_ITEMS: NavItem[] = [
         href: "/employees/pds-requests",
         roles: ["super_admin", "hr_admin"],
       },
+      {
+        label: "201 Upload Validation",
+        href: "/employees/document-validation",
+        roles: ["super_admin", "hr_admin"],
+      },
     ],
   },
 
@@ -405,6 +410,16 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "Payslips (Admin)",
         href: "/payroll/payslips",
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
+      },
+      {
+        label: "Salary Adjustments",
+        href: "/payroll/salary-adjustments",
+        roles: ["super_admin", "hr_admin", "payroll_admin"],
+      },
+      {
+        label: "Payroll Reports",
+        href: "/payroll/reports",
         roles: ["super_admin", "hr_admin", "payroll_admin"],
       },
       {
@@ -793,6 +808,64 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
 
+  // ── Workforce Reports (PIMM — TOR 1.3.3/15/19/21/24/26) ──────────────────
+  {
+    label: "Workforce Reports",
+    icon: FileText,
+    roles: [
+      "super_admin",
+      "hr_admin",
+      "payroll_admin",
+      "executive",
+      "viewer",
+      "auditor",
+    ],
+    children: [
+      {
+        label: "All Reports",
+        href: "/reports",
+        roles: [
+          "super_admin",
+          "hr_admin",
+          "payroll_admin",
+          "executive",
+          "viewer",
+          "auditor",
+        ],
+      },
+      {
+        label: "Personnel Categories",
+        href: "/reports/personnel-categories",
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
+      },
+      {
+        label: "Personnel Complement",
+        href: "/reports/personnel-complement",
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
+      },
+      {
+        label: "Step Increments",
+        href: "/reports/step-increments",
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
+      },
+      {
+        label: "HR Accomplishments",
+        href: "/reports/hr-accomplishments",
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
+      },
+      {
+        label: "NAP Archival",
+        href: "/reports/nap-archival",
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
+      },
+      {
+        label: "Ad Hoc Builder",
+        href: "/reports/adhoc",
+        roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],
+      },
+    ],
+  },
+
   // ── Welfare & PRAISE (EWBM — PRD §4.10 / M10) ────────────────────────────
   {
     label: "Welfare & PRAISE",
@@ -847,7 +920,13 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Employee Portal",
     icon: Megaphone,
-    roles: ["super_admin", "hr_admin", "employee_self_service"],
+    roles: [
+      "super_admin",
+      "hr_admin",
+      "supervisor",
+      "leave_approver",
+      "employee_self_service",
+    ],
     children: [
       {
         label: "Announcements",
@@ -877,6 +956,46 @@ const NAV_ITEMS: NavItem[] = [
         href: "/portal/dtr-correction",
         roles: ["super_admin", "hr_admin", "employee_self_service"],
         selfOnly: true,
+      },
+      {
+        label: "201 Document Upload",
+        href: "/portal/document-upload",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
+      {
+        label: "My 201 Documents",
+        href: "/portal/my-documents",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
+      {
+        label: "Movement Requests",
+        href: "/portal/movement",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
+      {
+        label: "Movement Approvals",
+        href: "/portal/movement/approvals",
+        roles: ["super_admin", "hr_admin", "supervisor", "leave_approver"],
+      },
+      {
+        label: "ID Requests",
+        href: "/portal/id-request",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
+      {
+        label: "Apply for Promotion",
+        href: "/portal/promotion",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
+        selfOnly: true,
+      },
+      {
+        label: "HR Forms",
+        href: "/portal/forms",
+        roles: ["super_admin", "hr_admin", "employee_self_service"],
       },
     ],
   },

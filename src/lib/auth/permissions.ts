@@ -714,6 +714,7 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   // permission matrix is advisory for query-level guards; route-level access
   // is the hard gate here.
   "/employees/new": ["super_admin", "hr_admin"],
+  "/employees/document-validation": ["super_admin", "hr_admin"],
   "/employees": [
     "super_admin",
     "hr_admin",
@@ -768,6 +769,12 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
   // ── Employee Portal (self-service) ────────────────────────────────────────
   // Self-service area — open to every authenticated role. Per-record scope is
   // enforced by selfOnly constraints in queries / action guards.
+  "/portal/movement/approvals": [
+    "super_admin",
+    "hr_admin",
+    "supervisor",
+    "leave_approver",
+  ],
   "/portal": [
     "super_admin",
     "hr_admin",

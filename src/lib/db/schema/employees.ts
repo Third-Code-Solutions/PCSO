@@ -4,6 +4,7 @@ import {
   varchar,
   date,
   smallint,
+  numeric,
   boolean,
   pgEnum,
   text,
@@ -36,8 +37,10 @@ export const appointmentTypeEnum = pgEnum("appointment_type", [
   "temporary",
   "coterminous",
   "casual",
+  "cti", // TOR 1.3.3 — Co-Terminus with the Incumbent; ORGANIC
   "job_order",
   "contract_of_service",
+  "consultant", // TOR 1.3.3 — non-organic; excluded from payroll scopes
   "confidential_agent", // TOR 1.8.2 — non-organic; JO/COS-style payroll rules
 ]);
 
@@ -78,19 +81,29 @@ export const employees = pgTable(
     lastName: varchar("last_name", { length: 100 }).notNull(),
     suffix: varchar("suffix", { length: 10 }),
     birthDate: date("birth_date").notNull(),
+    placeOfBirth: varchar("place_of_birth", { length: 200 }),
     gender: genderEnum("gender").notNull(),
     civilStatus: civilStatusEnum("civil_status").notNull(),
     nationality: varchar("nationality", { length: 100 })
       .notNull()
       .default("Filipino"),
+    // CS Form 212 citizenship block — dual citizenship acquisition details
+    dualCitizenshipType: varchar("dual_citizenship_type", { length: 20 }),
+    dualCitizenshipCountry: varchar("dual_citizenship_country", {
+      length: 100,
+    }),
     religion: varchar("religion", { length: 100 }),
     bloodType: bloodTypeEnum("blood_type"),
+    heightM: numeric("height_m", { precision: 4, scale: 2 }),
+    weightKg: numeric("weight_kg", { precision: 5, scale: 2 }),
 
     // Government IDs
     tin: varchar("tin", { length: 20 }),
     gsisNo: varchar("gsis_no", { length: 30 }),
     philhealthNo: varchar("philhealth_no", { length: 30 }),
     pagibigNo: varchar("pagibig_no", { length: 30 }),
+    // SSS coverage applies to non-organic personnel only (PRD §14.1)
+    sssNo: varchar("sss_no", { length: 30 }),
 
     // Bank Details (for bank hash file generation - PAY-010)
     bankName: varchar("bank_name", { length: 100 }),
@@ -123,13 +136,27 @@ export const employees = pgTable(
     // Contact
     email: varchar("email", { length: 255 }),
     phone: varchar("phone", { length: 20 }),
+    telephoneNo: varchar("telephone_no", { length: 20 }),
 
-    // Address
+    // Residential address
     addressStreet: text("address_street"),
     addressBarangay: varchar("address_barangay", { length: 100 }),
     addressCity: varchar("address_city", { length: 100 }),
     addressProvince: varchar("address_province", { length: 100 }),
     addressZipCode: varchar("address_zip_code", { length: 10 }),
+
+    // Permanent address (CS Form 212 distinguishes residential vs permanent)
+    permanentAddressStreet: text("permanent_address_street"),
+    permanentAddressBarangay: varchar("permanent_address_barangay", {
+      length: 100,
+    }),
+    permanentAddressCity: varchar("permanent_address_city", { length: 100 }),
+    permanentAddressProvince: varchar("permanent_address_province", {
+      length: 100,
+    }),
+    permanentAddressZipCode: varchar("permanent_address_zip_code", {
+      length: 10,
+    }),
 
     // Emergency contact
     emergencyContactName: varchar("emergency_contact_name", { length: 255 }),
@@ -144,6 +171,28 @@ export const employees = pgTable(
     specialSkillsHobbies: jsonb("special_skills_hobbies").$type<{
       skills: string[];
       hobbies: string[];
+    }>(),
+
+    // CS Form 212 Section VIII — non-academic distinctions & org memberships
+    nonAcademicDistinctions: jsonb("non_academic_distinctions").$type<
+      string[]
+    >(),
+    organizationMemberships: jsonb("organization_memberships").$type<
+      string[]
+    >(),
+
+    // CS Form 212 page 4 — questions 34–40 (yes/no + details)
+    pdsQuestionnaire:
+      jsonb("pds_questionnaire").$type<
+        Record<string, { answer: boolean; details?: string | null }>
+      >(),
+
+    // CS Form 212 signature block — government-issued ID presented
+    governmentIssuedId: jsonb("government_issued_id").$type<{
+      idType?: string;
+      idNo?: string;
+      dateIssued?: string;
+      placeIssued?: string;
     }>(),
 
     ...timestamps,
