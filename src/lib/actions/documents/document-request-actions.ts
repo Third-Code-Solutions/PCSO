@@ -463,16 +463,33 @@ export async function processDocumentRequest(
       };
     }
 
+    // PIM-016: bind exactly one serial to this request. It is drawn and
+    // persisted BEFORE the fallible generator runs, so a retry after a failed
+    // generation/upload reuses the same number instead of burning a fresh one —
+    // the sequence never gaps within a year. Generators receive this serial and
+    // reuse it rather than drawing their own.
     let serialNumber: string;
+    if (request.serialNumber) {
+      serialNumber = request.serialNumber;
+    } else {
+      serialNumber = await generateSerialNumber(DOCUMENT_TYPES[serialKey]);
+      await db
+        .update(documentRequests)
+        .set({ serialNumber, updatedAt: new Date() })
+        .where(eq(documentRequests.id, validated.requestId));
+    }
+
     let documentUrl: string | undefined;
 
-    // Run PDF generator for types that have one; for others, assign serial and
-    // mark ready so HR can manually prepare and release the physical document.
+    // Run PDF generator for types that have one; for others the serial is
+    // already assigned above and the request moves to READY so HR can manually
+    // prepare and release the physical document.
     if (request.documentType === "COE") {
       const generated = await generateCOE({
         employeeId: request.employeeId,
         purpose: request.purpose || "as requested",
         includeSalary: false,
+        serialNumber,
       });
       if (!generated.success) {
         return {
@@ -480,13 +497,13 @@ export async function processDocumentRequest(
           error: generated.error || "COE generation failed",
         };
       }
-      serialNumber = generated.serialNumber!;
       documentUrl = generated.documentUrl;
     } else if (request.documentType === "COE_REMUNERATION") {
       const generated = await generateCOE({
         employeeId: request.employeeId,
         purpose: request.purpose || "as requested",
         includeSalary: true,
+        serialNumber,
       });
       if (!generated.success) {
         return {
@@ -494,11 +511,11 @@ export async function processDocumentRequest(
           error: generated.error || "COE generation failed",
         };
       }
-      serialNumber = generated.serialNumber!;
       documentUrl = generated.documentUrl;
     } else if (request.documentType === "SERVICE_RECORD") {
       const generated = await generateServiceRecord({
         employeeId: request.employeeId,
+        serialNumber,
       });
       if (!generated.success) {
         return {
@@ -506,11 +523,11 @@ export async function processDocumentRequest(
           error: generated.error || "Service Record generation failed",
         };
       }
-      serialNumber = generated.serialNumber!;
       documentUrl = generated.documentUrl;
     } else if (request.documentType === "PDS") {
       const generated = await generatePds({
         employeeId: request.employeeId,
+        serialNumber,
       });
       if (!generated.success) {
         return {
@@ -518,7 +535,6 @@ export async function processDocumentRequest(
           error: generated.error || "PDS generation failed",
         };
       }
-      serialNumber = generated.serialNumber!;
       documentUrl = generated.documentUrl;
     } else if (request.documentType === "AD_HOC") {
       if (!validated.certificateTemplateId) {
@@ -532,6 +548,7 @@ export async function processDocumentRequest(
         employeeId: request.employeeId,
         templateId: validated.certificateTemplateId,
         purpose: request.purpose || undefined,
+        serialNumber,
       });
       if (!generated.success) {
         return {
@@ -539,12 +556,7 @@ export async function processDocumentRequest(
           error: generated.error || "Ad hoc certificate generation failed",
         };
       }
-      serialNumber = generated.serialNumber!;
       documentUrl = generated.documentUrl;
-    } else {
-      // Unimplemented PDF generators — assign serial number and move to READY.
-      // HR prepares the physical/manual document and releases it to the employee.
-      serialNumber = await generateSerialNumber(DOCUMENT_TYPES[serialKey]);
     }
 
     // Update request to READY

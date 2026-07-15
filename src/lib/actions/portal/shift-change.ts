@@ -31,6 +31,7 @@ import { employees } from "@/lib/db/schema/employees";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { notifyEmployee } from "@/lib/notifications";
+import { withTx, lockKey } from "@/lib/db/transaction";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -272,40 +273,66 @@ export async function processShiftChange(
       return { error: "Request is not pending HR review" };
     }
 
-    if (decision === "approve") {
-      // End current schedule assignment (effectiveTo is a date string column)
-      await db
-        .update(employeeSchedules)
-        .set({ effectiveTo: request.effectiveDate })
-        .where(
-          and(
-            eq(employeeSchedules.employeeId, request.employeeId),
-            sql`${employeeSchedules.effectiveTo} IS NULL`,
-          ),
-        );
+    // Atomic commit: closing the current assignment, inserting the new one,
+    // and updating the request status must all land together. A bare sequence
+    // of writes could close the old assignment then fail the insert, leaving
+    // the employee with NO active schedule (attendance compute would silently
+    // fall back to the agency default forever). The per-employee advisory lock
+    // serializes concurrent HR approvals for the same employee.
+    const updated = await withTx(async (tx) => {
+      await lockKey(tx, `shift_change:${request.employeeId}`);
 
-      // Create new schedule assignment
-      await db.insert(employeeSchedules).values({
-        employeeId: request.employeeId,
-        scheduleId: request.requestedScheduleId,
-        effectiveFrom: request.effectiveDate,
-        effectiveTo: null,
-      });
-    }
+      // Re-check status under the lock so two HR reviewers cannot both commit.
+      const [locked] = await tx
+        .select({ status: shiftChangeRequests.status })
+        .from(shiftChangeRequests)
+        .where(eq(shiftChangeRequests.id, requestId))
+        .limit(1);
+      if (!locked || locked.status !== "pending_hr") {
+        throw new Error("REQUEST_NOT_PENDING");
+      }
 
-    // Update request
-    const [updated] = await db
-      .update(shiftChangeRequests)
-      .set({
-        status: decision === "approve" ? "approved" : "rejected",
-        hrReviewerId: session.employeeId!,
-        hrApprovedAt: decision === "approve" ? new Date() : null,
-        hrNotes: notes || null,
-        rejectionReason: decision === "reject" ? rejectionReason || null : null,
-        processedAt: new Date(),
-      })
-      .where(eq(shiftChangeRequests.id, requestId))
-      .returning();
+      if (decision === "approve") {
+        // End current schedule assignment (effectiveTo is a date string column)
+        await tx
+          .update(employeeSchedules)
+          .set({ effectiveTo: request.effectiveDate })
+          .where(
+            and(
+              eq(employeeSchedules.employeeId, request.employeeId),
+              sql`${employeeSchedules.effectiveTo} IS NULL`,
+            ),
+          );
+
+        // Create new schedule assignment
+        await tx.insert(employeeSchedules).values({
+          employeeId: request.employeeId,
+          scheduleId: request.requestedScheduleId,
+          effectiveFrom: request.effectiveDate,
+          effectiveTo: null,
+        });
+      }
+
+      // Update request in the same transaction as the schedule mutation.
+      const [row] = await tx
+        .update(shiftChangeRequests)
+        .set({
+          status: decision === "approve" ? "approved" : "rejected",
+          hrReviewerId: session.employeeId!,
+          hrApprovedAt: decision === "approve" ? new Date() : null,
+          hrNotes: notes || null,
+          rejectionReason:
+            decision === "reject" ? rejectionReason || null : null,
+          processedAt: new Date(),
+        })
+        .where(eq(shiftChangeRequests.id, requestId))
+        .returning();
+
+      if (!row) {
+        throw new Error("Failed to update shift change request");
+      }
+      return row;
+    });
 
     await auditLog({
       userId: session.id,
@@ -327,9 +354,12 @@ export async function processShiftChange(
     });
 
     revalidatePath("/portal/shift-change");
-    return { data: updated! };
+    return { data: updated };
   } catch (error) {
     console.error("[processShiftChange]", error);
+    if (error instanceof Error && error.message === "REQUEST_NOT_PENDING") {
+      return { error: "Request is not pending HR review" };
+    }
     return { error: "Failed to process shift change request" };
   }
 }

@@ -7,6 +7,7 @@
 
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { RatingBadge } from "@/components/performance/rating-badge";
@@ -15,6 +16,11 @@ import {
   getStepIncrementsByEmployee,
   getApprovedIpcrfWithPeriodDates,
 } from "../../queries";
+import {
+  approveStepIncrement,
+  implementStepIncrement,
+  cancelStepIncrement,
+} from "../../actions";
 import {
   checkStepEligibility,
   toRatingRecord,
@@ -33,9 +39,38 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: "Step Increment — Employee" };
 }
 
+// ─── Step-increment form actions (bound to StepIncrementTable) ───────────────
+// Each delegates to the guarded server action in ../../actions, which enforces
+// the required permission (approve / process / edit) and the state machine.
+
+async function approveStepIncrementAction(formData: FormData): Promise<void> {
+  "use server";
+  await approveStepIncrement({
+    stepIncrementId: String(formData.get("stepIncrementId") ?? ""),
+  });
+}
+
+async function implementStepIncrementAction(formData: FormData): Promise<void> {
+  "use server";
+  await implementStepIncrement({
+    stepIncrementId: String(formData.get("stepIncrementId") ?? ""),
+  });
+}
+
+async function cancelStepIncrementAction(formData: FormData): Promise<void> {
+  "use server";
+  await cancelStepIncrement({
+    stepIncrementId: String(formData.get("stepIncrementId") ?? ""),
+    reason: String(formData.get("reason") ?? "Cancelled by HR"),
+  });
+}
+
 export default async function EmployeeStepIncrementPage({ params }: Props) {
   const { employeeId } = await params;
-  await requirePermission("performance", "view");
+  const user = await requirePermission("performance", "view");
+  const canApprove = hasPermission(user.role, "performance", "approve");
+  const canProcess = hasPermission(user.role, "performance", "process");
+  const canCancel = hasPermission(user.role, "performance", "edit");
 
   const supabase = supabaseAdmin;
 
@@ -74,7 +109,12 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
   );
   const lastIncrementDate = lastIncrement?.effectivityDate ?? null;
 
-  const eligibility = checkStepEligibility(ratingRecords, lastIncrementDate);
+  // PRD §10.5: pass current step so Step-8 employees are flagged ineligible.
+  const eligibility = checkStepEligibility(
+    ratingRecords,
+    lastIncrementDate,
+    Number(emp.step),
+  );
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
@@ -120,7 +160,7 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
                 <Badge variant="success" className="mb-3">
                   {eligibility.triggerRule === "two_consecutive_outstanding"
                     ? "2 Consecutive Outstanding"
-                    : "3 Consecutive VS or Better"}
+                    : "3 Consecutive Satisfactory or Better"}
                 </Badge>
                 <p className="text-xs text-muted-foreground">
                   Based on {eligibility.consecutiveCount} consecutive qualifying
@@ -192,7 +232,7 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
                   <tbody className="divide-y">
                     {ipcrf.map((r) => {
                       const numerical = parseFloat(r.numericalRating);
-                      const qualifies = numerical >= 3.5; // VS or better
+                      const qualifies = numerical >= 2.5; // Satisfactory+ (§10.5)
                       const isInQualifyingPeriods =
                         eligibility.qualifyingPeriods.some(
                           (qp) => qp.periodLabel === r.periodLabel,
@@ -244,6 +284,13 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
             <StepIncrementTable
               increments={incrementHistory}
               showEmployee={false}
+              approveAction={
+                canApprove ? approveStepIncrementAction : undefined
+              }
+              implementAction={
+                canProcess ? implementStepIncrementAction : undefined
+              }
+              cancelAction={canCancel ? cancelStepIncrementAction : undefined}
             />
           </section>
         </div>

@@ -21,6 +21,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import {
   dtrCorrectionRequests,
+  fmWorkSuspensions,
+  holidays,
   type DtrCorrectionRequest,
 } from "@/lib/db/schema";
 import {
@@ -38,6 +40,12 @@ import {
   toComputeSchedule,
   toTimeString,
 } from "@/lib/utils/attendance/schedule-mapping";
+import {
+  resolveDayType,
+  isRestDay,
+  resolveSuspension,
+} from "@/lib/utils/attendance/day-context";
+import { normalizeApplicableDays } from "@/lib/utils/attendance/schedule-resolution";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -338,14 +346,56 @@ export async function processDtrCorrection(
         const timeOut =
           toTimeString(request.requestedTimeOut) ?? existing?.timeOut ?? null;
 
+        // Resolve the real day type (holiday × rest-day × suspension) the same
+        // way the ingest pipeline does, so an approved correction on a rest
+        // day / regular holiday / suspended day is NOT recomputed as a
+        // deducting ordinary day (TOR 1.5.4 / 1.5.9).
+        const applicableDays = normalizeApplicableDays(
+          assignment?.schedule.applicableDays ?? null,
+        );
+        const [holiday] = await tx
+          .select({ type: holidays.type })
+          .from(holidays)
+          .where(eq(holidays.holidayDate, request.attendanceDate))
+          .limit(1);
+        const suspensionRows = await tx
+          .select({
+            applicableDate: fmWorkSuspensions.applicableDate,
+            applicableHours: fmWorkSuspensions.applicableHours,
+            isActive: fmWorkSuspensions.isActive,
+          })
+          .from(fmWorkSuspensions)
+          .where(
+            and(
+              eq(fmWorkSuspensions.applicableDate, request.attendanceDate),
+              eq(fmWorkSuspensions.isActive, true),
+              isNull(fmWorkSuspensions.deletedAt),
+            ),
+          );
+        const dayType = resolveDayType({
+          date: request.attendanceDate,
+          holidayType: holiday?.type ?? null,
+          isRestDay: isRestDay(request.attendanceDate, applicableDays),
+        });
+        const suspension = resolveSuspension(
+          suspensionRows,
+          request.attendanceDate,
+        );
+        const excused =
+          dayType !== "ordinary" ||
+          (suspension.isSuspended && suspension.halfDay === false);
+
         const computed = computeDailyAttendance({
           date: request.attendanceDate,
           timeIn,
           timeOut,
           schedule: toComputeSchedule(assignment?.schedule ?? null),
           approvedOvertimeMinutes: existing?.overtimeMinutes ?? 0,
-          dayType: "ordinary",
+          dayType,
         });
+        const lateMinutes = excused ? 0 : computed.lateMinutes;
+        const undertimeMinutes =
+          excused || suspension.isSuspended ? 0 : computed.undertimeMinutes;
 
         const values = {
           employeeId: request.employeeId,
@@ -356,9 +406,9 @@ export async function processDtrCorrection(
           sourceReference: request.id,
           corrected: true,
           correctionReason: request.reason,
-          isLate: computed.lateMinutes > 0,
-          lateMinutes: computed.lateMinutes,
-          undertimeMinutes: computed.undertimeMinutes,
+          isLate: lateMinutes > 0,
+          lateMinutes,
+          undertimeMinutes,
           overtimeMinutes: computed.overtimeMinutes,
         };
 

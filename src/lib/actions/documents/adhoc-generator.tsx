@@ -42,6 +42,12 @@ interface GenerateAdhocCertificateParams {
   purpose?: string;
   /** Employee ID of the requester (for audit). */
   requestedBy?: string;
+  /**
+   * Serial number already bound to a document request (PIM-016). When provided,
+   * it is reused instead of drawing a fresh one so a retry after a failed upload
+   * does not burn a serial and gap the sequence. Omit to draw a new serial.
+   */
+  serialNumber?: string;
 }
 
 interface GenerateAdhocCertificateResult {
@@ -143,8 +149,11 @@ export async function generateAdhocCertificate(
       (block) => ({ title: block.title }),
     );
 
-    // 9. Generate serial number (atomic) — only after the placeholder gate.
-    const serialNumber = await generateSerialNumber(DOCUMENT_TYPES.AD_HOC);
+    // 9. Serial number — only after the placeholder gate. Reuse the
+    //    request-bound serial (retry-safe, PIM-016) or draw a new one atomically.
+    const serialNumber =
+      params.serialNumber ??
+      (await generateSerialNumber(DOCUMENT_TYPES.AD_HOC));
 
     // 10. Compose letterhead lines + issuance line.
     const contactLine =

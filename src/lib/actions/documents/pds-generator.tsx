@@ -48,6 +48,12 @@ import { buildPdsFormProps } from "@/lib/utils/pimm/pds-mapper";
 interface GeneratePdsParams {
   employeeId: string;
   requestedBy?: string; // Employee ID of requester (for audit)
+  /**
+   * Serial number already bound to a document request (PIM-016). When provided,
+   * it is reused instead of drawing a fresh one so a retry after a failed upload
+   * does not burn a serial and gap the sequence. Omit to draw a new serial.
+   */
+  serialNumber?: string;
 }
 
 interface GeneratePdsResult {
@@ -89,8 +95,10 @@ export async function generatePds(
       return { success: false, error: "Organization profile not configured" };
     }
 
-    // 3. Generate serial number (atomic)
-    const serialNumber = await generateSerialNumber(DOCUMENT_TYPES.PDS);
+    // 3. Serial number: reuse the request-bound serial (retry-safe, PIM-016) or
+    //    draw a new one atomically.
+    const serialNumber =
+      params.serialNumber ?? (await generateSerialNumber(DOCUMENT_TYPES.PDS));
 
     // 4. Fetch 201-file child rows (soft-deleted rows excluded) + PCSO history
     const [

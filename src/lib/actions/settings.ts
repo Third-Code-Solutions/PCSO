@@ -12,6 +12,7 @@ import {
 } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth/guards";
 import { hasPermission } from "@/lib/auth/permissions";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 /**
  * Update organization profile (P0-001)
@@ -79,13 +80,32 @@ export async function updateUserRole(userId: string, role: SystemRole) {
     throw new Error("Unauthorized: Super admin access required");
   }
 
-  await db
+  const [updated] = await db
     .update(systemUsers)
     .set({
       role,
       updatedAt: new Date(),
     })
-    .where(eq(systemUsers.id, userId));
+    .where(eq(systemUsers.id, userId))
+    .returning({
+      authUid: systemUsers.authUid,
+      officeId: systemUsers.officeId,
+      employeeId: systemUsers.employeeId,
+    });
+
+  // Propagate the role into app_metadata (the service-role-only claim store
+  // read by middleware + getCurrentUser). Without this the DB role and the
+  // authorization claim drift — a demotion would otherwise leave the target's
+  // elevated access intact until the next manual metadata sync.
+  if (updated?.authUid) {
+    await supabaseAdmin.auth.admin.updateUserById(updated.authUid, {
+      app_metadata: {
+        role,
+        office_id: updated.officeId ?? null,
+        employee_id: updated.employeeId ?? null,
+      },
+    });
+  }
 
   revalidatePath("/settings/users");
 

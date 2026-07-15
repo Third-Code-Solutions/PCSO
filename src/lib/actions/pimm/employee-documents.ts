@@ -1,13 +1,15 @@
 "use server";
 
 /**
- * PIMM — Employee 201 File Documents server actions (PIM-004, PIM-005).
+ * PIMM — Employee 201 File Documents server actions (PIM-004).
  *
  * PIM-004: Employee and authorized HR staff may upload scanned documents to
  *          staging. HRD validates before committing. Rejected uploads do not
- *          partially commit.
- * PIM-005: Document request lifecycle tracking: Received → In Process → Ready
- *          → Released. All requests link to document_requests table.
+ *          partially commit. The HR validation screen lists staged documents
+ *          with their real uploader/approver names (PIM-005 accountability).
+ *
+ * The PIM-005 document-request lifecycle (Received → In Process → Ready →
+ * Released) lives in src/lib/actions/documents/document-request-actions.ts.
  *
  * Authorization:
  *   - Upload:  requirePermission('employees', 'edit') OR own employee
@@ -17,21 +19,14 @@
  * Notifications: N-018, N-019, N-020 handled by document request module.
  */
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
-import {
-  employeeDocuments,
-  documentRequests,
-  serialSequences,
-  type EmployeeDocument,
-  type DocumentRequest,
-} from "@/lib/db/schema";
+import { employeeDocuments, type EmployeeDocument } from "@/lib/db/schema";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
-import { createNotification, notifyEmployee } from "@/lib/notifications";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -73,45 +68,6 @@ const rejectDocumentSchema = z.object({
 const listDocumentsSchema = z.object({
   employeeId: z.string().uuid(),
   status: z.enum(["staging", "approved", "rejected"]).optional(),
-});
-
-const createDocumentRequestSchema = z.object({
-  employeeId: z.string().uuid(),
-  documentType: z.enum([
-    "COE",
-    "COE_REMUNERATION",
-    "SERVICE_RECORD",
-    "PDS",
-    "NOSI",
-    "NOSA",
-    "CLEARANCE",
-    "CERTIFICATE_TRAINING",
-    "AD_HOC",
-  ]),
-  purpose: z.string().max(500).optional(),
-  remarks: z.string().max(500).optional(),
-});
-
-const updateDocumentRequestStatusSchema = z.object({
-  requestId: z.string().uuid(),
-  newStatus: z.enum([
-    "received",
-    "in_process",
-    "on_hold",
-    "ready",
-    "released",
-    "disapproved",
-  ]),
-  assignedToId: z.string().uuid().optional(),
-  onHoldReason: z.string().max(500).optional(),
-  disapprovalReason: z.string().max(500).optional(),
-  generatedDocumentUrl: z.string().url().optional(),
-  serialNumber: z.string().max(50).optional(),
-});
-
-const getNextSerialNumberSchema = z.object({
-  documentType: z.string().min(1).max(40),
-  year: z.number().int().min(2000).max(2100).optional(),
 });
 
 // ─── uploadEmployeeDocument (PIM-004) ───────────────────────────────────────
@@ -290,24 +246,25 @@ export async function listEmployeeDocuments(
       conditions.push(eq(employeeDocuments.status, parsed.status));
     }
 
-    const where = and(...conditions);
+    // Join employees so the HR validation screen shows the real uploader and
+    // approver names (PIM-005 accountability), not placeholder labels.
+    const docs = await db.query.employeeDocuments.findMany({
+      where: and(...conditions),
+      columns: {
+        id: true,
+        documentTypeCode: true,
+        fileName: true,
+        fileUrl: true,
+        status: true,
+        uploadedAt: true,
+        rejectionReason: true,
+      },
+      with: {
+        uploadedBy: { columns: { firstName: true, lastName: true } },
+        approvedBy: { columns: { firstName: true, lastName: true } },
+      },
+    });
 
-    const docs = await db
-      .select({
-        id: employeeDocuments.id,
-        documentTypeCode: employeeDocuments.documentTypeCode,
-        fileName: employeeDocuments.fileName,
-        fileUrl: employeeDocuments.fileUrl,
-        status: employeeDocuments.status,
-        uploadedAt: employeeDocuments.uploadedAt,
-        uploadedById: employeeDocuments.uploadedById,
-        approvedById: employeeDocuments.approvedById,
-        rejectionReason: employeeDocuments.rejectionReason,
-      })
-      .from(employeeDocuments)
-      .where(where);
-
-    // Transform to include uploader/approver names (simplified - in real app join employees)
     const results: DocumentRow[] = docs.map((d) => ({
       id: d.id,
       documentTypeCode: d.documentTypeCode,
@@ -315,8 +272,12 @@ export async function listEmployeeDocuments(
       fileUrl: d.fileUrl,
       status: d.status,
       uploadedAt: d.uploadedAt,
-      uploadedByName: "User", // Simplified - should join employees table
-      approvedByName: d.approvedById ? "Admin" : null,
+      uploadedByName: d.uploadedBy
+        ? `${d.uploadedBy.firstName} ${d.uploadedBy.lastName}`.trim()
+        : "Unknown",
+      approvedByName: d.approvedBy
+        ? `${d.approvedBy.firstName} ${d.approvedBy.lastName}`.trim()
+        : null,
       rejectionReason: d.rejectionReason,
     }));
 
@@ -325,196 +286,3 @@ export async function listEmployeeDocuments(
     return err(toErrMsg(e));
   }
 }
-
-// ─── createDocumentRequest (PIM-005) ────────────────────────────────────────
-
-export interface CreateDocumentRequestResult {
-  id: string;
-  status: string;
-}
-
-export async function createDocumentRequest(
-  input: unknown,
-): Promise<Result<CreateDocumentRequestResult>> {
-  try {
-    const user = await requireAuth();
-    const parsed = createDocumentRequestSchema.parse(input);
-
-    // Employee can only request for themselves unless they have permission
-    const canRequest = await requirePermission("employees", "edit").catch(
-      () => null,
-    );
-    const isOwnEmployee = user.employeeId === parsed.employeeId;
-
-    if (!canRequest && !isOwnEmployee) {
-      return err(
-        "You do not have permission to request documents for this employee.",
-      );
-    }
-
-    const [request] = await db
-      .insert(documentRequests)
-      .values({
-        employeeId: parsed.employeeId,
-        documentType: parsed.documentType,
-        purpose: parsed.purpose ?? null,
-        remarks: parsed.remarks ?? null,
-        status: "received",
-      })
-      .returning();
-
-    if (!request) {
-      return err("Failed to create document request.");
-    }
-
-    await auditLog({
-      userId: user.id,
-      action: "document_request.create",
-      table: "document_requests",
-      recordId: request.id,
-      newValues: {
-        employeeId: parsed.employeeId,
-        documentType: parsed.documentType,
-      },
-    });
-
-    // Notify HR staff of new request (N-018)
-    await createNotification({
-      userId: user.id,
-      type: "generic",
-      title: "Document request received",
-      body: `Your request for ${parsed.documentType} has been received.`,
-      entityType: "document_request",
-      entityId: request.id,
-    });
-
-    revalidatePath(`/employees/${parsed.employeeId}/documents/requests`);
-
-    return ok({ id: request.id, status: request.status });
-  } catch (e) {
-    return err(toErrMsg(e));
-  }
-}
-
-// ─── updateDocumentRequestStatus (PIM-005) ──────────────────────────────────
-
-export async function updateDocumentRequestStatus(
-  input: unknown,
-): Promise<Result<DocumentRequest>> {
-  try {
-    const user = await requirePermission("employees", "process");
-    const parsed = updateDocumentRequestStatusSchema.parse(input);
-
-    const updateData: Record<string, unknown> = {
-      status: parsed.newStatus,
-    };
-
-    // Set timestamps based on status transition
-    switch (parsed.newStatus) {
-      case "in_process":
-        updateData.processedAt = new Date();
-        if (parsed.assignedToId) updateData.assignedToId = parsed.assignedToId;
-        break;
-      case "on_hold":
-        updateData.onHoldReason = parsed.onHoldReason ?? null;
-        break;
-      case "ready":
-        updateData.readyAt = new Date();
-        if (parsed.generatedDocumentUrl)
-          updateData.generatedDocumentUrl = parsed.generatedDocumentUrl;
-        if (parsed.serialNumber) updateData.serialNumber = parsed.serialNumber;
-        break;
-      case "released":
-        updateData.releasedAt = new Date();
-        break;
-      case "disapproved":
-        updateData.disapprovedAt = new Date();
-        updateData.disapprovalReason = parsed.disapprovalReason ?? null;
-        break;
-    }
-
-    const [updated] = await db
-      .update(documentRequests)
-      .set(updateData as Partial<DocumentRequest>)
-      .where(eq(documentRequests.id, parsed.requestId))
-      .returning();
-
-    if (!updated) {
-      return err("Document request not found.");
-    }
-
-    await auditLog({
-      userId: user.id,
-      action: "document_request.update_status",
-      table: "document_requests",
-      recordId: updated.id,
-      newValues: { status: parsed.newStatus },
-    });
-
-    // Notify employee of status change
-    if (updated.employeeId) {
-      let notifBody = `Document request status updated to: ${parsed.newStatus}`;
-      if (parsed.newStatus === "ready") {
-        notifBody = "Your requested document is ready for download.";
-      }
-
-      await notifyEmployee(updated.employeeId, {
-        type: "generic",
-        title: "Document request update",
-        body: notifBody,
-        entityType: "document_request",
-        entityId: updated.id,
-      });
-    }
-
-    revalidatePath(`/employees/${updated.employeeId}/documents/requests`);
-
-    return ok(updated);
-  } catch (e) {
-    return err(toErrMsg(e));
-  }
-}
-
-// ─── getNextSerialNumber (PIM-016) ──────────────────────────────────────────
-
-export interface SerialNumberResult {
-  serialNumber: string;
-  sequence: number;
-}
-
-export async function getNextSerialNumber(
-  input: unknown,
-): Promise<Result<SerialNumberResult>> {
-  try {
-    await requirePermission("employees", "process");
-    const parsed = getNextSerialNumberSchema.parse(input);
-
-    const year = parsed.year ?? new Date().getFullYear();
-
-    // Atomic increment using raw SQL (per schema comment in serial-sequences.ts)
-    const [result] = await db.execute<{ last_sequence: number }>(sql`
-      INSERT INTO serial_sequences (document_type, year, last_sequence)
-      VALUES (${parsed.documentType}, ${year}, 1)
-      ON CONFLICT (document_type, year)
-      DO UPDATE SET
-        last_sequence = serial_sequences.last_sequence + 1,
-        updated_at = now()
-      RETURNING last_sequence
-    `);
-
-    if (!result) {
-      return err("Failed to generate serial number.");
-    }
-
-    const sequence = result.last_sequence;
-    const paddedSequence = String(sequence).padStart(6, "0");
-    const serialNumber = `${parsed.documentType}-${year}-${paddedSequence}`;
-
-    return ok({ serialNumber, sequence });
-  } catch (e) {
-    return err(toErrMsg(e));
-  }
-}
-
-// Unused import guard
-void sql;

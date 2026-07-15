@@ -62,6 +62,7 @@ import {
   type VacancyInput,
 } from "@/lib/utils/rpm/csc-form-9-data";
 import { CscForm9 } from "@/components/pdf/csc-form-9";
+import { getOrgProfile } from "@/lib/org-profile";
 
 // ---------------------------------------------------------------------------
 // Result envelope
@@ -506,15 +507,46 @@ export async function publishVacancy(
         )[0] ?? null)
       : null;
 
+    // Load the real plantilla position, office, and agency profile so the
+    // published CSC Form 9 carries actual data (RPM-002) instead of the
+    // "Position" / SG 0 / ₱0 / "PCSO" placeholders it used before.
+    const [position] = vacancy.positionId
+      ? await db
+          .select({
+            positionTitle: plantillaPositions.positionTitle,
+            salaryGrade: plantillaPositions.salaryGrade,
+            authorizedSalary: plantillaPositions.authorizedSalary,
+            itemNo: plantillaPositions.itemNo,
+          })
+          .from(plantillaPositions)
+          .where(eq(plantillaPositions.id, vacancy.positionId))
+          .limit(1)
+      : [undefined];
+    const [office] = vacancy.officeId
+      ? await db
+          .select({ name: offices.name, code: offices.code })
+          .from(offices)
+          .where(eq(offices.id, vacancy.officeId))
+          .limit(1)
+      : [undefined];
+    const org = await getOrgProfile();
+
+    const resolvedTitle = position?.positionTitle ?? "Position";
+    const resolvedSalaryGrade = position?.salaryGrade ?? 0;
+    const resolvedMonthlySalary = position?.authorizedSalary
+      ? Number(position.authorizedSalary)
+      : 0;
+    const resolvedItemNumber = vacancy.itemNumber ?? position?.itemNo ?? "";
+
     // Build PDF data — qualification standards override beats stored
     const qsStored = vacancy.qualificationStandards as QualificationStandards;
     const vacancyInput: VacancyInput = {
       id: vacancy.id,
-      itemNumber: vacancy.itemNumber,
-      positionTitle: "Position", // hydrated by UI layer; keep conservative
-      salaryGrade: 0,
-      monthlySalary: 0,
-      placeOfAssignment: null,
+      itemNumber: resolvedItemNumber,
+      positionTitle: resolvedTitle,
+      salaryGrade: resolvedSalaryGrade,
+      monthlySalary: resolvedMonthlySalary,
+      placeOfAssignment: office?.name ?? null,
       applicationDeadline: parsed.applicationDeadline,
       publishedAt: new Date(),
       cscForm9Number: vacancy.cscForm9Number,
@@ -531,15 +563,19 @@ export async function publishVacancy(
       justification: mrf?.justification ?? null,
     };
     const positionInput: PositionInput = {
-      title: "Position",
-      itemNumber: vacancy.itemNumber,
-      salaryGrade: 0,
+      title: resolvedTitle,
+      itemNumber: resolvedItemNumber,
+      salaryGrade: resolvedSalaryGrade,
     };
     const officeInput: OfficeInput = {
-      name: "PCSO",
-      code: "PCSO",
+      name: office?.name ?? "PCSO",
+      code: office?.code ?? "PCSO",
     };
-    const orgProfile: OrgProfileInput | null = null;
+    const orgProfile: OrgProfileInput | null = {
+      agencyName: org.agencyName,
+      agencyAddress: org.agencyAddress,
+      agencyLogoUrl: org.logoUrl ?? null,
+    };
 
     const pdfData = buildCscForm9Data({
       vacancy: vacancyInput,

@@ -12,7 +12,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 export { diffValues } from "./diff";
 
 export interface AuditLogParams {
-  userId: string;
+  /** Auth UID of the actor. Omit/null for unauthenticated or system events. */
+  userId?: string | null;
   action: string;
   table: string;
   recordId?: string;
@@ -43,7 +44,7 @@ export interface AuditLogParams {
 export async function auditLog(params: AuditLogParams): Promise<void> {
   try {
     await supabaseAdmin.from("audit_logs").insert({
-      user_id: params.userId,
+      user_id: params.userId ?? null,
       action: params.action,
       table_name: params.table,
       record_id: params.recordId ?? null,

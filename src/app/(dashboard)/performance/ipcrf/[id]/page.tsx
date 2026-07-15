@@ -8,10 +8,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { RatingBadge } from "@/components/performance/rating-badge";
+import { PerformanceDocUpload } from "@/components/performance/performance-doc-upload";
 import { getPerformanceRatingById } from "../../queries";
+import { uploadPerformanceDocumentFile } from "../../actions";
 import { IPCRF_PHASES } from "@/lib/constants/performance";
 import type { AdjectivalRating } from "@/lib/constants/performance";
 import { CheckCircleIcon, CircleIcon, ChevronRightIcon } from "lucide-react";
@@ -42,6 +45,21 @@ export default async function IpcrfDetailPage({ params }: Props) {
     user.employeeId !== rating.employeeId
   ) {
     notFound();
+  }
+
+  const canEdit = hasPermission(user.role, "performance", "edit");
+
+  // Inline server action: uploads a scanned IPCRF/OPCRF via the PMM-005 action.
+  async function uploadScannedDocAction(payload: {
+    fileName: string;
+    fileBase64: string;
+    mimeType: string;
+  }): Promise<void> {
+    "use server";
+    await uploadPerformanceDocumentFile({
+      performanceRatingId: id,
+      ...payload,
+    });
   }
 
   const phases: Array<{
@@ -215,6 +233,16 @@ export default async function IpcrfDetailPage({ params }: Props) {
             Rater&apos;s Remarks
           </h3>
           <p className="text-sm text-foreground">{rating.raterRemarks}</p>
+        </section>
+      )}
+
+      {/* Scanned document upload (PMM-005) */}
+      {canEdit && (
+        <section className="mt-6 rounded-xl border bg-card p-4 shadow-sm">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Scanned document
+          </h3>
+          <PerformanceDocUpload uploadAction={uploadScannedDocAction} />
         </section>
       )}
     </main>

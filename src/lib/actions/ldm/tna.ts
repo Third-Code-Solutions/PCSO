@@ -26,7 +26,10 @@ import {
 } from "@/lib/db/schema/learning";
 import { fmCompetencyBaselines } from "@/lib/db/schema/fm-extensions";
 import { employees } from "@/lib/db/schema/employees";
-import { tnaGapSchema } from "@/lib/validations/learning";
+import {
+  competencyLevelSchema,
+  tnaGapSchema,
+} from "@/lib/validations/learning";
 import { requirePermission } from "@/lib/auth/guards";
 import {
   computeGapsForEmployee,
@@ -55,6 +58,30 @@ function getErrorMessage(e: unknown): string {
 
 function rethrowIfRedirectError(error: unknown): void {
   if (isRedirectError(error)) throw error;
+}
+
+// ─── Numeric level ↔ competency enum mapping ─────────────────────────────────
+//
+// The analyzer works in a numeric 1–5 band (baseline required level, assessment
+// score), but `tna_gaps` stores `required_level`/`current_level` as the
+// competency_level enum and `gap_levels` as the ordinal difference (0..4). Map
+// numeric levels onto the enum ordinal so `tnaGapSchema.parse` and the insert
+// both succeed. Ordering is sourced from `competencyLevelSchema` (single source
+// of truth) — novice(0) → expert(4).
+const COMPETENCY_LEVELS = competencyLevelSchema.options;
+type CompetencyLevelValue = (typeof COMPETENCY_LEVELS)[number];
+
+/** Map a numeric competency level/score (0–5) to a 0-based enum ordinal (0–4). */
+function toLevelOrdinal(value: number): number {
+  const rounded = Math.round(value);
+  const clamped = Math.max(1, Math.min(COMPETENCY_LEVELS.length, rounded));
+  return clamped - 1;
+}
+
+/** Resolve a clamped 0-based ordinal to its competency enum value. */
+function ordinalToLevel(ordinal: number): CompetencyLevelValue {
+  const idx = Math.max(0, Math.min(COMPETENCY_LEVELS.length - 1, ordinal));
+  return COMPETENCY_LEVELS[idx] ?? "novice";
 }
 
 // ─── Internal: generate gaps for a single employee context ───────────────────
@@ -95,19 +122,21 @@ async function generateForEmployeeInternal(
 
   const suggestions = suggestProgramsForGaps(gaps, programs);
 
-  // Validate each gap row through the schema-level validator before insert.
-  const values = suggestions.map((s) =>
-    tnaGapSchema.parse({
+  // Reconcile analyzer output (numeric levels + `gap`, array of program ids)
+  // with the `tna_gaps` schema (enum levels + ordinal `gapLevels`, single
+  // `suggestedProgramId`), then validate each row before insert.
+  const values = suggestions.map((s) => {
+    const requiredOrdinal = toLevelOrdinal(s.gap.requiredLevel);
+    const currentOrdinal = toLevelOrdinal(s.gap.currentLevel);
+    return tnaGapSchema.parse({
       employeeId: s.gap.employeeId,
-      domain: s.gap.domain,
       competencyCode: s.gap.competencyCode,
-      requiredLevel: s.gap.requiredLevel,
-      currentLevel: s.gap.currentLevel,
-      gap: s.gap.gap,
-      cycleYear: s.gap.cycleYear,
-      suggestedProgramIds: s.suggestedProgramIds,
-    }),
-  );
+      requiredLevel: ordinalToLevel(requiredOrdinal),
+      currentLevel: ordinalToLevel(currentOrdinal),
+      gapLevels: Math.max(0, requiredOrdinal - currentOrdinal),
+      suggestedProgramId: s.suggestedProgramIds[0] ?? null,
+    });
+  });
 
   await db.insert(tnaGaps).values(values);
   return { employeeId, insertedGaps: values.length };

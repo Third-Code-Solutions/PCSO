@@ -469,6 +469,22 @@ export async function submitIpcrfReview(input: unknown): Promise<void> {
   const user = await requirePermission("performance", "edit");
   const supabase = await createServerClient();
 
+  // State guard (parity with saveIpcrfReview): never let a submit overwrite an
+  // already-approved or disapproved rating. Only editable-phase records may be
+  // (re-)submitted for approval.
+  const { data: current, error: fetchError } = await supabase
+    .from("performance_ratings")
+    .select("id, status")
+    .eq("id", parsed.performanceRatingId)
+    .single();
+
+  if (fetchError || !current) throw new Error("Performance rating not found.");
+  if (!["draft", "submitted", "reviewed"].includes(String(current.status))) {
+    throw new Error(
+      "This rating can no longer be submitted — it has already been approved or disapproved.",
+    );
+  }
+
   const kraInputs: KraRatingInput[] = parsed.kras.map((k) => ({
     weight: k.weight,
     rating: k.rating,
@@ -512,6 +528,70 @@ export async function submitIpcrfReview(input: unknown): Promise<void> {
   revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}/review`);
 }
 
+/**
+ * Enforces the CSC forced-ranking distribution cap (PRD §10.4.2) at the moment
+ * an IPCRF rating is approved. Aggregates the office's already-approved IPCRF
+ * population for the period, adds the rating being approved, and blocks when
+ * Outstanding > 10% or Very Satisfactory > 25% (round-up-when-<1 rule lives in
+ * `validateForcedRanking`).
+ *
+ * Only individual (IPCRF) Outstanding / Very Satisfactory approvals can breach a
+ * cap: OPCRF/DPCR/BPCR rollups are not a rated population, and approving a
+ * Satisfactory-or-lower rating only grows the denominator.
+ */
+async function enforceForcedRankingOnApproval(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  params: {
+    ratingType: string;
+    adjectival: string;
+    employeeId: string;
+    periodId: string;
+  },
+): Promise<void> {
+  if (params.ratingType !== "ipcrf") return;
+  if (!["outstanding", "very_satisfactory"].includes(params.adjectival)) return;
+
+  const { data: emp } = await supabase
+    .from("employees")
+    .select("office_id")
+    .eq("id", params.employeeId)
+    .single();
+  const officeId = (emp?.office_id as string | null | undefined) ?? null;
+
+  const { data: approvedRows, error } = await supabase
+    .from("performance_ratings")
+    .select("adjectival_rating, employees ( office_id )")
+    .eq("period_id", params.periodId)
+    .eq("rating_type", "ipcrf")
+    .eq("status", "approved");
+
+  if (error) {
+    throw new Error(`Failed to evaluate forced ranking: ${error.message}`);
+  }
+
+  const population = (approvedRows ?? [])
+    .filter(
+      (r) =>
+        ((r.employees as { office_id?: string | null } | null)?.office_id ??
+          null) === officeId,
+    )
+    .map((r) => String(r.adjectival_rating));
+  // Include the rating currently being approved.
+  population.push(params.adjectival);
+
+  const { validateForcedRanking, formatForcedRankingError } =
+    await import("@/lib/utils/performance/forced-ranking");
+  const result = validateForcedRanking(
+    population as Parameters<typeof validateForcedRanking>[0],
+  );
+  if (!result.valid) {
+    throw new Error(
+      formatForcedRankingError(result) ??
+        "Forced ranking limits exceeded for this office and rating period.",
+    );
+  }
+}
+
 export async function approveRating(input: unknown): Promise<void> {
   const parsed = ApproveRatingSchema.parse(input);
   const user = await requirePermission("performance", "approve");
@@ -519,7 +599,9 @@ export async function approveRating(input: unknown): Promise<void> {
 
   const { data: rating, error: fetchError } = await supabase
     .from("performance_ratings")
-    .select("id, status")
+    .select(
+      "id, status, rating_type, employee_id, period_id, adjectival_rating",
+    )
     .eq("id", parsed.performanceRatingId)
     .single();
 
@@ -527,6 +609,14 @@ export async function approveRating(input: unknown): Promise<void> {
   if (String(rating.status) !== "submitted") {
     throw new Error("Only submitted ratings can be approved.");
   }
+
+  // PRD §10.4.2 — block approvals that breach the forced-ranking distribution.
+  await enforceForcedRankingOnApproval(supabase, {
+    ratingType: String(rating.rating_type),
+    adjectival: String(rating.adjectival_rating),
+    employeeId: String(rating.employee_id),
+    periodId: String(rating.period_id),
+  });
 
   const oldValues = { status: rating.status };
 
@@ -1346,137 +1436,13 @@ export async function startMyIpcrf(
   });
 }
 
-// ─── DPCR Actions (PMM-003) ───────────────────────────────────────────────────
-
-/**
- * DPCR (Division Performance Commitment Review) — division-level ratings.
- * Uses same computation logic as OPCRF but with ratingType='dpcr'.
- */
-export async function saveDpcr(input: unknown): Promise<void> {
-  const { SaveDpcrSchema } = await import("@/lib/validations/performance");
-  const parsed = SaveDpcrSchema.parse(input);
-  const user = await requirePermission("performance", "edit");
-  const supabase = await createServerClient();
-
-  const { computeFinalRating } = await import("@/lib/utils/performance/rating");
-
-  const kraInputs: { weight: number; rating: number }[] = parsed.kras.map(
-    (k) => ({
-      weight: k.weight,
-      rating: k.rating,
-    }),
-  );
-
-  const finalRating = computeFinalRating(kraInputs);
-  if (!finalRating) {
-    throw new Error(
-      "Could not compute DPCR final rating from the provided KRA data.",
-    );
-  }
-
-  const { data: rating, error: fetchError } = await supabase
-    .from("performance_ratings")
-    .select("id, status")
-    .eq("id", parsed.performanceRatingId)
-    .single();
-
-  if (fetchError || !rating) throw new Error("DPCR rating record not found.");
-
-  const { error } = await supabase
-    .from("performance_ratings")
-    .update({
-      kras: { items: parsed.kras, raterRemarks: parsed.remarks ?? null },
-      numerical_rating: String(finalRating.numerical),
-      adjectival_rating: finalRating.adjectival,
-      rated_by: user.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", parsed.performanceRatingId);
-
-  if (error) throw new Error(`Failed to save DPCR: ${error.message}`);
-
-  await writeAuditLog(supabase, {
-    userId: user.id,
-    action: "update",
-    tableName: "performance_ratings",
-    recordId: parsed.performanceRatingId,
-    newValues: {
-      type: "dpcr",
-      divisionId: parsed.divisionId,
-      numericalRating: finalRating.numerical,
-      adjectivalRating: finalRating.adjectival,
-    },
-  });
-
-  revalidatePath("/performance/dpcr");
-  revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
-}
-
-// ─── BPCR Actions (PMM-004) ───────────────────────────────────────────────────
-
-/**
- * BPCR (Branch Performance Commitment Review) — branch-level ratings
- * for NCL, STBR, Visayas, Mindanao branches.
- */
-export async function saveBpcr(input: unknown): Promise<void> {
-  const { SaveBpcrSchema } = await import("@/lib/validations/performance");
-  const parsed = SaveBpcrSchema.parse(input);
-  const user = await requirePermission("performance", "edit");
-  const supabase = await createServerClient();
-
-  const { computeFinalRating } = await import("@/lib/utils/performance/rating");
-
-  const kraInputs: { weight: number; rating: number }[] = parsed.kras.map(
-    (k) => ({
-      weight: k.weight,
-      rating: k.rating,
-    }),
-  );
-
-  const finalRating = computeFinalRating(kraInputs);
-  if (!finalRating) {
-    throw new Error(
-      "Could not compute BPCR final rating from the provided KRA data.",
-    );
-  }
-
-  const { data: rating, error: fetchError } = await supabase
-    .from("performance_ratings")
-    .select("id, status")
-    .eq("id", parsed.performanceRatingId)
-    .single();
-
-  if (fetchError || !rating) throw new Error("BPCR rating record not found.");
-
-  const { error } = await supabase
-    .from("performance_ratings")
-    .update({
-      kras: { items: parsed.kras, raterRemarks: parsed.remarks ?? null },
-      numerical_rating: String(finalRating.numerical),
-      adjectival_rating: finalRating.adjectival,
-      rated_by: user.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", parsed.performanceRatingId);
-
-  if (error) throw new Error(`Failed to save BPCR: ${error.message}`);
-
-  await writeAuditLog(supabase, {
-    userId: user.id,
-    action: "update",
-    tableName: "performance_ratings",
-    recordId: parsed.performanceRatingId,
-    newValues: {
-      type: "bpcr",
-      branchId: parsed.branchId,
-      numericalRating: finalRating.numerical,
-      adjectivalRating: finalRating.adjectival,
-    },
-  });
-
-  revalidatePath("/performance/bpcr");
-  revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
-}
+// NOTE: DPCR (PMM-003) and BPCR (PMM-004) are persisted in the dedicated
+// `dpcr_forms` / `bpcr_forms` tables via `createDpcr` / `updateDpcr` /
+// `submitDpcr` (and the BPCR equivalents) in
+// `@/lib/actions/performance-gaps`. The former `saveDpcr` / `saveBpcr` here
+// wrote a parallel copy into `performance_ratings` that nothing read — that
+// split-brain storage path has been removed so there is a single source of
+// truth (the tables the DPCR/BPCR list + detail pages query).
 
 // ─── Document Upload (PMM-005) ────────────────────────────────────────────────
 
@@ -1528,6 +1494,68 @@ export async function uploadPerformanceDocument(input: unknown): Promise<void> {
 
   revalidatePath("/performance");
   revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
+}
+
+/**
+ * Uploads a scanned IPCRF/OPCRF document to Supabase Storage and attaches its
+ * URL to the rating via {@link uploadPerformanceDocument} (PMM-005). The file
+ * body is sent as base64 from the client; only the resulting public URL is
+ * persisted. Guarded by `performance.edit`.
+ */
+export async function uploadPerformanceDocumentFile(input: {
+  performanceRatingId: string;
+  fileName: string;
+  fileBase64: string;
+  mimeType: string;
+}): Promise<void> {
+  const { z } = await import("zod");
+  const Schema = z.object({
+    performanceRatingId: z.string().uuid("Invalid rating ID."),
+    fileName: z.string().min(1).max(200),
+    fileBase64: z.string().min(1),
+    mimeType: z.enum(["application/pdf", "image/jpeg", "image/png"]),
+  });
+  const parsed = Schema.parse(input);
+  await requirePermission("performance", "edit");
+  const supabase = await createServerClient();
+
+  const buffer = Buffer.from(parsed.fileBase64, "base64");
+  const MAX_BYTES = 10 * 1024 * 1024;
+  if (buffer.byteLength === 0) throw new Error("Uploaded file is empty.");
+  if (buffer.byteLength > MAX_BYTES) {
+    throw new Error("File exceeds the 10MB upload limit.");
+  }
+
+  const ext =
+    parsed.mimeType === "application/pdf"
+      ? "pdf"
+      : parsed.mimeType === "image/png"
+        ? "png"
+        : "jpg";
+  const storagePath = `performance-docs/${parsed.performanceRatingId}/${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("documents")
+    .upload(storagePath, buffer, {
+      contentType: parsed.mimeType,
+      upsert: false,
+    });
+  if (uploadError) {
+    throw new Error(
+      `Failed to store performance document: ${uploadError.message}`,
+    );
+  }
+
+  const { data: urlData } = supabase.storage
+    .from("documents")
+    .getPublicUrl(storagePath);
+
+  // Delegate the DB write + audit to the canonical PMM-005 action.
+  await uploadPerformanceDocument({
+    performanceRatingId: parsed.performanceRatingId,
+    documentUrl: urlData.publicUrl,
+    originalFilename: parsed.fileName,
+  });
 }
 
 // ─── Forced Ranking Validation (PMM-006) ─────────────────────────────────────

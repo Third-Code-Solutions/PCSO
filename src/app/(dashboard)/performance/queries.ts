@@ -6,15 +6,14 @@
  */
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { db } from "@/lib/db";
-import { adminCases, attendanceLogs, salnSubmissions } from "@/lib/db/schema";
-import { and, eq, inArray, isNull, gte, lte } from "drizzle-orm";
 import type { AdjectivalRating } from "@/lib/constants/performance";
 import { RATING_BANDS } from "@/lib/constants/performance";
 import {
   checkStepEligibility,
   toRatingRecord,
 } from "@/lib/utils/performance/step-eligibility";
+import { fetchPbbGateFlags } from "@/lib/db/pbb-gate-queries";
+import { batchValidatePbbQualification } from "@/lib/utils/performance/pbb-qualification";
 
 // ─── Shared Row Types ─────────────────────────────────────────────────────────
 
@@ -682,7 +681,12 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<
         ? lastIncrement.effectivity_date
         : null;
 
-    const eligibility = checkStepEligibility(ratings, lastIncrementDate);
+    // PRD §10.5: pass current step so Step-8 employees are excluded.
+    const eligibility = checkStepEligibility(
+      ratings,
+      lastIncrementDate,
+      Number(emp.step),
+    );
 
     if (eligibility.eligible) {
       const officeData = emp.offices as { name?: string } | null;
@@ -1249,166 +1253,9 @@ export async function getRatingTrend(): Promise<CycleTrendRow[]> {
     .sort((a, b) => a.periodLabel.localeCompare(b.periodLabel));
 }
 
-// ─── DPCR (Division Performance Commitment Review) ────────────────────────────
-
-export interface DpcrRow {
-  id: string;
-  divisionId: string | null;
-  divisionName: string | null;
-  periodId: string;
-  periodLabel: string;
-  numericalRating: string;
-  adjectivalRating: AdjectivalRating;
-  status: string;
-  scannedDocUrl: string | null;
-  createdAt: string;
-}
-
-export async function getDpcrRatings(periodId?: string): Promise<DpcrRow[]> {
-  const supabase = supabaseAdmin;
-
-  let query = supabase
-    .from("performance_ratings")
-    .select(
-      `
-      id,
-      employee_id,
-      period_id,
-      rating_type,
-      numerical_rating,
-      adjectival_rating,
-      status,
-      scanned_doc_url,
-      created_at,
-      performance_periods ( year, semester ),
-      employees ( office_id, offices ( name ) )
-    `,
-    )
-    .eq("rating_type", "dpcr")
-    .order("created_at", { ascending: false });
-
-  if (periodId) {
-    query = query.eq("period_id", periodId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) throw new Error(`Failed to fetch DPCR ratings: ${error.message}`);
-
-  return (data ?? []).map((row) => {
-    const period = row.performance_periods as {
-      year?: number;
-      semester?: string;
-    } | null;
-    const emp = row.employees as {
-      office_id?: string;
-      offices?: { name?: string } | null;
-    } | null;
-    const periodLabel = period
-      ? makePeriodLabel(Number(period.year), String(period.semester))
-      : "Unknown";
-
-    return {
-      id: String(row.id ?? ""),
-      divisionId: emp?.office_id ?? null,
-      divisionName: emp?.offices?.name ?? null,
-      periodId: String(row.period_id ?? ""),
-      periodLabel,
-      numericalRating: String(row.numerical_rating ?? "0"),
-      adjectivalRating: String(
-        row.adjectival_rating ?? "satisfactory",
-      ) as AdjectivalRating,
-      status: String(row.status ?? "draft"),
-      scannedDocUrl:
-        typeof row.scanned_doc_url === "string" ? row.scanned_doc_url : null,
-      createdAt: String(row.created_at ?? ""),
-    };
-  });
-}
-
-// ─── BPCR (Branch Performance Commitment Review) ──────────────────────────────
-
-export interface BpcrRow {
-  id: string;
-  branchId: string | null;
-  branchName: string | null;
-  periodId: string;
-  periodLabel: string;
-  numericalRating: string;
-  adjectivalRating: AdjectivalRating;
-  status: string;
-  scannedDocUrl: string | null;
-  createdAt: string;
-}
-
-export async function getBpcrRatings(periodId?: string): Promise<BpcrRow[]> {
-  const supabase = supabaseAdmin;
-
-  let query = supabase
-    .from("performance_ratings")
-    .select(
-      `
-      id,
-      employee_id,
-      period_id,
-      rating_type,
-      numerical_rating,
-      adjectival_rating,
-      status,
-      scanned_doc_url,
-      created_at,
-      performance_periods ( year, semester ),
-      employees ( office_id, offices ( name ) )
-    `,
-    )
-    .eq("rating_type", "bpcr")
-    .order("created_at", { ascending: false });
-
-  if (periodId) {
-    query = query.eq("period_id", periodId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) throw new Error(`Failed to fetch BPCR ratings: ${error.message}`);
-
-  return (data ?? []).map((row) => {
-    const period = row.performance_periods as {
-      year?: number;
-      semester?: string;
-    } | null;
-    const emp = row.employees as {
-      office_id?: string;
-      offices?: { name?: string } | null;
-    } | null;
-    const periodLabel = period
-      ? makePeriodLabel(Number(period.year), String(period.semester))
-      : "Unknown";
-
-    return {
-      id: String(row.id ?? ""),
-      branchId: emp?.office_id ?? null,
-      branchName: emp?.offices?.name ?? null,
-      periodId: String(row.period_id ?? ""),
-      periodLabel,
-      numericalRating: String(row.numerical_rating ?? "0"),
-      adjectivalRating: String(
-        row.adjectival_rating ?? "satisfactory",
-      ) as AdjectivalRating,
-      status: String(row.status ?? "draft"),
-      scannedDocUrl:
-        typeof row.scanned_doc_url === "string" ? row.scanned_doc_url : null,
-      createdAt: String(row.created_at ?? ""),
-    };
-  });
-}
-
 // ─── PBB Qualification List ───────────────────────────────────────────────────
 
-import type {
-  PbbQualificationResult,
-  PbbQualificationGates,
-} from "@/lib/utils/performance/pbb-qualification";
+import type { PbbQualificationResult } from "@/lib/utils/performance/pbb-qualification";
 
 export interface PbbListResult {
   qualified: PbbQualificationResult[];
@@ -1424,10 +1271,48 @@ export interface PbbListResult {
   };
 }
 
-export async function getPbbQualificationList(): Promise<PbbListResult> {
+const EMPTY_PBB_RESULT: PbbListResult = {
+  qualified: [],
+  disqualified: [],
+  summary: {
+    total: 0,
+    qualifiedCount: 0,
+    disqualifiedCount: 0,
+    gate1Failures: 0,
+    gate2Failures: 0,
+    gate3Failures: 0,
+    gate4Failures: 0,
+  },
+};
+
+/**
+ * PBB qualification list (PMM-007), scoped to a single rating period.
+ *
+ * Fixes the previous all-periods query (which double-counted employees rated in
+ * multiple periods) and the calendar-year gate windows. Gates 2-4 now use the
+ * leave-aware {@link fetchPbbGateFlags} against the period's actual date range,
+ * so approved leave no longer reads as AWOL (PRD §10.4.3).
+ *
+ * @param periodId - performance_periods.id to scope the list to. When omitted or
+ *   not found, an empty result is returned (the page always passes a period).
+ */
+export async function getPbbQualificationList(
+  periodId?: string,
+): Promise<PbbListResult> {
   const supabase = supabaseAdmin;
 
-  // Fetch all approved IPCRF ratings for the current/most recent cycle
+  if (!periodId) return EMPTY_PBB_RESULT;
+
+  // Rating-period bounds drive Gates 2-4 (admin case, AWOL window, SALN year).
+  const { data: period, error: periodError } = await supabase
+    .from("performance_periods")
+    .select("year, date_from, date_to")
+    .eq("id", periodId)
+    .single();
+
+  if (periodError || !period) return EMPTY_PBB_RESULT;
+
+  // Approved IPCRF ratings for THIS period only — no cross-period duplicates.
   const { data: ratingsData, error: ratingsError } = await supabase
     .from("performance_ratings")
     .select(
@@ -1438,143 +1323,45 @@ export async function getPbbQualificationList(): Promise<PbbListResult> {
     `,
     )
     .eq("rating_type", "ipcrf")
-    .eq("status", "approved");
+    .eq("status", "approved")
+    .eq("period_id", periodId);
 
   if (ratingsError)
     throw new Error(
       `Failed to fetch IPCRF ratings for PBB: ${ratingsError.message}`,
     );
 
-  // Batch-fetch gate 2/3/4 data for all employees to avoid N+1 queries
   const employeeIds = (ratingsData ?? [])
     .map((r) => String(r.employee_id))
     .filter(Boolean);
 
-  const currentYear = new Date().getFullYear();
-  const yearStart = `${currentYear}-01-01`;
-  const yearEnd = `${currentYear}-12-31`;
+  if (employeeIds.length === 0) return EMPTY_PBB_RESULT;
 
-  const [adminCaseRows, awolRows, salnRows] =
-    employeeIds.length > 0
-      ? await Promise.all([
-          // Gate 2: employees with a pending admin case
-          db
-            .select({ employeeId: adminCases.employeeId })
-            .from(adminCases)
-            .where(
-              and(
-                inArray(adminCases.employeeId, employeeIds),
-                eq(adminCases.status, "pending"),
-              ),
-            ),
-          // Gate 3: AWOL — attendance log with no time-in in current calendar year
-          db
-            .select({ employeeId: attendanceLogs.employeeId })
-            .from(attendanceLogs)
-            .where(
-              and(
-                inArray(attendanceLogs.employeeId, employeeIds),
-                isNull(attendanceLogs.timeIn),
-                gte(attendanceLogs.logDate, yearStart),
-                lte(attendanceLogs.logDate, yearEnd),
-              ),
-            ),
-          // Gate 4: SALN filed (submitted/received/verified) this calendar year
-          db
-            .select({ employeeId: salnSubmissions.employeeId })
-            .from(salnSubmissions)
-            .where(
-              and(
-                inArray(salnSubmissions.employeeId, employeeIds),
-                eq(salnSubmissions.year, currentYear),
-                inArray(salnSubmissions.status, [
-                  "submitted",
-                  "received",
-                  "verified",
-                ]),
-              ),
-            ),
-        ])
-      : [[], [], []];
+  // Leave-aware Gate 2-4 evaluation over the period's real date range.
+  const gateFlags = await fetchPbbGateFlags({
+    employeeIds,
+    periodStart: String(period.date_from),
+    periodEnd: String(period.date_to),
+    salnYear: Number(period.year),
+  });
 
-  const employeesWithPendingCase = new Set(
-    adminCaseRows.map((r) => r.employeeId),
-  );
-  const employeesWithAwol = new Set(awolRows.map((r) => r.employeeId));
-  const employeesWithSaln = new Set(salnRows.map((r) => r.employeeId));
-
-  const results: PbbQualificationResult[] = [];
-
-  for (const r of ratingsData ?? []) {
+  const employeeData = (ratingsData ?? []).map((r) => {
     const empId = String(r.employee_id);
     const emp = r.employees as {
       first_name?: string;
       last_name?: string;
     } | null;
-    const empName = `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim();
-    const ipcrfRating = parseFloat(String(r.numerical_rating ?? "0"));
-
-    const hasPendingAdminCase = employeesWithPendingCase.has(empId);
-    const hadAwol = employeesWithAwol.has(empId);
-    const salnFiled = employeesWithSaln.has(empId);
-
-    const gates: PbbQualificationGates = {
-      gate1_rating: ipcrfRating >= 2.5,
-      gate2_noAdminCase: !hasPendingAdminCase,
-      gate3_noAwol: !hadAwol,
-      gate4_salnFiled: salnFiled,
-    };
-
-    const qualified = Object.values(gates).every((g) => g === true);
-
-    const failedGates: string[] = [];
-    if (!gates.gate1_rating)
-      failedGates.push(
-        `Rating below Satisfactory (${ipcrfRating.toFixed(3)} < 2.500)`,
-      );
-    if (!gates.gate2_noAdminCase)
-      failedGates.push("Pending administrative case");
-    if (!gates.gate3_noAwol) failedGates.push("AWOL in rating period");
-    if (!gates.gate4_salnFiled) failedGates.push("SALN not filed");
-
-    results.push({
+    const flags = gateFlags.get(empId);
+    return {
       employeeId: empId,
-      employeeName: empName,
-      qualified,
-      gates,
-      disqualificationReason:
-        failedGates.length > 0 ? failedGates.join("; ") : null,
-      ipcrfRating,
-    });
-  }
+      employeeName: `${emp?.last_name ?? ""}, ${emp?.first_name ?? ""}`.trim(),
+      ipcrfRating: parseFloat(String(r.numerical_rating ?? "0")),
+      // Fail closed on missing gate data: treat as disqualifying.
+      hasPendingAdminCase: flags?.hasPendingAdminCase ?? true,
+      hadAwol: flags?.hadAwol ?? true,
+      salnFiled: flags?.salnFiled ?? false,
+    };
+  });
 
-  const qualified = results.filter((r) => r.qualified);
-  const disqualified = results.filter((r) => !r.qualified);
-
-  const gate1Failures = disqualified.filter(
-    (r) => !r.gates.gate1_rating,
-  ).length;
-  const gate2Failures = disqualified.filter(
-    (r) => !r.gates.gate2_noAdminCase,
-  ).length;
-  const gate3Failures = disqualified.filter(
-    (r) => !r.gates.gate3_noAwol,
-  ).length;
-  const gate4Failures = disqualified.filter(
-    (r) => !r.gates.gate4_salnFiled,
-  ).length;
-
-  return {
-    qualified,
-    disqualified,
-    summary: {
-      total: results.length,
-      qualifiedCount: qualified.length,
-      disqualifiedCount: disqualified.length,
-      gate1Failures,
-      gate2Failures,
-      gate3Failures,
-      gate4Failures,
-    },
-  };
+  return batchValidatePbbQualification(employeeData);
 }

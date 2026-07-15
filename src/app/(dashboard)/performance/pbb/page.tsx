@@ -13,7 +13,7 @@ import { requirePermission } from "@/lib/auth/guards";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { RatingBadge } from "@/components/performance/rating-badge";
-import { getPbbQualificationList } from "../queries";
+import { getPbbQualificationList, getPerformancePeriods } from "../queries";
 import type { AdjectivalRating } from "@/lib/constants/performance";
 import { CheckCircle2Icon, XCircleIcon } from "lucide-react";
 import type { Metadata } from "next";
@@ -22,10 +22,22 @@ export const metadata: Metadata = {
   title: "PBB Qualification List",
 };
 
-export default async function PbbQualificationPage() {
+interface Props {
+  searchParams: Promise<{ period?: string }>;
+}
+
+export default async function PbbQualificationPage({ searchParams }: Props) {
   await requirePermission("performance", "view");
 
-  const { qualified, disqualified, summary } = await getPbbQualificationList();
+  // PMM-007: the list is scoped to one rating period so Gates 2-4 evaluate the
+  // correct AWOL/SALN window and employees rated in several periods aren't
+  // double-counted. Defaults to the most recent period.
+  const { period: periodParam } = await searchParams;
+  const periods = await getPerformancePeriods();
+  const activePeriodId = periodParam || periods[0]?.id;
+
+  const { qualified, disqualified, summary } =
+    await getPbbQualificationList(activePeriodId);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
@@ -38,6 +50,39 @@ export default async function PbbQualificationPage() {
           { label: "PBB Qualification" },
         ]}
       />
+
+      {/* Rating-period scope selector */}
+      <form
+        method="GET"
+        action="/performance/pbb"
+        className="mb-6 flex items-center gap-2 text-sm"
+      >
+        <label htmlFor="pbb-period" className="text-xs text-muted-foreground">
+          Rating period
+        </label>
+        <select
+          id="pbb-period"
+          name="period"
+          defaultValue={activePeriodId ?? ""}
+          className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+        >
+          {periods.length === 0 ? (
+            <option value="">No rating periods</option>
+          ) : (
+            periods.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))
+          )}
+        </select>
+        <button
+          type="submit"
+          className="rounded-md bg-pcso-navy px-3 py-1.5 text-xs font-medium text-pcso-cream transition-colors hover:bg-pcso-navy-light"
+        >
+          Apply
+        </button>
+      </form>
 
       {/* Summary Cards */}
       <div className="mb-6 grid gap-4 md:grid-cols-4">

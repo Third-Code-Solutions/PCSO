@@ -24,12 +24,17 @@ import {
   type NewAppointment,
   type NewAppointmentDocument,
 } from "@/lib/db/schema/recruitment";
-import { employees, type NewEmployee } from "@/lib/db/schema/employees";
+import { employees } from "@/lib/db/schema/employees";
 import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import { offices } from "@/lib/db/schema/offices";
-import { leaveCredits } from "@/lib/db/schema/leave";
+import { salaryGrades } from "@/lib/db/schema/government-rates";
 import { workSchedules } from "@/lib/db/schema/attendance";
 import { requirePermission } from "@/lib/auth/guards";
+import { withTx } from "@/lib/db/transaction";
+import {
+  atomicallyProvisionNewEmployee,
+  type AppointmentIssueInput,
+} from "@/lib/utils/rpm/auto-provision";
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
 
@@ -184,23 +189,21 @@ async function calculateMonthlySalary(
   salaryGrade: number,
   step: number,
 ): Promise<number> {
-  // Simplified — real implementation would query salary schedule tables
-  const baseRates: Record<number, number> = {
-    1: 13000,
-    2: 14000,
-    3: 15000,
-    4: 16000,
-    5: 17000,
-    6: 18000,
-    7: 19000,
-    8: 20000,
-    9: 21000,
-    10: 22000,
-  };
+  // Resolve the authoritative SSL/CPCS monthly rate for (grade, step) from the
+  // salary-schedule table (most recent schedule in effect). Returns 0 when no
+  // rate row exists so the gap is visible to HR, rather than masking it with a
+  // hardcoded guess (the old map only covered SG 1-10 and defaulted everything
+  // else to PHP 13,000).
+  const [row] = await db
+    .select({ monthlySalary: salaryGrades.monthlySalary })
+    .from(salaryGrades)
+    .where(
+      and(eq(salaryGrades.grade, salaryGrade), eq(salaryGrades.step, step)),
+    )
+    .orderBy(desc(salaryGrades.effectiveDate))
+    .limit(1);
 
-  const base = baseRates[salaryGrade] ?? 13000;
-  const stepMultiplier = 1 + (step - 1) * 0.03;
-  return Math.round(base * stepMultiplier);
+  return row ? Number(row.monthlySalary) : 0;
 }
 
 // ─── Generate Appointment Documents ──────────────────────────────────────────
@@ -339,6 +342,39 @@ export async function generateAppointmentDocuments(input: unknown) {
 
 // ─── Provision Employee ───────────────────────────────────────────────────────
 
+/** employees.appointment_type enum accepted by the provisioning core. */
+type ProvisionAppointmentType = AppointmentIssueInput["appointmentType"];
+
+/**
+ * The recruitment `appointments.appointment_type` column is a free-text
+ * varchar constrained by CreateAppointmentSchema to the RPM vocabulary
+ * (`cas`, `cos`, …). The `employees.appointment_type` pgEnum uses the
+ * canonical CSC codes (`casual`, `contract_of_service`, …). Bridge the two
+ * so the employee record is written with a valid enum value — a raw cast
+ * would push `cas`/`cos` straight into the enum column and fail at runtime.
+ */
+const APPOINTMENT_TYPE_MAP: Record<string, ProvisionAppointmentType> = {
+  permanent: "permanent",
+  temporary: "temporary",
+  coterminous: "coterminous",
+  cas: "casual",
+  casual: "casual",
+  job_order: "job_order",
+  cos: "contract_of_service",
+  contract_of_service: "contract_of_service",
+};
+
+function normalizeAppointmentType(raw: string): ProvisionAppointmentType {
+  return APPOINTMENT_TYPE_MAP[raw] ?? "permanent";
+}
+
+function normalizeGender(
+  raw: string | null | undefined,
+): "male" | "female" | "prefer_not_to_say" {
+  if (raw === "male" || raw === "female") return raw;
+  return "prefer_not_to_say";
+}
+
 export async function provisionEmployee(input: unknown) {
   const user = await requirePermission("employees", "create");
   const parsed = ProvisionEmployeeSchema.parse(input);
@@ -431,95 +467,84 @@ export async function provisionEmployee(input: unknown) {
     };
   }
 
-  const year = new Date().getFullYear();
-  const employeeNumberSequence = await db
-    .select({ employeeNo: employees.employeeNo })
-    .from(employees)
-    .orderBy(desc(employees.createdAt))
+  // Resolve the plantilla position title — drives employees.positionTitle
+  // (the previous implementation hardcoded "TBD").
+  const [plantilla] = await db
+    .select({
+      id: plantillaPositions.id,
+      positionTitle: plantillaPositions.positionTitle,
+    })
+    .from(plantillaPositions)
+    .where(eq(plantillaPositions.id, appointment.positionId))
     .limit(1);
 
-  let empSeq = 1;
-  if (
-    employeeNumberSequence.length > 0 &&
-    employeeNumberSequence[0]?.employeeNo
-  ) {
-    const match =
-      employeeNumberSequence[0].employeeNo.match(/PCSO-\d{4}-(\d{4})/);
-    if (match?.[1]) {
-      empSeq = parseInt(match[1], 10) + 1;
-    }
+  if (!plantilla) {
+    return {
+      success: false,
+      error: "Plantilla position not found for this appointment",
+    };
   }
 
-  const employeeNumber = `PCSO-${year}-${empSeq.toString().padStart(4, "0")}`;
-
-  const newEmployee: NewEmployee = {
-    employeeNo: employeeNumber,
-    lastName: applicant.lastName,
-    firstName: applicant.firstName,
-    middleName: applicant.middleName ?? undefined,
-    birthDate: applicant.dateOfBirth ?? new Date().toISOString().slice(0, 10),
-    gender:
-      (applicant.gender as "male" | "female" | "prefer_not_to_say") ??
-      "prefer_not_to_say",
-    civilStatus: "single",
-    addressStreet: applicant.currentAddress ?? undefined,
-    email: applicant.email ?? undefined,
-    phone: applicant.contactNumber ?? undefined,
-    appointmentType:
-      (appointment.appointmentType as
-        | "permanent"
-        | "temporary"
-        | "coterminous"
-        | "casual"
-        | "job_order"
-        | "contract_of_service") ?? "permanent",
-    positionTitle: "TBD",
-    officeId: appointment.officeId ?? undefined,
-    salaryGrade: appointment.salaryGrade,
-    step: appointment.stepIncrement ?? 1,
-    dateHired: appointment.effectiveDate,
-    status: "active",
-  };
+  // Agency-wide default schedule gives the new hire a DTR/attendance profile.
+  const [defaultSchedule] = await db
+    .select({ id: workSchedules.id })
+    .from(workSchedules)
+    .where(isNull(workSchedules.deletedAt))
+    .limit(1);
 
   try {
-    const [createdEmployee] = await db
-      .insert(employees)
-      .values(newEmployee)
-      .returning({ id: employees.id });
+    // RPM-023 / §12.3 APPOINTED: one transaction provisions the employee 201,
+    // fills the plantilla item, opens the leave ledger for every active leave
+    // type, records the schedule linkage, writes the audit row, and advances
+    // the application + vacancy pipeline. Any failure rolls the whole unit
+    // back — no partial employee is ever committed.
+    const provision = await withTx(async (tx) => {
+      const result = await atomicallyProvisionNewEmployee(tx, {
+        applicationId: appointment.applicationId,
+        positionId: appointment.positionId,
+        officeId: appointment.officeId,
+        itemNumber: appointment.itemNumber ?? "",
+        salaryGrade: appointment.salaryGrade,
+        stepIncrement: appointment.stepIncrement ?? 1,
+        appointmentType: normalizeAppointmentType(appointment.appointmentType),
+        effectiveDate: appointment.effectiveDate,
+        positionTitle: plantilla.positionTitle,
+        appointingAuthorityEmployeeId: user.id,
+        workScheduleId: defaultSchedule?.id,
+        applicant: {
+          firstName: applicant.firstName,
+          middleName: applicant.middleName ?? null,
+          lastName: applicant.lastName,
+          birthDate: applicant.dateOfBirth,
+          gender: normalizeGender(applicant.gender),
+          civilStatus: "single",
+          email: applicant.email ?? null,
+          phone: applicant.contactNumber ?? null,
+        },
+        issuedByUserId: user.id,
+      });
 
-    const [defaultSchedule] = await db
-      .select({ id: workSchedules.id })
-      .from(workSchedules)
-      .where(isNull(workSchedules.deletedAt))
-      .limit(1);
+      // Flip the appointment to provisioned in the same transaction so the
+      // appointment row and the new employee commit atomically together.
+      await tx
+        .update(appointments)
+        .set({
+          provisioned: true,
+          provisionedAt: new Date(),
+          provisionedEmployeeId: result.employeeId,
+          status: "provisioned",
+          updatedAt: new Date(),
+        })
+        .where(eq(appointments.id, appointment.id));
 
-    if (defaultSchedule) {
-      // Assignment would go here in a full implementation
-    }
-
-    // TODO: Insert leave credits after resolving leaveTypeId from leave_types table
-    void leaveCredits; // suppress unused import warning
-
-    if (!createdEmployee) {
-      return { success: false, error: "Failed to create employee record" };
-    }
-
-    await db
-      .update(appointments)
-      .set({
-        provisioned: true,
-        provisionedAt: new Date(),
-        provisionedEmployeeId: createdEmployee.id,
-        status: "provisioned",
-        updatedAt: new Date(),
-      })
-      .where(eq(appointments.id, appointment.id));
+      return result;
+    });
 
     revalidatePath("/recruitment/appointments");
     revalidatePath(`/recruitment/appointments/${appointment.id}`);
     revalidatePath("/employees");
 
-    return { success: true, employeeId: createdEmployee.id };
+    return { success: true, employeeId: provision.employeeId };
   } catch (error) {
     console.error("Provisioning error:", error);
     return {

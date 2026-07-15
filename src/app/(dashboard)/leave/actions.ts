@@ -19,7 +19,7 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { and, eq, inArray, gte, lte, isNull } from "drizzle-orm";
+import { and, eq, inArray, gte, lte, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   leaveTypes,
@@ -1319,8 +1319,34 @@ export async function accrueMonthlyCredits(
   if (empError)
     throw new Error(`Failed to fetch employees: ${empError.message}`);
 
+  // Idempotency (mirrors system-accrual.ts runMonthlyAccrual): collect the
+  // employees already credited for this month/year via their "accrue" audit
+  // rows. Without this, re-running a month permanently double-credits every
+  // already-accrued employee. The UI promises already-credited employees are
+  // skipped — this makes that true.
+  const alreadyAccrued = await db
+    .select({ recordId: auditLogs.recordId })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.action, "accrue"),
+        eq(auditLogs.tableName, "leave_credits"),
+        sql`${auditLogs.newValues} ->> 'month' = ${String(creditMonth)}`,
+        sql`${auditLogs.newValues} ->> 'year' = ${String(creditYear)}`,
+      ),
+    );
+  const accruedEmployeeIds = new Set(
+    alreadyAccrued.map((r) => r.recordId).filter((id): id is string => !!id),
+  );
+
   for (const emp of empRows ?? []) {
     try {
+      // Skip employees already credited for this month/year (idempotent re-run).
+      if (accruedEmployeeIds.has(String(emp.id))) {
+        summary.skipped++;
+        continue;
+      }
+
       const hireDate = new Date(String(emp.date_hired));
 
       // Fetch current balances

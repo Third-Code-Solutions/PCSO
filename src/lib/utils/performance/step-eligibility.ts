@@ -1,14 +1,15 @@
 /**
  * Step increment eligibility utilities — PCSO HRIS Phase 12
  *
- * CSC / DBM rules:
- *  - 3 consecutive Very Satisfactory (or better) → eligible for one step up
+ * CSC / DBM rules (PRD §10.5):
+ *  - 3 consecutive years at ≥ Satisfactory (numerical ≥ 2.500) → eligible for one step up
  *  - 2 consecutive Outstanding → eligible for one step up
  *  - Maximum one step increment per 3-year period
+ *  - Maximum step is Step 8; employees at Step 8 are not eligible.
  *
  * Sources:
  *  - CSC MC No. 6, s. 2012 (SPMS)
- *  - DBM National Budget Circular 461 (Step Increment Rules)
+ *  - DBM-CSC Joint Circular No. 1, s. 2012 (Step Increment Rules)
  */
 
 import type { AdjectivalRating } from "@/lib/constants/performance";
@@ -18,6 +19,12 @@ import {
   STEP_INCREMENT_COOLDOWN_YEARS,
 } from "@/lib/constants/performance";
 import { ratingToAdjectival } from "./rating";
+
+/**
+ * Maximum step under the CPCS/SSL step ladder (PRD §10.5). Employees already at
+ * this step cannot receive a further increment.
+ */
+const MAX_STEP = 8;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,10 +54,18 @@ export interface StepEligibilityResult {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Returns true when an adjectival rating is Very Satisfactory or better.
+ * Returns true when an adjectival rating is Satisfactory or better.
+ *
+ * PRD §10.5 requires "at least Satisfactory" (numerical ≥ 2.500) in each of the
+ * 3 consecutive years — NOT Very Satisfactory. Satisfactory, Very Satisfactory,
+ * and Outstanding all qualify.
  */
-function isVeryStatisfactoryOrBetter(adjectival: AdjectivalRating): boolean {
-  return adjectival === "very_satisfactory" || adjectival === "outstanding";
+function isSatisfactoryOrBetter(adjectival: AdjectivalRating): boolean {
+  return (
+    adjectival === "satisfactory" ||
+    adjectival === "very_satisfactory" ||
+    adjectival === "outstanding"
+  );
 }
 
 /**
@@ -69,11 +84,15 @@ function isOutstanding(adjectival: AdjectivalRating): boolean {
  *                    (oldest first, newest last). Must be consecutive periods.
  * @param lastIncrementDate - ISO date string of the most recent step increment,
  *                            or null if the employee has never received one.
+ * @param currentStep - The employee's current step. When ≥ 8 (max step), the
+ *                      employee is ineligible per PRD §10.5. Optional so legacy
+ *                      2-arg callers keep compiling.
  * @returns Eligibility result with reason and qualifying periods.
  */
 export function checkStepEligibility(
   ratings: RatingRecord[],
   lastIncrementDate: string | null,
+  currentStep?: number,
 ): StepEligibilityResult {
   const notEligible = (reason: string): StepEligibilityResult => ({
     eligible: false,
@@ -82,6 +101,13 @@ export function checkStepEligibility(
     qualifyingPeriods: [],
     ineligibilityReason: reason,
   });
+
+  // PRD §10.5: Step 8 is the maximum — no further increments.
+  if (currentStep !== undefined && currentStep >= MAX_STEP) {
+    return notEligible(
+      `Employee is already at the maximum step (Step ${MAX_STEP}).`,
+    );
+  }
 
   if (ratings.length === 0) {
     return notEligible("No performance ratings on record.");
@@ -129,10 +155,10 @@ export function checkStepEligibility(
     };
   }
 
-  // Check for 3 consecutive Very Satisfactory or better
+  // Check for 3 consecutive Satisfactory or better (PRD §10.5)
   const vsResult = findConsecutiveStreak(
     sorted,
-    isVeryStatisfactoryOrBetter,
+    isSatisfactoryOrBetter,
     STEP_INCREMENT_CONSECUTIVE_VS,
   );
   if (vsResult !== null) {
@@ -147,7 +173,7 @@ export function checkStepEligibility(
 
   return notEligible(
     `Insufficient consecutive qualifying ratings. Requires ${STEP_INCREMENT_CONSECUTIVE_VS} consecutive ` +
-      `Very Satisfactory or ${STEP_INCREMENT_CONSECUTIVE_OUTSTANDING} consecutive Outstanding ratings.`,
+      `Satisfactory (or better) or ${STEP_INCREMENT_CONSECUTIVE_OUTSTANDING} consecutive Outstanding ratings.`,
   );
 }
 
@@ -204,6 +230,8 @@ export interface EmployeeEligibilityInput {
   employeeId: string;
   ratings: RatingRecord[];
   lastIncrementDate: string | null;
+  /** Current step — employees at ≥ Step 8 are excluded (PRD §10.5). */
+  currentStep?: number;
 }
 
 export interface EmployeeEligibilitySummary {
@@ -222,7 +250,11 @@ export function checkBatchEligibility(
 ): EmployeeEligibilitySummary[] {
   return employees.map((emp) => ({
     employeeId: emp.employeeId,
-    eligibility: checkStepEligibility(emp.ratings, emp.lastIncrementDate),
+    eligibility: checkStepEligibility(
+      emp.ratings,
+      emp.lastIncrementDate,
+      emp.currentStep,
+    ),
   }));
 }
 

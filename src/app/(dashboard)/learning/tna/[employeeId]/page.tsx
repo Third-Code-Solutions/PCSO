@@ -5,8 +5,11 @@
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { TnaGapCard, type TnaGapRow } from "@/components/learning/tna-gap-card";
+import { GenerateTnaButton } from "@/components/learning/generate-tna-button";
+import { RecordAssessmentDialog } from "@/components/learning/record-assessment-dialog";
 import { db } from "@/lib/db";
 import { tnaGaps, trainingPrograms } from "@/lib/db/schema/learning";
 import { employees } from "@/lib/db/schema/employees";
@@ -19,8 +22,10 @@ interface PageProps {
 }
 
 export default async function EmployeeTnaPage({ params }: PageProps) {
-  await requireAuth();
+  const user = await requireAuth();
   const { employeeId } = await params;
+  const canManage = hasPermission(user.role, "learning", "create");
+  const cycleYear = new Date().getFullYear();
 
   const [emp] = await db
     .select({
@@ -75,6 +80,21 @@ export default async function EmployeeTnaPage({ params }: PageProps) {
           { label: "TNA", href: "/learning/tna" },
           { label: employeeLabel },
         ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <RecordAssessmentDialog
+              employeeId={employeeId}
+              assessorEmployeeId={user.employeeId}
+              cycleYear={cycleYear}
+              canManage={canManage}
+            />
+            <GenerateTnaButton
+              employeeId={employeeId}
+              cycleYear={cycleYear}
+              canManage={canManage}
+            />
+          </div>
+        }
       />
       <div className="mt-6">
         <TnaGapCard gaps={gaps} employeeLabel={employeeLabel} />

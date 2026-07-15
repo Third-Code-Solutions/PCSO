@@ -23,8 +23,9 @@ export interface CurrentUser {
  * Retrieves the currently authenticated user along with their RBAC role,
  * office assignment, and linked employee record.
  *
- * Reads user metadata stored in `auth.users.raw_user_meta_data` which is
- * populated by the `sync_auth_to_system_users` trigger on signup.
+ * Reads RBAC claims from `auth.users.raw_app_meta_data` (app_metadata) — the
+ * service-role-only claim store — with a `system_users` fallback. Never trusts
+ * user_metadata, which is client-writable via supabase.auth.updateUser.
  *
  * Returns `null` when there is no active session.
  *
@@ -42,10 +43,13 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   if (error || !user) return null;
 
-  const meta = user.user_metadata as Record<string, unknown>;
+  // SECURITY: read RBAC claims from app_metadata, which only the service-role
+  // admin API can write. user_metadata is client-writable via
+  // supabase.auth.updateUser({ data }) and must NEVER gate authorization.
+  const meta = user.app_metadata as Record<string, unknown>;
 
-  // The trigger `sync_auth_to_system_users` is expected to keep these in auth metadata,
-  // but older/manual accounts can drift. Fall back to `system_users` by auth UID.
+  // Admin user actions keep these claims in app_metadata; older/manual accounts
+  // can drift, so fall back to the authoritative `system_users` row by auth UID.
   const metaRole = meta["role"] as Role | undefined;
   const metaOfficeId =
     typeof meta["office_id"] === "string" ? meta["office_id"] : null;

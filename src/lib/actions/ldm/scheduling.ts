@@ -18,7 +18,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import React from "react";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
@@ -41,6 +41,7 @@ import {
   type CostInput,
 } from "@/lib/utils/ldm/cost-calculator";
 import {
+  checkScheduleConflicts,
   generateProposedSchedule,
   type ProgramLike,
   type ProposedSchedule,
@@ -210,6 +211,7 @@ export interface ListRunsFilter {
 export async function proposeTrainingRun(
   input: ProposeTrainingRunInput,
 ): Promise<TrainingRun> {
+  await requirePermission("learning", "create");
   const costError = validateCostInputs(input.cost);
   if (costError) throw new Error(costError);
 
@@ -268,6 +270,40 @@ export async function createTrainingRun(
       };
     }
     const createdBy = user.employeeId;
+
+    // LDM-004: block venue double-booking. Compare the proposed window against
+    // every active (non-cancelled) run; reject on an overlapping venue booking.
+    const activeRuns = await db
+      .select({
+        id: trainingRuns.id,
+        scheduledStart: trainingRuns.scheduledStart,
+        scheduledEnd: trainingRuns.scheduledEnd,
+        venue: trainingRuns.venue,
+      })
+      .from(trainingRuns)
+      .where(
+        and(
+          isNull(trainingRuns.deletedAt),
+          ne(trainingRuns.status, "cancelled"),
+        ),
+      );
+    const conflicts = checkScheduleConflicts(
+      {
+        startDate: values.scheduledStart,
+        endDate: values.scheduledEnd,
+        venue: values.venue,
+      },
+      activeRuns.map((r) => ({
+        id: r.id,
+        startDate: r.scheduledStart.toISOString(),
+        endDate: r.scheduledEnd.toISOString(),
+        venue: r.venue,
+      })),
+    );
+    const venueConflict = conflicts.find((c) => c.kind === "venue");
+    if (venueConflict) {
+      return { error: `Scheduling conflict — ${venueConflict.detail}` };
+    }
 
     const totalBudget = computeRunTotal({
       perParticipantCost: Number(values.perParticipantCost),
@@ -417,6 +453,39 @@ export async function removeParticipant(
     return {
       error:
         err instanceof Error ? err.message : "Failed to remove participant.",
+    };
+  }
+}
+
+/**
+ * Mark a participant as `completed` (LDM-010 precondition). Only a completed
+ * participant is eligible for certificate issuance, so this is the transition
+ * that unlocks the certificate dialog + batch-generate page. Records the
+ * completion timestamp for downstream ordering/reporting.
+ */
+export async function markParticipantCompleted(
+  participantId: string,
+): Promise<Result<TrainingParticipant>> {
+  try {
+    await requirePermission("learning", "edit");
+    const [row] = await db
+      .update(trainingParticipants)
+      .set({
+        status: "completed",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(trainingParticipants.id, participantId))
+      .returning();
+    if (!row) return { error: "Participant not found." };
+    return { data: mapParticipant(row) };
+  } catch (err: unknown) {
+    rethrowIfRedirectError(err);
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Failed to mark participant completed.",
     };
   }
 }

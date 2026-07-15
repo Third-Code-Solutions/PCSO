@@ -18,8 +18,17 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { attendanceLogs } from "@/lib/db/schema";
-import { eq, and, gte, lte, isNull } from "drizzle-orm";
+import type { Database } from "@/lib/db";
+import {
+  attendanceLogs,
+  employees,
+  employeeSchedules,
+  officeSchedules,
+  workSchedules,
+  holidays,
+  fmWorkSuspensions,
+} from "@/lib/db/schema";
+import { eq, and, gte, lte, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
@@ -29,8 +38,21 @@ import {
   ManualEntrySchema,
 } from "@/lib/validations/attendance";
 import { computeDailyAttendance } from "@/lib/utils/attendance/compute";
-import { DEFAULT_AGENCY_SCHEDULE } from "@/lib/constants/work-schedule";
-import type { AttendanceLog, DayType } from "@/lib/utils/attendance/types";
+import {
+  pickApplicableSchedule,
+  normalizeApplicableDays,
+} from "@/lib/utils/attendance/schedule-resolution";
+import { toComputeSchedule } from "@/lib/utils/attendance/schedule-mapping";
+import {
+  resolveDayType,
+  isRestDay,
+  resolveSuspension,
+} from "@/lib/utils/attendance/day-context";
+import type {
+  AttendanceLog,
+  DayType,
+  WorkSchedule,
+} from "@/lib/utils/attendance/types";
 
 // ---------------------------------------------------------------------------
 // Internal helper: build an AttendanceLog for the compute engine
@@ -41,15 +63,213 @@ function buildComputeInput(
   timeIn: string | null,
   timeOut: string | null,
   approvedOvertimeMinutes: number,
-  dayType: DayType = "ordinary",
+  schedule: WorkSchedule,
+  dayType: DayType,
 ): AttendanceLog {
   return {
     date,
     timeIn,
     timeOut,
-    schedule: DEFAULT_AGENCY_SCHEDULE,
+    schedule,
     dayType,
     approvedOvertimeMinutes,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Internal helper: resolve the (employee, date) schedule + day context the
+// same way the biometric ingest pipeline does, then compute CSC-compliant,
+// day-type-gated late / undertime / overtime. Replaces the previous
+// schedule/day-type-blind compute that hardcoded DEFAULT_AGENCY_SCHEDULE +
+// "ordinary" for every web-clock and HR-correction record.
+// ---------------------------------------------------------------------------
+
+/** Minimal db/tx handle — accepts both the base client and a tx handle. */
+type DbExecutor = Pick<Database, "select">;
+
+/** Flat schedule-assignment row shared by employee_schedules / office_schedules. */
+interface ScheduleAssignmentRow {
+  scheduleId: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  timeIn: string;
+  timeOut: string;
+  breakStart: string | null;
+  breakEnd: string | null;
+  gracePeriodMinutes: number;
+  applicableDays: unknown;
+}
+
+interface DayComputeContext {
+  schedule: WorkSchedule;
+  dayType: DayType;
+  /** True only when a FULL-day suspension covers the date. */
+  fullSuspension: boolean;
+  /** True when any (half or full) suspension covers the date — waives undertime. */
+  suspended: boolean;
+}
+
+/**
+ * Resolves the applicable work schedule (employee → office → agency default)
+ * and the real day type (holiday × rest-day × suspension) for (employee, date),
+ * reusing the same pure helpers as the ingest pipeline.
+ */
+async function resolveDayComputeContext(
+  exec: DbExecutor,
+  employeeId: string,
+  date: string,
+): Promise<DayComputeContext> {
+  const [employee] = await exec
+    .select({ officeId: employees.officeId })
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+  const officeId = employee?.officeId ?? null;
+
+  const employeeAssignments: ScheduleAssignmentRow[] = await exec
+    .select({
+      scheduleId: employeeSchedules.scheduleId,
+      effectiveFrom: employeeSchedules.effectiveFrom,
+      effectiveTo: employeeSchedules.effectiveTo,
+      timeIn: workSchedules.timeIn,
+      timeOut: workSchedules.timeOut,
+      breakStart: workSchedules.breakStart,
+      breakEnd: workSchedules.breakEnd,
+      gracePeriodMinutes: workSchedules.gracePeriodMinutes,
+      applicableDays: workSchedules.applicableDays,
+    })
+    .from(employeeSchedules)
+    .innerJoin(
+      workSchedules,
+      eq(employeeSchedules.scheduleId, workSchedules.id),
+    )
+    .where(
+      and(
+        eq(employeeSchedules.employeeId, employeeId),
+        lte(employeeSchedules.effectiveFrom, date),
+        or(
+          isNull(employeeSchedules.effectiveTo),
+          gte(employeeSchedules.effectiveTo, date),
+        ),
+      ),
+    );
+
+  const officeAssignments: ScheduleAssignmentRow[] = officeId
+    ? await exec
+        .select({
+          scheduleId: officeSchedules.scheduleId,
+          effectiveFrom: officeSchedules.effectiveFrom,
+          effectiveTo: officeSchedules.effectiveTo,
+          timeIn: workSchedules.timeIn,
+          timeOut: workSchedules.timeOut,
+          breakStart: workSchedules.breakStart,
+          breakEnd: workSchedules.breakEnd,
+          gracePeriodMinutes: workSchedules.gracePeriodMinutes,
+          applicableDays: workSchedules.applicableDays,
+        })
+        .from(officeSchedules)
+        .innerJoin(
+          workSchedules,
+          eq(officeSchedules.scheduleId, workSchedules.id),
+        )
+        .where(
+          and(
+            eq(officeSchedules.officeId, officeId),
+            lte(officeSchedules.effectiveFrom, date),
+            or(
+              isNull(officeSchedules.effectiveTo),
+              gte(officeSchedules.effectiveTo, date),
+            ),
+          ),
+        )
+    : [];
+
+  const assignment = pickApplicableSchedule({
+    date,
+    employeeAssignments,
+    officeAssignments,
+  });
+  const schedule = toComputeSchedule(assignment);
+  const applicableDays = normalizeApplicableDays(
+    assignment?.applicableDays ?? null,
+  );
+
+  const [holiday] = await exec
+    .select({ type: holidays.type })
+    .from(holidays)
+    .where(eq(holidays.holidayDate, date))
+    .limit(1);
+
+  const suspensionRows = await exec
+    .select({
+      applicableDate: fmWorkSuspensions.applicableDate,
+      applicableHours: fmWorkSuspensions.applicableHours,
+      isActive: fmWorkSuspensions.isActive,
+    })
+    .from(fmWorkSuspensions)
+    .where(
+      and(
+        eq(fmWorkSuspensions.applicableDate, date),
+        eq(fmWorkSuspensions.isActive, true),
+        isNull(fmWorkSuspensions.deletedAt),
+      ),
+    );
+
+  const dayType = resolveDayType({
+    date,
+    holidayType: holiday?.type ?? null,
+    isRestDay: isRestDay(date, applicableDays),
+  });
+  const suspension = resolveSuspension(suspensionRows, date);
+
+  return {
+    schedule,
+    dayType,
+    fullSuspension: suspension.isSuspended && suspension.halfDay === false,
+    suspended: suspension.isSuspended,
+  };
+}
+
+/**
+ * Resolves the real (employee, date) schedule + day context, then returns the
+ * gated late / undertime / overtime minutes. Excused days (holiday, rest day,
+ * full suspension) accrue no tardiness/undertime; half-day suspensions waive
+ * undertime only (TOR 1.5.4 / 1.5.9) — mirroring the ingest pipeline's
+ * enrichRow gating. `dayTypeOverride` lets HR manual entry keep its explicitly
+ * classified day type; the other callers use the system-resolved day type.
+ */
+async function computeForEmployeeDate(
+  exec: DbExecutor,
+  employeeId: string,
+  date: string,
+  timeIn: string | null,
+  timeOut: string | null,
+  approvedOvertimeMinutes: number,
+  dayTypeOverride?: DayType,
+): Promise<{
+  lateMinutes: number;
+  undertimeMinutes: number;
+  overtimeMinutes: number;
+}> {
+  const ctx = await resolveDayComputeContext(exec, employeeId, date);
+  const dayType = dayTypeOverride ?? ctx.dayType;
+  const excused = dayType !== "ordinary" || ctx.fullSuspension;
+
+  const result = computeDailyAttendance(
+    buildComputeInput(
+      date,
+      timeIn,
+      timeOut,
+      approvedOvertimeMinutes,
+      ctx.schedule,
+      dayType,
+    ),
+  );
+
+  return {
+    lateMinutes: excused ? 0 : result.lateMinutes,
+    undertimeMinutes: excused || ctx.suspended ? 0 : result.undertimeMinutes,
+    overtimeMinutes: result.overtimeMinutes,
   };
 }
 
@@ -77,8 +297,13 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
     throw new Error("Forbidden: cannot clock in on behalf of another employee");
   }
 
-  const computed = computeDailyAttendance(
-    buildComputeInput(parsed.date, parsed.timeIn, null, 0),
+  const computed = await computeForEmployeeDate(
+    db,
+    effectiveEmployeeId,
+    parsed.date,
+    parsed.timeIn,
+    null,
+    0,
   );
 
   let row: {
@@ -190,14 +415,13 @@ export async function clockOut(input: unknown): Promise<void> {
       throw new Error("You have already clocked out for today.");
     }
 
-    const computed = computeDailyAttendance(
-      buildComputeInput(
-        current.logDate,
-        current.timeIn,
-        parsed.timeOut,
-        current.overtimeMinutes,
-        "ordinary",
-      ),
+    const computed = await computeForEmployeeDate(
+      tx,
+      effectiveEmployeeId,
+      current.logDate,
+      current.timeIn,
+      parsed.timeOut,
+      current.overtimeMinutes,
     );
 
     // Optimistic lock: the row must not have been updated between the
@@ -256,14 +480,14 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
   const parsed = ManualEntrySchema.parse(input);
   const user = await requirePermission("attendance", "edit");
 
-  const computed = computeDailyAttendance(
-    buildComputeInput(
-      parsed.date,
-      parsed.timeIn,
-      parsed.timeOut,
-      parsed.approvedOvertimeMinutes,
-      parsed.dayType as DayType,
-    ),
+  const computed = await computeForEmployeeDate(
+    db,
+    parsed.employeeId,
+    parsed.date,
+    parsed.timeIn,
+    parsed.timeOut,
+    parsed.approvedOvertimeMinutes,
+    parsed.dayType,
   );
 
   // All-or-nothing: capture previous row (for audit), upsert, and log.
@@ -380,14 +604,13 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
       throw new Error("Invalid optimistic-lock version.");
     }
 
-    const computed = computeDailyAttendance(
-      buildComputeInput(
-        current.logDate,
-        parsed.timeIn,
-        parsed.timeOut,
-        current.overtimeMinutes,
-        "ordinary",
-      ),
+    const computed = await computeForEmployeeDate(
+      tx,
+      current.employeeId,
+      current.logDate,
+      parsed.timeIn,
+      parsed.timeOut,
+      current.overtimeMinutes,
     );
 
     // Stale-version check: reject if the client's snapshot is outdated.

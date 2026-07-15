@@ -2,7 +2,9 @@
 
 import { z } from "zod";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createServerClient } from "@/lib/supabase/server";
+import { auditLog } from "@/lib/audit";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,28 @@ export async function signInWithPassword(
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    // LOG-004 / N-037: record the failed attempt so the hourly security-alerts
+    // cron's failed-login-burst detector (which scans audit_logs WHERE
+    // outcome='failure') has data to act on. Non-throwing; user_id is null for
+    // an unauthenticated attempt, so bursts group by IP.
+    const hdrs = await headers();
+    const ipAddress =
+      hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+      hdrs.get("x-real-ip") ??
+      undefined;
+    void auditLog({
+      action: "auth.login",
+      table: "auth.users",
+      outcome: "failure",
+      severity: "warn",
+      reason: "invalid_credentials",
+      module: "SEC",
+      subModule: "authentication",
+      ipAddress,
+      userAgent: hdrs.get("user-agent") ?? undefined,
+      newValues: { email },
+    });
+
     // Intentionally vague error message to avoid user enumeration.
     const message =
       error.status === 400

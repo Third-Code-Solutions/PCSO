@@ -5,14 +5,12 @@
  * certificate-issuance affordances for completed attendees.
  */
 
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth/guards";
 import type { Role } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { RoleGate } from "@/components/role-gate";
 import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import {
@@ -24,6 +22,8 @@ import {
   type NominatableEmployee,
 } from "@/components/learning/participant-nominator";
 import { CertificateIssueDialog } from "@/components/learning/certificate-issue-dialog";
+import { RunApprovalActions } from "@/components/learning/run-approval-actions";
+import { ParticipantStatusActions } from "@/components/learning/participant-status-actions";
 import { db } from "@/lib/db";
 import {
   trainingRuns,
@@ -192,6 +192,10 @@ export default async function RunDetailPage({
 
   const nominated = new Set(participants.map((p) => p.employeeId));
 
+  // First still-pending approver slot — the next actionable decision.
+  const nextPendingSequence =
+    approvalsRows.find((a) => a.decision === "pending")?.sequenceOrder ?? null;
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
       <PageHeader
@@ -205,15 +209,12 @@ export default async function RunDetailPage({
         ]}
         actions={
           <RoleGate role={user.role} roles={ADMIN_ROLES} fallback={null}>
-            <div className="flex items-center gap-2">
-              {runRow.status === "draft" && (
-                <Button size="sm" variant="outline" asChild>
-                  <Link href={`/learning/schedule/${id}?action=submit`}>
-                    Submit for Approval
-                  </Link>
-                </Button>
-              )}
-            </div>
+            <RunApprovalActions
+              runId={id}
+              status={runRow.status}
+              nextPendingSequence={nextPendingSequence}
+              approverEmployeeId={user.employeeId}
+            />
           </RoleGate>
         }
       />
@@ -295,17 +296,25 @@ export default async function RunDetailPage({
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {isAdmin &&
-                        !p.certificateNumber &&
-                        user.employeeId &&
-                        (p.status === "completed" ||
-                          p.status === "attended") && (
-                          <CertificateIssueDialog
+                      <div className="flex items-center justify-end gap-2">
+                        {isAdmin && (
+                          <ParticipantStatusActions
                             participantId={p.id}
-                            participantName={`${p.firstName} ${p.lastName}`}
-                            issuerEmployeeId={user.employeeId}
+                            status={p.status}
                           />
                         )}
+                        {isAdmin &&
+                          !p.certificateNumber &&
+                          user.employeeId &&
+                          (p.status === "completed" ||
+                            p.status === "attended") && (
+                            <CertificateIssueDialog
+                              participantId={p.id}
+                              participantName={`${p.firstName} ${p.lastName}`}
+                              issuerEmployeeId={user.employeeId}
+                            />
+                          )}
+                      </div>
                     </td>
                   </tr>
                 ))}

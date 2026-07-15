@@ -47,6 +47,14 @@ export async function createUser(input: unknown): Promise<{ id: string }> {
           office_id: parsed.officeId ?? null,
           employee_id: parsed.employeeId ?? null,
         },
+        // app_metadata is the authoritative, service-role-only claim store read
+        // by middleware + getCurrentUser for authorization. user_metadata is
+        // kept only for the legacy signup trigger and is never trusted for authz.
+        app_metadata: {
+          role: parsed.role,
+          office_id: parsed.officeId ?? null,
+          employee_id: parsed.employeeId ?? null,
+        },
       });
 
     if (createError) {
@@ -143,13 +151,17 @@ export async function updateUser(input: unknown): Promise<void> {
     if (parsed.role !== undefined || parsed.officeId !== undefined) {
       const authUid = row["auth_uid"] as string | null;
       if (authUid) {
+        const metaClaims = {
+          role: parsed.role ?? (row["role"] as string),
+          office_id: parsed.officeId ?? (row["office_id"] as string | null),
+          employee_id:
+            parsed.employeeId ?? (row["employee_id"] as string | null),
+        };
+        // app_metadata is authoritative for authorization (service-role-only);
+        // user_metadata is retained only for the legacy signup trigger.
         await supabaseAdmin.auth.admin.updateUserById(authUid, {
-          user_metadata: {
-            role: parsed.role ?? (row["role"] as string),
-            office_id: parsed.officeId ?? (row["office_id"] as string | null),
-            employee_id:
-              parsed.employeeId ?? (row["employee_id"] as string | null),
-          },
+          user_metadata: metaClaims,
+          app_metadata: metaClaims,
         });
       }
     }

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { createBrowserClient } from '@/lib/supabase/client';
-import type { Role } from '@/lib/auth/permissions';
+import { useEffect, useState } from "react";
+import { createBrowserClient } from "@/lib/supabase/client";
+import type { Role } from "@/lib/auth/permissions";
 
 export interface CurrentUserClient {
   id: string;
@@ -13,9 +13,9 @@ export interface CurrentUserClient {
 }
 
 type UseCurrentUserResult =
-  | { status: 'loading'; user: null }
-  | { status: 'authenticated'; user: CurrentUserClient }
-  | { status: 'unauthenticated'; user: null };
+  | { status: "loading"; user: null }
+  | { status: "authenticated"; user: CurrentUserClient }
+  | { status: "unauthenticated"; user: null };
 
 /**
  * Client-side hook that returns the authenticated user's identity and role.
@@ -28,26 +28,38 @@ type UseCurrentUserResult =
  * with the `hasPermission()` predicate.
  */
 export function useCurrentUser(): UseCurrentUserResult {
-  const [result, setResult] = useState<UseCurrentUserResult>({ status: 'loading', user: null });
+  const [result, setResult] = useState<UseCurrentUserResult>({
+    status: "loading",
+    user: null,
+  });
 
   useEffect(() => {
     const supabase = createBrowserClient();
 
     function buildUser(
-      authUser: { id: string; email?: string; user_metadata: Record<string, unknown> } | null,
+      authUser: {
+        id: string;
+        email?: string;
+        app_metadata: Record<string, unknown>;
+      } | null,
     ): UseCurrentUserResult {
-      if (!authUser) return { status: 'unauthenticated', user: null };
+      if (!authUser) return { status: "unauthenticated", user: null };
 
-      const meta = authUser.user_metadata;
-      const role = (meta['role'] as Role | undefined) ?? 'employee_self_service';
-      const officeId = typeof meta['office_id'] === 'string' ? meta['office_id'] : null;
-      const employeeId = typeof meta['employee_id'] === 'string' ? meta['employee_id'] : null;
+      // Mirror the server: role/office/employee live in app_metadata (the
+      // service-role-only claim store). Display-only — the server enforces authz.
+      const meta = authUser.app_metadata;
+      const role =
+        (meta["role"] as Role | undefined) ?? "employee_self_service";
+      const officeId =
+        typeof meta["office_id"] === "string" ? meta["office_id"] : null;
+      const employeeId =
+        typeof meta["employee_id"] === "string" ? meta["employee_id"] : null;
 
       return {
-        status: 'authenticated',
+        status: "authenticated",
         user: {
           id: authUser.id,
-          email: authUser.email ?? '',
+          email: authUser.email ?? "",
           role,
           officeId,
           employeeId,

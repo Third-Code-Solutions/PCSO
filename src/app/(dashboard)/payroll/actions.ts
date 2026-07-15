@@ -12,8 +12,9 @@ import {
   salaryGrades,
   allowances,
   employees,
+  attendanceLogs,
 } from "@/lib/db/schema";
-import { eq, and, isNull, inArray, lte, desc, ne, sql } from "drizzle-orm";
+import { eq, and, gte, isNull, inArray, lte, desc, ne, sql } from "drizzle-orm";
 import {
   CreatePeriodSchema,
   OverrideRecordSchema,
@@ -62,11 +63,18 @@ import {
   computeLoanDeductions,
   collectionWindowKey,
 } from "@/lib/utils/payroll/loans";
-import type { PayrollBenefitType } from "@/lib/db/schema";
+import type {
+  PayrollBenefitType,
+  PayrollPeriod,
+  PayrollRecord,
+} from "@/lib/db/schema";
 import type {
   LoanForDeduction,
   LoanDeductionEntry,
 } from "@/lib/utils/payroll/loans";
+import { Resend } from "resend";
+import { env } from "@/lib/env";
+import { PayslipEmailTemplate } from "@/lib/email/templates/payslip";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -101,6 +109,15 @@ const LOAN_COLLECT_LOCK_KEY = "payroll:loans:collect";
 export async function createPeriod(input: unknown) {
   const parsed = CreatePeriodSchema.parse(input);
   const user = await requirePermission("payroll", "create");
+
+  // PAY-005: a 'pbb' benefit run pays from the PMM-approved qualified list
+  // (PMM-007), which is not yet integrated — every record would compute to
+  // zero and the run would silently pay nobody. Reject at creation.
+  if (parsed.scope === "benefits_bonuses" && parsed.benefitType === "pbb") {
+    throw new Error(
+      "PBB payroll is not yet supported — pending PMM PBB-list integration.",
+    );
+  }
 
   const period = await withTx(async (tx) => {
     const [inserted] = await tx
@@ -307,6 +324,55 @@ export async function processPayroll(periodId: string) {
         .where(eq(payrollEmployeeInputs.periodId, periodId));
       const inputsByEmployee = new Map(inputRows.map((r) => [r.employeeId, r]));
 
+      // TOR §10.1.2 / §10.2 / §10.3: the regular (DTR-based) run docks
+      // tardiness, undertime, and unexcused absences and pays approved OT.
+      // Aggregate each from attendance_logs for the period. Bonus/allowance and
+      // JO/COS/confidential runs are NOT attendance-docked, so they keep zeroed
+      // attendance input (never dock a bonus run for a late punch). Absences
+      // exclude holiday/suspended/leave-covered days — unfiled (AWOL) only per
+      // §10.1.2. overtime_minutes is populated only from approved OT requests.
+      const attendanceByEmployee = new Map<
+        string,
+        {
+          lateMinutes: number;
+          undertimeMinutes: number;
+          absenceDays: number;
+          approvedOvertimeHours: number;
+        }
+      >();
+      if (period.scope === "regular") {
+        const attRows = await tx
+          .select({
+            employeeId: attendanceLogs.employeeId,
+            late: sql<number>`coalesce(sum(${attendanceLogs.lateMinutes}), 0)`,
+            undertime: sql<number>`coalesce(sum(${attendanceLogs.undertimeMinutes}), 0)`,
+            overtime: sql<number>`coalesce(sum(${attendanceLogs.overtimeMinutes}), 0)`,
+            absences: sql<number>`coalesce(sum(case
+              when ${attendanceLogs.timeIn} is null
+               and ${attendanceLogs.dayType} = 'ordinary'
+               and ${attendanceLogs.isSuspended} = false
+               and ${attendanceLogs.leaveApplicationId} is null
+              then 1 else 0 end), 0)`,
+          })
+          .from(attendanceLogs)
+          .where(
+            and(
+              gte(attendanceLogs.logDate, period.periodStart),
+              lte(attendanceLogs.logDate, period.periodEnd),
+            ),
+          )
+          .groupBy(attendanceLogs.employeeId);
+
+        for (const r of attRows) {
+          attendanceByEmployee.set(r.employeeId, {
+            lateMinutes: Number(r.late),
+            undertimeMinutes: Number(r.undertime),
+            absenceDays: Number(r.absences),
+            approvedOvertimeHours: Number(r.overtime) / 60,
+          });
+        }
+      }
+
       const periodStartDate = new Date(period.periodStart);
       const periodEndDate = new Date(period.periodEnd);
       const periodType = "semi-monthly" as const;
@@ -348,7 +414,9 @@ export async function processPayroll(periodId: string) {
           ),
         };
 
-        const attendanceInput: AttendanceInput = {
+        const attendanceInput: AttendanceInput = attendanceByEmployee.get(
+          emp.id,
+        ) ?? {
           lateMinutes: 0,
           undertimeMinutes: 0,
           absenceDays: 0,
@@ -865,43 +933,126 @@ export async function generatePayslip(recordId: string) {
 
 // ─── Email Payslips ───────────────────────────────────────────────────────────
 
+const PAYSLIP_FROM_EMAIL = env.RESEND_FROM_EMAIL ?? "noreply@pcso.gov.ph";
+
+function getResend(): Resend | null {
+  if (!env.RESEND_API_KEY) return null;
+  return new Resend(env.RESEND_API_KEY);
+}
+
+/**
+ * Best-effort payslip delivery. Mirrors the leave module's sendEmail helper:
+ * skips silently when RESEND_API_KEY is unset (dev/test) and logs — never
+ * throws — on failure, so one bad recipient can never abort the batch.
+ */
+async function sendPayslipEmail(params: {
+  to: string;
+  employeeName: string;
+  period: PayrollPeriod;
+  record: PayrollRecord;
+}): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+
+  try {
+    const { error } = await resend.emails.send({
+      from: `PCSO HRIS <${PAYSLIP_FROM_EMAIL}>`,
+      to: params.to,
+      subject: `Your Payslip — ${params.period.name}`,
+      react: PayslipEmailTemplate({
+        employeeName: params.employeeName,
+        period: params.period,
+        record: params.record,
+      }),
+      text: `Your payslip for ${params.period.name} is ready. Net pay: PHP ${params.record.netPay}.`,
+    });
+    if (error) {
+      console.error("[payroll/actions] payslip email failed:", error);
+    }
+  } catch (err) {
+    console.error("[payroll/actions] payslip email failed:", err);
+  }
+}
+
 export async function emailPayslips(input: unknown) {
   const parsed = EmailPayslipsSchema.parse(input);
   const user = await requirePermission("payroll", "export");
 
-  const result = await withTx(async (tx) => {
-    const [period] = await tx
-      .select()
-      .from(payrollPeriods)
-      .where(eq(payrollPeriods.id, parsed.periodId))
-      .limit(1);
+  const [period] = await db
+    .select()
+    .from(payrollPeriods)
+    .where(eq(payrollPeriods.id, parsed.periodId))
+    .limit(1);
 
-    if (!period) throw new Error("Payroll period not found");
-    if (period.status !== "approved" && period.status !== "paid") {
-      throw new Error(
-        "Payslips can only be emailed for approved or paid periods.",
-      );
-    }
+  if (!period) throw new Error("Payroll period not found");
+  if (period.status !== "approved" && period.status !== "paid") {
+    throw new Error(
+      "Payslips can only be emailed for approved or paid periods.",
+    );
+  }
 
-    const now = new Date().toISOString();
-    await tx
+  // Only included records are emailed, optionally narrowed to the caller's
+  // recordIds. Join employees for the recipient name + email address.
+  const recordConds = [
+    eq(payrollRecords.periodId, parsed.periodId),
+    eq(payrollRecords.included, true),
+  ];
+  if (parsed.recordIds && parsed.recordIds.length > 0) {
+    recordConds.push(inArray(payrollRecords.id, parsed.recordIds));
+  }
+
+  const rows = await db
+    .select({
+      record: payrollRecords,
+      firstName: employees.firstName,
+      lastName: employees.lastName,
+      email: employees.email,
+    })
+    .from(payrollRecords)
+    .innerJoin(employees, eq(payrollRecords.employeeId, employees.id))
+    .where(and(...recordConds));
+
+  // Render + send each payslip (best-effort, outside any tx). Stamp only the
+  // records we actually emailed; an employee with no email on file is skipped.
+  const emailedRecordIds: string[] = [];
+  for (const row of rows) {
+    if (!row.email) continue;
+    const employeeName =
+      `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim() || "Employee";
+    await sendPayslipEmail({
+      to: row.email,
+      employeeName,
+      period,
+      record: row.record,
+    });
+    emailedRecordIds.push(row.record.id);
+  }
+
+  const now = new Date().toISOString();
+  if (emailedRecordIds.length > 0) {
+    await db
       .update(payrollRecords)
       .set({ payslipEmailedAt: now, updatedAt: new Date() })
-      .where(eq(payrollRecords.periodId, parsed.periodId));
-
-    return { periodId: parsed.periodId, emailedAt: now };
-  });
+      .where(inArray(payrollRecords.id, emailedRecordIds));
+  }
 
   void auditLog({
     userId: user.id,
     action: "export",
     table: "payroll_periods",
     recordId: parsed.periodId,
-    newValues: { payslipsEmailedAt: result.emailedAt },
+    newValues: {
+      payslipsEmailedAt: now,
+      emailedCount: emailedRecordIds.length,
+    },
   });
 
   revalidatePath(`/payroll/${parsed.periodId}`);
-  return result;
+  return {
+    periodId: parsed.periodId,
+    emailedAt: now,
+    emailedCount: emailedRecordIds.length,
+  };
 }
 
 // ─── Export Register ──────────────────────────────────────────────────────────
@@ -1038,7 +1189,17 @@ async function loadScopeContext(
   // message rather than silently producing an empty run.
   if (period.scope === "benefits_bonuses" && !period.benefitType) {
     throw new Error(
-      "Benefit type is not set for this benefits and bonuses run. Recreate the period and select a benefit component (Mid-Year, Year-End + Cash Gift, or PBB).",
+      "Benefit type is not set for this benefits and bonuses run. Recreate the period and select a benefit component (Mid-Year, or Year-End + Cash Gift).",
+    );
+  }
+
+  // PAY-005: 'pbb' pays from the PMM-approved qualified list (PMM-007), which is
+  // not yet integrated — a pbb run computes zero for every employee and pays
+  // nobody. Reject here too (catches periods created before the createPeriod
+  // guard) instead of silently producing an empty run.
+  if (period.scope === "benefits_bonuses" && period.benefitType === "pbb") {
+    throw new Error(
+      "PBB payroll is not yet supported — pending PMM PBB-list integration.",
     );
   }
 

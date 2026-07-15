@@ -17,13 +17,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CostBreakdownCard } from "./cost-breakdown-card";
-// Upstream Agent 09 — may not exist yet.
-import { createTrainingRun } from "@/lib/actions/ldm/scheduling";
+import {
+  createTrainingRun,
+  proposeTrainingRun,
+} from "@/lib/actions/ldm/scheduling";
 
 type FormValues = z.infer<typeof createTrainingRunSchema>;
 
+/** ISO (UTC) → `datetime-local` display string in the viewer's local zone. */
+function isoToLocalInput(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 interface RunFormProps {
-  programs: Array<{ id: string; code: string; title: string }>;
+  programs: Array<{
+    id: string;
+    code: string;
+    title: string;
+    durationDays: number | null;
+  }>;
   providers: Array<{ id: string; companyName: string }>;
   defaultProgramId?: string;
 }
@@ -35,6 +51,7 @@ export function RunForm({
 }: RunFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = React.useState<string | null>(null);
+  const [proposing, setProposing] = React.useState(false);
 
   const {
     register,
@@ -73,6 +90,53 @@ export function RunForm({
       setServerError(
         `FAILED: ${err instanceof Error ? err.message : "Unexpected error."}`,
       );
+    }
+  }
+
+  // LDM-004 auto-schedule: compute a suggested window/venue/budget from the
+  // selected program + cost inputs and prefill the form for review.
+  async function onSuggestSchedule(): Promise<void> {
+    setServerError(null);
+    const program = programs.find((p) => p.id === watched.programId);
+    if (!program || !watched.providerId) {
+      setServerError(
+        "FAILED: Select a program and provider first to suggest a schedule.",
+      );
+      return;
+    }
+    setProposing(true);
+    try {
+      const proposed = await proposeTrainingRun({
+        cost: {
+          perParticipantCost: Number(watched.perParticipantCost) || 0,
+          plannedHeadcount: Number(watched.plannedHeadcount) || 1,
+          venueCost: Number(watched.venueCost) || 0,
+          facilitatorFees: Number(watched.facilitatorFees) || 0,
+        },
+        program: {
+          id: program.id,
+          name: program.title,
+          durationDays: program.durationDays ?? 1,
+        },
+        provider: { id: watched.providerId, availability: { weeklySlots: [] } },
+      });
+      setValue(
+        "scheduledStart",
+        new Date(`${proposed.startDate}T09:00:00`).toISOString(),
+        { shouldValidate: true },
+      );
+      setValue(
+        "scheduledEnd",
+        new Date(`${proposed.endDate}T17:00:00`).toISOString(),
+        { shouldValidate: true },
+      );
+      setValue("venue", proposed.venue, { shouldValidate: true });
+    } catch (err) {
+      setServerError(
+        `FAILED: ${err instanceof Error ? err.message : "Could not suggest a schedule."}`,
+      );
+    } finally {
+      setProposing(false);
     }
   }
 
@@ -141,9 +205,14 @@ export function RunForm({
             <Input
               id="scheduledStart"
               type="datetime-local"
-              {...register("scheduledStart", {
-                setValueAs: (v) => (v ? new Date(v).toISOString() : ""),
-              })}
+              value={isoToLocalInput(watched.scheduledStart)}
+              onChange={(e) =>
+                setValue(
+                  "scheduledStart",
+                  e.target.value ? new Date(e.target.value).toISOString() : "",
+                  { shouldValidate: true },
+                )
+              }
             />
             {errors.scheduledStart && (
               <p className="mt-1 text-xs text-destructive">
@@ -156,9 +225,14 @@ export function RunForm({
             <Input
               id="scheduledEnd"
               type="datetime-local"
-              {...register("scheduledEnd", {
-                setValueAs: (v) => (v ? new Date(v).toISOString() : ""),
-              })}
+              value={isoToLocalInput(watched.scheduledEnd)}
+              onChange={(e) =>
+                setValue(
+                  "scheduledEnd",
+                  e.target.value ? new Date(e.target.value).toISOString() : "",
+                  { shouldValidate: true },
+                )
+              }
             />
             {errors.scheduledEnd && (
               <p className="mt-1 text-xs text-destructive">
@@ -222,6 +296,14 @@ export function RunForm({
         )}
 
         <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void onSuggestSchedule()}
+            disabled={proposing || isSubmitting}
+          >
+            {proposing ? "Suggesting…" : "Suggest Schedule"}
+          </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Saving…" : "Propose Run"}
           </Button>

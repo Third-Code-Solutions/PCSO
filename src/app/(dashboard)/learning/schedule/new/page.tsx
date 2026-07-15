@@ -34,6 +34,7 @@ export default async function NewRunPage({ searchParams }: PageProps) {
         id: trainingPrograms.id,
         code: trainingPrograms.code,
         title: trainingPrograms.title,
+        durationDays: trainingPrograms.durationDays,
       })
       .from(trainingPrograms)
       .where(isNull(trainingPrograms.deletedAt))

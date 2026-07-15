@@ -21,7 +21,10 @@ import {
   type CompetencyAssessment,
 } from "@/lib/db/schema/learning";
 import { employees } from "@/lib/db/schema/employees";
-import { competencyAssessmentSchema } from "@/lib/validations/learning";
+import {
+  competencyAssessmentSchema,
+  type CompetencyAssessmentInput,
+} from "@/lib/validations/learning";
 import { requirePermission } from "@/lib/auth/guards";
 
 type Ok<T> = { data: T };
@@ -52,6 +55,10 @@ export interface RecordAssessmentInput {
   domain: string;
   competencyCode: string;
   score: number;
+  /** Competency enum level (novice…expert) — required by the DB + schema. */
+  level: CompetencyAssessmentInput["level"];
+  /** Assessment date, ISO `YYYY-MM-DD` — required by the DB + schema. */
+  assessedAt: string;
   cycleYear: number;
   assessorEmployeeId: string;
 }

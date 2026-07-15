@@ -41,6 +41,12 @@ import type { AppointmentType } from "@/lib/utils/payroll/types";
 interface GenerateServiceRecordParams {
   employeeId: string;
   requestedBy?: string; // Employee ID of requester (for audit)
+  /**
+   * Serial number already bound to a document request (PIM-016). When provided,
+   * it is reused instead of drawing a fresh one so a retry after a failed upload
+   * does not burn a serial and gap the sequence. Omit to draw a new serial.
+   */
+  serialNumber?: string;
 }
 
 interface GenerateServiceRecordResult {
@@ -194,10 +200,11 @@ export async function generateServiceRecord(
       signatories[0];
     const issuedByTitle = certifier?.title ?? "HRD Manager";
 
-    // 6. Generate serial number (atomic)
-    const serialNumber = await generateSerialNumber(
-      DOCUMENT_TYPES.SERVICE_RECORD,
-    );
+    // 6. Serial number: reuse the request-bound serial (retry-safe, PIM-016) or
+    //    draw a new one atomically.
+    const serialNumber =
+      params.serialNumber ??
+      (await generateSerialNumber(DOCUMENT_TYPES.SERVICE_RECORD));
 
     const issuedDate = new Date().toLocaleDateString("en-PH", {
       year: "numeric",

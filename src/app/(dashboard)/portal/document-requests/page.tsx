@@ -61,6 +61,12 @@ const STATUS_VARIANTS: Record<
   disapproved: "destructive",
 };
 
+// Only document types that processDocumentRequest actually generates a file for
+// are offered here. Types that would produce a serial + "Ready" status but no
+// downloadable file (e.g. Office Clearance, Certificate of Training) are issued
+// through their own flows — Training certificates via the LDM per-run flow — not
+// generic document requests, so an employee never gets a dead "Ready" with
+// nothing to download.
 const DOCUMENT_TYPE_OPTIONS = [
   { value: "COE", label: "Certificate of Employment (COE)" },
   {
@@ -69,8 +75,6 @@ const DOCUMENT_TYPE_OPTIONS = [
   },
   { value: "SERVICE_RECORD", label: "Service Record" },
   { value: "PDS", label: "Personal Data Sheet (CS Form 212)" },
-  { value: "CLEARANCE", label: "Office Clearance" },
-  { value: "CERTIFICATE_TRAINING", label: "Certificate of Training" },
   { value: "AD_HOC", label: "Ad Hoc Certificate" },
 ] as const;
 

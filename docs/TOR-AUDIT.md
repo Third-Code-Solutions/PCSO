@@ -3,7 +3,7 @@
 **Audit date:** 2026-07-04 · **Baseline:** commit e325efe · **Method:** 5 parallel per-module codebase sweeps against `TOR-HS-System.md`
 **Verification state at audit:** type-check clean · 936/936 unit tests green
 
-> **Remediation status (after Iterations 1–5, 2026-07-15):** every code-expressible TOR item is IMPLEMENTED except:
+> **Remediation status (after Iteration 6, 2026-07-15):** Iteration 6 was an adversarial live-path re-audit (5 parallel per-module sweeps) that found ~30 defects previously mis-marked IMPL — features that compiled and had passing tests but did NOT work end-to-end for the user, including **3 CRITICAL**: (1) privilege escalation — RBAC role was read from client-writable `user_metadata`, so any employee could self-promote to super_admin; (2) `/api/attendance/schedules` write CRUD gated only by `requireAuth()` (any user could rewrite schedules → payroll tampering); (3) payroll silently ignored attendance (tardiness/undertime/AWOL/OT hardcoded to 0 every run). All are fixed and verified (§Iteration 6 Results). After Iteration 6, every code-expressible TOR item is IMPLEMENTED **and exercised end-to-end** except:
 > • **External-dependency:** Entra ID SSO 3.1.7/3.2.7/3.6.3 (needs PCSO tenant — `docs/ENTRA-SSO-READINESS.md` has the exact setup) · PCSO PKI-based PAdES upgrade (detached-RSA signing shipped as the TOR-sanctioned fallback) · biometric vendor device endpoints (push/pull API live; CSV/XLSX fallback guaranteed).
 > • **Execution-at-UAT:** load-test run 3.5.14 (k6 harness + methodology shipped) · VA/PenTest 3.7.5/6 (procurement).
 > • **By-design PARTIALs:** CSC-standard value sets kept as pgEnums rather than FM rows (blood type, civil status, gender, holiday type, employment status — FM 1.1.56 rationale: referential integrity for payroll/leave-critical enums; all other lookups are FM-managed).
@@ -411,6 +411,32 @@ Structural finding: 34 `fm_*` tables defined (`src/lib/db/schema/fm-extensions.t
 **External-dependency items:** Entra ID SSO (3.1.7/3.2.7/3.6.3) — `docs/ENTRA-SSO-READINESS.md` with exact Supabase SAML + Entra enterprise-app steps; blocked on PCSO tenant values. Runbook updated (7 crons, API surface, key rotation, workflows, error triage).
 
 **Verified:** type-check clean · lint 0 errors · production build green (14 new routes) · **1271/1271 unit tests** (+81: API v1 45, masking 22, signing 14). Migration `2026-07-15-03` (api_clients, api_jobs, workflow_definitions, error_logs, biometric_imports relax) applied to prod ahead of deploy. New cron: security-alerts (hourly).
+
+## Iteration 6 Results (2026-07-15) — adversarial live-path re-audit
+
+Method: 5 parallel skeptical module audits (verifying "IMPL" claims against actual call-graphs, not docs) surfaced ~30 genuine live-path defects; 5 parallel fix-agents on disjoint file-sets + direct fixes on the security/payroll/RPM criticals closed them. Verified: **type-check exit 0 · 1273/1273 unit tests · lint exit 0 · production build exit 0.**
+
+**CRITICAL (security + payroll correctness):**
+
+- **Privilege escalation (SEC-008/3.2.6) → FIXED.** `middleware.ts` + `get-current-user.ts` (+ client `use-current-user.ts`) read the RBAC role from `user.user_metadata`, which any authenticated user can self-write via `supabase.auth.updateUser({ data: { role: 'super_admin' } })` with the anon key — and the Drizzle client bypasses RLS, so the app-layer guard was the only control. Now read exclusively from `app_metadata` (service-role-only). Writers (`admin/users`, `settings.updateUserRole`, `sync-user-metadata`) dual-write/propagate `app_metadata`; migration `2026-07-15-04` backfills `raw_app_meta_data` from the authoritative `system_users` table (getUser() returns fresh metadata → effective without re-login).
+- **Unauthenticated schedule writes → FIXED.** `/api/attendance/schedules` POST/PUT/DELETE were gated only by `requireAuth()` (middleware doesn't cover `/api/attendance/*`), so any employee could rewrite the schedules that drive tardiness/undertime for everyone. Added `getCurrentUser` + `hasPermission("attendance","edit")` (401/403, no redirect-in-route) + Zod body validation.
+- **Payroll ignored attendance (§10.1.2/10.2/10.3) → FIXED.** `processPayroll` hardcoded `lateMinutes/undertimeMinutes/absenceDays/approvedOvertimeHours = 0` for every employee, so no run ever docked tardiness/undertime/AWOL or paid approved OT. Now aggregates them per employee from `attendance_logs` for the regular (DTR-based) scope only (bonus/RATA/JO runs stay un-docked); AWOL excludes holiday/suspended/leave-covered days.
+
+**HIGH:**
+
+- RPM appointment package PDFs 404'd (URLs pointed at a non-existent route while the real renderer was dead) → new on-demand `/api/documents/appointment/[id]/[doc]` route renders the 5 PDFs from live data, authz-gated (RPM-022).
+- CSC Form 9 published with hardcoded `Position`/SG 0/₱0/`PCSO`/`TBD` → now joins the real plantilla position + office + `orgProfile` (RPM-002).
+- Appointment→employee provisioning was a non-atomic stub (no leave ledger, no plantilla-fill, `cas`/`cos` enum crash) → delegates to the atomic `atomicallyProvisionNewEmployee` in `withTx` (RPM-023).
+- Leave "Run Accrual" double-credited on re-run → added the same audit-log month/year idempotency guard the cron uses.
+- `emailPayslips` stamped success + toasted but sent nothing → renders `PayslipEmailTemplate` and sends via Resend (best-effort) before stamping.
+- Web-clock + HR-correction attendance compute was schedule/day-type-blind (hardcoded 08:00–17:00 / "ordinary") → resolves the applicable schedule + real day type (holiday/rest/suspension), reusing the ingest helpers (§1.5.4/1.5.9).
+- DPCR/BPCR (PMM-003/004) non-functional (routes 404, orphaned actions, FK-parent cycle never inserted, split-brain storage) → added `new`/`[id]` routes on a single `dpcr_forms`/`bpcr_forms` path with lazy `performance_cycles` creation.
+- Forced-ranking cap (§10.4.2) never enforced → `approveRating` now blocks when Outstanding>10% / VS>25% for the office/period; duplicate deleted.
+- Step-increment approve/implement/cancel unwired → NOSI (PIM-014) never issued → bound as guarded form actions; `implementStepIncrement` reachable.
+- TNA (LDM-013) + competency recording (LDM-012) threw ZodErrors on a schema mismatch and had no UI → shapes reconciled + entry controls wired.
+- Training-approval workflow (LDM-008) was a GET-link decoy → real submit/approve/reject actions; runs can reach `completed`.
+
+**MEDIUM/LOW:** appointment monthly salary hardcoded (SG 1-10 else ₱13k) → real SSL schedule lookup; PBB payroll run silently paid nobody → rejected pending PMM integration; PBB list not period-scoped + ignored approved leave → period-scoped + leave-aware gates; N-037 failed-login burst alert was dead (no `outcome='failure'` rows ever written) → login records them; `updateUserRole` didn't propagate to JWT → now does; `submitIpcrfReview` missing state guard; step-eligibility used ≥3.5 not ≥2.5 for §10.5 + no Step-8 cap; DTR-correction recomputed holidays as ordinary days; shift-change commit non-atomic → `withTx`+lock; LDM participant-complete + auto-schedule/conflict-detection wired; `uploadPerformanceDocument` (PMM-005) wired; portal offered `CLEARANCE`/`CERTIFICATE_TRAINING` with no generator → removed; HR 201-doc list showed fake `User`/`Admin` names → real joins; serial burned on upload failure → bound to the request for retry (PIM-016); dead parallel doc-request exports removed; `overrideRecord` field allowlist.
 
 ## Remediation iterations (loop plan)
 

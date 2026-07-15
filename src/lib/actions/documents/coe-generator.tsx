@@ -123,6 +123,12 @@ interface GenerateCOEParams {
   purpose: string;
   includeSalary?: boolean;
   requestedBy?: string; // Employee ID of requester (for audit)
+  /**
+   * Serial number already bound to a document request (PIM-016). When provided,
+   * it is reused instead of drawing a fresh one so a retry after a failed upload
+   * does not burn a serial and gap the sequence. Omit to draw a new serial.
+   */
+  serialNumber?: string;
 }
 
 interface GenerateCOEResult {
@@ -162,8 +168,10 @@ export async function generateCOE(
       return { success: false, error: "Organization profile not configured" };
     }
 
-    // 3. Generate serial number (atomic)
-    const serialNumber = await generateSerialNumber(DOCUMENT_TYPES.COE);
+    // 3. Serial number: reuse the request-bound serial (retry-safe, PIM-016) or
+    //    draw a new one atomically.
+    const serialNumber =
+      params.serialNumber ?? (await generateSerialNumber(DOCUMENT_TYPES.COE));
 
     // Signing posture is decided BEFORE rendering so the footer text is part
     // of the signed bytes (the detached signature covers the final PDF).

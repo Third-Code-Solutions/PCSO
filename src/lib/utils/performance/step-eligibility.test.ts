@@ -75,11 +75,27 @@ describe("three consecutive VS or better rule", () => {
     expect(result.triggerRule).toBe("none");
   });
 
-  it("is NOT eligible when streak is broken by a Satisfactory", () => {
-    const ratings = makeRatings([3.5, 2.8, 3.7, 4.0]); // 2.8 is Satisfactory
-    // Only 2 consecutive VS at the end
+  it("is NOT eligible when streak is broken by an Unsatisfactory (< 2.500)", () => {
+    // PRD §10.5: each of the 3 consecutive years needs ≥ Satisfactory. An
+    // Unsatisfactory (2.0) breaks the streak, leaving only 2 qualifying years.
+    const ratings = makeRatings([3.5, 2.0, 3.7, 4.0]);
     const result = checkStepEligibility(ratings, null);
     expect(result.eligible).toBe(false);
+  });
+
+  it("is eligible with 3 consecutive Satisfactory (≥ 2.500) per §10.5", () => {
+    // Satisfactory band is 2.500–3.499; three in a row now qualifies.
+    const ratings = makeRatings([2.5, 2.8, 3.4]);
+    const result = checkStepEligibility(ratings, null);
+    expect(result.eligible).toBe(true);
+    expect(result.triggerRule).toBe("three_consecutive_vs");
+  });
+
+  it("excludes employees already at the maximum step (Step 8)", () => {
+    const ratings = makeRatings([3.5, 3.6, 3.7]);
+    const result = checkStepEligibility(ratings, null, 8);
+    expect(result.eligible).toBe(false);
+    expect(result.ineligibilityReason).toContain("maximum step");
   });
 
   it("is eligible when streak resumes after a break with 3 more VS", () => {

@@ -78,9 +78,54 @@ export type ProcessPayrollInput = z.infer<typeof ProcessPayrollSchema>;
 
 // ─── Override Record ──────────────────────────────────────────────────────────
 
+/**
+ * The only payroll_records columns an override may write. Constrained to the
+ * numeric money columns so a crafted `fieldName` can never target arbitrary
+ * columns (status, employee_id, ids, snapshots, …) via the dynamic
+ * `set({ [fieldName]: … })` write in overrideRecord. Names are the Drizzle
+ * property names (camelCase), matching what the update statement expects.
+ */
+export const OVERRIDABLE_PAYROLL_FIELDS: readonly string[] = [
+  // Earnings
+  "authorizedSalary",
+  "basicPay",
+  "rata",
+  "longevityPay",
+  "overtimePay",
+  "pera",
+  "otherEarnings",
+  "grossPay",
+  // Deductions
+  "gsisPersonal",
+  "gsisEmployer",
+  "gsisLifeInsurance",
+  "philhealthPersonal",
+  "philhealthEmployer",
+  "pagibigPersonal",
+  "pagibigEmployer",
+  "withholdingTax",
+  "lateDeduction",
+  "undertimeDeduction",
+  "absenceDeduction",
+  "otherDeductions",
+  "totalDeductions",
+  // Net
+  "netPay",
+];
+
 export const OverrideRecordSchema = z.object({
   recordId: z.string().uuid(),
-  fieldName: z.string().min(1),
+  // Runtime allowlist enforcement. Kept as a `string` refine (not `z.enum`) so
+  // the inferred value type stays `string` for the consuming react-hook-form
+  // — membership is enforced at parse time, so a crafted fieldName can never
+  // target an arbitrary column via the dynamic set() write in overrideRecord.
+  fieldName: z
+    .string()
+    .min(1)
+    .refine(
+      (v) => OVERRIDABLE_PAYROLL_FIELDS.includes(v),
+      "Field is not an overridable payroll column.",
+    ),
   adjustedValue: z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Must be a valid monetary amount"),

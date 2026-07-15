@@ -293,9 +293,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 4. Retrieve the role stored in user metadata (set by the signup trigger).
+  // 4. Retrieve the role from app_metadata — the service-role-only claim store.
+  //    user_metadata is client-writable (supabase.auth.updateUser) and must not
+  //    gate routes. Existing users are backfilled by migration 2026-07-15-04.
   const role =
-    (user.user_metadata?.["role"] as Role | undefined) ??
+    (user.app_metadata?.["role"] as Role | undefined) ??
     "employee_self_service";
 
   // 5. Route-level ROLE allowlist (hard gate — single source of truth lives
