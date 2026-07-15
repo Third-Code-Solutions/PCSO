@@ -3,9 +3,11 @@
 **Audit date:** 2026-07-04 · **Baseline:** commit e325efe · **Method:** 5 parallel per-module codebase sweeps against `TOR-HS-System.md`
 **Verification state at audit:** type-check clean · 936/936 unit tests green
 
-> **Iteration 1 remediation applied 2026-07-05** (see §Iteration 1 Results at bottom).
-> Post-iteration coverage: **IMPL 175 (64%) · PARTIAL 61 (22%) · MISSING 28 (10%) · N/A 8** — up from 45% IMPL at baseline.
-> The per-item tables below are the BASELINE audit; consult §Iteration 1 Results for items closed since.
+> **Remediation status (after Iterations 1–5, 2026-07-15):** every code-expressible TOR item is IMPLEMENTED except:
+> • **External-dependency:** Entra ID SSO 3.1.7/3.2.7/3.6.3 (needs PCSO tenant — `docs/ENTRA-SSO-READINESS.md` has the exact setup) · PCSO PKI-based PAdES upgrade (detached-RSA signing shipped as the TOR-sanctioned fallback) · biometric vendor device endpoints (push/pull API live; CSV/XLSX fallback guaranteed).
+> • **Execution-at-UAT:** load-test run 3.5.14 (k6 harness + methodology shipped) · VA/PenTest 3.7.5/6 (procurement).
+> • **By-design PARTIALs:** CSC-standard value sets kept as pgEnums rather than FM rows (blood type, civil status, gender, holiday type, employment status — FM 1.1.56 rationale: referential integrity for payroll/leave-critical enums; all other lookups are FM-managed).
+> The per-item tables below are the BASELINE audit; consult the §Iteration Results sections for everything closed since.
 
 Statuses: **IMPL** (works end-to-end) · **PARTIAL** (schema-only, backend-only, or incomplete) · **MISSING** · **N/A** (infra/process item not expressible in code)
 
