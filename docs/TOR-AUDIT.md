@@ -381,6 +381,35 @@ Structural finding: 34 `fm_*` tables defined (`src/lib/db/schema/fm-extensions.t
 
 **Known follow-ups:** `biometric_imports.imported_by_id` NOT NULL blocks archive rows for unauthenticated push/cron pulls (they transaction-log instead) — schema relax queued for Iter 5. Consultant payroll exclusion documented (contract-billed).
 
+## Iteration 5 Results (2026-07-15)
+
+**CRITICAL production fix — middleware API gating:** the session middleware was login-redirecting every non-`/api/auth` route: ALL `/api/cron/*` scheduled jobs (monthly accrual, sick-leave auto-approve, year-end forced leave, retirement notices) had NEVER executed their handlers in prod (Vercel received 307→login HTML and reported "success"), `/verify/*` public QR verification (PIM-017) and the external applicant portal (`/applicant`, `/apply`, `/api/rpm/*` — RPM-006) were unreachable for anonymous users. Fixed: PUBLIC_PREFIXES now exempts exactly the self-authenticating families (cron CRON_SECRET, RPM applicant JWT/public reads, biometric device keys, API v1 client credentials, error reporting, verify, applicant portal pages). Internal APIs remain session-gated.
+
+**API v1 (TOR 3.3 / API-001…008):**
+
+- **3.3.3 → IMPL.** `api_clients` registry: static keys `pcso_<id>.<secret>` (sha256-at-rest, timing-safe) AND OAuth2 client-credentials (`/api/v1/oauth/token` → 1h HS256 JWT; `API_JWT_SECRET` optional env). Scope model (6 scopes), per-client rate limits w/ 429 + Retry-After. Admin UI `/admin/api-clients` (one-time key reveal, rotate, deactivate) + static API docs page w/ CSC-readiness note (3.3.16).
+- **3.3.5/3.3.6/3.3.7 → IMPL.** REST v1: employees CRUD + PATCH + soft DELETE, batch endpoint (max 500 ops, per-item results), leave-balances, journal-entries (API-007 accounting export w/ included filter).
+- **3.3.9/3.3.10 → IMPL.** XML negotiation (`?format=xml` / Accept) via safe serializer (entity-escaped, no DTD).
+- **3.3.14 → IMPL.** RFC 7807 problem+json on every v1 error.
+- **3.3.15 → IMPL.** `api_jobs` async queue: payroll_journal_export + employee_report job types → Supabase Storage artifacts + 7-day signed URLs, status polling endpoints.
+
+**Security (TOR 3.2/3.4/3.6):**
+
+- **3.2.6/3.1.12 → IMPL.** MFA TOTP via Supabase Auth: enrollment at `/settings/security` (QR + verify + unenroll w/ password re-confirm), inline second step on login, `/login/mfa` for guard-initiated verification, requirePermission enforces aal2 for super_admin/hr_admin sessions with enrolled factors; enrollment banner for admin roles (hard-lock deferred by design). Requires Supabase project MFA toggle.
+- **3.4.1/3.6.8 → IMPL.** Hourly `security-alerts` cron: failed-outcome bursts (≥5/10min per user/IP), off-hours admin writes on sensitive modules (Asia/Manila), unusual export volume (>20/hr) → super_admin notifications + email + `alert_sent` dedupe + transaction log.
+- **3.4.4 → IMPL.** `error_logs` table w/ full TOR field set + `logError` helper + anonymous rate-limited `/api/errors/report` + global-error boundaries wired + `/admin/error-logs` viewer.
+- **3.2.8 → IMPL.** Masking utils (TIN/GSIS/PhilHealth/Pag-IBIG/SSS/bank/email, last-4 posture) applied to employee profile government IDs for viewers without employees.edit (22 tests). PDFs/official documents unmasked by design.
+
+**Client environment (TOR 3.5):**
+
+- **3.5.10 → IMPL.** Workflow definition page `/admin/workflows`: 9 PRD §12 process chains seeded, step editor (actor/kind/SLA/reorder), active toggles, audit-logged.
+- **3.5.11/3.5.12 → IMPL (PAdES-compatible fallback).** Detached RSA-SHA256 document signing (`DOCUMENT_SIGNING_PRIVATE_KEY` optional env; null-safe when unconfigured), wired end-to-end into the COE generator + QR/JWT verify portal (signature metadata: alg, pdfSha256, fingerprint, keyId, signedAt); full signature persisted in audit. `docs/DIGITAL-SIGNATURES.md` maps the scheme to PAdES + PCSO-PKI upgrade path. (14 tests.)
+- **3.5.14 → IMPL (harness).** k6 smoke + 900-VU load profiles w/ p95<3s thresholds, `docs/LOAD-TESTING.md` methodology mapping to TOR 9.2 acceptance. Execution against prod requires Supabase Pro tier window (run at UAT).
+
+**External-dependency items:** Entra ID SSO (3.1.7/3.2.7/3.6.3) — `docs/ENTRA-SSO-READINESS.md` with exact Supabase SAML + Entra enterprise-app steps; blocked on PCSO tenant values. Runbook updated (7 crons, API surface, key rotation, workflows, error triage).
+
+**Verified:** type-check clean · lint 0 errors · production build green (14 new routes) · **1271/1271 unit tests** (+81: API v1 45, masking 22, signing 14). Migration `2026-07-15-03` (api_clients, api_jobs, workflow_definitions, error_logs, biometric_imports relax) applied to prod ahead of deploy. New cron: security-alerts (hourly).
+
 ## Remediation iterations (loop plan)
 
 - **Iter 1:** FM module (generic CRUD + seeds + new lookups) · cron scheduler (accrual/sick-auto-approve/year-end/retirement) · CSP+HSTS · audit-log field expansion + transaction log · leave attachments · LWOP + advanced leave reports · portal UIs (shift-change, DTR-correction) · Docker · upload templates

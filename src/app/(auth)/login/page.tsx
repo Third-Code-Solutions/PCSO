@@ -7,6 +7,7 @@ import { z } from "zod";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signInWithPassword, signInWithMagicLink } from "./actions";
+import { MfaVerifyForm } from "@/components/auth/mfa-verify-form";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,8 @@ function LoginPageInner() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // SEC-003: password accepted but the account requires a TOTP second step.
+  const [mfaStep, setMfaStep] = useState(false);
 
   // ── Password form ──────────────────────────────────────────────────────────
   const {
@@ -165,6 +168,8 @@ function LoginPageInner() {
       const result = await signInWithPassword({ ...data, next });
       if (result && !result.success) {
         setServerError(result.error ?? "Sign in failed.");
+      } else if (result && result.success && result.mfaRequired) {
+        setMfaStep(true);
       }
     } finally {
       setIsSubmitting(false);
@@ -187,6 +192,24 @@ function LoginPageInner() {
   }
 
   const urlErrorMessage = urlError ? URL_ERROR_MESSAGES[urlError] : null;
+
+  // ── SEC-003 second step: TOTP verification after password acceptance ──────
+  if (mfaStep) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <div className="w-8 h-0.5 bg-pcso-gold mb-4" />
+          <h2 className="font-serif text-2xl font-semibold text-pcso-navy leading-snug">
+            Two-factor verification
+          </h2>
+          <p className="mt-1.5 text-sm text-slate-500 font-sans">
+            One more step to finish signing in
+          </p>
+        </div>
+        <MfaVerifyForm next={next ?? "/dashboard"} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

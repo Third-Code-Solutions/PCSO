@@ -1038,6 +1038,21 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Holidays", href: "/admin/holidays", roles: ["super_admin"] },
       { label: "Offices", href: "/admin/offices", roles: ["super_admin"] },
       {
+        label: "API Clients",
+        href: "/admin/api-clients",
+        roles: ["super_admin"],
+      },
+      {
+        label: "Workflows",
+        href: "/admin/workflows",
+        roles: ["super_admin"],
+      },
+      {
+        label: "Error Logs",
+        href: "/admin/error-logs",
+        roles: ["super_admin"],
+      },
+      {
         label: "Audit Logs",
         href: "/admin/audit-logs",
         roles: ["super_admin", "hr_admin", "executive", "viewer", "auditor"],

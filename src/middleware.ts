@@ -12,7 +12,32 @@ import {
 
 const PUBLIC_PATHS = ["/login", "/forgot-password", "/reset-password"] as const;
 
-const PUBLIC_PREFIXES = ["/api/auth/"] as const;
+/**
+ * Paths that must NOT be Supabase-session gated. Every entry either carries
+ * its own credential check inside the route handler or is public by design:
+ *   /api/auth/                 — Supabase auth callbacks
+ *   /api/cron/                 — CRON_SECRET Bearer check in-route (checkCronAuth).
+ *                                Session-gating these silently 307'd every
+ *                                scheduled job to /login (found 2026-07-15).
+ *   /api/rpm/                  — applicant portal API: public rate-limited reads
+ *                                + applicant-JWT-guarded routes (RPM-006)
+ *   /api/attendance/biometric/ — device API-key auth in-route (TAM-004)
+ *   /api/v1/                   — API-key / OAuth2 client-credential auth in-route
+ *   /api/errors/               — anonymous error reporting (rate-limited, capped)
+ *   /verify/                   — public read-only QR document verification (PIM-017)
+ *   /applicant, /apply         — public applicant portal pages w/ separate auth
+ */
+const PUBLIC_PREFIXES = [
+  "/api/auth/",
+  "/api/cron/",
+  "/api/rpm/",
+  "/api/attendance/biometric/",
+  "/api/v1/",
+  "/api/errors/",
+  "/verify/",
+  "/applicant",
+  "/apply",
+] as const;
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")))
@@ -248,8 +273,14 @@ export async function middleware(request: NextRequest) {
 
   // 2. Allow all public paths without further checks.
   if (isPublicPath(pathname)) {
-    // Authenticated users visiting /login are redirected to the dashboard.
-    if (user && (pathname === "/login" || pathname.startsWith("/login/"))) {
+    // Authenticated users visiting /login are redirected to the dashboard —
+    // EXCEPT /login/mfa, which an aal1 session must reach to complete the
+    // TOTP challenge (SEC-003 guard enforcement).
+    if (
+      user &&
+      (pathname === "/login" || pathname.startsWith("/login/")) &&
+      pathname !== "/login/mfa"
+    ) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     return response;

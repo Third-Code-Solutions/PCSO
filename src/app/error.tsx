@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
-import { AlertTriangle, RotateCw, Home } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import * as React from "react";
+import Link from "next/link";
+import { AlertTriangle, RotateCw, Home } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface GlobalErrorProps {
   error: Error & { digest?: string };
@@ -30,14 +30,35 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
     } catch {
       // Swallow — instrumentation failures must not mask the UX.
     }
+    // TOR 3.4.4 / LOG-002: fire-and-forget report into error_logs via the
+    // rate-limited ingestion route. Must never break the error UI.
+    try {
+      void fetch("/api/errors/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({
+          message: error.message?.slice(0, 5000) || "Unknown client error",
+          stack: error.stack?.slice(0, 20000),
+          source: "client:app-error-boundary",
+          digest: error.digest,
+          url:
+            typeof window !== "undefined"
+              ? window.location.pathname.slice(0, 500)
+              : undefined,
+        }),
+      }).catch(() => {});
+    } catch {
+      // Reporting is best-effort only.
+    }
     // Always log to the browser console so developers can see context.
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== "production") {
       // eslint-disable-next-line no-console
-      console.error('[global-error]', error);
+      console.error("[global-error]", error);
     }
   }, [error]);
 
-  const isDev = process.env.NODE_ENV !== 'production';
+  const isDev = process.env.NODE_ENV !== "production";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-6 py-12">

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { DashboardShell } from "./_shell";
+import { MfaEnrollmentBanner } from "@/components/auth/mfa-enrollment-banner";
 
 // Authenticated dashboard pages depend on the logged-in user and live data;
 // none should be statically prerendered. Forcing dynamic for the whole group
@@ -14,5 +15,13 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <DashboardShell>{children}</DashboardShell>;
+  return (
+    <DashboardShell>
+      {/* SEC-003: non-blocking TOTP enrollment prompt for admin roles */}
+      <React.Suspense fallback={null}>
+        <MfaEnrollmentBanner />
+      </React.Suspense>
+      {children}
+    </DashboardShell>
+  );
 }

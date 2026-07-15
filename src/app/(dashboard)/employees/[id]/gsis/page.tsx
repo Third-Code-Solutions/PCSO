@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
+import { maskGsis } from "@/lib/utils/masking";
 import { db } from "@/lib/db";
 import {
   employees,
@@ -76,9 +78,12 @@ function SectionCard({
 function RegistrationSection({
   registration,
   employeeId,
+  canViewFullIds,
 }: {
   registration: GsisRegistration | null;
   employeeId: string;
+  /** TOR 3.2.8: viewers without employees.edit see a masked GSIS number. */
+  canViewFullIds: boolean;
 }) {
   return (
     <SectionCard title="GSIS Membership">
@@ -86,7 +91,13 @@ function RegistrationSection({
         <dl className="divide-y divide-zinc-50">
           <InfoRow
             label="GSIS No."
-            value={<span className="font-mono">{registration.gsisNo}</span>}
+            value={
+              <span className="font-mono">
+                {canViewFullIds
+                  ? registration.gsisNo
+                  : maskGsis(registration.gsisNo)}
+              </span>
+            }
           />
           <InfoRow label="Status" value={registration.status} />
           <InfoRow
@@ -383,7 +394,9 @@ interface Props {
 }
 
 export default async function EmployeeGsisPage({ params }: Props) {
-  await requirePermission("employees", "view");
+  const user = await requirePermission("employees", "view");
+  // TOR 3.2.8: only HR-privileged roles see the full GSIS number on screen.
+  const canViewFullIds = hasPermission(user.role, "employees", "edit");
 
   const [employee] = await db
     .select()
@@ -451,6 +464,7 @@ export default async function EmployeeGsisPage({ params }: Props) {
           <RegistrationSection
             registration={registration ?? null}
             employeeId={params.id}
+            canViewFullIds={canViewFullIds}
           />
           <LoansSection loans={loans} />
         </div>

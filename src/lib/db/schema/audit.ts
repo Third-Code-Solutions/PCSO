@@ -101,6 +101,41 @@ export const transactionLogs = pgTable(
   ],
 );
 
+// ─── Error log — TOR 3.4.4 ───────────────────────────────────────────────────
+
+/**
+ * Structured error log (LOG-002). Sentry remains the real-time alerting
+ * channel; this table is the COA-auditable persistent record with the exact
+ * TOR 3.4.4 field set.
+ */
+export const errorLogs = pgTable(
+  "error_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** 'fatal' | 'error' | 'warn' */
+    level: varchar("level", { length: 10 }).notNull().default("error"),
+    /** Application error code, e.g. 'PAYROLL_COMPUTE_FAILED' */
+    errorCode: varchar("error_code", { length: 60 }),
+    message: text("message").notNull(),
+    /** Originating module/file/route */
+    source: varchar("source", { length: 200 }),
+    stackTrace: text("stack_trace"),
+    /** Affected data/resource descriptor — no PII payloads */
+    affectedResource: varchar("affected_resource", { length: 200 }),
+    /** Runtime/environment info: node version, region, deployment id */
+    environment: jsonb("environment"),
+    /** system user id — nullable for anonymous/system errors */
+    userId: uuid("user_id"),
+    sessionId: text("session_id"),
+    ...timestamps,
+  },
+  (t) => [
+    index("error_logs_level_idx").on(t.level),
+    index("error_logs_code_idx").on(t.errorCode),
+    index("error_logs_created_at_idx").on(t.createdAt),
+  ],
+);
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type AuditLog = typeof auditLogs.$inferSelect;
@@ -108,3 +143,6 @@ export type NewAuditLog = typeof auditLogs.$inferInsert;
 
 export type TransactionLog = typeof transactionLogs.$inferSelect;
 export type NewTransactionLog = typeof transactionLogs.$inferInsert;
+
+export type ErrorLog = typeof errorLogs.$inferSelect;
+export type NewErrorLog = typeof errorLogs.$inferInsert;

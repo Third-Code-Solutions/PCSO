@@ -174,7 +174,7 @@ SALN records are confidential per RA 6713 Section 8. Access is restricted to
 
 ### P1 / P2 Response Steps
 
-1. **Acknowledge** — Respond in the #senate-hris-alerts Slack channel (or
+1. **Acknowledge** — Respond in the #pcso-hris-alerts Slack channel (or
    designated communication channel) immediately
 2. **Assess** — Identify scope: how many users affected? Is data integrity at
    risk?
@@ -271,3 +271,139 @@ If a batch email send fails:
 3. Select all failed records
 4. Click **Resend Selected**
 5. Monitor Resend dashboard for delivery confirmation
+
+---
+
+## 7. Scheduled Jobs (Cron)
+
+All jobs live under `/api/cron/*`, are scheduled in `vercel.json`, and require
+`Authorization: Bearer $CRON_SECRET` (Vercel Cron sends it automatically).
+Every run writes a `transaction_logs` row — check there first when a job is
+suspected of not firing.
+
+| Job                         | Schedule (UTC)  | Purpose                                                               |
+| --------------------------- | --------------- | --------------------------------------------------------------------- |
+| `monthly-accrual`           | `0 1 1 * *`     | Monthly leave credit accrual (LAM-002)                                |
+| `sick-leave-auto-approve`   | `0 2 * * *`     | SL auto-approval after 5-business-day approver timeout (LAM-006)      |
+| `year-end-forced-leave`     | `55 15 31 12 *` | Dec 31 23:55 PH forced-leave auto-deduction (LAM-009)                 |
+| `annual-retirement-notices` | `0 1 1 1 *`     | Jan 1 retirement eligibility notices to HRD (EWB-003)                 |
+| `attendance-notifications`  | `0 23 * * *`    | Daily 07:00 PH: tardiness (N-009), NFL/LWOP (N-008), habitual (N-010) |
+| `biometric-pull`            | `*/30 * * * *`  | Poll active pull-mode biometric devices (TAM-004)                     |
+| `security-alerts`           | `0 * * * *`     | Hourly audit-log anomaly scan (N-037 / LOG-004)                       |
+
+### Manual trigger (backfill / verification)
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/<job>
+# attendance-notifications accepts ?date=YYYY-MM-DD (PH calendar date) for backfill
+```
+
+### biometric-pull
+
+Polls every ACTIVE device with `mode = pull` and a configured pull URL that is
+due per its `poll_interval_minutes`. Devices are isolated — one failing device
+never blocks the rest. Outcomes land on the device row
+(**Attendance > Biometric > Devices**: `last_pull_status` /
+`last_pull_message`). A stuck device: verify its pull URL responds within 10 s
+and the payload matches its configured format (CSV/JSON/XML); CSV import
+remains the guaranteed fallback (**Attendance > Import**).
+
+### attendance-notifications
+
+Processes YESTERDAY (PH time): tardiness notices, No-Filed-Leave notices to
+employee + payroll_admin aggregate, and habitual-tardiness flags (≥10
+instances month-to-date). Idempotent — re-running for the same day sends no
+duplicates (deterministic notification titles). Missing emails usually mean
+`RESEND_API_KEY` is unset; in-app notifications still deliver.
+
+### security-alerts
+
+Hourly scan of recent `audit_logs` (rows with `alert_sent = false`) for:
+failure bursts (≥5 failures per user/IP in 10 min — N-037), off-hours
+super_admin/hr_admin writes on sensitive surfaces (22:00–06:00 PH), and
+unusual export volume (>20/hour per actor). Alerts go to Super Admins in-app
+and via email; implicated rows are marked `alert_sent = true` (the dedupe
+mechanism). On an alert: review **Admin > Audit Logs** filtered to the actor
+and window, then follow Section 5 (Incident Response) if it looks hostile.
+
+---
+
+## 8. Public API (/api/v1) & API Key Rotation
+
+REST surface for system integrations (TOR 3.3), managed at
+**Admin > API Clients** (`/admin/api-clients`, Super Admin only):
+
+| Endpoint                                         | Purpose                                        |
+| ------------------------------------------------ | ---------------------------------------------- |
+| `POST /api/v1/oauth/token`                       | OAuth 2.0 client-credentials → short-lived JWT |
+| `GET /api/v1/employees[?…]`                      | Employee directory reads                       |
+| `GET /api/v1/employees/{id}`                     | Single employee                                |
+| `POST /api/v1/employees/batch`                   | Batch reads (API-003)                          |
+| `GET /api/v1/leave-balances`                     | Leave balances                                 |
+| `GET /api/v1/payroll/journal-entries`            | Accounting-system journal export (PAY-015)     |
+| `GET/POST /api/v1/jobs`, `GET /api/v1/jobs/{id}` | Async job queue (API-006)                      |
+
+Operational notes:
+
+- Client secrets are shown **once** at creation and stored only as a SHA-256
+  hash (`api_clients.secret_hash`) — there is no "reveal secret" path.
+- Per-client rate limit: `rate_limit_per_minute` (default 60), editable on the
+  client record. 429 responses use RFC 7807 bodies like all API errors.
+- The OAuth token flow requires the `API_JWT_SECRET` env var (≥32 chars);
+  when unset the token endpoint returns 503 while static API keys keep working.
+- Scopes are per-client (`scopes` jsonb); grant the minimum set.
+
+### Key rotation procedure
+
+1. **Admin > API Clients > New Client** — same scopes/rate limit as the old
+   client, name suffixed with the rotation date. Copy the secret now.
+2. Deliver the new `client_id` + secret to the integrating system
+   (PCSO Accounting, etc.) out-of-band; confirm it authenticates.
+3. **Deactivate** (do not delete) the old client — `is_active = false` kills
+   auth immediately while preserving the audit trail and `last_used_at`.
+4. Watch `last_used_at` on the old client for 1 week for stragglers, then
+   leave it deactivated permanently.
+5. Suspected compromise: deactivate FIRST, then rotate, then review
+   **Admin > Audit Logs** + `transaction_logs` for the client's activity.
+
+---
+
+## 9. Workflow Definitions (Admin > Workflows)
+
+`/admin/workflows` (TOR 3.5.10) is the no-code editor for the nine HR process
+chains (PRD §12): leave approval, payroll run, document request, training
+approval, personnel movement, salary adjustment, recruitment pipeline, DTR
+correction, shift change.
+
+- **Seed defaults** inserts the PRD §12 chains for any process that has no
+  definition yet — it never overwrites an existing definition.
+- Each step defines: label, actor (role slug or free-text position title),
+  kind (submit/endorse/approve/process/release/system), and optional SLA in
+  business days.
+- Definitions are the display + routing source for process pages. Document
+  signatory chains remain in File Maintenance (FM-022) and are NOT edited
+  here.
+- Deactivating a definition hides it as guidance; it does not halt in-flight
+  transactions.
+- Every save/toggle/seed is audit-logged (module `ADMIN`,
+  sub-module `workflow_definitions`).
+
+---
+
+## 10. Error Logs Viewer (Admin > Error Logs)
+
+`/admin/error-logs` (TOR 3.4.4) surfaces the `error_logs` table: level,
+error code, message, source, stack trace, affected resource, environment
+info, and user/session context.
+
+Triage flow:
+
+1. Filter by level `error`/`fatal` since the incident window opened.
+2. Group by `error_code` / `source` — a burst from one source is one bug,
+   not N incidents.
+3. Cross-reference the same window in Sentry (richer stack context) and
+   `transaction_logs` (whether the failing operation partially committed).
+4. For payroll/leave data-integrity errors, follow Section 5 severity rules —
+   an error that interrupted a financial write is P2 minimum.
+5. Error logs are append-only diagnostics; never edit rows. Retention/offload
+   follows the same policy as audit logs.

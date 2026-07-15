@@ -14,13 +14,18 @@
  *   - Signing and verification are constant-time where it matters (HMAC compare).
  */
 import { createHmac, timingSafeEqual, createHash } from "node:crypto";
+import type { DocumentSignatureBlock } from "@/lib/signing/document-signer";
 
 const FIVE_YEARS_SECONDS = 60 * 60 * 24 * 365 * 5;
 
 export interface CertificateTokenPayload {
-  /** Always `certificate_of_training` for this helper. */
-  documentType: "certificate_of_training";
-  /** The `CT-YYYY-NNNNNN` serial. */
+  /**
+   * Document type slug, e.g. `certificate_of_training` (LDM-010) or
+   * `certificate_of_employment` (PIM-010). Any generator adopting the
+   * PIM-017 QR verification flow mints tokens through this helper.
+   */
+  documentType: string;
+  /** The document serial, e.g. `CT-YYYY-NNNNNN` / `COE-YYYY-NNNNNN`. */
   serialNumber: string;
   /** SHA-256 prefix hash of the employee id — never the raw UUID. */
   employeeIdHash: string;
@@ -28,6 +33,13 @@ export interface CertificateTokenPayload {
   issuedAt: number;
   /** system_users.id of the issuer (HRMO). */
   issuedBy: string;
+  /**
+   * Optional detached digital signature metadata (TOR 3.5.11/12). Present
+   * only when `DOCUMENT_SIGNING_PRIVATE_KEY` was configured at issuance.
+   * The full detached signature lives in the audit log — this block carries
+   * QR-safe metadata that binds the token to the exact signed PDF bytes.
+   */
+  signature?: DocumentSignatureBlock;
 }
 
 interface SignedPayload extends CertificateTokenPayload {
@@ -96,22 +108,52 @@ export function signCertificateToken(payload: CertificateTokenPayload): string {
   return `${headerB64}.${payloadB64}.${sig}`;
 }
 
+/**
+ * Parses the optional detached-signature block. Returns `undefined` when the
+ * field is absent, `null` when it is present but malformed (the token was
+ * minted incorrectly — reject it rather than show a broken signature).
+ */
+function parseSignatureBlock(
+  raw: unknown,
+): DocumentSignatureBlock | null | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "object" || raw === null) return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.alg !== "string") return null;
+  if (typeof obj.pdfSha256 !== "string") return null;
+  if (typeof obj.certFingerprint !== "string") return null;
+  if (typeof obj.keyId !== "string") return null;
+  if (typeof obj.signedAt !== "number") return null;
+  return {
+    alg: obj.alg,
+    pdfSha256: obj.pdfSha256,
+    certFingerprint: obj.certFingerprint,
+    keyId: obj.keyId,
+    signedAt: obj.signedAt,
+  };
+}
+
 function parseSignedPayload(raw: unknown): SignedPayload | null {
   if (typeof raw !== "object" || raw === null) return null;
   const obj = raw as Record<string, unknown>;
-  if (obj.documentType !== "certificate_of_training") return null;
+  if (typeof obj.documentType !== "string" || obj.documentType.length === 0) {
+    return null;
+  }
   if (typeof obj.serialNumber !== "string") return null;
   if (typeof obj.employeeIdHash !== "string") return null;
   if (typeof obj.issuedAt !== "number") return null;
   if (typeof obj.issuedBy !== "string") return null;
   if (typeof obj.iat !== "number") return null;
   if (typeof obj.exp !== "number") return null;
+  const signature = parseSignatureBlock(obj.signature);
+  if (signature === null) return null;
   return {
     documentType: obj.documentType,
     serialNumber: obj.serialNumber,
     employeeIdHash: obj.employeeIdHash,
     issuedAt: obj.issuedAt,
     issuedBy: obj.issuedBy,
+    ...(signature ? { signature } : {}),
     iat: obj.iat,
     exp: obj.exp,
   };
@@ -168,5 +210,6 @@ export function verifyCertificateToken(
     employeeIdHash: parsed.employeeIdHash,
     issuedAt: parsed.issuedAt,
     issuedBy: parsed.issuedBy,
+    ...(parsed.signature ? { signature: parsed.signature } : {}),
   };
 }

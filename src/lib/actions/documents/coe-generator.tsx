@@ -8,7 +8,10 @@
  * - Civil status
  * - Salary (optional field, configurable per request)
  * - Configurable signatory (from FM)
- * - QR code for verification (PRD PIM-017)
+ * - Verification token (PRD PIM-017) resolving to /verify/[token]
+ * - Detached digital signature over the exact PDF bytes when
+ *   DOCUMENT_SIGNING_PRIVATE_KEY is provisioned (TOR 3.5.11/12) — this is
+ *   the reference wiring for the scheme in docs/DIGITAL-SIGNATURES.md
  */
 
 "use server";
@@ -31,6 +34,16 @@ import {
   pdf,
 } from "@react-pdf/renderer";
 import { createServerClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
+import {
+  isDocumentSigningConfigured,
+  signPdfBytes,
+  toSignatureBlock,
+} from "@/lib/signing/document-signer";
+import {
+  hashEmployeeId,
+  signCertificateToken,
+} from "@/lib/utils/ldm/certificate-jwt";
 
 // PDF Styles for COE
 const styles = StyleSheet.create({
@@ -116,6 +129,10 @@ interface GenerateCOEResult {
   success: boolean;
   serialNumber?: string;
   documentUrl?: string;
+  /** Public /verify/[token] URL (PIM-017). Absent when no JWT secret is set. */
+  verificationUrl?: string;
+  /** True when the PDF bytes carry a detached digital signature (TOR 3.5.11/12). */
+  digitallySigned?: boolean;
   error?: string;
 }
 
@@ -147,6 +164,10 @@ export async function generateCOE(
 
     // 3. Generate serial number (atomic)
     const serialNumber = await generateSerialNumber(DOCUMENT_TYPES.COE);
+
+    // Signing posture is decided BEFORE rendering so the footer text is part
+    // of the signed bytes (the detached signature covers the final PDF).
+    const signingConfigured = isDocumentSigningConfigured();
 
     // 4. Calculate employment period
     const hireDate = new Date(employee.dateHired);
@@ -263,8 +284,9 @@ export async function generateCOE(
 
           {/* Footer */}
           <Text style={styles.footer}>
-            This is an electronically generated document. No signature is
-            required.
+            {signingConfigured
+              ? "This is an electronically generated document protected by a detached digital signature (RSA-SHA256)."
+              : "This is an electronically generated document. No signature is required."}
             {"\n"}
             Document Serial Number: {serialNumber}
           </Text>
@@ -272,15 +294,42 @@ export async function generateCOE(
       </Document>
     );
 
-    // 8. Generate PDF blob
+    // 8. Generate PDF bytes (the EXACT bytes that get signed and stored)
     const pdfBlob = await pdf(<COEDocument />).toBlob();
+    const pdfBytes = new Uint8Array(await pdfBlob.arrayBuffer());
 
-    // 9. Upload to Supabase Storage
+    // 9. Detached digital signature (TOR 3.5.11/12). `signPdfBytes` returns
+    // null when DOCUMENT_SIGNING_PRIVATE_KEY is not provisioned — generation
+    // proceeds unsigned in that case, never fails.
+    const signature = signPdfBytes(pdfBytes);
+
+    // 10. Mint the PIM-017 verification token. The signature metadata block
+    // (hash of the signed bytes + key identity) rides inside the token; the
+    // full detached signature goes to the audit log below. Token minting is
+    // best-effort: a missing DOCUMENT_JWT_SECRET must not block issuance.
+    let verificationToken: string | null = null;
+    try {
+      verificationToken = signCertificateToken({
+        documentType: "certificate_of_employment",
+        serialNumber,
+        employeeIdHash: hashEmployeeId(employee.id),
+        issuedAt: Math.floor(currentDate.getTime() / 1000),
+        issuedBy: user.id,
+        ...(signature ? { signature: toSignatureBlock(signature) } : {}),
+      });
+    } catch (tokenError) {
+      console.error("COE verification token not minted:", tokenError);
+    }
+    const verificationUrl = verificationToken
+      ? `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, "")}/verify/${verificationToken}`
+      : null;
+
+    // 11. Upload the signed bytes to Supabase Storage
     const supabase = await createServerClient();
     const fileName = `${serialNumber}.pdf`;
     const { data, error } = await supabase.storage
       .from("documents")
-      .upload(`coe/${fileName}`, pdfBlob, {
+      .upload(`coe/${fileName}`, pdfBytes, {
         contentType: "application/pdf",
         upsert: false,
       });
@@ -293,12 +342,14 @@ export async function generateCOE(
       };
     }
 
-    // 10. Get public URL
+    // 12. Get public URL
     const { data: urlData } = supabase.storage
       .from("documents")
       .getPublicUrl(`coe/${fileName}`);
 
-    // 11. Log issuance in the audit trail (PIM-016 serial issuance logging)
+    // 13. Log issuance in the audit trail (PIM-016 serial issuance logging).
+    // The FULL detached signature is persisted here — the QR/JWT payload only
+    // carries its metadata block to stay scannable.
     await auditLog({
       userId: user.id,
       action: "document.coe.issue",
@@ -311,13 +362,31 @@ export async function generateCOE(
         issuedById: user.employeeId ?? user.id,
         requestedBy: params.requestedBy ?? null,
         documentUrl: urlData.publicUrl,
+        verificationUrl,
+        digitallySigned: signature !== null,
+        ...(signature
+          ? {
+              signature: {
+                algorithm: signature.algorithm,
+                signatureB64: signature.signatureB64,
+                certFingerprint: signature.certFingerprint,
+                keyId: signature.keyId,
+                signedAt: signature.signedAt,
+                pdfSha256: signature.pdfSha256,
+              },
+            }
+          : {}),
       },
+      module: "DOCS",
+      subModule: "coe_generator",
     });
 
     return {
       success: true,
       serialNumber,
       documentUrl: urlData.publicUrl,
+      ...(verificationUrl ? { verificationUrl } : {}),
+      digitallySigned: signature !== null,
     };
   } catch (error) {
     console.error("COE generation error:", error);

@@ -245,9 +245,10 @@ export const biometricImports = pgTable(
     recordCount: integer("record_count").notNull().default(0),
     matchedCount: integer("matched_count").notNull().default(0),
     unmatchedCount: integer("unmatched_count").notNull().default(0),
-    importedById: uuid("imported_by_id")
-      .notNull()
-      .references(() => employees.id),
+    // Nullable since Iter 5 — unauthenticated device push / cron pulls have
+    // no acting employee; deviceId carries provenance instead.
+    importedById: uuid("imported_by_id").references(() => employees.id),
+    deviceId: uuid("device_id").references(() => biometricDevices.id),
     status: biometricImportStatusEnum("status").notNull().default("processing"),
     errorLog: text("error_log"),
     ...timestamps,

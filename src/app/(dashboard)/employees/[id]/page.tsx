@@ -12,6 +12,7 @@ import { getEmployeeById } from "../queries";
 import { APPOINTMENT_TYPE_LABELS } from "@/lib/constants/appointment-types";
 import { requireAuth } from "@/lib/auth/guards";
 import { hasPermission } from "@/lib/auth/permissions";
+import { maskEmployeeSensitiveFields } from "@/lib/utils/masking";
 
 export async function generateMetadata({
   params,
@@ -77,6 +78,19 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
 
   const canEdit = hasPermission(user.role, "employees", "edit");
   const canArchive = hasPermission(user.role, "employees", "delete");
+
+  // TOR 3.2.8: viewers WITHOUT employees.edit (payroll_admin, supervisor,
+  // executive, auditor, viewer) see masked government IDs. Display-only —
+  // official documents and HR edit surfaces stay unmasked.
+  const displayIds = maskEmployeeSensitiveFields(
+    {
+      tin: employee.tin,
+      gsisNo: employee.gsisNo,
+      philhealthNo: employee.philhealthNo,
+      pagibigNo: employee.pagibigNo,
+    },
+    canEdit,
+  );
 
   const fullName = [employee.firstName, employee.middleName, employee.lastName]
     .filter(Boolean)
@@ -265,11 +279,19 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
                 Government IDs
               </h2>
               <div className="divide-y divide-border">
-                <InfoRow label="TIN" value={employee.tin} />
-                <InfoRow label="GSIS No." value={employee.gsisNo} />
-                <InfoRow label="PhilHealth No." value={employee.philhealthNo} />
-                <InfoRow label="Pag-IBIG No." value={employee.pagibigNo} />
+                <InfoRow label="TIN" value={displayIds.tin} />
+                <InfoRow label="GSIS No." value={displayIds.gsisNo} />
+                <InfoRow
+                  label="PhilHealth No."
+                  value={displayIds.philhealthNo}
+                />
+                <InfoRow label="Pag-IBIG No." value={displayIds.pagibigNo} />
               </div>
+              {!canEdit && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Identifiers are partially masked for your role (TOR 3.2.8).
+                </p>
+              )}
             </section>
 
             {/* Address & emergency */}

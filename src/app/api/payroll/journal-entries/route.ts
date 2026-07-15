@@ -4,6 +4,7 @@ import { payrollPeriods, payrollRecords } from "@/lib/db/schema";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
+import { logError, describeError } from "@/lib/logging/error-log";
 import { format as dateFnsFormat } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -211,6 +212,16 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Journal entries export error:", error);
+
+    // TOR 3.4.4 / LOG-002: persist to error_logs (fire-and-forget).
+    const described = describeError(error);
+    void logError({
+      errorCode: "PAYROLL_JOURNAL_EXPORT_FAILED",
+      message: described.message,
+      stack: described.stack,
+      source: "api/payroll/journal-entries",
+      affectedResource: "payroll_periods",
+    });
 
     if (error instanceof Error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

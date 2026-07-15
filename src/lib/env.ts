@@ -6,6 +6,10 @@ const ServerEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   DATABASE_URL: z.string().url().optional(),
   JWT_SECRET: z.string().min(32).optional(),
+  /** HS256 signing secret for /api/v1 OAuth 2.0 access tokens (API-001). When unset, the OAuth token flow returns 503; static API keys still work. */
+  API_JWT_SECRET: z.string().min(32).optional(),
+  /** PKCS#8 RSA private key PEM for detached PDF signing (TOR 3.5.11/12). When unset, documents are generated unsigned. */
+  DOCUMENT_SIGNING_PRIVATE_KEY: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -31,6 +35,8 @@ function buildFallback(): ServerEnv {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
+    API_JWT_SECRET: process.env.API_JWT_SECRET,
+    DOCUMENT_SIGNING_PRIVATE_KEY: process.env.DOCUMENT_SIGNING_PRIVATE_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
     NEXT_PUBLIC_APP_URL:

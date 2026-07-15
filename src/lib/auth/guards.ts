@@ -1,8 +1,13 @@
-import { cache } from 'react';
-import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
-import { getCurrentUser, type CurrentUser } from '@/lib/auth/get-current-user';
-import { hasPermission, type Resource, type Action } from '@/lib/auth/permissions';
+import { cache } from "react";
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { getCurrentUser, type CurrentUser } from "@/lib/auth/get-current-user";
+import {
+  hasPermission,
+  type Resource,
+  type Action,
+} from "@/lib/auth/permissions";
+import { getAalStatus, isMfaEnforcedRole } from "@/lib/auth/mfa";
 
 // ─── Request-scoped user cache ───────────────────────────────────────────────
 //
@@ -23,9 +28,9 @@ const getCurrentUserCached = cache(getCurrentUser);
 async function getCurrentPathname(): Promise<string> {
   try {
     const h = await headers();
-    const invoked = h.get('x-invoke-path') ?? h.get('x-pathname');
+    const invoked = h.get("x-invoke-path") ?? h.get("x-pathname");
     if (invoked) return invoked;
-    const referer = h.get('referer');
+    const referer = h.get("referer");
     if (referer) {
       try {
         return new URL(referer).pathname;
@@ -36,11 +41,11 @@ async function getCurrentPathname(): Promise<string> {
   } catch {
     // headers() throws outside a request context — fall through.
   }
-  return '/';
+  return "/";
 }
 
 function buildUnauthorizedUrl(pathname: string): string {
-  const params = new URLSearchParams({ unauthorized: '1', path: pathname });
+  const params = new URLSearchParams({ unauthorized: "1", path: pathname });
   return `/login?${params.toString()}`;
 }
 
@@ -63,7 +68,7 @@ function buildUnauthorizedUrl(pathname: string): string {
  */
 export async function requireAuth(): Promise<CurrentUser> {
   const user = await getCurrentUserCached();
-  if (!user) redirect('/login');
+  if (!user) redirect("/login");
   return user;
 }
 
@@ -93,6 +98,17 @@ export async function requirePermission(
   action: Action,
 ): Promise<CurrentUser> {
   const user = await requireAuth();
+
+  // SEC-003 / TOR 3.2.6: super_admin and hr_admin sessions must complete the
+  // TOTP challenge when the account has a verified factor enrolled
+  // (currentLevel aal1 while nextLevel aal2 → verification pending for THIS
+  // session). Accounts WITHOUT an enrolled factor are prompted via a
+  // non-blocking banner instead of a hard lock this release; getAalStatus()
+  // is request-cached and reads the local session (no network call).
+  if (isMfaEnforcedRole(user.role)) {
+    const aal = await getAalStatus();
+    if (aal.needsMfaVerification) redirect("/login/mfa");
+  }
 
   if (!hasPermission(user.role, resource, action)) {
     const pathname = await getCurrentPathname();

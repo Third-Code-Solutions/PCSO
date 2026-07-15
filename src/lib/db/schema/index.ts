@@ -41,6 +41,10 @@ export * from "./gsis";
 // Audit (no FK deps at schema level)
 export * from "./audit";
 
+// API platform (TOR 3.3) + workflow definitions (TOR 3.5.10)
+export * from "./api-platform";
+export * from "./workflow";
+
 // System users (depends on employees + offices)
 export * from "./users";
 
