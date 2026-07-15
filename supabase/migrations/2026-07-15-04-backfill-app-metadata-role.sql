@@ -31,7 +31,7 @@ BEGIN
            'employee_id', su.employee_id::text
          )
     FROM public.system_users su
-    WHERE su.auth_uid = u.id
+    WHERE su.auth_uid = u.id::text
       AND su.role IS NOT NULL;
   END IF;
 END $$;
