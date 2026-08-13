@@ -20,8 +20,11 @@ export default defineConfig({
   ],
   webServer: process.env.CI
     ? {
-        command: 'npm run build && npm start',
+        // The CI workflow builds the app before invoking Playwright. Rebuilding
+        // here races the 60-second default startup window on this large app.
+        command: 'npm start',
         port: 3000,
+        timeout: 120_000,
         reuseExistingServer: false,
       }
     : undefined,

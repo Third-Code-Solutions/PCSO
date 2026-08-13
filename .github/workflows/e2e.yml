@@ -11,6 +11,10 @@ concurrency:
 jobs:
   e2e:
     name: Playwright E2E
+    # Authenticated E2E requires repository secrets, which GitHub withholds
+    # from Dependabot and fork pull requests. Keep this check honest instead
+    # of running a guaranteed unauthenticated failure.
+    if: github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

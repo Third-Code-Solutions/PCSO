@@ -15,7 +15,7 @@ jobs:
           BRANCH_NAME: ${{ github.head_ref }}
         run: |
           echo "Branch: $BRANCH_NAME"
-          if echo "$BRANCH_NAME" | grep -qE '^feature/phase-[0-9]+-[a-z0-9-]+$|^hotfix/[a-z0-9-]+$|^release/[0-9]+\.[0-9]+\.[0-9]+$|^chore/[a-z0-9-]+$|^docs/[a-z0-9-]+$'; then
+          if echo "$BRANCH_NAME" | grep -qE '^feature/phase-[0-9]+-[a-z0-9-]+$|^hotfix/[a-z0-9-]+$|^release/[0-9]+\.[0-9]+\.[0-9]+$|^chore/[a-z0-9-]+$|^docs/[a-z0-9-]+$|^dependabot/[a-z0-9._/-]+$'; then
             echo "Branch name is valid."
           else
             echo "ERROR: Branch '$BRANCH_NAME' does not follow the naming convention."
@@ -26,6 +26,7 @@ jobs:
             echo "  release/X.Y.Z                  (e.g., release/1.0.0)"
             echo "  chore/description              (e.g., chore/update-deps)"
             echo "  docs/description               (e.g., docs/add-runbook)"
+            echo "  dependabot/update              (automated Dependabot branches)"
             exit 1
           fi
 

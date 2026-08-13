@@ -51,6 +51,15 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: react-dom
         update-types: ['version-update:semver-major']
+      # TanStack Table 9 is a breaking API migration from the v8 table model
+      # used throughout the application; upgrade it manually with the source
+      # changes and a dedicated regression pass.
+      - dependency-name: '@tanstack/react-table'
+        update-types: ['version-update:semver-major']
+      # Tailwind CSS 4 requires the v3 config/PostCSS setup to be migrated
+      # explicitly; do not generate an automatically failing major PR.
+      - dependency-name: 'tailwindcss'
+        update-types: ['version-update:semver-major']
 
   # GitHub Actions
   - package-ecosystem: github-actions
