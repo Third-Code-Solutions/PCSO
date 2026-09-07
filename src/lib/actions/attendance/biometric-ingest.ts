@@ -115,11 +115,35 @@ export interface IngestOutcome {
 
 const TimeString = z
   .string()
-  .regex(/^\d{2}:\d{2}(:\d{2})?$/, "Time must be HH:MM (24-hour)");
+  .regex(/^\d{2}:\d{2}(:\d{2})?$/, "Time must be HH:MM (24-hour)")
+  .refine((value) => {
+    const [hours = Number.NaN, minutes = Number.NaN, seconds = 0] = value
+      .split(":")
+      .map(Number);
+    return (
+      hours >= 0 &&
+      hours <= 23 &&
+      minutes >= 0 &&
+      minutes <= 59 &&
+      seconds >= 0 &&
+      seconds <= 59
+    );
+  }, "Time must be a valid 24-hour clock value");
 
 const DateString = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
+  .refine((value) => {
+    const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = value
+      .split("-")
+      .map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    );
+  }, "Date must be a valid calendar date");
 
 const IngestRowSchema = z
   .object({

@@ -96,10 +96,7 @@ const approveSchema = z.object({
 
 const rejectSchema = z.object({
   requestId: z.string().uuid(),
-  rejectionReason: z
-    .string()
-    .min(1, "Rejection reason is required")
-    .max(2000),
+  rejectionReason: z.string().min(1, "Rejection reason is required").max(2000),
   notes: z.string().max(2000).optional(),
 });
 
@@ -145,7 +142,12 @@ export async function submitPdsUpdateRequest(
     // For Section 31, snapshot the live employee value so the request records
     // exactly what it replaced (falls back to the caller-supplied snapshot).
     const currentSnapshot = isSection31
-      ? { section_31: employee.specialSkillsHobbies ?? { skills: [], hobbies: [] } }
+      ? {
+          section_31: employee.specialSkillsHobbies ?? {
+            skills: [],
+            hobbies: [],
+          },
+        }
       : currentValues;
 
     const [request] = await db
@@ -453,7 +455,10 @@ export async function getMyPdsUpdateRequests(): Promise<
 export async function getPendingPdsUpdateRequestsForHR(): Promise<
   Result<PdsUpdateRequest[]>
 > {
-  await requirePermission("employees", "view");
+  const user = await requirePermission("employees", "view");
+  if (user.role === "employee_self_service") {
+    return { error: "Employee self-service users cannot access the HR queue" };
+  }
 
   try {
     const requests = await db.query.pdsUpdateRequests.findMany({
@@ -478,7 +483,10 @@ export async function getPendingPdsUpdateRequestsForHR(): Promise<
 export async function getAllPdsUpdateRequestsForHR(): Promise<
   Result<PdsUpdateRequest[]>
 > {
-  await requirePermission("employees", "view");
+  const user = await requirePermission("employees", "view");
+  if (user.role === "employee_self_service") {
+    return { error: "Employee self-service users cannot access the HR queue" };
+  }
 
   try {
     const requests = await db.query.pdsUpdateRequests.findMany({

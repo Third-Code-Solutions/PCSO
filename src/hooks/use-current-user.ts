@@ -35,6 +35,7 @@ export function useCurrentUser(): UseCurrentUserResult {
 
   useEffect(() => {
     const supabase = createBrowserClient();
+    let active = true;
 
     function buildUser(
       authUser: {
@@ -67,19 +68,29 @@ export function useCurrentUser(): UseCurrentUserResult {
       };
     }
 
-    // Seed the initial state from the local session cache.
-    supabase.auth.getUser().then(({ data }) => {
-      setResult(buildUser(data.user));
-    });
+    // Seed display-only state from the local session cache. Server guards
+    // still validate the session with getUser(); this avoids an extra auth
+    // round-trip before the shell can render its role and navigation.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (active) setResult(buildUser(data.session?.user ?? null));
+      })
+      .catch(() => {
+        if (active) setResult({ status: "unauthenticated", user: null });
+      });
 
     // Keep in sync with auth state changes (sign-in, sign-out, token refresh).
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setResult(buildUser(session?.user ?? null));
+      if (active) setResult(buildUser(session?.user ?? null));
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   return result;

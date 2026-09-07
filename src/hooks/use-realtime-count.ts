@@ -31,6 +31,7 @@ export interface UseRealtimeRefreshResult {
 const BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
 const POLLING_FALLBACK_AFTER_MS = 10_000;
 const POLLING_INTERVAL_MS = 30_000;
+const REFRESH_THROTTLE_MS = 1_000;
 
 function backoffAt(attempt: number): number {
   const idx = Math.min(attempt, BACKOFF_MS.length - 1);
@@ -83,12 +84,35 @@ export function useRealtimeRefresh(
     // the new page's URL, causing unexpected re-renders or navigation artifacts).
     const effectPathname = mountPathnameRef.current;
 
-    // Safe refresh: only fires when the document URL matches the pathname at
-    // the time this channel was created. Prevents stale reconnects from
-    // triggering refreshes on unrelated pages.
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastRefreshAt = 0;
+
+    const runRefresh = () => {
+      if (disposed || window.location.pathname !== effectPathname) return;
+      lastRefreshAt = Date.now();
+      startTransition(() => routerRef.current.refresh());
+    };
+
+    // Coalesce bursts from biometric imports and batch updates. Without this,
+    // every row-level Realtime event starts another RSC request and can keep a
+    // data-heavy page cycling through loading states.
     const safeRefresh = () => {
       if (window.location.pathname !== effectPathname) return;
-      startTransition(() => routerRef.current.refresh());
+      const remaining = REFRESH_THROTTLE_MS - (Date.now() - lastRefreshAt);
+      if (remaining <= 0) {
+        if (refreshTimer) {
+          clearTimeout(refreshTimer);
+          refreshTimer = null;
+        }
+        runRefresh();
+        return;
+      }
+      if (!refreshTimer) {
+        refreshTimer = setTimeout(() => {
+          refreshTimer = null;
+          runRefresh();
+        }, remaining);
+      }
     };
 
     let attempt = 0;
@@ -232,6 +256,7 @@ export function useRealtimeRefresh(
 
     return () => {
       disposed = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
       clearReconnectTimer();
       clearFallbackTimer();
       stopPolling();

@@ -122,14 +122,10 @@ const RPM_DOCS_BUCKET = "rpm-documents";
 // Small helpers
 // ---------------------------------------------------------------------------
 
-async function signatoryEmployeeIdOrSelf(
-  _role: ApprovalRole,
-  fallback: string,
-): Promise<string> {
-  // TODO(PRD FM-022 signatory chains): look up the current incumbent for
-  // `_role` via the signatories table (not yet in schema). Until that exists
-  // we fall back to the requesting employee so the FK is always satisfied.
-  return fallback;
+function missingMrfSignatoryConfiguration(_role: ApprovalRole): never {
+  throw new Error(
+    "MRF approval signatory configuration is unavailable; submission is blocked until each approval role is mapped to an employee.",
+  );
 }
 
 function toIsoString(value: Date | string | null | undefined): string {
@@ -252,10 +248,7 @@ export async function submitMrf(
         APPROVAL_ROLES.map(async (role, idx) => ({
           mrfId: parsed.id,
           approverRole: role,
-          approverEmployeeId: await signatoryEmployeeIdOrSelf(
-            role,
-            current.requestedByEmployeeId,
-          ),
+          approverEmployeeId: missingMrfSignatoryConfiguration(role),
           sequenceOrder: idx + 1,
           decision: "pending",
         })),
@@ -284,8 +277,14 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
   }>
 > {
   try {
-    await requirePermission("employees", "process");
+    const user = await requirePermission("employees", "process");
     const parsed = approveMrfSchema.parse(input);
+    const approverEmployeeId = user.employeeId;
+    if (!approverEmployeeId) {
+      throw new Error(
+        "The current account is not linked to an employee record",
+      );
+    }
 
     const result = await withTx(async (tx: Tx) => {
       const [current] = await tx
@@ -306,6 +305,7 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
           and(
             eq(mrfApprovals.mrfId, parsed.mrfId),
             eq(mrfApprovals.sequenceOrder, parsed.sequenceOrder),
+            eq(mrfApprovals.approverEmployeeId, approverEmployeeId),
           ),
         )
         .limit(1);
@@ -333,7 +333,6 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
         .update(mrfApprovals)
         .set({
           decision: parsed.decision,
-          approverEmployeeId: parsed.approverEmployeeId,
           comments: parsed.comments ?? null,
           decidedAt: new Date(),
           updatedAt: new Date(),
@@ -380,16 +379,28 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
           })
           .where(eq(mrfs.id, parsed.mrfId));
 
+        const qualificationStandards = parsed.qualificationStandards;
+        const deadline = parsed.applicationDeadline
+          ? new Date(parsed.applicationDeadline)
+          : null;
+        const hasPlaceholder =
+          qualificationStandards !== undefined &&
+          Object.values(qualificationStandards).some(
+            (value) =>
+              typeof value === "string" && value.trim().toUpperCase() === "TBD",
+          );
+        if (
+          !qualificationStandards ||
+          !deadline ||
+          Number.isNaN(deadline.getTime()) ||
+          hasPlaceholder
+        ) {
+          throw new Error(
+            "Final MRF approval requires complete qualification standards and an application deadline",
+          );
+        }
+
         const cscAlloc = await nextCscForm9Number(tx);
-        const defaultQs: QualificationStandards = {
-          education: "TBD",
-          eligibility: "TBD",
-          experience: 0,
-          training: "TBD",
-        };
-        // 30 days from now as placeholder deadline
-        const deadline = new Date();
-        deadline.setDate(deadline.getDate() + 30);
 
         const [newVacancy] = await tx
           .insert(vacancies)
@@ -399,7 +410,7 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
             officeId: current.officeId,
             itemNumber: current.itemNumber,
             cscForm9Number: cscAlloc.formatted,
-            qualificationStandards: defaultQs,
+            qualificationStandards,
             applicationDeadline: deadline,
             status: "draft",
             pipelineStage: "mrf_pending",

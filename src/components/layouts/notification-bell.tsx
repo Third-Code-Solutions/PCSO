@@ -43,9 +43,14 @@ type ConnectionStatus = "connected" | "polling" | "error";
  * - Mark-all-read, clear-all (confirm), and per-item navigate + mark-read.
  * - Connection status dot: green realtime, yellow polling fallback, red error.
  */
-export function NotificationBell() {
+interface NotificationBellProps {
+  /** Auth UID supplied by the shared dashboard session hook. */
+  authUserId: string | null;
+}
+
+export function NotificationBell({ authUserId }: NotificationBellProps) {
   const { items, loading, unreadCount, markRead, markAllRead, clearAll } =
-    useNotifications();
+    useNotifications(authUserId);
 
   const [open, setOpen] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);

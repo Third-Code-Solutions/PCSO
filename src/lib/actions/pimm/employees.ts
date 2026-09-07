@@ -270,8 +270,14 @@ export async function updateEmployee(
 
 export async function getEmployee(input: unknown): Promise<Result<Employee>> {
   try {
-    await requirePermission("employees", "view");
+    const user = await requirePermission("employees", "view");
     const parsed = getEmployeeSchema.parse(input);
+    if (
+      user.role === "employee_self_service" &&
+      user.employeeId !== parsed.id
+    ) {
+      return err("You may only view your own employee record.");
+    }
 
     const [employee] = await db
       .select()
@@ -312,8 +318,11 @@ export async function searchEmployees(
   input: unknown,
 ): Promise<Result<SearchEmployeesResult>> {
   try {
-    await requirePermission("employees", "view");
+    const user = await requirePermission("employees", "view");
     const parsed = searchEmployeesSchema.parse(input);
+    if (user.role === "employee_self_service") {
+      return err("Employee self-service users cannot search employee records.");
+    }
 
     const conditions = [isNull(employees.deletedAt)];
 

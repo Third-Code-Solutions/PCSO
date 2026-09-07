@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createBrowserClient } from '@/lib/supabase/client';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createBrowserClient } from "@/lib/supabase/client";
 import {
   clearReadAction,
   clearAllAction,
   markAllReadAction,
-} from '@/lib/notifications/actions';
+} from "@/lib/notifications/actions";
 
 export interface NotificationRow {
   id: string;
@@ -26,7 +26,7 @@ const FALLBACK_POLL_MS = 30_000;
 
 type RawRow = Record<string, unknown>;
 type SupabaseBrowserClient = ReturnType<typeof createBrowserClient>;
-type RealtimeChannel = ReturnType<SupabaseBrowserClient['channel']>;
+type RealtimeChannel = ReturnType<SupabaseBrowserClient["channel"]>;
 
 /**
  * Real-time notification subscription for the current user. Listens on the
@@ -35,7 +35,7 @@ type RealtimeChannel = ReturnType<SupabaseBrowserClient['channel']>;
  * down. All channels and timers are torn down on unmount. Handles the
  * "no user" case gracefully — returns an empty list without throwing.
  */
-export function useNotifications() {
+export function useNotifications(authUserId: string | null = null) {
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [systemUserId, setSystemUserId] = useState<string | null>(null);
@@ -63,12 +63,27 @@ export function useNotifications() {
     const supabase = supabaseRef.current;
     if (!supabase) return;
 
+    if (!authUserId) {
+      setItems([]);
+      setLoading(false);
+      setSystemUserId(null);
+      setIsConnected(false);
+      setError(null);
+      return;
+    }
+
+    setLoading(true);
+    setItems([]);
+    setSystemUserId(null);
+    setIsConnected(false);
+    setError(null);
+
     let cancelled = false;
     let channel: RealtimeChannel | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let reconnectAttempt = 0;
-    let userId: string | null = null;
+    let userId: string | null = authUserId;
 
     const clearReconnect = () => {
       if (reconnectTimer) {
@@ -87,17 +102,17 @@ export function useNotifications() {
       if (cancelled || !userId) return;
       try {
         const { data } = await supabase
-          .from('notifications')
-          .select('id, type, title, body, action_url, read_at, created_at')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
+          .from("notifications")
+          .select("id, type, title, body, action_url, read_at, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
           .limit(INITIAL_FETCH_LIMIT);
         if (cancelled) return;
         setItems((data ?? []).map(mapRow));
       } catch (err) {
-        if (!cancelled && process.env.NODE_ENV !== 'production') {
+        if (!cancelled && process.env.NODE_ENV !== "production") {
           // eslint-disable-next-line no-console
-          console.error('[use-notifications] refetch failed', err);
+          console.error("[use-notifications] refetch failed", err);
         }
       }
     };
@@ -134,11 +149,11 @@ export function useNotifications() {
       channel = supabase
         .channel(`notifications:${userId}:${Date.now()}`)
         .on(
-          'postgres_changes' as never,
+          "postgres_changes" as never,
           {
-            event: '*',
-            schema: 'public',
-            table: 'notifications',
+            event: "*",
+            schema: "public",
+            table: "notifications",
             filter: `user_id=eq.${userId}`,
           },
           (payload: {
@@ -146,27 +161,27 @@ export function useNotifications() {
             new: RawRow | null;
             old: RawRow | null;
           }) => {
-            if (payload.eventType === 'INSERT' && payload.new) {
+            if (payload.eventType === "INSERT" && payload.new) {
               const row = mapRow(payload.new);
               setItems((prev) => {
                 // Guard against duplicate inserts (race with initial fetch).
                 if (prev.some((p) => p.id === row.id)) return prev;
                 return [row, ...prev].slice(0, MAX_KEEP);
               });
-            } else if (payload.eventType === 'UPDATE' && payload.new) {
+            } else if (payload.eventType === "UPDATE" && payload.new) {
               const row = mapRow(payload.new);
               setItems((prev) =>
                 prev.map((it) => (it.id === row.id ? row : it)),
               );
-            } else if (payload.eventType === 'DELETE' && payload.old) {
-              const id = payload.old['id'] as string;
+            } else if (payload.eventType === "DELETE" && payload.old) {
+              const id = payload.old["id"] as string;
               setItems((prev) => prev.filter((it) => it.id !== id));
             }
           },
         )
         .subscribe((status: string) => {
           if (cancelled) return;
-          if (status === 'SUBSCRIBED') {
+          if (status === "SUBSCRIBED") {
             reconnectAttempt = 0;
             setIsConnected(true);
             setError(null);
@@ -175,12 +190,12 @@ export function useNotifications() {
             // while the channel was down.
             void refetch();
           } else if (
-            status === 'CHANNEL_ERROR' ||
-            status === 'TIMED_OUT' ||
-            status === 'CLOSED'
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
           ) {
             setIsConnected(false);
-            setError(`Realtime ${status.toLowerCase().replace('_', ' ')}`);
+            setError(`Realtime ${status.toLowerCase().replace("_", " ")}`);
             startPollingIfDisconnected();
             scheduleReconnect();
           }
@@ -189,21 +204,16 @@ export function useNotifications() {
 
     (async () => {
       try {
-        const { data: auth } = await supabase.auth.getUser();
-        if (cancelled) return;
-        if (!auth.user) {
-          setLoading(false);
-          return;
-        }
-
         // Resolve system_users.id for this auth user.
         const { data: su } = await supabase
-          .from('system_users')
-          .select('id')
-          .eq('auth_uid', auth.user.id)
+          .from("system_users")
+          .select("id")
+          .eq("auth_uid", authUserId)
           .maybeSingle();
         if (cancelled) return;
         if (!su) {
+          setItems([]);
+          setSystemUserId(null);
           setLoading(false);
           return;
         }
@@ -212,10 +222,10 @@ export function useNotifications() {
 
         // Initial fetch of the newest `INITIAL_FETCH_LIMIT` rows.
         const { data } = await supabase
-          .from('notifications')
-          .select('id, type, title, body, action_url, read_at, created_at')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
+          .from("notifications")
+          .select("id, type, title, body, action_url, read_at, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
           .limit(INITIAL_FETCH_LIMIT);
         if (cancelled) return;
 
@@ -228,10 +238,10 @@ export function useNotifications() {
       } catch (err) {
         if (!cancelled) {
           setLoading(false);
-          setError(err instanceof Error ? err.message : 'Init failed');
-          if (process.env.NODE_ENV !== 'production') {
+          setError(err instanceof Error ? err.message : "Init failed");
+          if (process.env.NODE_ENV !== "production") {
             // eslint-disable-next-line no-console
-            console.error('[use-notifications] init failed', err);
+            console.error("[use-notifications] init failed", err);
           }
         }
       }
@@ -243,7 +253,7 @@ export function useNotifications() {
       clearPolling();
       if (channel) void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [authUserId]);
 
   const markRead = useCallback(async (id: string) => {
     const supabase = supabaseRef.current;
@@ -254,17 +264,17 @@ export function useNotifications() {
       prev.map((it) => (it.id === id ? { ...it, readAt } : it)),
     );
     const { error: updateError } = await supabase
-      .from('notifications')
+      .from("notifications")
       .update({ read_at: readAt })
-      .eq('id', id);
+      .eq("id", id);
     if (updateError) {
       // Roll back on failure.
       setItems((prev) =>
         prev.map((it) => (it.id === id ? { ...it, readAt: null } : it)),
       );
-      if (process.env.NODE_ENV !== 'production') {
+      if (process.env.NODE_ENV !== "production") {
         // eslint-disable-next-line no-console
-        console.error('[use-notifications] markRead failed', updateError);
+        console.error("[use-notifications] markRead failed", updateError);
       }
     }
   }, []);
@@ -282,9 +292,9 @@ export function useNotifications() {
     if (!result.ok) {
       // Roll back to snapshot on failure.
       setItems(snapshot);
-      if (process.env.NODE_ENV !== 'production') {
+      if (process.env.NODE_ENV !== "production") {
         // eslint-disable-next-line no-console
-        console.error('[use-notifications] markAllRead failed', result.error);
+        console.error("[use-notifications] markAllRead failed", result.error);
       }
     }
   }, [systemUserId]);
@@ -298,9 +308,9 @@ export function useNotifications() {
     const result = await clearReadAction();
     if (!result.ok) {
       setItems(snapshot);
-      if (process.env.NODE_ENV !== 'production') {
+      if (process.env.NODE_ENV !== "production") {
         // eslint-disable-next-line no-console
-        console.error('[use-notifications] clearRead failed', result.error);
+        console.error("[use-notifications] clearRead failed", result.error);
       }
     }
     // On success realtime DELETEs are idempotent with the optimistic prune.
@@ -317,9 +327,9 @@ export function useNotifications() {
     const result = await clearAllAction();
     if (!result.ok) {
       setItems(snapshot);
-      if (process.env.NODE_ENV !== 'production') {
+      if (process.env.NODE_ENV !== "production") {
         // eslint-disable-next-line no-console
-        console.error('[use-notifications] clearAll failed', result.error);
+        console.error("[use-notifications] clearAll failed", result.error);
       }
     }
   }, [systemUserId]);
@@ -352,12 +362,12 @@ export function useNotifications() {
 
 function mapRow(row: RawRow): NotificationRow {
   return {
-    id: row['id'] as string,
-    type: row['type'] as string,
-    title: row['title'] as string,
-    body: (row['body'] as string | null) ?? null,
-    actionUrl: (row['action_url'] as string | null) ?? null,
-    readAt: (row['read_at'] as string | null) ?? null,
-    createdAt: row['created_at'] as string,
+    id: row["id"] as string,
+    type: row["type"] as string,
+    title: row["title"] as string,
+    body: (row["body"] as string | null) ?? null,
+    actionUrl: (row["action_url"] as string | null) ?? null,
+    readAt: (row["read_at"] as string | null) ?? null,
+    createdAt: row["created_at"] as string,
   };
 }

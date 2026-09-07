@@ -125,14 +125,14 @@ export async function withTransactionLog<T>(
   const startedAt = Date.now();
   try {
     const result = await fn();
-    void logTransaction({
+    await logTransaction({
       ...meta,
       status: "success",
       durationMs: Date.now() - startedAt,
     });
     return result;
   } catch (err) {
-    void logTransaction({
+    await logTransaction({
       ...meta,
       status: "failure",
       durationMs: Date.now() - startedAt,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { applicants } from "@/lib/db/schema/recruitment";
@@ -61,21 +61,27 @@ export async function GET(request: Request) {
     const limited = enforceRateLimit(request, READ_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
 
     const rows = await db
       .select(PROFILE_COLUMNS)
       .from(applicants)
-      .where(eq(applicants.id, token.applicantId))
+      .where(
+        and(
+          eq(applicants.id, token.applicantId),
+          ne(applicants.status, "inactive"),
+          isNull(applicants.deletedAt),
+        ),
+      )
       .limit(1);
 
     const row = rows[0];
     if (!row) return problem(404, "Not Found", "Applicant not found");
     return NextResponse.json({ data: row });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
-    return problem(500, "Internal Server Error", detail);
+    console.error("[rpm/applicants/me] GET failed", error);
+    return problem(500, "Internal Server Error", "Unexpected server error");
   }
 }
 
@@ -90,7 +96,7 @@ export async function PATCH(request: Request) {
     const limited = enforceRateLimit(request, UPDATE_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
 
     const json: unknown = await request.json().catch(() => null);
@@ -128,14 +134,20 @@ export async function PATCH(request: Request) {
     const updatedRows = await db
       .update(applicants)
       .set(updates)
-      .where(eq(applicants.id, token.applicantId))
+      .where(
+        and(
+          eq(applicants.id, token.applicantId),
+          ne(applicants.status, "inactive"),
+          isNull(applicants.deletedAt),
+        ),
+      )
       .returning(PROFILE_COLUMNS);
 
     const updated = updatedRows[0];
     if (!updated) return problem(404, "Not Found", "Applicant not found");
     return NextResponse.json({ data: updated });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
-    return problem(500, "Internal Server Error", detail);
+    console.error("[rpm/applicants/me] PATCH failed", error);
+    return problem(500, "Internal Server Error", "Unexpected server error");
   }
 }

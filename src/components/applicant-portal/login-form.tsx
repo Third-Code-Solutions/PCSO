@@ -15,7 +15,6 @@ import { setApplicantToken } from "@/lib/applicant-portal/session";
 
 interface LoginResponse {
   data: {
-    token: string;
     applicant: { id: string; status: string };
     tokenType: string;
     expiresInSeconds: number;
@@ -52,10 +51,13 @@ export function LoginForm() {
         throw new Error(problem.detail ?? "Invalid email or password");
       }
       const json = (await res.json()) as LoginResponse;
-      setApplicantToken(json.data.token);
+      setApplicantToken();
 
       const target =
-        next && next.startsWith("/") && !next.startsWith("//")
+        next &&
+        next.startsWith("/") &&
+        !next.startsWith("//") &&
+        !next.includes("\\")
           ? next
           : "/applicant/dashboard";
       router.push(target);

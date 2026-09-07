@@ -10,7 +10,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // API-005: public read endpoint — generous per-IP limit.
-const RATE_LIMIT = { bucket: "rpm:vacancies:list", limit: 120, windowMs: 60_000 };
+const RATE_LIMIT = {
+  bucket: "rpm:vacancies:list",
+  limit: 120,
+  windowMs: 60_000,
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -74,13 +78,13 @@ export async function GET(request: NextRequest) {
       },
     );
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
+    console.error("[rpm/vacancies] GET failed", error);
     return NextResponse.json(
       {
         type: "about:blank",
         title: "Internal Server Error",
         status: 500,
-        detail,
+        detail: "Unexpected server error",
       },
       { status: 500 },
     );

@@ -15,6 +15,10 @@ import {
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
+import { and, eq, isNull } from "drizzle-orm";
+
+import { db } from "@/lib/db";
+import { applicants } from "@/lib/db/schema/recruitment";
 
 // ── Secret resolution ────────────────────────────────────────────────────────
 
@@ -63,6 +67,7 @@ export interface ApplicantTokenPayload {
 }
 
 const TOKEN_TTL_SECONDS = 24 * 60 * 60; // 24h
+export const APPLICANT_TOKEN_COOKIE = "pcso_applicant_token";
 
 function sign(data: string, secret: string): string {
   return base64UrlEncode(createHmac("sha256", secret).update(data).digest());
@@ -117,19 +122,47 @@ export function verifyApplicantToken(
   }
 }
 
-/** Extract + verify bearer token from an Authorization header. */
-export function authenticateApplicantRequest(
+function readCookie(request: Request, name: string): string | null {
+  const cookieHeader = request.headers.get("cookie");
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() !== name) continue;
+    return decodeURIComponent(part.slice(separator + 1).trim());
+  }
+  return null;
+}
+
+/** Extract, verify, and re-check the active applicant record. */
+export async function authenticateApplicantRequest(
   request: Request,
-): ApplicantTokenPayload | null {
+): Promise<ApplicantTokenPayload | null> {
   const header =
     request.headers.get("authorization") ??
     request.headers.get("Authorization");
-  if (!header) return null;
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  if (!match) return null;
-  const token = match[1];
+  const match = header ? /^Bearer\s+(.+)$/i.exec(header.trim()) : null;
+  const token = match?.[1] ?? readCookie(request, APPLICANT_TOKEN_COOKIE);
   if (!token) return null;
-  return verifyApplicantToken(token);
+  const payload = verifyApplicantToken(token);
+  if (!payload) return null;
+
+  try {
+    const [applicant] = await db
+      .select({ status: applicants.status })
+      .from(applicants)
+      .where(
+        and(
+          eq(applicants.id, payload.applicantId),
+          isNull(applicants.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!applicant || applicant.status === "inactive") return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 // ── Password hashing (scrypt) ────────────────────────────────────────────────

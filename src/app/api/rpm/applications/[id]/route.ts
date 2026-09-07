@@ -15,6 +15,7 @@ import {
   type VacancyQualificationStandards,
 } from "@/lib/utils/rpm/qualification-score";
 import { enforceRateLimit } from "@/lib/utils/rate-limit";
+import { createApplicationSchema } from "@/lib/validations/recruitment";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,7 @@ export async function GET(
     const limited = enforceRateLimit(request, READ_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
     const { id } = await params;
 
@@ -127,13 +128,13 @@ export async function GET(
       },
     });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
+    console.error("[rpm/application] GET failed", error);
     return NextResponse.json(
       {
         type: "about:blank",
         title: "Internal Server Error",
         status: 500,
-        detail,
+        detail: "Unexpected server error",
       },
       { status: 500 },
     );
@@ -148,7 +149,7 @@ export async function POST(
     const limited = enforceRateLimit(request, SUBMIT_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
     const { id } = await params;
 
@@ -222,6 +223,29 @@ export async function POST(
       currentAddress: row.currentAddress,
     };
 
+    const completeApplication = createApplicationSchema.safeParse({
+      vacancyId: row.vacancyId,
+      applicantId: token.applicantId,
+      personalInfo,
+      educationalBackground,
+      workExperience,
+      eligibility,
+      trainings,
+      references: referencesJson,
+    });
+    if (!completeApplication.success) {
+      return NextResponse.json(
+        {
+          type: "about:blank",
+          title: "Unprocessable Entity",
+          status: 422,
+          detail: "Complete the required application fields before submitting.",
+          errors: completeApplication.error.flatten(),
+        },
+        { status: 422 },
+      );
+    }
+
     // computeMatchScore does its own defensive parsing (inputs are loose JSONB).
     const applicantProfile = {
       educationalBackground,
@@ -236,7 +260,7 @@ export async function POST(
 
     const scored = computeMatchScore(applicantProfile, standards);
 
-    await db
+    const updatedRows = await db
       .update(applications)
       .set({
         status: "submitted",
@@ -250,7 +274,26 @@ export async function POST(
         matchScore: scored.total.toFixed(2),
         matchBreakdown: scored.breakdown as unknown as Record<string, unknown>,
       })
-      .where(eq(applications.id, id));
+      .where(
+        and(
+          eq(applications.id, id),
+          eq(applications.applicantId, token.applicantId),
+          eq(applications.status, "incomplete"),
+        ),
+      )
+      .returning({ id: applications.id });
+    if (!updatedRows[0]) {
+      return NextResponse.json(
+        {
+          type: "about:blank",
+          title: "Conflict",
+          status: 409,
+          detail:
+            "Application was already submitted or is no longer available.",
+        },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({
       data: {
@@ -261,13 +304,13 @@ export async function POST(
       },
     });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
+    console.error("[rpm/application] POST failed", error);
     return NextResponse.json(
       {
         type: "about:blank",
         title: "Internal Server Error",
         status: 500,
-        detail,
+        detail: "Unexpected server error",
       },
       { status: 500 },
     );

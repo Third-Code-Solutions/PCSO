@@ -611,7 +611,13 @@ export interface RankedApplicationDetail extends RankedApplication {
 export async function listRanked(
   vacancyId: string,
 ): Promise<SelectionResult<RankedApplicationDetail[]>> {
-  await requirePermission("employees", "view");
+  const user = await requirePermission("employees", "view");
+  if (user.role === "employee_self_service") {
+    return {
+      ok: false,
+      error: "Employee self-service users cannot access recruitment rankings",
+    };
+  }
   const rows = await db
     .select({
       id: applications.id,
@@ -662,7 +668,13 @@ export async function listRanked(
 export async function listShortlisted(
   vacancyId: string,
 ): Promise<SelectionResult<RankedApplicationDetail[]>> {
-  await requirePermission("employees", "view");
+  const user = await requirePermission("employees", "view");
+  if (user.role === "employee_self_service") {
+    return {
+      ok: false,
+      error: "Employee self-service users cannot access recruitment rankings",
+    };
+  }
   const res = await listRanked(vacancyId);
   if (!res.ok) return res;
 

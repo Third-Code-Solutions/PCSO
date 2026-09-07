@@ -237,7 +237,7 @@ export const applicants = pgTable(
     // Applicant-editable profile (RPM-010): education, work experience,
     // eligibility, trainings, references collected by the portal wizard.
     profile: jsonb("profile"),
-    // bcrypt hash — never plaintext
+    // scrypt hash -- never plaintext
     passwordHash: varchar("password_hash", { length: 200 }).notNull(),
     status: applicantStatusEnum("status").notNull().default("registered"),
     verificationToken: varchar("verification_token", { length: 200 }),

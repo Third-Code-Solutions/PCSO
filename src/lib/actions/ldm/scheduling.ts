@@ -261,6 +261,12 @@ export async function createTrainingRun(
     };
   }
   const values = parsed.data;
+  if (values.venue.trim().toUpperCase() === "TBD") {
+    return {
+      error:
+        "A real training venue is required; placeholder values are not allowed.",
+    };
+  }
 
   try {
     const user = await requirePermission("learning", "create");

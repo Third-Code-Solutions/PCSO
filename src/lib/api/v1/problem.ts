@@ -125,11 +125,10 @@ export function validationProblem(
 
 /** Shorthand for uncaught route errors — never leaks stack traces. */
 export function internalProblem(error: unknown): NextResponse<ProblemDocument> {
-  const detail =
-    error instanceof Error ? error.message : "Unexpected server error";
+  console.error("[api] internal server error", error);
   return problem({
     status: 500,
     title: "Internal Server Error",
-    detail,
+    detail: "Unexpected server error",
   });
 }

@@ -131,10 +131,12 @@ export const submitMrfSchema = z.object({
 
 export const approveMrfSchema = z.object({
   mrfId: uuid,
-  approverEmployeeId: uuid,
+  approverEmployeeId: uuid.optional(),
   sequenceOrder: z.number().int().min(1).max(3),
   decision: z.enum(["approved", "returned"]),
   comments: optionalText(2000),
+  qualificationStandards: qualificationStandardsSchema.optional(),
+  applicationDeadline: z.string().datetime({ offset: true }).optional(),
 });
 
 // ─── Vacancy schemas ─────────────────────────────────────────────────────────

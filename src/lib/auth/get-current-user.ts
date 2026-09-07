@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createServerClient } from "@/lib/supabase/server";
 import type { Role } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
@@ -31,7 +32,7 @@ export interface CurrentUser {
  *
  * @server-only — Never call in Client Components. Use `useCurrentUser()` hook instead.
  */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createServerClient();
 
   // getUser() validates the JWT against Supabase's auth server.
@@ -80,4 +81,4 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const email = user.email ?? "";
 
   return { id: user.id, email, role, officeId, employeeId };
-}
+});

@@ -4,12 +4,15 @@
 // is env-configured, so the *.sentry.io wildcard covers us/de/legacy ingest
 // hosts), and Resend (server-side, listed defensively). next/font self-hosts
 // Google fonts at build time, so no fonts.gstatic.com entry is needed.
-// 'unsafe-inline'/'unsafe-eval' in script-src are required by the Next.js
-// runtime and dev tooling; tighten to nonces if the app moves to a
-// middleware-generated nonce scheme.
+// Next's development tooling needs eval; production does not.
+const scriptSources = [
+  "'self'",
+  "'unsafe-inline'",
+  ...(process.env.NODE_ENV === "production" ? [] : ["'unsafe-eval'"]),
+].join(" ");
 const contentSecurityPolicy = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src " + scriptSources,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.supabase.co",
   "font-src 'self' data:",
@@ -34,15 +37,6 @@ const nextConfig = {
   // start` — used by Vercel-/Railway-style deploys and `npm start` — hard-errors
   // when output is "standalone".
   ...(process.env.BUILD_STANDALONE === "1" ? { output: "standalone" } : {}),
-  // TECHNICAL DEBT — flip these back to false once the scaffold-era type errors
-  // (mostly react-pdf v3 vs v4 drift and TS2532/TS18048 noise from parallel
-  // agent work) are cleaned up. Runtime behavior is verified by scripts/smoke-all-roles.ts.
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   experimental: {
     // Tree-shake heavy barrel packages per route so Turbopack compiles only the
     // icons/helpers a page actually imports instead of the whole package. Cuts

@@ -52,11 +52,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           onToggleSidebar={handleToggleSidebar}
           breadcrumbs={[{ label: "PCSO HRIS" }]}
           role={auth.user?.role}
+          authUserId={auth.user?.id ?? null}
           user={{ name: displayName, email: displayEmail }}
           onSignOut={handleSignOut}
         />
 
-        <main className="flex-1 overflow-y-auto" id="main-content" tabIndex={-1}>
+        <main
+          className="flex-1 overflow-y-auto"
+          id="main-content"
+          tabIndex={-1}
+        >
           <div className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
             {children}
           </div>

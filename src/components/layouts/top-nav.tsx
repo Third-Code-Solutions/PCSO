@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { NotificationBell } from "@/components/layouts/notification-bell";
+import dynamic from "next/dynamic";
+import { Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -14,6 +14,21 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { Role } from "@/lib/auth/permissions";
+
+const LazyNotificationBell = dynamic(
+  () =>
+    import("@/components/layouts/notification-bell").then(
+      (module) => module.NotificationBell,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <Button variant="ghost" size="icon" aria-label="Notifications" disabled>
+        <Bell className="h-5 w-5" />
+      </Button>
+    ),
+  },
+);
 
 interface BreadcrumbItem {
   label: string;
@@ -42,6 +57,7 @@ interface TopNavProps {
   onToggleSidebar: () => void;
   /** Role of the signed-in user; renders the role + data-scope badge when set */
   role?: Role;
+  authUserId?: string | null;
   user?: {
     name: string;
     email: string;
@@ -55,6 +71,7 @@ export function TopNav({
   sidebarOpen,
   onToggleSidebar,
   role,
+  authUserId = null,
   user,
   onSignOut,
 }: TopNavProps) {
@@ -143,7 +160,7 @@ export function TopNav({
       )}
 
       {/* Notifications */}
-      <NotificationBell />
+      <LazyNotificationBell authUserId={authUserId} />
 
       <Separator orientation="vertical" className="h-6" />
 

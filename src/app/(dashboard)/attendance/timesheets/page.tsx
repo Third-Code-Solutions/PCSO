@@ -5,19 +5,34 @@
  * summary for that period. Accessible by all roles that can view attendance.
  */
 
-import Link from 'next/link';
-import { requirePermission } from '@/lib/auth/guards';
-import { PageHeader } from '@/components/layouts/page-header';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { getTimesheetPeriods } from './queries';
-import { CheckCircle2, Clock, AlertCircle, FileText } from 'lucide-react';
-import type { Metadata } from 'next';
+import Link from "next/link";
+import { Suspense } from "react";
+import { requirePermission } from "@/lib/auth/guards";
+import { PageHeader } from "@/components/layouts/page-header";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { getTimesheetPeriods } from "./queries";
+import { CheckCircle2, Clock, AlertCircle, FileText } from "lucide-react";
+import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: 'Timesheets' };
+export const metadata: Metadata = { title: "Timesheets" };
 
-export default async function TimesheetsPage() {
-  await requirePermission('attendance', 'view');
+function TimesheetPeriodsSkeleton() {
+  return (
+    <div
+      className="mt-6 overflow-hidden rounded-xl border border-[#0B2545]/10 bg-white shadow-sm"
+      aria-label="Loading timesheet periods"
+    >
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={index}
+          className="h-14 animate-pulse border-b border-[#0B2545]/5 bg-[#0B2545]/[0.02] last:border-0"
+        />
+      ))}
+    </div>
+  );
+}
 
+async function TimesheetPeriods() {
   let periods: Awaited<ReturnType<typeof getTimesheetPeriods>> = [];
   let fetchError: string | null = null;
 
@@ -25,23 +40,11 @@ export default async function TimesheetsPage() {
     periods = await getTimesheetPeriods();
   } catch (err: unknown) {
     fetchError =
-      err instanceof Error ? err.message : 'Failed to load timesheet periods.';
+      err instanceof Error ? err.message : "Failed to load timesheet periods.";
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <RealtimeBoundary tables={['attendance_logs', 'dtr_periods']} />
-
-      <PageHeader
-        title="Timesheets"
-        description="Per-period DTR summaries for approval and export."
-        breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Time & Attendance', href: '/attendance' },
-          { label: 'Timesheets' },
-        ]}
-      />
-
+    <>
       {fetchError && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {fetchError}
@@ -52,7 +55,9 @@ export default async function TimesheetsPage() {
         <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#0B2545]/20">
           <FileText className="h-10 w-10 text-[#0B2545]/20" />
           <div className="text-center">
-            <p className="text-sm font-medium text-gray-500">No timesheet data yet</p>
+            <p className="text-sm font-medium text-gray-500">
+              No timesheet data yet
+            </p>
             <p className="mt-0.5 text-xs text-gray-400">
               DTR summaries will appear here once attendance records are added.
             </p>
@@ -174,6 +179,30 @@ export default async function TimesheetsPage() {
           </table>
         </div>
       )}
+    </>
+  );
+}
+
+export default async function TimesheetsPage() {
+  await requirePermission("attendance", "view");
+
+  return (
+    <main className="mx-auto max-w-5xl px-4 py-8">
+      <RealtimeBoundary tables={["attendance_logs", "dtr_periods"]} />
+
+      <PageHeader
+        title="Timesheets"
+        description="Per-period DTR summaries for approval and export."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Time & Attendance", href: "/attendance" },
+          { label: "Timesheets" },
+        ]}
+      />
+
+      <Suspense fallback={<TimesheetPeriodsSkeleton />}>
+        <TimesheetPeriods />
+      </Suspense>
     </main>
   );
 }

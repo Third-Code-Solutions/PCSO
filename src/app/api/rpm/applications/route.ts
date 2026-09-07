@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { applications, vacancies } from "@/lib/db/schema/recruitment";
@@ -50,12 +50,21 @@ function generateApplicationNumber(): string {
   return `APP-${year}-${suffix}`;
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "23505"
+  );
+}
+
 export async function GET(request: Request) {
   try {
     const limited = enforceRateLimit(request, LIST_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
 
     const rows = await db
@@ -75,8 +84,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data: rows });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
-    return problem(500, "Internal Server Error", detail);
+    console.error("[rpm/applications] GET failed", error);
+    return problem(500, "Internal Server Error", "Unexpected server error");
   }
 }
 
@@ -85,7 +94,7 @@ export async function POST(request: Request) {
     const limited = enforceRateLimit(request, CREATE_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
 
     const json: unknown = await request.json().catch(() => null);
@@ -151,29 +160,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ data: existingRows[0] }, { status: 200 });
     }
 
-    const insertedRows = await db
-      .insert(applications)
-      .values({
-        vacancyId,
-        applicantId: token.applicantId,
-        applicationNumber: generateApplicationNumber(),
-        status: "incomplete",
-        // Empty-but-valid defaults for the NOT NULL JSONB columns. The wizard
-        // fills these at submit (POST /api/rpm/applications/[id]).
-        personalInfo: {} as Record<string, unknown>,
-        educationalBackground: [] as Record<string, unknown>[],
-        workExperience: [] as Record<string, unknown>[],
-        eligibility: [] as Record<string, unknown>[],
-        trainings: [] as Record<string, unknown>[],
-        referencesJson: [] as Record<string, unknown>[],
-      })
-      .returning({
-        id: applications.id,
-        status: applications.status,
-        applicationNumber: applications.applicationNumber,
-      });
+    let inserted:
+      | { id: string; status: string; applicationNumber: string }
+      | undefined;
+    for (let attempt = 0; attempt < 3 && !inserted; attempt += 1) {
+      try {
+        const insertedRows = await db
+          .insert(applications)
+          .values({
+            vacancyId,
+            applicantId: token.applicantId,
+            applicationNumber: generateApplicationNumber(),
+            status: "incomplete",
+            // Empty-but-valid defaults for the NOT NULL JSONB columns. The wizard
+            // fills these at submit (POST /api/rpm/applications/[id]).
+            personalInfo: {} as Record<string, unknown>,
+            educationalBackground: [] as Record<string, unknown>[],
+            workExperience: [] as Record<string, unknown>[],
+            eligibility: [] as Record<string, unknown>[],
+            trainings: [] as Record<string, unknown>[],
+            referencesJson: [] as Record<string, unknown>[],
+          })
+          .returning({
+            id: applications.id,
+            status: applications.status,
+            applicationNumber: applications.applicationNumber,
+          });
+        inserted = insertedRows[0];
+      } catch (error: unknown) {
+        if (!isUniqueViolation(error) || attempt === 2) throw error;
+      }
+    }
 
-    const inserted = insertedRows[0];
     if (!inserted) {
       return problem(
         500,
@@ -183,10 +201,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ data: inserted }, { status: 201 });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
-    return problem(500, "Internal Server Error", detail);
+    console.error("[rpm/applications] POST failed", error);
+    return problem(500, "Internal Server Error", "Unexpected server error");
   }
 }
-
-// Silence unused-import lint in edge-runtime builds.
-void sql;

@@ -1,4 +1,4 @@
-'use server';
+"use server";
 
 /**
  * Timesheet queries — server-side data fetching for the timesheets module.
@@ -13,22 +13,23 @@
  * Read-only. All writes belong in actions.ts.
  */
 
-import { db } from '@/lib/db';
+import { db } from "@/lib/db";
 import {
   attendanceLogs,
   dtrPeriods,
   employees,
   leaveApplications,
   offices,
-} from '@/lib/db/schema';
-import { and, eq, gte, lte, isNull, sql, inArray } from 'drizzle-orm';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { requireAuth } from '@/lib/auth/guards';
-import type { DateString } from '@/lib/utils/attendance/types';
+} from "@/lib/db/schema";
+import { and, eq, gte, lte, isNull, sql, inArray } from "drizzle-orm";
+import { format, startOfMonth, endOfMonth } from "date-fns";
+import { unstable_cache } from "next/cache";
+import { requireAuth, requirePermission } from "@/lib/auth/guards";
+import type { DateString } from "@/lib/utils/attendance/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type DtrStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
+export type DtrStatus = "draft" | "submitted" | "approved" | "rejected";
 
 /** One row in the period list (one distinct period across all employees). */
 export interface TimesheetPeriod {
@@ -84,14 +85,15 @@ const MIN_PER_WORKDAY = 8 * 60;
 function buildRecentPeriods(
   n: number,
 ): Array<{ start: DateString; end: DateString; label: string }> {
-  const result: Array<{ start: DateString; end: DateString; label: string }> = [];
+  const result: Array<{ start: DateString; end: DateString; label: string }> =
+    [];
   const now = new Date();
 
   for (let i = 0; i < n; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const start = format(startOfMonth(d), 'yyyy-MM-dd') as DateString;
-    const end = format(endOfMonth(d), 'yyyy-MM-dd') as DateString;
-    const label = format(d, 'MMMM yyyy');
+    const start = format(startOfMonth(d), "yyyy-MM-dd") as DateString;
+    const end = format(endOfMonth(d), "yyyy-MM-dd") as DateString;
+    const label = format(d, "MMMM yyyy");
     result.push({ start, end, label });
   }
 
@@ -114,6 +116,37 @@ function computeNetHours(row: {
 
 // ─── getTimesheetPeriods ──────────────────────────────────────────────────────
 
+const loadTimesheetPeriodGroups = unstable_cache(
+  async (
+    windowStart: DateString,
+    windowEnd: DateString,
+    employeeId: string | null,
+  ) => {
+    const condition = employeeId
+      ? and(
+          gte(dtrPeriods.periodStart, windowStart),
+          lte(dtrPeriods.periodStart, windowEnd),
+          eq(dtrPeriods.employeeId, employeeId),
+        )
+      : and(
+          gte(dtrPeriods.periodStart, windowStart),
+          lte(dtrPeriods.periodStart, windowEnd),
+        );
+
+    return db
+      .select({
+        periodStart: dtrPeriods.periodStart,
+        status: dtrPeriods.status,
+        count: sql<number>`cast(count(*) as integer)`,
+      })
+      .from(dtrPeriods)
+      .where(condition)
+      .groupBy(dtrPeriods.periodStart, dtrPeriods.status);
+  },
+  ["timesheet-period-groups-v1"],
+  { revalidate: 10 },
+);
+
 /**
  * Returns the last 12 calendar months with aggregate approval status counts.
  *
@@ -121,34 +154,39 @@ function computeNetHours(row: {
  * window — no per-month loop.
  */
 export async function getTimesheetPeriods(): Promise<TimesheetPeriod[]> {
-  const user = await requireAuth();
-  const isSelfService = user.role === 'employee_self_service';
+  const user = await requirePermission("attendance", "view");
+  const isSelfService = user.role === "employee_self_service";
 
   const periods = buildRecentPeriods(12);
   const windowStart = periods[periods.length - 1]!.start;
   const windowEnd = periods[0]!.end;
 
-  const baseCondition = isSelfService && user.employeeId
-    ? and(
-        gte(dtrPeriods.periodStart, windowStart),
-        lte(dtrPeriods.periodEnd, windowEnd),
-        eq(dtrPeriods.employeeId, user.employeeId),
-      )
-    : and(
-        gte(dtrPeriods.periodStart, windowStart),
-        lte(dtrPeriods.periodEnd, windowEnd),
-      );
+  // Never fall through to the all-employee query when an ESS account has no
+  // linked employee record.
+  if (isSelfService && !user.employeeId) {
+    const current = periods[0]!;
+    return [
+      {
+        periodStart: current.start,
+        periodEnd: current.end,
+        label: current.label,
+        totalEmployees: 0,
+        approvedCount: 0,
+        draftCount: 0,
+        submittedCount: 0,
+        rejectedCount: 0,
+      },
+    ];
+  }
 
-  // Single query: group by period_start + status across the whole window
-  const grouped = await db
-    .select({
-      periodStart: dtrPeriods.periodStart,
-      status: dtrPeriods.status,
-      count: sql<number>`cast(count(*) as integer)`,
-    })
-    .from(dtrPeriods)
-    .where(baseCondition)
-    .groupBy(dtrPeriods.periodStart, dtrPeriods.status);
+  // Cache this small, role-scoped aggregate briefly. The employee ID is part
+  // of the cache key for self-service accounts; privileged roles share only
+  // the all-employee aggregate. Mutations also revalidate the route.
+  const grouped = await loadTimesheetPeriodGroups(
+    windowStart,
+    windowEnd,
+    isSelfService ? user.employeeId : null,
+  );
 
   // Bucket by period-start
   const bucket = new Map<
@@ -163,10 +201,10 @@ export async function getTimesheetPeriods(): Promise<TimesheetPeriod[]> {
       b = { approved: 0, draft: 0, submitted: 0, rejected: 0 };
       bucket.set(key, b);
     }
-    if (row.status === 'approved') b.approved = row.count;
-    else if (row.status === 'draft') b.draft = row.count;
-    else if (row.status === 'submitted') b.submitted = row.count;
-    else if (row.status === 'rejected') b.rejected = row.count;
+    if (row.status === "approved") b.approved = row.count;
+    else if (row.status === "draft") b.draft = row.count;
+    else if (row.status === "submitted") b.submitted = row.count;
+    else if (row.status === "rejected") b.rejected = row.count;
   }
 
   const result: TimesheetPeriod[] = [];
@@ -224,23 +262,24 @@ export async function getTimesheetDetail(
   options: GetTimesheetDetailOptions = {},
 ): Promise<TimesheetDetailPage> {
   const user = await requireAuth();
-  const isSelfService = user.role === 'employee_self_service';
+  const isSelfService = user.role === "employee_self_service";
 
   const page = Math.max(1, options.page ?? 1);
   const pageSize = Math.min(Math.max(options.pageSize ?? 50, 10), 200);
-  const search = options.search?.trim().toLowerCase() ?? '';
+  const search = options.search?.trim().toLowerCase() ?? "";
 
   // ── 1. Existing dtr_periods rows ────────────────────────────────────────
-  const dtrConditions = isSelfService && user.employeeId
-    ? and(
-        gte(dtrPeriods.periodStart, periodStart),
-        lte(dtrPeriods.periodEnd, periodEnd),
-        eq(dtrPeriods.employeeId, user.employeeId),
-      )
-    : and(
-        gte(dtrPeriods.periodStart, periodStart),
-        lte(dtrPeriods.periodEnd, periodEnd),
-      );
+  const dtrConditions =
+    isSelfService && user.employeeId
+      ? and(
+          gte(dtrPeriods.periodStart, periodStart),
+          lte(dtrPeriods.periodEnd, periodEnd),
+          eq(dtrPeriods.employeeId, user.employeeId),
+        )
+      : and(
+          gte(dtrPeriods.periodStart, periodStart),
+          lte(dtrPeriods.periodEnd, periodEnd),
+        );
 
   const existingPeriods = await db
     .select({
@@ -287,7 +326,9 @@ export async function getTimesheetDetail(
       )
       .groupBy(attendanceLogs.employeeId);
 
-    derivedRows = aggregated.filter((r) => !coveredEmployeeIds.has(r.employeeId));
+    derivedRows = aggregated.filter(
+      (r) => !coveredEmployeeIds.has(r.employeeId),
+    );
   }
 
   const allEmployeeIds = [
@@ -312,10 +353,7 @@ export async function getTimesheetDetail(
     .from(employees)
     .leftJoin(offices, eq(employees.officeId, offices.id))
     .where(
-      and(
-        inArray(employees.id, allEmployeeIds),
-        isNull(employees.deletedAt),
-      ),
+      and(inArray(employees.id, allEmployeeIds), isNull(employees.deletedAt)),
     );
 
   const empMap = new Map(
@@ -325,7 +363,7 @@ export async function getTimesheetDetail(
         employeeNo: e.employeeNo,
         firstName: e.firstName,
         lastName: e.lastName,
-        department: e.officeName ?? 'Unassigned',
+        department: e.officeName ?? "Unassigned",
       },
     ]),
   );
@@ -340,14 +378,16 @@ export async function getTimesheetDetail(
     .where(
       and(
         inArray(leaveApplications.employeeId, allEmployeeIds),
-        eq(leaveApplications.status, 'approved'),
+        eq(leaveApplications.status, "approved"),
         lte(leaveApplications.dateFrom, periodEnd),
         gte(leaveApplications.dateTo, periodStart),
       ),
     )
     .groupBy(leaveApplications.employeeId);
 
-  const leaveMap = new Map(leaveAgg.map((l) => [l.employeeId, Number(l.totalDays)]));
+  const leaveMap = new Map(
+    leaveAgg.map((l) => [l.employeeId, Number(l.totalDays)]),
+  );
 
   // ── 5. Merge into final rows ───────────────────────────────────────────
   const rows: TimesheetEmployeeRow[] = [];
@@ -395,7 +435,7 @@ export async function getTimesheetDetail(
       totalOvertimeMinutes: derived.totalOvertimeMinutes,
       totalLeaveDays: leaveMap.get(derived.employeeId) ?? 0,
       netHours: computeNetHours(derived),
-      status: 'draft',
+      status: "draft",
       approvedBy: null,
     });
   }

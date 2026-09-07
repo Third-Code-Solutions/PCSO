@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { applicants } from "@/lib/db/schema/recruitment";
@@ -40,7 +40,13 @@ export async function GET(
         emailVerifiedAt: applicants.emailVerifiedAt,
       })
       .from(applicants)
-      .where(eq(applicants.verificationToken, token))
+      .where(
+        and(
+          eq(applicants.verificationToken, token),
+          ne(applicants.status, "inactive"),
+          isNull(applicants.deletedAt),
+        ),
+      )
       .limit(1);
 
     const row = rows[0];
@@ -89,13 +95,13 @@ export async function GET(
 
     return NextResponse.json({ data: { id: row.id, verified: true } });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
+    console.error("[rpm/verify] applicant verification failed", error);
     return NextResponse.json(
       {
         type: "about:blank",
         title: "Internal Server Error",
         status: 500,
-        detail,
+        detail: "Unexpected server error",
       },
       { status: 500 },
     );

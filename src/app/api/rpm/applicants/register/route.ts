@@ -34,7 +34,7 @@ async function sendVerificationEmail(
   to: string,
   firstName: string,
   token: string,
-): Promise<void> {
+): Promise<boolean> {
   const verifyUrl = `${env.NEXT_PUBLIC_APP_URL}/applicant/verify?token=${encodeURIComponent(token)}`;
 
   if (!env.RESEND_API_KEY) {
@@ -42,7 +42,7 @@ async function sendVerificationEmail(
       // Dev-only visibility when no email provider is configured.
       console.info(`[rpm/register] verification link for ${to}: ${verifyUrl}`);
     }
-    return;
+    return false;
   }
 
   try {
@@ -62,9 +62,12 @@ async function sendVerificationEmail(
     });
     if (error) {
       console.error("[rpm/register] verification email failed:", error);
+      return false;
     }
+    return true;
   } catch (error: unknown) {
     console.error("[rpm/register] verification email failed:", error);
+    return false;
   }
 }
 
@@ -111,12 +114,12 @@ export async function POST(request: Request) {
     if (existingRows[0]) {
       return NextResponse.json(
         {
-          type: "about:blank",
-          title: "Conflict",
-          status: 409,
-          detail: "An account with this email already exists.",
+          data: {
+            message:
+              "If an account can be created for this email, verification instructions will be sent.",
+          },
         },
-        { status: 409 },
+        { status: 202 },
       );
     }
 
@@ -161,7 +164,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await sendVerificationEmail(
+    const emailSent = await sendVerificationEmail(
       inserted.email,
       input.firstName,
       verificationToken,
@@ -172,19 +175,21 @@ export async function POST(request: Request) {
         data: {
           id: inserted.id,
           email: inserted.email,
-          message: "Verification email sent. Check your inbox.",
+          message: emailSent
+            ? "Verification email sent. Check your inbox."
+            : "Registration received, but verification email delivery is temporarily unavailable. Please contact support.",
         },
       },
-      { status: 201 },
+      { status: emailSent ? 201 : 202 },
     );
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
+    console.error("[rpm/register] applicant registration failed", error);
     return NextResponse.json(
       {
         type: "about:blank",
         title: "Internal Server Error",
         status: 500,
-        detail,
+        detail: "Unexpected server error",
       },
       { status: 500 },
     );

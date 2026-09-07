@@ -21,12 +21,12 @@ test.describe("Leave Management", () => {
     });
 
     test("leave application page loads for employee", async ({ page }) => {
-      await page.goto("/dashboard/leave");
+      await page.goto("/leave");
       await expect(page.getByRole("heading", { name: /leave/i })).toBeVisible();
     });
 
     test("leave balance summary is visible", async ({ page }) => {
-      await page.goto("/dashboard/leave");
+      await page.goto("/leave");
       await expect(
         page
           .getByText(/vacation leave|sick leave|vl balance|sl balance/i)
@@ -35,14 +35,14 @@ test.describe("Leave Management", () => {
     });
 
     test("apply for leave button is visible", async ({ page }) => {
-      await page.goto("/dashboard/leave");
+      await page.goto("/leave");
       await expect(
         page.getByRole("button", { name: /apply|file leave|new leave/i }),
       ).toBeVisible();
     });
 
     test("leave application form has required fields", async ({ page }) => {
-      await page.goto("/dashboard/leave");
+      await page.goto("/leave");
       await page
         .getByRole("button", { name: /apply|file leave|new leave/i })
         .click();
@@ -53,7 +53,7 @@ test.describe("Leave Management", () => {
     });
 
     test("leave application form validates date range", async ({ page }) => {
-      await page.goto("/dashboard/leave");
+      await page.goto("/leave");
       await page
         .getByRole("button", { name: /apply|file leave|new leave/i })
         .click();
@@ -76,7 +76,7 @@ test.describe("Leave Management", () => {
     });
 
     test("employee can view their own leave history", async ({ page }) => {
-      await page.goto("/dashboard/leave/history");
+      await page.goto("/leave/history");
       await expect(page.getByRole("table")).toBeVisible();
     });
   });
@@ -88,7 +88,7 @@ test.describe("Leave Management", () => {
     });
 
     test("pending leave approvals list is accessible", async ({ page }) => {
-      await page.goto("/dashboard/leave/approvals");
+      await page.goto("/leave/approvals");
       await expect(
         page.getByRole("heading", { name: /leave approvals|pending leaves/i }),
       ).toBeVisible();
@@ -97,7 +97,7 @@ test.describe("Leave Management", () => {
     test("approver can see applicant details before acting", async ({
       page,
     }) => {
-      await page.goto("/dashboard/leave/approvals");
+      await page.goto("/leave/approvals");
 
       const firstPending = page
         .getByRole("row")
@@ -116,7 +116,7 @@ test.describe("Leave Management", () => {
     });
 
     test("approval action requires confirmation", async ({ page }) => {
-      await page.goto("/dashboard/leave/approvals");
+      await page.goto("/leave/approvals");
 
       const firstPending = page
         .getByRole("row")
@@ -139,7 +139,7 @@ test.describe("Leave Management", () => {
   test.skip("full leave application and approval flow", async ({ page }) => {
     // Step 1: Employee files leave
     await signIn(page, getEmployeeCredentials());
-    await page.goto("/dashboard/leave");
+    await page.goto("/leave");
     // ... fill form, submit, verify pending status
 
     // Step 2: Approver approves

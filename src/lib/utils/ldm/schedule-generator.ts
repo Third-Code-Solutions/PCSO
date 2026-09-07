@@ -157,7 +157,8 @@ function dateRangesOverlap(
 
 /**
  * Advisory proposal: start = next month's first Monday, end = start + (duration - 1).
- * Venue defaults to the first weekly-slot venue; falls back to 'TBD'.
+ * Venue defaults to the first weekly-slot venue; an empty value means the
+ * caller must supply a real venue before persisting the run.
  */
 export function generateProposedSchedule(
   input: Readonly<GenerateScheduleInput>,
@@ -165,7 +166,7 @@ export function generateProposedSchedule(
   const duration = Math.max(1, input.program.durationDays);
   const start = nextMonthFirstMonday(new Date());
   const end = addDays(start, duration - 1);
-  const venue = input.providerAvailability.weeklySlots[0]?.venue ?? "TBD";
+  const venue = input.providerAvailability.weeklySlots[0]?.venue?.trim() ?? "";
 
   return {
     startDate: toIsoDate(start),

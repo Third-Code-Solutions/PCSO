@@ -65,6 +65,37 @@ function problem(status: number, title: string, detail: string) {
   );
 }
 
+function detectMimeType(buffer: Buffer): string | null {
+  if (
+    buffer.length >= 5 &&
+    buffer.subarray(0, 5).toString("ascii") === "%PDF-"
+  ) {
+    return "application/pdf";
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+  return null;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -73,7 +104,7 @@ export async function GET(
     const limited = enforceRateLimit(request, LIST_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
     const { id } = await params;
 
@@ -106,8 +137,8 @@ export async function GET(
 
     return NextResponse.json({ data: rows });
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
-    return problem(500, "Internal Server Error", detail);
+    console.error("[rpm/application-documents] GET failed", error);
+    return problem(500, "Internal Server Error", "Unexpected server error");
   }
 }
 
@@ -128,7 +159,7 @@ export async function POST(
     const limited = enforceRateLimit(request, UPLOAD_RATE_LIMIT);
     if (limited) return limited;
 
-    const token = authenticateApplicantRequest(request);
+    const token = await authenticateApplicantRequest(request);
     if (!token) return unauthorized();
     const { id } = await params;
 
@@ -195,6 +226,16 @@ export async function POST(
       );
     }
 
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const detectedMime = detectMimeType(buffer);
+    if (detectedMime !== file.type) {
+      return problem(
+        415,
+        "Unsupported Media Type",
+        "The file contents do not match the declared file type.",
+      );
+    }
+
     const extension =
       file.type === "application/pdf"
         ? "pdf"
@@ -204,8 +245,6 @@ export async function POST(
     const objectId = randomUUID();
     const storagePath = `${token.applicantId}/${id}/${objectId}.${extension}`;
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-
     const { error: uploadError } = await supabaseAdmin.storage
       .from(BUCKET)
       .upload(storagePath, buffer, {
@@ -214,10 +253,14 @@ export async function POST(
       });
 
     if (uploadError) {
+      console.error(
+        "[rpm/application-documents] storage upload failed",
+        uploadError,
+      );
       return problem(
-        422,
-        "Unprocessable Entity",
-        `Upload failed: ${uploadError.message}`,
+        502,
+        "Bad Gateway",
+        "Document storage is temporarily unavailable.",
       );
     }
 
@@ -253,12 +296,18 @@ export async function POST(
         .catch(() => {
           /* swallow — stale object will be reaped by a janitor */
         });
-      const detail =
-        dbError instanceof Error ? dbError.message : "Database insert failed";
-      return problem(422, "Unprocessable Entity", detail);
+      console.error(
+        "[rpm/application-documents] database insert failed",
+        dbError,
+      );
+      return problem(
+        500,
+        "Internal Server Error",
+        "Document could not be saved.",
+      );
     }
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
-    return problem(500, "Internal Server Error", detail);
+    console.error("[rpm/application-documents] POST failed", error);
+    return problem(500, "Internal Server Error", "Unexpected server error");
   }
 }

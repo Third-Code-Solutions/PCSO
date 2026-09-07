@@ -668,7 +668,12 @@ export async function getGsisBatchDetail(batchId: string) {
 }
 
 export async function getEmployeeGsisDetail(employeeId: string) {
-  await requirePermission("employees", "view");
+  const user = await requirePermission("employees", "view");
+  if (user.role === "employee_self_service" && user.employeeId !== employeeId) {
+    throw new Error(
+      "Employee self-service users may only view their own GSIS data",
+    );
+  }
 
   const [registration] = await db
     .select()

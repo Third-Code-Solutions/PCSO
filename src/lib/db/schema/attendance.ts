@@ -200,6 +200,7 @@ export const dtrPeriods = pgTable(
     index("dtr_periods_employee_id_idx").on(t.employeeId),
     index("dtr_periods_period_start_idx").on(t.periodStart),
     index("dtr_periods_period_end_idx").on(t.periodEnd),
+    index("dtr_periods_period_status_idx").on(t.periodStart, t.status),
     uniqueIndex("dtr_periods_employee_period_idx").on(
       t.employeeId,
       t.periodStart,

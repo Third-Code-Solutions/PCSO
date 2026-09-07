@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { applicants } from "@/lib/db/schema/recruitment";
 import { applicantLoginSchema } from "@/lib/validations/recruitment";
 import {
+  APPLICANT_TOKEN_COOKIE,
   signApplicantToken,
   verifyPassword,
 } from "@/lib/utils/rpm/applicant-auth";
@@ -49,7 +50,13 @@ export async function POST(request: Request) {
         status: applicants.status,
       })
       .from(applicants)
-      .where(eq(applicants.email, email))
+      .where(
+        and(
+          eq(applicants.email, email),
+          ne(applicants.status, "inactive"),
+          isNull(applicants.deletedAt),
+        ),
+      )
       .limit(1);
 
     // Constant-ish response shape — do not leak which side failed.
@@ -82,22 +89,29 @@ export async function POST(request: Request) {
     }
 
     const token = signApplicantToken({ applicantId: row.id });
-    return NextResponse.json({
+    const response = NextResponse.json({
       data: {
-        token,
         applicant: { id: row.id, status: row.status },
-        tokenType: "Bearer",
+        tokenType: "Cookie",
         expiresInSeconds: 24 * 60 * 60,
       },
     });
+    response.cookies.set(APPLICANT_TOKEN_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 24 * 60 * 60,
+    });
+    return response;
   } catch (error: unknown) {
-    const detail = error instanceof Error ? error.message : "unknown";
+    console.error("[rpm/login] applicant login failed", error);
     return NextResponse.json(
       {
         type: "about:blank",
         title: "Internal Server Error",
         status: 500,
-        detail,
+        detail: "Unexpected server error",
       },
       { status: 500 },
     );
