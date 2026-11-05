@@ -73,12 +73,20 @@ export default async function WorkSchedulesPage({ searchParams }: PageProps) {
             Manage shift schedules, grace periods, and break times (TAM-001)
           </p>
         </div>
-        <Link
-          href="/attendance/schedules/new"
-          className="rounded bg-[#0B2545] px-4 py-2 text-sm font-medium text-[#FAF4E6] hover:bg-[#13315C]"
-        >
-          + New Schedule
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/attendance/schedules/assignments"
+            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Assign to offices / employees
+          </Link>
+          <Link
+            href="/attendance/schedules/new"
+            className="rounded bg-[#0B2545] px-4 py-2 text-sm font-medium text-[#FAF4E6] hover:bg-[#13315C]"
+          >
+            + New Schedule
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}

@@ -2,7 +2,9 @@
  * /learning/reports — Yearly training expense by breakdown (LDM-011, LDM-015).
  */
 
-import { requireAuth } from "@/lib/auth/guards";
+import { redirect } from "next/navigation";
+import { requirePermission } from "@/lib/auth/guards";
+import { learningScopeFor } from "@/lib/actions/ldm/scope";
 import { PageHeader } from "@/components/layouts/page-header";
 import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import {
@@ -27,7 +29,9 @@ interface PageProps {
 }
 
 export default async function LearningReportsPage({ searchParams }: PageProps) {
-  await requireAuth();
+  const user = await requirePermission("learning", "view");
+  // H-24: org-wide training spend is for HR + read-only oversight only.
+  if (learningScopeFor(user).kind !== "all") redirect("/learning");
   const params = await searchParams;
 
   const rawYear = Array.isArray(params["year"])

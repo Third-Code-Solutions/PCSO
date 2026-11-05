@@ -3,7 +3,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { auditLogs, biometricDevices } from "@/lib/db/schema";
+import { biometricDevices } from "@/lib/db/schema";
+import { auditLog } from "@/lib/audit";
 import {
   parsePunchCsv,
   parsePunchRecords,
@@ -230,16 +231,19 @@ export async function POST(request: NextRequest) {
       actorUserId: null,
     });
 
-    await db.insert(auditLogs).values({
+    await auditLog({
       userId: null,
       action: "attendance.biometric_push",
-      tableName: "attendance_logs",
+      table: "attendance_logs",
+      module: "TAM",
+      subModule: "biometric_push",
       newValues: {
         deviceId: device.id,
         deviceName: device.name,
         receivedPunches: summary.receivedPunches,
         dayRows: summary.dayRows,
         imported: summary.imported,
+        protectedSkipped: summary.protectedSkipped,
         skipped: summary.skipped,
         unmatchedBadges: summary.unmatchedBadgeCount,
         parseErrors: parsed.errors.length,
@@ -253,6 +257,7 @@ export async function POST(request: NextRequest) {
       received: summary.receivedPunches,
       dayRows: summary.dayRows,
       imported: summary.imported,
+      protectedSkipped: summary.protectedSkipped,
       skipped: summary.skipped,
       unmatchedBadges: summary.unmatchedBadgeCount,
       errors: [...parsed.errors.slice(0, 50), ...summary.errors.slice(0, 50)],

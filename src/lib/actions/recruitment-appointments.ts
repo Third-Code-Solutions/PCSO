@@ -11,10 +11,9 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, and, isNull, desc, ne } from "drizzle-orm";
 import {
   appointments,
   appointmentDocuments,
@@ -30,6 +29,7 @@ import { offices } from "@/lib/db/schema/offices";
 import { salaryGrades } from "@/lib/db/schema/government-rates";
 import { workSchedules } from "@/lib/db/schema/attendance";
 import { requirePermission } from "@/lib/auth/guards";
+import { requireRecruitmentViewer } from "@/lib/utils/rpm/recruitment-viewer";
 import { withTx } from "@/lib/db/transaction";
 import {
   atomicallyProvisionNewEmployee,
@@ -89,7 +89,20 @@ async function generateAppointmentNumber(): Promise<string> {
 
 export async function createAppointment(input: unknown) {
   const user = await requirePermission("employees", "create");
-  const parsed = CreateAppointmentSchema.parse(input);
+  const result = CreateAppointmentSchema.safeParse(input);
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error.issues[0]?.message ?? "Invalid appointment details",
+    };
+  }
+  const parsed = result.data;
+  if (!user.employeeId) {
+    return {
+      success: false,
+      error: "Your account is not linked to an employee record",
+    };
+  }
 
   const [application] = await db
     .select({
@@ -114,7 +127,26 @@ export async function createAppointment(input: unknown) {
   if (application.status !== "results_released") {
     return {
       success: false,
-      error: "Application must be in results_released status",
+      error:
+        "Only applicants whose results were released as selected can be appointed",
+    };
+  }
+
+  const [openAppointment] = await db
+    .select({ id: appointments.id })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.applicationId, application.id),
+        isNull(appointments.deletedAt),
+        ne(appointments.status, "cancelled"),
+      ),
+    )
+    .limit(1);
+  if (openAppointment) {
+    return {
+      success: false,
+      error: "An appointment already exists for this application",
     };
   }
 
@@ -172,7 +204,7 @@ export async function createAppointment(input: unknown) {
     monthlySalary: monthlySalary.toString(),
     appointmentType: parsed.appointmentType,
     status: "draft",
-    preparedByEmployeeId: user.employeeId!,
+    preparedByEmployeeId: user.employeeId,
     notes: parsed.notes,
   };
 
@@ -211,6 +243,13 @@ async function calculateMonthlySalary(
 export async function generateAppointmentDocuments(input: unknown) {
   const user = await requirePermission("employees", "edit");
   const parsed = GenerateDocumentsSchema.parse(input);
+  const generatedByEmployeeId = user.employeeId;
+  if (!generatedByEmployeeId) {
+    return {
+      success: false,
+      error: "Your account is not linked to an employee record",
+    };
+  }
 
   const [appointment] = await db
     .select({
@@ -321,7 +360,7 @@ export async function generateAppointmentDocuments(input: unknown) {
       docType,
       fileName: `${appointment.appointmentNumber}_${docType}.pdf`,
       fileUrl: pdfUrl,
-      generatedByEmployeeId: user.employeeId!,
+      generatedByEmployeeId,
     };
 
     await db.insert(appointmentDocuments).values(newDoc);
@@ -423,6 +462,7 @@ export async function provisionEmployee(input: unknown) {
       id: applications.id,
       applicantId: applications.applicantId,
       personalInfo: applications.personalInfo,
+      employeeId: applications.employeeId,
     })
     .from(applications)
     .where(eq(applications.id, appointment.applicationId))
@@ -452,7 +492,11 @@ export async function provisionEmployee(input: unknown) {
     return { success: false, error: "Applicant not found" };
   }
 
-  const existingEmployee = await db
+  // Internal promotion (TOR 1.9.13): the application carries the employee,
+  // whose 201 record is updated in place. External applicants must not
+  // collide with an existing employee.
+  const internalEmployeeId = application.employeeId ?? undefined;
+  const [existingEmployee] = await db
     .select({ id: employees.id })
     .from(employees)
     .where(
@@ -460,10 +504,11 @@ export async function provisionEmployee(input: unknown) {
     )
     .limit(1);
 
-  if (existingEmployee.length > 0) {
+  if (existingEmployee && existingEmployee.id !== internalEmployeeId) {
     return {
       success: false,
-      error: "Employee with this email already exists",
+      error:
+        "An employee with this email already exists. Internal applicants must apply through the Employee Portal promotion form.",
     };
   }
 
@@ -509,8 +554,9 @@ export async function provisionEmployee(input: unknown) {
         appointmentType: normalizeAppointmentType(appointment.appointmentType),
         effectiveDate: appointment.effectiveDate,
         positionTitle: plantilla.positionTitle,
-        appointingAuthorityEmployeeId: user.id,
+        appointingAuthorityEmployeeId: user.employeeId ?? "",
         workScheduleId: defaultSchedule?.id,
+        existingEmployeeId: internalEmployeeId,
         applicant: {
           firstName: applicant.firstName,
           middleName: applicant.middleName ?? null,
@@ -557,7 +603,7 @@ export async function provisionEmployee(input: unknown) {
 // ─── List Appointments ────────────────────────────────────────────────────────
 
 export async function listAppointments() {
-  await requirePermission("employees", "view");
+  await requireRecruitmentViewer();
 
   const rows = await db
     .select({
@@ -590,7 +636,7 @@ export async function listAppointments() {
 // ─── Get Single Appointment ───────────────────────────────────────────────────
 
 export async function getAppointment(id: string) {
-  await requirePermission("employees", "view");
+  await requireRecruitmentViewer();
 
   const [row] = await db
     .select({

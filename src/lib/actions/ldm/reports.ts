@@ -24,6 +24,7 @@ import {
 } from "@/lib/db/schema/learning";
 import { employees } from "@/lib/db/schema/employees";
 import { requirePermission } from "@/lib/auth/guards";
+import { requireLearningOversight } from "./guard";
 
 // ── Types (module-local: 'use server' files export async functions only) ────
 
@@ -100,7 +101,7 @@ export async function getTrainingExpenseReport(filters?: {
   officeId?: string;
   lndType?: string;
 }): Promise<TrainingExpenseRecord[]> {
-  await requirePermission("learning", "view");
+  await requireLearningOversight();
   const parsed = expenseFilterSchema.parse(filters ?? {});
   const currentYear = parsed.cycleYear ?? new Date().getFullYear();
 
@@ -288,7 +289,7 @@ export async function adhocTrainingReport(filter: {
   endDate?: Date;
   lndType?: string;
 }): Promise<AdhocReportRow[]> {
-  await requirePermission("learning", "view");
+  await requireLearningOversight();
   const parsed = adhocFilterSchema.parse(filter ?? {});
 
   const conds = [];

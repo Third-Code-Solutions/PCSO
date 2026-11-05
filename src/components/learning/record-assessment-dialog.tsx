@@ -32,7 +32,7 @@ const LEVELS = competencyLevelSchema.options;
 
 interface Props {
   employeeId: string;
-  /** Current user's employee id — the assessor. */
+  /** Current user's employee id. UI hint only; the server uses the session. */
   assessorEmployeeId: string | null;
   cycleYear: number;
   canManage: boolean;
@@ -75,7 +75,6 @@ export function RecordAssessmentDialog({
         level,
         assessedAt,
         cycleYear,
-        assessorEmployeeId: assessorEmployeeId as string,
       });
       if ("error" in result) {
         setError(result.error);

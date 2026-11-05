@@ -59,7 +59,8 @@ interface GeneratePdsParams {
 interface GeneratePdsResult {
   success: boolean;
   serialNumber?: string;
-  documentUrl?: string;
+  /** Object path in the private `documents` bucket — sign at read time (H-19). */
+  documentPath?: string;
   error?: string;
 }
 
@@ -224,10 +225,10 @@ export async function generatePds(
 
     // 8. Upload to Supabase Storage
     const supabase = await createServerClient();
-    const fileName = `${serialNumber}.pdf`;
+    const documentPath = `pds/${serialNumber}.pdf`;
     const { error } = await supabase.storage
       .from("documents")
-      .upload(`pds/${fileName}`, blob, {
+      .upload(documentPath, blob, {
         contentType: "application/pdf",
         upsert: false,
       });
@@ -240,10 +241,8 @@ export async function generatePds(
       };
     }
 
-    // 9. Get public URL
-    const { data: urlData } = supabase.storage
-      .from("documents")
-      .getPublicUrl(`pds/${fileName}`);
+    // 9. Private bucket: persist the object path; readers sign it after
+    //    authorizing the viewer (H-19).
 
     // 10. Log issuance in the audit trail (PIM-016 serial issuance logging)
     await auditLog({
@@ -257,14 +256,14 @@ export async function generatePds(
         employeeNo: employee.employeeNo,
         issuedById: user.employeeId ?? user.id,
         requestedBy: params.requestedBy ?? null,
-        documentUrl: urlData.publicUrl,
+        documentPath,
       },
     });
 
     return {
       success: true,
       serialNumber,
-      documentUrl: urlData.publicUrl,
+      documentPath,
     };
   } catch (error) {
     console.error("PDS generation error:", error);

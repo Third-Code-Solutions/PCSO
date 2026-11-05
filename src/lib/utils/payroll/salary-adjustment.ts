@@ -9,6 +9,8 @@
  */
 
 import { z } from "zod";
+import { parseMoney } from "./rounding";
+import type { SalaryGradeRow } from "./run-support";
 
 // ---------------------------------------------------------------------------
 // Catalog
@@ -257,6 +259,78 @@ export function resolveAdjustmentTarget(
 }
 
 // ---------------------------------------------------------------------------
+// Effectivity (pure) — H-17
+// ---------------------------------------------------------------------------
+
+/** Today's date in Philippine time, YYYY-MM-DD. */
+export function manilaToday(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+}
+
+/**
+ * An approved adjustment takes effect on the 201/payroll only once its
+ * effectivity date has arrived; future-dated ones stay `approved` until then.
+ */
+export function isAdjustmentDue(effectiveDate: string, today: string): boolean {
+  return effectiveDate <= today;
+}
+
+/** Fields of an effected salary_adjustments row needed by payroll. */
+export interface EffectedAdjustmentRow {
+  effectiveDate: string;
+  newSalary: string;
+  oldGrade: number | null;
+  oldStep: number | null;
+  newGrade: number | null;
+  newStep: number | null;
+}
+
+/**
+ * Monthly salary set by the employee's latest effected adjustment as of
+ * `asOf`, or undefined when the salary schedule should be used instead.
+ *
+ * The adjustment amount applies only while it is still the most recent
+ * pricing decision for the employee's current grade/step:
+ *  - its resulting grade/step (new, else old for amount-only) must equal the
+ *    current grade/step (a later NOSI/promotion supersedes it), and
+ *  - no salary_grades row for that grade/step took effect after it (a newer
+ *    tranche supersedes it).
+ * This is what makes amount-only and manual-amount adjustments reach payroll.
+ *
+ * @param adjustments Effected rows for ONE employee, oldest approval first.
+ */
+export function resolveAdjustedSalary(
+  adjustments: readonly EffectedAdjustmentRow[],
+  salaryRows: readonly SalaryGradeRow[],
+  grade: number,
+  step: number,
+  asOf: string,
+): number | undefined {
+  let latest: EffectedAdjustmentRow | undefined;
+  for (const row of adjustments) {
+    if (row.effectiveDate > asOf) continue;
+    if (!latest || row.effectiveDate >= latest.effectiveDate) latest = row;
+  }
+  if (!latest) return undefined;
+
+  const resultingGrade = latest.newGrade ?? latest.oldGrade;
+  const resultingStep = latest.newStep ?? latest.oldStep;
+  if (resultingGrade !== grade || resultingStep !== step) return undefined;
+
+  const newerSchedule = salaryRows.some(
+    (r) =>
+      r.grade === grade &&
+      r.step === step &&
+      r.effectiveDate > latest.effectiveDate &&
+      r.effectiveDate <= asOf,
+  );
+  if (newerSchedule) return undefined;
+
+  const amount = parseMoney(latest.newSalary);
+  return amount > 0 ? amount : undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Display helpers (pure)
 // ---------------------------------------------------------------------------
 
@@ -269,4 +343,32 @@ export function formatGradeStep(
   if (grade != null) parts.push(`SG ${grade}`);
   if (step != null) parts.push(`Step ${step}`);
   return parts.length > 0 ? parts.join(", ") : null;
+}
+
+// ---------------------------------------------------------------------------
+// Maker-checker (segregation of duties — COA; PAY-011)
+// ---------------------------------------------------------------------------
+
+export interface SalaryAdjustmentActor {
+  /** auth user id */
+  id: string;
+  employeeId: string | null;
+}
+
+/**
+ * Why `actor` may not create (no `requestedBy`) or approve (with
+ * `requestedBy`) an adjustment for `employeeId`; null when allowed. Nobody
+ * adjusts their own pay, and the approver must differ from the requester.
+ */
+export function salaryAdjustmentSegregationError(
+  actor: SalaryAdjustmentActor,
+  adjustment: { employeeId: string; requestedBy?: string | null },
+): string | null {
+  if (actor.employeeId && adjustment.employeeId === actor.employeeId) {
+    return "You cannot create or approve a salary adjustment for your own employee record.";
+  }
+  if (adjustment.requestedBy && adjustment.requestedBy === actor.id) {
+    return "You requested this salary adjustment, so another authorized officer must approve it.";
+  }
+  return null;
 }

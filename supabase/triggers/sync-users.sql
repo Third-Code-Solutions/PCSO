@@ -4,10 +4,9 @@
 --
 -- Purpose:
 --   When a new user is created in Supabase Auth (auth.users), automatically
---   create a corresponding row in public.system_users and store the role,
---   office_id, and employee_id in auth.users.raw_user_meta_data so that
---   middleware and server components can read them from the JWT without an
---   extra database round-trip.
+--   create a corresponding public.system_users row with the least-privileged
+--   role. Role/linkage come only from admin provisioning (app_metadata, set via
+--   the service role) — never from client-writable raw_user_meta_data.
 --
 -- Run order: Apply AFTER the schema agent has created public.system_users.
 --            This migration must be idempotent (uses CREATE OR REPLACE).
@@ -38,60 +37,20 @@ SECURITY DEFINER
 -- SECURITY DEFINER runs as the function owner (typically postgres / supabase_admin)
 -- which has INSERT permission on public.system_users even when called from
 -- an RLS-restricted context.
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
-DECLARE
-  _role          text  := 'employee_self_service';
-  _office_id     uuid  := NULL;
-  _employee_id   uuid  := NULL;
 BEGIN
-  -- Pull values from the user's initial metadata (set via the Admin SDK or
-  -- the Supabase dashboard when provisioning accounts).
-  IF NEW.raw_user_meta_data ? 'role' THEN
-    _role := NEW.raw_user_meta_data->>'role';
-  END IF;
-
-  IF NEW.raw_user_meta_data ? 'office_id' THEN
-    BEGIN
-      _office_id := (NEW.raw_user_meta_data->>'office_id')::uuid;
-    EXCEPTION WHEN invalid_text_representation THEN
-      _office_id := NULL; -- Silently ignore malformed UUIDs
-    END;
-  END IF;
-
-  IF NEW.raw_user_meta_data ? 'employee_id' THEN
-    BEGIN
-      _employee_id := (NEW.raw_user_meta_data->>'employee_id')::uuid;
-    EXCEPTION WHEN invalid_text_representation THEN
-      _employee_id := NULL;
-    END;
-  END IF;
-
-  -- Insert the system_users row. On conflict (e.g. re-running migration)
-  -- update the mutable fields so the record stays in sync.
-  INSERT INTO public.system_users (auth_uid, email, role, office_id, employee_id)
-  VALUES (NEW.id::text, NEW.email, _role, _office_id, _employee_id)
+  -- raw_user_meta_data is client-controlled (supabase.auth.signUp options.data)
+  -- and is NEVER read here (C-01). New accounts start as employee_self_service
+  -- with no linkage; admin provisioning sets the real role via the service role.
+  INSERT INTO public.system_users (auth_uid, email, role, is_active)
+  VALUES (NEW.id::text, NEW.email, 'employee_self_service'::system_role, true)
   ON CONFLICT (auth_uid) DO UPDATE
-    SET
-      email       = EXCLUDED.email,
-      role        = EXCLUDED.role,
-      office_id   = EXCLUDED.office_id,
-      employee_id = EXCLUDED.employee_id,
-      updated_at  = now();
-
-  -- Persist resolved values back into auth metadata so the JWT claim is
-  -- immediately correct without waiting for an additional metadata update.
-  -- This call uses the Supabase internal admin helper; only available inside
-  -- SECURITY DEFINER functions running as the service role.
-  UPDATE auth.users
-  SET raw_user_meta_data = raw_user_meta_data
-    || jsonb_build_object(
-        'role',        _role,
-        'office_id',   _office_id,
-        'employee_id', _employee_id
-       )
-  WHERE id = NEW.id;
-
+    SET email = EXCLUDED.email,
+        updated_at = now();
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'handle_new_auth_user failed for %: %', NEW.id, SQLERRM;
   RETURN NEW;
 END;
 $$;

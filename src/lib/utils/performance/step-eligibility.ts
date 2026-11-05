@@ -78,6 +78,20 @@ function isOutstanding(adjectival: AdjectivalRating): boolean {
 // ─── Core Eligibility Check ───────────────────────────────────────────────────
 
 /**
+ * PRD §10.5 reference date: the latest of the last step increment, the 201
+ * date_last_increment and date_last_promotion (a promotion restarts the clock).
+ */
+export function latestReferenceDate(
+  ...dates: ReadonlyArray<string | null | undefined>
+): string | null {
+  const valid = dates.filter(
+    (d): d is string => typeof d === "string" && !Number.isNaN(Date.parse(d)),
+  );
+  if (valid.length === 0) return null;
+  return valid.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a));
+}
+
+/**
  * Determines whether an employee is eligible for a step increment.
  *
  * @param ratings   - Chronologically ASCENDING array of performance ratings

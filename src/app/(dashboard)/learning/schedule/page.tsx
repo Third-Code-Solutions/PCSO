@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { desc, eq, isNull, and } from "drizzle-orm";
-import { requireAuth } from "@/lib/auth/guards";
+import { requirePermission } from "@/lib/auth/guards";
 import type { Role } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +64,7 @@ function parseStatus(v: string | string[] | undefined): StatusFilter {
 }
 
 export default async function ScheduleListPage({ searchParams }: PageProps) {
-  const user = await requireAuth();
+  const user = await requirePermission("learning", "view");
   const params = await searchParams;
   const status = parseStatus(params["status"]);
   const actionStatusRaw = Array.isArray(params["actionStatus"])

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,9 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type GenerateResult =
-  | { data: { runId: string; totalEligible: number } }
-  | { error: string };
+type GenerateSuccess = {
+  runId: string;
+  totalEligible: number;
+  added: number;
+  reused: boolean;
+};
+
+type GenerateResult = { data: GenerateSuccess } | { error: string };
 
 type GenerateAction = (input: LoyaltyRunFormInput) => Promise<GenerateResult>;
 
@@ -33,6 +39,7 @@ export function LoyaltyRunForm({
 }: LoyaltyRunFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = React.useState<string | null>(null);
+  const [lastRun, setLastRun] = React.useState<GenerateSuccess | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
   const {
@@ -50,6 +57,7 @@ export function LoyaltyRunForm({
 
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null);
+    setLastRun(null);
     setSubmitting(true);
     try {
       const result = await onGenerate(values);
@@ -57,8 +65,8 @@ export function LoyaltyRunForm({
         setServerError(result.error);
         return;
       }
+      setLastRun(result.data);
       router.refresh();
-      router.push(`/welfare/loyalty/${result.data.runId}`);
     } catch (error: unknown) {
       setServerError(
         error instanceof Error ? error.message : "Failed to generate run",
@@ -93,6 +101,23 @@ export function LoyaltyRunForm({
       {serverError && (
         <p role="alert" className="text-sm text-destructive">
           {serverError}
+        </p>
+      )}
+
+      {lastRun && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {lastRun.reused ? "Existing run updated" : "New run created"}:{" "}
+          {lastRun.totalEligible} eligible, {lastRun.added} newly added
+          {lastRun.reused
+            ? `, ${lastRun.totalEligible - lastRun.added} already listed`
+            : ""}
+          .{" "}
+          <Link
+            href={`/welfare/loyalty/${lastRun.runId}`}
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            View run
+          </Link>
         </p>
       )}
 

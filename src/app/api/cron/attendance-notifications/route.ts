@@ -4,7 +4,6 @@ import { Resend } from "resend";
 import { db } from "@/lib/db";
 import {
   attendanceLogs,
-  auditLogs,
   employees,
   fmWorkSuspensions,
   holidays,
@@ -19,7 +18,17 @@ import {
   nflNoticePlainText,
 } from "@/lib/email/templates/nfl-notice";
 import { HABITUAL_TARDINESS_THRESHOLD } from "@/lib/utils/attendance/tam-adhoc";
+import {
+  loadScheduleAssignments,
+  pickFromMaps,
+} from "@/lib/actions/attendance/schedule-context";
+import {
+  DEFAULT_APPLICABLE_DAYS,
+  normalizeApplicableDays,
+} from "@/lib/utils/attendance/schedule-resolution";
+import { isRestDay } from "@/lib/utils/attendance/day-context";
 import { checkCronAuth } from "../_lib/auth";
+import { recordCronRun } from "../_lib/record-run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,11 +76,6 @@ function phYesterday(): string {
   return new Date(Date.now() + 8 * 3_600_000 - 86_400_000)
     .toISOString()
     .slice(0, 10);
-}
-
-function isWeekendDate(isoDate: string): boolean {
-  const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
-  return day === 0 || day === 6;
 }
 
 function getResend(): Resend | null {
@@ -150,6 +154,7 @@ export async function GET(request: NextRequest) {
             lastName: employees.lastName,
             email: employees.email,
             dateHired: employees.dateHired,
+            officeId: employees.officeId,
           })
           .from(employees)
           .where(
@@ -198,10 +203,9 @@ export async function GET(request: NextRequest) {
     }
     const employeeById = new Map(employeeRows.map((e) => [e.id, e]));
 
+    // Agency-wide closure only; rest days are per employee schedule (H-13).
     const isWorkingDay =
-      !isWeekendDate(targetDate) &&
-      holidayRows.length === 0 &&
-      suspensionRows.length === 0;
+      holidayRows.length === 0 && suspensionRows.length === 0;
     counters.nonWorkingDay = !isWorkingDay;
 
     const appUrl = env.NEXT_PUBLIC_APP_URL;
@@ -247,8 +251,38 @@ export async function GET(request: NextRequest) {
           .map((l) => l.employeeId),
       );
 
+      // Rest days come from the employee -> office -> default schedule, so a
+      // Saturday-duty schedule is checked on Saturday and skipped on off-days.
+      const scheduleMaps = await loadScheduleAssignments(
+        employeeRows.map((e) => e.id),
+        Array.from(
+          new Set(
+            employeeRows
+              .map((e) => e.officeId)
+              .filter((v): v is string => v !== null),
+          ),
+        ),
+        targetDate,
+        targetDate,
+      );
+      const isScheduledToWork = (e: (typeof employeeRows)[number]) => {
+        const assignment = pickFromMaps(
+          scheduleMaps,
+          e.id,
+          e.officeId,
+          targetDate,
+        );
+        const days = assignment
+          ? normalizeApplicableDays(assignment.schedule.applicableDays)
+          : [...DEFAULT_APPLICABLE_DAYS];
+        return !isRestDay(targetDate, days);
+      };
+
       const candidates = employeeRows.filter(
-        (e) => e.dateHired <= targetDate && !presentIds.has(e.id),
+        (e) =>
+          e.dateHired <= targetDate &&
+          !presentIds.has(e.id) &&
+          isScheduledToWork(e),
       );
 
       // Approved leave covering the date removes the NFL flag.
@@ -427,45 +461,38 @@ export async function GET(request: NextRequest) {
     }
 
     // Run-level audit entry (system actor).
-    await db.insert(auditLogs).values({
-      userId: null,
-      action: "cron.attendance_notifications",
-      tableName: "notifications",
-      newValues: {
-        targetDate,
-        ...counters,
-        durationMs: Date.now() - startedAt.getTime(),
-      },
+    const httpStatus = await recordCronRun({
+      job: "attendance_notifications",
+      table: "notifications",
+      startedAtMs: startedAt.getTime(),
+      summary: { targetDate, ...counters },
+      errorCount: 0,
     });
 
-    return NextResponse.json({
-      success: true,
-      targetDate,
-      ...counters,
-      timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        targetDate,
+        ...counters,
+        timestamp: new Date().toISOString(),
+      },
+      { status: httpStatus },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[cron/attendance-notifications] Job failed:", error);
 
-    await db
-      .insert(auditLogs)
-      .values({
-        userId: null,
-        action: "cron.attendance_notifications",
-        tableName: "notifications",
-        newValues: { outcome: "failure", targetDate, error: message },
-      })
-      .catch((auditErr) =>
-        console.error(
-          "[cron/attendance-notifications] Audit write failed:",
-          auditErr,
-        ),
-      );
+    const failStatus = await recordCronRun({
+      job: "attendance_notifications",
+      table: "notifications",
+      startedAtMs: startedAt.getTime(),
+      summary: { targetDate, ...counters },
+      error,
+    });
 
     return NextResponse.json(
       { success: false, error: message, timestamp: new Date().toISOString() },
-      { status: 500 },
+      { status: failStatus },
     );
   }
 }

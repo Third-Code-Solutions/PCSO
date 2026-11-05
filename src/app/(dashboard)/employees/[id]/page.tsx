@@ -6,7 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AvatarUploader } from "@/components/employees/avatar-uploader";
-import { TwoOhOneViewer } from "@/components/employees/201-viewer";
+import {
+  TwoOhOneViewer,
+  type StoredDocument,
+} from "@/components/employees/201-viewer";
+import { EmployeeDocumentList } from "@/components/pimm/employee-document-list";
+import { listEmployeeDocuments } from "@/lib/actions/pimm/employee-documents";
 import { ArchiveEmployeeButton } from "@/components/employees/archive-employee-button";
 import { getEmployeeById } from "../queries";
 import { APPOINTMENT_TYPE_LABELS } from "@/lib/constants/appointment-types";
@@ -63,6 +68,12 @@ function getStatusVariant(
   }
 }
 
+const VIEWER_DOC_TYPES: Record<string, StoredDocument["type"]> = {
+  "201_FILE": "201_file",
+  APPOINTMENT_PAPER: "appointment_paper",
+  MEDICAL_CERTIFICATE: "medical_certificate",
+};
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -78,6 +89,21 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
 
   const canEdit = hasPermission(user.role, "employees", "edit");
   const canArchive = hasPermission(user.role, "employees", "delete");
+  const canApproveDocs = hasPermission(user.role, "employees", "approve");
+
+  // H-20: real 201 documents (private bucket, signed after authorization).
+  const docsResult = await listEmployeeDocuments({ employeeId: employee.id });
+  const documents = "error" in docsResult ? [] : docsResult.data;
+  const approvedDocs: StoredDocument[] = documents
+    .filter((d) => d.status === "approved")
+    .map((d) => ({
+      name: d.fileName,
+      type: VIEWER_DOC_TYPES[d.documentTypeCode] ?? "other",
+      storagePath: d.id,
+      uploadedAt: new Date(d.uploadedAt).toISOString(),
+      signedUrl: d.fileUrl || undefined,
+    }));
+  const reviewDocs = documents.filter((d) => d.status !== "approved");
 
   // TOR 3.2.8: viewers WITHOUT employees.edit (payroll_admin, supervisor,
   // executive, auditor, viewer) see masked government IDs. Display-only —
@@ -372,14 +398,25 @@ export default async function EmployeeProfilePage({ params }: PageProps) {
               <h2 className="text-sm font-semibold text-pcso-navy">
                 201 File Documents
               </h2>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/employees/${employee.id}/edit#documents`}>
-                  Manage Documents
-                </Link>
-              </Button>
+              {canEdit && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/employees/${employee.id}/edit#documents`}>
+                    Upload Documents
+                  </Link>
+                </Button>
+              )}
             </div>
-            {/* Documents are loaded separately; this is the viewer shell */}
-            <TwoOhOneViewer documents={[]} />
+            {"error" in docsResult && (
+              <p className="text-sm text-destructive">{docsResult.error}</p>
+            )}
+            <TwoOhOneViewer documents={approvedDocs} />
+            {/* PIM-004: staged uploads await HR validation before commit. */}
+            {canApproveDocs && reviewDocs.length > 0 && (
+              <EmployeeDocumentList
+                documents={reviewDocs}
+                employeeId={employee.id}
+              />
+            )}
           </div>
         </TabsContent>
       </Tabs>

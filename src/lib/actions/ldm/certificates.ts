@@ -12,11 +12,13 @@
  *   - A rendered A4 landscape PDF uploaded to Supabase storage.
  *   - A row in `training_certificates` linking the participant to the artifact.
  *
- * Authorization: issuance requires permission('learning', 'create');
- * reads require permission('learning', 'view'). Checked before any DB write.
+ * Authorization: issuance requires permission('learning', 'create'). The
+ * issuer is always the signed-in user's employee record (H-26). The PDF is
+ * stored as a private object path (H-19); downloads go through
+ * /api/learning/certificates/[id], which authorizes and signs.
  */
 import { renderToBuffer } from "@react-pdf/renderer";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import React from "react";
@@ -46,24 +48,15 @@ import { nextCertificateSerial } from "@/lib/utils/ldm/certificate-serial";
 // ── Types (module-local: 'use server' files export async functions only) ────
 
 interface IssuedCertificate {
-  serial: string;
-  pdfUrl: string;
-  token: string;
-}
-
-interface CertificateRow {
   id: string;
-  participantId: string;
-  employeeId: string;
-  serialNumber: string;
-  pdfUrl: string | null;
-  issuedBy: string;
-  issuedAt: Date;
+  serial: string;
+  /** Private storage object path in the "certificates" bucket. */
+  pdfPath: string;
+  token: string;
 }
 
 interface IssueCertificateInput {
   participantId: string;
-  issuedByEmployeeId: string;
   /** Optional post-assessment score (0..100). Ignored if the participant row
    *  already carries a score. */
   postAssessmentScore?: number;
@@ -73,9 +66,20 @@ type IssueCertificateResult = { data: IssuedCertificate } | { error: string };
 
 const issueCertificateSchema = z.object({
   participantId: z.string().uuid(),
-  issuedByEmployeeId: z.string().uuid(),
   postAssessmentScore: z.number().min(0).max(100).optional(),
 });
+
+/** Session issuer (H-26): never trust a client-supplied issuer id. */
+async function requireIssuer(): Promise<{
+  userId: string;
+  employeeId: string;
+}> {
+  const user = await requirePermission("learning", "create");
+  if (!user.employeeId) {
+    throw new Error("Authenticated user is not linked to an employee record.");
+  }
+  return { userId: user.id, employeeId: user.employeeId };
+}
 
 // ── Participant context ──────────────────────────────────────────────────────
 
@@ -184,17 +188,15 @@ async function uploadCertificatePdf(
   if (error) {
     throw new Error(`Failed to upload certificate PDF: ${error.message}`);
   }
-  const { data } = supabaseAdmin.storage
-    .from("certificates")
-    .getPublicUrl(objectPath);
-  return data.publicUrl;
+  // Private bucket: store the object path; sign at read time (H-19).
+  return objectPath;
 }
 
 // ── Core issuance (caller must already be authorized) ───────────────────────
 
 async function issueCertificateCore(
   input: z.infer<typeof issueCertificateSchema>,
-  actorUserId: string,
+  issuer: { userId: string; employeeId: string },
 ): Promise<IssuedCertificate> {
   const issuedAt = new Date();
   const issuedAtSeconds = Math.floor(issuedAt.getTime() / 1000);
@@ -256,7 +258,7 @@ async function issueCertificateCore(
       serialNumber: serial,
       employeeIdHash: hashEmployeeId(ctx.employeeId),
       issuedAt: issuedAtSeconds,
-      issuedBy: input.issuedByEmployeeId,
+      issuedBy: issuer.employeeId,
     });
 
     const [inserted] = await tx
@@ -265,7 +267,7 @@ async function issueCertificateCore(
         participantId: ctx.participantId,
         certificateNumber: serial,
         issuedAt,
-        issuedByEmployeeId: input.issuedByEmployeeId,
+        issuedByEmployeeId: issuer.employeeId,
         qrTokenJwt: token,
       })
       .returning({ id: trainingCertificates.id });
@@ -287,22 +289,25 @@ async function issueCertificateCore(
     verifyUrl: verifyUrl(prepared.token),
     issuedAt,
   });
-  const pdfUrl = await uploadCertificatePdf(prepared.serial, pdf);
+  const pdfPath = await uploadCertificatePdf(prepared.serial, pdf);
   await db
     .update(trainingCertificates)
-    .set({ pdfUrl, updatedAt: new Date() })
+    .set({ pdfUrl: pdfPath, updatedAt: new Date() })
     .where(eq(trainingCertificates.id, prepared.id));
 
   // Non-blocking side effects: audit trail + N-028-style employee notice.
   await auditLog({
-    userId: actorUserId,
+    userId: issuer.userId,
     action: "learning.certificate.issue",
     table: "training_certificates",
     recordId: prepared.id,
     newValues: {
       certificateNumber: prepared.serial,
       participantId: prepared.ctx.participantId,
+      issuedByEmployeeId: issuer.employeeId,
     },
+    module: "LDM",
+    subModule: "training_certificate",
   });
   await notifyEmployee(prepared.ctx.employeeId, {
     type: "generic",
@@ -314,39 +319,33 @@ async function issueCertificateCore(
   });
 
   revalidatePath("/learning/certificates");
-  return { serial: prepared.serial, pdfUrl, token: prepared.token };
+  return {
+    id: prepared.id,
+    serial: prepared.serial,
+    pdfPath,
+    token: prepared.token,
+  };
 }
 
 // ── Public server actions ────────────────────────────────────────────────────
 
 /**
- * Issue a certificate. Accepts EITHER:
- *   - A positional `(participantId, issuedByEmployeeId)` — returns a raw
- *     `IssuedCertificate` and throws on failure (legacy call shape).
- *   - An object `{participantId, issuedByEmployeeId, postAssessmentScore?}` —
- *     returns the standard `{data}|{error}` envelope used by the
- *     certificate-issue dialog.
+ * Issue a certificate for one completed participant. Returns the standard
+ * `{data}|{error}` envelope used by the certificate-issue dialog.
  */
 export async function issueCertificate(
-  arg1: string | IssueCertificateInput,
-  arg2?: string,
-): Promise<IssuedCertificate | IssueCertificateResult> {
-  const returnEnvelope = typeof arg1 !== "string";
+  input: IssueCertificateInput,
+): Promise<IssueCertificateResult> {
   try {
-    const user = await requirePermission("learning", "create");
-    const input = issueCertificateSchema.parse(
-      typeof arg1 === "string"
-        ? { participantId: arg1, issuedByEmployeeId: arg2 }
-        : arg1,
-    );
-    const result = await issueCertificateCore(input, user.id);
-    return returnEnvelope ? { data: result } : result;
+    const issuer = await requireIssuer();
+    const parsed = issueCertificateSchema.parse(input);
+    return { data: await issueCertificateCore(parsed, issuer) };
   } catch (err) {
     if (isRedirectError(err)) throw err;
-    const msg =
-      err instanceof Error ? err.message : "Failed to issue certificate.";
-    if (returnEnvelope) return { error: msg };
-    throw err;
+    return {
+      error:
+        err instanceof Error ? err.message : "Failed to issue certificate.",
+    };
   }
 }
 
@@ -356,19 +355,15 @@ export async function issueCertificate(
  */
 export async function generateTrainingCertificate(input: {
   participantId: string;
-  issuedByEmployeeId: string;
 }): Promise<
-  | { success: true; data: { certificateNumber: string; pdfUrl: string } }
+  | { success: true; data: { certificateNumber: string } }
   | { success: false; error: string }
 > {
   try {
-    const user = await requirePermission("learning", "create");
+    const issuer = await requireIssuer();
     const parsed = issueCertificateSchema.parse(input);
-    const issued = await issueCertificateCore(parsed, user.id);
-    return {
-      success: true,
-      data: { certificateNumber: issued.serial, pdfUrl: issued.pdfUrl },
-    };
+    const issued = await issueCertificateCore(parsed, issuer);
+    return { success: true, data: { certificateNumber: issued.serial } };
   } catch (err) {
     if (isRedirectError(err)) throw err;
     return {
@@ -384,20 +379,12 @@ export async function generateTrainingCertificate(input: {
  * not already hold one. Failures on individual participants are collected but
  * do not abort the batch.
  */
-export async function bulkIssueForCompletedRun(
-  runId: string,
-  issuedByEmployeeId: string,
-): Promise<{
+export async function bulkIssueForCompletedRun(runId: string): Promise<{
   issued: IssuedCertificate[];
   failed: Array<{ participantId: string; error: string }>;
 }> {
-  const user = await requirePermission("learning", "create");
-  const parsed = z
-    .object({
-      runId: z.string().uuid(),
-      issuedByEmployeeId: z.string().uuid(),
-    })
-    .parse({ runId, issuedByEmployeeId });
+  const issuer = await requireIssuer();
+  const parsedRunId = z.string().uuid().parse(runId);
 
   const rows = await db
     .select({ id: trainingParticipants.id })
@@ -408,7 +395,7 @@ export async function bulkIssueForCompletedRun(
     )
     .where(
       and(
-        eq(trainingParticipants.runId, parsed.runId),
+        eq(trainingParticipants.runId, parsedRunId),
         eq(trainingParticipants.status, "completed"),
         isNull(trainingCertificates.id),
       ),
@@ -419,14 +406,9 @@ export async function bulkIssueForCompletedRun(
 
   for (const row of rows) {
     try {
-      const cert = await issueCertificateCore(
-        {
-          participantId: row.id,
-          issuedByEmployeeId: parsed.issuedByEmployeeId,
-        },
-        user.id,
+      issued.push(
+        await issueCertificateCore({ participantId: row.id }, issuer),
       );
-      issued.push(cert);
     } catch (err: unknown) {
       if (isRedirectError(err)) throw err;
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -434,85 +416,4 @@ export async function bulkIssueForCompletedRun(
     }
   }
   return { issued, failed };
-}
-
-/** Look up a certificate by uuid or by `CT-YYYY-NNNNNN` serial. */
-export async function getCertificate(
-  serialOrId: string,
-): Promise<CertificateRow | null> {
-  const user = await requirePermission("learning", "view");
-  const needle = z.string().min(1).max(80).parse(serialOrId);
-
-  const isUuid = z.string().uuid().safeParse(needle).success;
-  const [row] = await db
-    .select({
-      id: trainingCertificates.id,
-      participantId: trainingCertificates.participantId,
-      employeeId: trainingParticipants.employeeId,
-      serialNumber: trainingCertificates.certificateNumber,
-      pdfUrl: trainingCertificates.pdfUrl,
-      issuedBy: trainingCertificates.issuedByEmployeeId,
-      issuedAt: trainingCertificates.issuedAt,
-    })
-    .from(trainingCertificates)
-    .innerJoin(
-      trainingParticipants,
-      eq(trainingParticipants.id, trainingCertificates.participantId),
-    )
-    .where(
-      isUuid
-        ? or(
-            eq(trainingCertificates.id, needle),
-            eq(trainingCertificates.certificateNumber, needle),
-          )
-        : eq(trainingCertificates.certificateNumber, needle),
-    )
-    .limit(1);
-
-  if (!row) return null;
-  // ESS ownership guard: an employee_self_service user may only read their own
-  // certificate (mirrors the own-records scope in pimm/employee-documents.ts).
-  if (
-    user.role === "employee_self_service" &&
-    row.employeeId !== user.employeeId
-  ) {
-    return null;
-  }
-
-  return row;
-}
-
-/** All certificates held by one employee, newest first. */
-export async function listCertificatesForEmployee(
-  employeeId: string,
-): Promise<CertificateRow[]> {
-  const user = await requirePermission("learning", "view");
-  const parsed = z.string().uuid().parse(employeeId);
-
-  // ESS ownership guard: an employee_self_service user may only list their own
-  // certificates (mirrors the own-records scope in pimm/employee-documents.ts).
-  if (
-    user.role === "employee_self_service" &&
-    (!user.employeeId || user.employeeId !== parsed)
-  ) {
-    return [];
-  }
-
-  return db
-    .select({
-      id: trainingCertificates.id,
-      participantId: trainingCertificates.participantId,
-      employeeId: trainingParticipants.employeeId,
-      serialNumber: trainingCertificates.certificateNumber,
-      pdfUrl: trainingCertificates.pdfUrl,
-      issuedBy: trainingCertificates.issuedByEmployeeId,
-      issuedAt: trainingCertificates.issuedAt,
-    })
-    .from(trainingCertificates)
-    .innerJoin(
-      trainingParticipants,
-      eq(trainingParticipants.id, trainingCertificates.participantId),
-    )
-    .where(eq(trainingParticipants.employeeId, parsed))
-    .orderBy(desc(trainingCertificates.issuedAt));
 }

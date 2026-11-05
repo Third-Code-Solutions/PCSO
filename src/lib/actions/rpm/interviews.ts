@@ -19,6 +19,7 @@
  * employees.view, writes on employees.process (hr_admin / super_admin).
  */
 
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -35,6 +36,7 @@ import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import { systemUsers } from "@/lib/db/schema/users";
 import { notifications } from "@/lib/db/schema/notifications";
 import { requirePermission } from "@/lib/auth/guards";
+import { requireRecruitmentViewer } from "@/lib/utils/rpm/recruitment-viewer";
 import { auditLog } from "@/lib/audit";
 import {
   applicantStatusUrl,
@@ -351,6 +353,7 @@ export async function createInterviewSchedule(
       data: { scheduleId, assigned: parsed.applicationIds.length },
     };
   } catch (error: unknown) {
+    if (isRedirectError(error)) throw error;
     return { ok: false, error: toErrorMessage(error) };
   }
 }
@@ -362,7 +365,7 @@ export async function listInterviewSchedules(
   vacancyId: string,
 ): Promise<Result<InterviewScheduleSummary[]>> {
   try {
-    await requirePermission("employees", "view");
+    await requireRecruitmentViewer();
 
     const schedules = await db
       .select()
@@ -578,6 +581,7 @@ export async function cancelInterviewSchedule(
 
     return { ok: true, data: { scheduleId: parsedId, unassigned } };
   } catch (error: unknown) {
+    if (isRedirectError(error)) throw error;
     return { ok: false, error: toErrorMessage(error) };
   }
 }

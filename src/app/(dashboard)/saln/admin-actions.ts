@@ -14,8 +14,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { requirePermission } from "@/lib/auth/guards";
+import { auditLog } from "@/lib/audit";
 import { notifyEmployee } from "@/lib/notifications";
 import { ExportSalnSchema, SalnStatusSchema } from "@/lib/validations/saln";
 
@@ -23,23 +23,22 @@ import { ExportSalnSchema, SalnStatusSchema } from "@/lib/validations/saln";
 // Shared audit helper
 // ---------------------------------------------------------------------------
 
-async function writeAuditLog(
-  supabase: SupabaseClient,
-  params: {
-    userId: string;
-    action: string;
-    recordId: string;
-    oldValues?: Record<string, unknown>;
-    newValues?: Record<string, unknown>;
-  },
-): Promise<void> {
-  await supabase.from("audit_logs").insert({
-    user_id: params.userId,
+async function writeAuditLog(params: {
+  userId: string;
+  action: string;
+  recordId: string;
+  oldValues?: Record<string, unknown>;
+  newValues?: Record<string, unknown>;
+}): Promise<void> {
+  await auditLog({
+    userId: params.userId,
     action: params.action,
-    table_name: "saln_submissions",
-    record_id: params.recordId,
-    old_values: params.oldValues ?? null,
-    new_values: params.newValues ?? null,
+    table: "saln_submissions",
+    recordId: params.recordId,
+    oldValues: params.oldValues,
+    newValues: params.newValues,
+    module: "PIMM",
+    subModule: "saln",
   });
 }
 
@@ -114,7 +113,7 @@ export async function reviewSaln(input: unknown): Promise<{ id: string }> {
   // Only emit audit + notification when the status actually flipped.
   // Re-submitting the same review is a no-op.
   if (didUpdate && statusChanged) {
-    await writeAuditLog(supabase, {
+    await writeAuditLog({
       userId: user.id,
       action: parsed.status === "deficient" ? "flag" : "review",
       recordId: parsed.id,
@@ -214,7 +213,7 @@ export async function exportDocuments(input: unknown): Promise<ExportResult> {
     throw new Error(`Failed to load SALN data for export: ${error.message}`);
   }
 
-  await writeAuditLog(supabase, {
+  await writeAuditLog({
     userId: user.id,
     action: "export",
     recordId: user.id,
@@ -320,7 +319,7 @@ export async function generateSignedDocumentUrl(
     );
   }
 
-  await writeAuditLog(supabase, {
+  await writeAuditLog({
     userId: user.id,
     action: "access_document",
     recordId: submissionId,

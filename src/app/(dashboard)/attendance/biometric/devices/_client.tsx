@@ -197,7 +197,7 @@ export function BiometricDevicesClient({ devices, offices }: Props) {
         const res = await pullBiometricDeviceNow({ deviceId: device.id });
         if (res.success) {
           toast.success(
-            `Pulled ${device.name}: ${res.imported} imported, ${res.unmatchedBadges} unmatched badges.`,
+            `Pulled ${device.name}: ${res.imported} imported, ${res.protectedSkipped} kept (HR-corrected), ${res.unmatchedBadges} unmatched badges.`,
           );
         } else {
           toast.error(`Pull failed: ${res.message}`);

@@ -241,6 +241,12 @@ export const payrollRecords = pgTable(
     index("payroll_records_status_idx").on(t.status),
     index("payroll_records_has_exception_idx").on(t.hasException),
     index("payroll_records_period_included_idx").on(t.periodId, t.included),
+    // C-12: one record per employee per run — re-processing can never
+    // double-pay (migration 2026-11-05-03-payroll-integrity.sql).
+    uniqueIndex("payroll_records_period_employee_uidx").on(
+      t.periodId,
+      t.employeeId,
+    ),
   ],
 );
 

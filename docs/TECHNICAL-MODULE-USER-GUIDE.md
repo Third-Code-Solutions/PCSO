@@ -11,7 +11,7 @@ This guide shows you how to access and use the Technical module features in the 
 **Test Account:**
 
 - Email: `sysadmin@pcso.gov.ph`
-- Password: `PCSO-super-admin-vAs45Fhn`
+- Password: `(rotated — not stored in repo)`
 
 ---
 

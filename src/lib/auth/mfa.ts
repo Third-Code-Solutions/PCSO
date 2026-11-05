@@ -53,8 +53,8 @@ const NO_SESSION_STATUS: AalStatus = {
  *
  * Request-scoped via `React.cache`: the guard layer and UI banners share one
  * resolution per request. NEVER throws — an unreadable session degrades to
- * "no MFA data" so auth flows keep working (fail-open ONLY on status
- * reporting; the login itself is still enforced by Supabase).
+ * `currentLevel: null`, which `requirePermission` treats as NOT aal2 (fails
+ * closed for MFA-enforced roles).
  */
 export const getAalStatus = cache(async (): Promise<AalStatus> => {
   try {

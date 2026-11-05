@@ -25,7 +25,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { timestamps, softDelete } from "./_shared";
 import { employees } from "./employees";
 import { offices } from "./offices";
@@ -96,6 +96,8 @@ export const loyaltyAwardees = pgTable(
       scale: 2,
     }).notNull(),
     awardGrantedAt: timestamp("award_granted_at", { withTimezone: true }),
+    /** auth.users id of the HR user who recorded the grant (H-22). */
+    awardGrantedBy: uuid("award_granted_by"),
     previousAwardFlag: boolean("previous_award_flag").notNull().default(false),
     notes: text("notes"),
     ...timestamps,
@@ -106,6 +108,10 @@ export const loyaltyAwardees = pgTable(
       t.employeeId,
       t.milestoneYears,
     ),
+    // EWB-002: a milestone is granted to an employee at most once.
+    uniqueIndex("loyalty_awardees_granted_employee_milestone_idx")
+      .on(t.employeeId, t.milestoneYears)
+      .where(sql`award_granted_at IS NOT NULL`),
     index("loyalty_awardees_employee_id_idx").on(t.employeeId),
     index("loyalty_awardees_run_id_idx").on(t.runId),
   ],

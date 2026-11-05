@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { db } from "@/lib/db";
-import { auditLogs } from "@/lib/db/schema";
 import { yearEndForcedLeaveDeduction } from "@/lib/utils/leave/year-end-forced-leave";
 import { checkCronAuth } from "../_lib/auth";
+import { recordCronRun } from "../_lib/record-run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,48 +39,43 @@ export async function GET(request: NextRequest) {
 
     // Run-level audit entry (system actor). Per-employee entries are written
     // inside yearEndForcedLeaveDeduction itself.
-    await db.insert(auditLogs).values({
-      userId: null,
-      action: "cron.year_end_forced_leave",
-      tableName: "leave_credits",
-      newValues: {
+    const httpStatus = await recordCronRun({
+      job: "year_end_forced_leave",
+      table: "leave_credits",
+      startedAtMs: startedAt.getTime(),
+      summary: {
         year: year ?? new Date().getFullYear(),
         processed: result.processed,
         skipped: result.skipped,
-        errorCount: result.errors.length,
-        durationMs: Date.now() - startedAt.getTime(),
       },
+      errorCount: result.errors.length,
     });
 
-    return NextResponse.json({
-      success: result.errors.length === 0,
-      processed: result.processed,
-      skipped: result.skipped,
-      errors: result.errors,
-      timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        success: result.errors.length === 0,
+        processed: result.processed,
+        skipped: result.skipped,
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
+      },
+      { status: httpStatus },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[cron/year-end-forced-leave] Job failed:", error);
 
-    await db
-      .insert(auditLogs)
-      .values({
-        userId: null,
-        action: "cron.year_end_forced_leave",
-        tableName: "leave_credits",
-        newValues: { outcome: "failure", error: message },
-      })
-      .catch((auditErr) =>
-        console.error(
-          "[cron/year-end-forced-leave] Audit write failed:",
-          auditErr,
-        ),
-      );
+    const failStatus = await recordCronRun({
+      job: "year_end_forced_leave",
+      table: "leave_credits",
+      startedAtMs: startedAt.getTime(),
+      summary: { year: year ?? new Date().getFullYear() },
+      error,
+    });
 
     return NextResponse.json(
       { success: false, error: message, timestamp: new Date().toISOString() },
-      { status: 500 },
+      { status: failStatus },
     );
   }
 }

@@ -16,6 +16,8 @@ import { db } from "@/lib/db";
 import { dpcrForms, performanceCycles } from "@/lib/db/schema/performance";
 import { eq } from "drizzle-orm";
 import { PcrForm } from "@/components/performance/pcr-form";
+import { signedObjectUrl } from "@/lib/storage/signed-url";
+import { canViewPcrScan } from "../../_lib/pcr-scope";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -41,6 +43,7 @@ export default async function DpcrDetailPage({ params }: Props) {
   const { id } = await params;
   const user = await requirePermission("performance", "view");
   const canEdit = hasPermission(user.role, "performance", "edit");
+  const canReview = hasPermission(user.role, "performance", "approve");
 
   const [row] = await db
     .select({
@@ -51,6 +54,7 @@ export default async function DpcrDetailPage({ params }: Props) {
       adjectivalRating: dpcrForms.adjectivalRating,
       status: dpcrForms.status,
       scannedDocUrl: dpcrForms.scannedDocUrl,
+      unitId: dpcrForms.officeId,
       cycleYear: performanceCycles.year,
       cycleSemester: performanceCycles.semester,
     })
@@ -63,6 +67,10 @@ export default async function DpcrDetailPage({ params }: Props) {
     .limit(1);
 
   if (!row) notFound();
+  // H-19: private bucket — sign only for viewers scoped to this unit.
+  const scannedDocHref = canViewPcrScan(user, row.unitId)
+    ? await signedObjectUrl("documents", row.scannedDocUrl)
+    : null;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
@@ -87,6 +95,7 @@ export default async function DpcrDetailPage({ params }: Props) {
           <PcrForm
             variant="dpcr"
             mode="edit"
+            canReview={canReview}
             initial={{
               id: row.id,
               unitName: row.divisionName,
@@ -94,7 +103,7 @@ export default async function DpcrDetailPage({ params }: Props) {
               numericalRating: row.numericalRating,
               adjectivalRating: row.adjectivalRating,
               status: row.status,
-              scannedDocUrl: row.scannedDocUrl,
+              scannedDocUrl: scannedDocHref,
             }}
           />
         ) : (
@@ -113,10 +122,10 @@ export default async function DpcrDetailPage({ params }: Props) {
                   : "Not rated"}
               </dd>
             </div>
-            {row.scannedDocUrl && (
+            {scannedDocHref && (
               <div className="sm:col-span-2">
                 <a
-                  href={row.scannedDocUrl}
+                  href={scannedDocHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-pcso-navy hover:underline"

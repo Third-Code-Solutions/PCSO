@@ -16,6 +16,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { auditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guards";
 import {
   FileSalnSchema,
@@ -51,23 +53,23 @@ function getResend(): Resend | null {
 const FROM_EMAIL = env.RESEND_FROM_EMAIL ?? "noreply@pcso.gov.ph";
 const APP_URL = env.NEXT_PUBLIC_APP_URL;
 
-async function writeAuditLog(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  params: {
-    userId: string;
-    action: string;
-    recordId: string;
-    oldValues?: Record<string, unknown>;
-    newValues?: Record<string, unknown>;
-  },
-): Promise<void> {
-  await supabase.from("audit_logs").insert({
-    user_id: params.userId,
+/** C-16: audit through the service-role writer (session inserts hit RLS). */
+async function writeAuditLog(params: {
+  userId: string;
+  action: string;
+  recordId: string;
+  oldValues?: Record<string, unknown>;
+  newValues?: Record<string, unknown>;
+}): Promise<void> {
+  await auditLog({
+    userId: params.userId,
     action: params.action,
-    table_name: "saln_submissions",
-    record_id: params.recordId,
-    old_values: params.oldValues ?? null,
-    new_values: params.newValues ?? null,
+    table: "saln_submissions",
+    recordId: params.recordId,
+    oldValues: params.oldValues,
+    newValues: params.newValues,
+    module: "PIMM",
+    subModule: "saln",
   });
 }
 
@@ -138,7 +140,7 @@ export async function fileSaln(input: unknown): Promise<{ id: string }> {
     );
   }
 
-  await writeAuditLog(supabase, {
+  await writeAuditLog({
     userId: user.id,
     action: parsed.submit ? "submit" : "create_draft",
     recordId: data.id,
@@ -314,7 +316,7 @@ export async function updateSaln(input: unknown): Promise<{ id: string }> {
     throw new Error(`Failed to update SALN: ${updateError.message}`);
   }
 
-  await writeAuditLog(supabase, {
+  await writeAuditLog({
     userId: user.id,
     action: parsed.submit
       ? "submit"
@@ -470,7 +472,8 @@ export async function sendReminders(
   // action twice in quick succession.
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const { data: alreadySentToday } = await supabase
+  // Service role: audit_logs is not readable through the session client.
+  const { data: alreadySentToday } = await supabaseAdmin
     .from("audit_logs")
     .select("record_id, new_values, created_at")
     .eq("action", "send_reminder_individual")
@@ -548,7 +551,7 @@ export async function sendReminders(
 
     // Record per-recipient audit row so a subsequent bulk-reminder run on
     // the same day will see the dedupe record and skip this employee.
-    await writeAuditLog(supabase, {
+    await writeAuditLog({
       userId: user.id,
       action: "send_reminder_individual",
       recordId: String(emp.id),
@@ -577,7 +580,7 @@ export async function sendReminders(
   }
 
   // Audit log the bulk action
-  await writeAuditLog(supabase, {
+  await writeAuditLog({
     userId: user.id,
     action: "send_reminders",
     recordId: user.id,

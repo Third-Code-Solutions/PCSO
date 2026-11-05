@@ -21,6 +21,7 @@
  *   - never throw to the caller
  */
 
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { renderToBuffer } from "@react-pdf/renderer";
@@ -29,6 +30,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withTx, type Tx } from "@/lib/db/transaction";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
+import { requireRecruitmentViewer } from "@/lib/utils/rpm/recruitment-viewer";
+import { auditLog } from "@/lib/audit";
+import { effectiveRolesOf, hasPermission } from "@/lib/auth/permissions";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   mrfs,
@@ -39,6 +43,7 @@ import {
   type Vacancy,
 } from "@/lib/db/schema/recruitment";
 import { offices } from "@/lib/db/schema/offices";
+import { employees } from "@/lib/db/schema/employees";
 import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import {
   createMrfSchema,
@@ -53,6 +58,7 @@ import {
   type QualificationStandards,
 } from "@/lib/validations/recruitment";
 import { nextMrfNumber, nextCscForm9Number } from "@/lib/utils/rpm/mrf-number";
+import { loadMrfApprovers } from "@/lib/utils/rpm/mrf-signatories";
 import {
   buildCscForm9Data,
   type MrfInput as MrfDataInput,
@@ -111,22 +117,12 @@ const returnMrfSchema = z.object({
 // Constants
 // ---------------------------------------------------------------------------
 
-/** 3-level approval chain roles per PRD FM-022 / RPM-002. */
-const APPROVAL_ROLES = ["dept_head", "agm", "gm"] as const;
-type ApprovalRole = (typeof APPROVAL_ROLES)[number];
-
 /** Supabase storage bucket for RPM PDFs. */
 const RPM_DOCS_BUCKET = "rpm-documents";
 
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
-
-function missingMrfSignatoryConfiguration(_role: ApprovalRole): never {
-  throw new Error(
-    "MRF approval signatory configuration is unavailable; submission is blocked until each approval role is mapped to an employee.",
-  );
-}
 
 function toIsoString(value: Date | string | null | undefined): string {
   if (!value) return "";
@@ -141,15 +137,33 @@ export async function createMrf(
   input: CreateMrfInput,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-    await requirePermission("employees", "create");
-    const parsed = createMrfSchema.parse(input);
+    // PRD §11: HR creates MRFs for any unit; a Dept Head (supervisor) only
+    // for their own office.
+    const user = await requirePermission("employees", "view");
+    // The requester is always the session's employee, never a client value.
+    if (!user.employeeId) {
+      return { error: "Your account is not linked to an employee record" };
+    }
+    const parsed = createMrfSchema.parse({
+      ...input,
+      requestedByEmployeeId: user.employeeId,
+    });
+    const isSupervisor = effectiveRolesOf(user.role).some(
+      (r) => r === "supervisor" || r === "leave_approver",
+    );
+    if (!hasPermission(user.role, "employees", "create")) {
+      if (!isSupervisor) return { error: "Not authorized to create MRFs" };
+      if (!user.officeId || parsed.officeId !== user.officeId) {
+        return { error: "You can only request manpower for your own office" };
+      }
+    }
 
     const [row] = await db
       .insert(mrfs)
       .values({
         positionId: parsed.positionId,
         officeId: parsed.officeId,
-        requestedByEmployeeId: parsed.requestedByEmployeeId,
+        requestedByEmployeeId: user.employeeId,
         itemNumber: parsed.itemNumber,
         justification: parsed.justification,
         numberOfVacancies: parsed.numberOfVacancies,
@@ -158,9 +172,19 @@ export async function createMrf(
       .returning({ id: mrfs.id });
 
     if (!row) return { error: "Failed to create MRF" };
+    await auditLog({
+      userId: user.id,
+      action: "rpm.mrf_created",
+      table: "mrfs",
+      recordId: row.id,
+      newValues: { positionId: parsed.positionId, officeId: parsed.officeId },
+      module: "RPM",
+      subModule: "mrf",
+    });
     revalidatePath("/recruitment/mrf");
     return ok({ id: row.id });
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
@@ -197,19 +221,20 @@ export async function updateMrf(
     revalidatePath(`/recruitment/mrf/${id}`);
     return ok({ id: row.id });
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
 
 // ---------------------------------------------------------------------------
-// submitMrf — assigns MRF number, creates 3 approval rows
+// submitMrf — assigns MRF number, seeds the FM-configured approval chain
 // ---------------------------------------------------------------------------
 
 export async function submitMrf(
   input: SubmitMrfInput,
 ): Promise<ActionResult<{ id: string; mrfNumber: string }>> {
   try {
-    await requirePermission("employees", "edit");
+    const user = await requirePermission("employees", "edit");
     const parsed = submitMrfSchema.parse(input);
 
     const result = await withTx(async (tx: Tx) => {
@@ -224,6 +249,11 @@ export async function submitMrf(
           `MRF in status "${current.status}" cannot be submitted`,
         );
       }
+
+      // Resolve approvers before allocating a number so a misconfigured
+      // chain fails with an actionable message.
+      const chain = await loadMrfApprovers(tx, current.officeId);
+      if (!chain.ok) throw new Error(chain.error);
 
       const allocation = await nextMrfNumber(tx);
 
@@ -244,23 +274,32 @@ export async function submitMrf(
       // Clear any prior approvals (for returned → resubmit)
       await tx.delete(mrfApprovals).where(eq(mrfApprovals.mrfId, parsed.id));
 
-      const approvalRows = await Promise.all(
-        APPROVAL_ROLES.map(async (role, idx) => ({
+      await tx.insert(mrfApprovals).values(
+        chain.approvers.map((a) => ({
           mrfId: parsed.id,
-          approverRole: role,
-          approverEmployeeId: missingMrfSignatoryConfiguration(role),
-          sequenceOrder: idx + 1,
+          approverRole: a.approverRole,
+          approverEmployeeId: a.approverEmployeeId,
+          sequenceOrder: a.sequenceOrder,
           decision: "pending",
         })),
       );
-      await tx.insert(mrfApprovals).values(approvalRows);
 
       return { id: updated.id, mrfNumber: allocation.formatted };
     });
 
+    await auditLog({
+      userId: user.id,
+      action: "rpm.mrf_submitted",
+      table: "mrfs",
+      recordId: result.id,
+      newValues: { mrfNumber: result.mrfNumber, status: "submitted" },
+      module: "RPM",
+      subModule: "mrf",
+    });
     revalidatePath(`/recruitment/mrf/${result.id}`);
     return ok(result);
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
@@ -277,7 +316,9 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
   }>
 > {
   try {
-    const user = await requirePermission("employees", "process");
+    // Authorization is the assignment itself: only the employee seeded as the
+    // approver of this exact step (from the FM chain) can decide it.
+    const user = await requirePermission("employees", "view");
     const parsed = approveMrfSchema.parse(input);
     const approverEmployeeId = user.employeeId;
     if (!approverEmployeeId) {
@@ -309,9 +350,45 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
           ),
         )
         .limit(1);
-      if (!step) throw new Error("Approval step not found");
+      if (!step)
+        throw new Error("You are not the assigned approver for this step");
       if (step.decision !== "pending")
         throw new Error("Approval step already decided");
+
+      const [last] = await tx
+        .select({
+          lastStep: sql<number>`max(${mrfApprovals.sequenceOrder})::int`,
+        })
+        .from(mrfApprovals)
+        .where(eq(mrfApprovals.mrfId, parsed.mrfId));
+      const isFinalStep = parsed.sequenceOrder === Number(last?.lastStep);
+
+      // Validate the vacancy data before recording the final approval.
+      const qualificationStandards = parsed.qualificationStandards;
+      const deadline = parsed.applicationDeadline
+        ? new Date(parsed.applicationDeadline)
+        : null;
+      if (isFinalStep && parsed.decision === "approved") {
+        const hasPlaceholder =
+          qualificationStandards !== undefined &&
+          Object.values(qualificationStandards).some(
+            (value) =>
+              typeof value === "string" && value.trim().toUpperCase() === "TBD",
+          );
+        if (
+          !qualificationStandards ||
+          !deadline ||
+          Number.isNaN(deadline.getTime()) ||
+          hasPlaceholder
+        ) {
+          throw new Error(
+            "Final MRF approval requires complete qualification standards and an application deadline",
+          );
+        }
+        if (deadline.getTime() <= Date.now()) {
+          throw new Error("Application deadline must be in the future");
+        }
+      }
 
       // Enforce sequential order
       if (parsed.sequenceOrder > 1) {
@@ -343,7 +420,7 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
       if (
         current.status === "submitted" &&
         parsed.decision === "approved" &&
-        parsed.sequenceOrder < APPROVAL_ROLES.length
+        !isFinalStep
       ) {
         await tx
           .update(mrfs)
@@ -369,7 +446,7 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
       }
 
       // Last step approved → mark MRF approved and create vacancy draft
-      if (parsed.sequenceOrder === APPROVAL_ROLES.length) {
+      if (isFinalStep && qualificationStandards && deadline) {
         await tx
           .update(mrfs)
           .set({
@@ -378,27 +455,6 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
             updatedAt: new Date(),
           })
           .where(eq(mrfs.id, parsed.mrfId));
-
-        const qualificationStandards = parsed.qualificationStandards;
-        const deadline = parsed.applicationDeadline
-          ? new Date(parsed.applicationDeadline)
-          : null;
-        const hasPlaceholder =
-          qualificationStandards !== undefined &&
-          Object.values(qualificationStandards).some(
-            (value) =>
-              typeof value === "string" && value.trim().toUpperCase() === "TBD",
-          );
-        if (
-          !qualificationStandards ||
-          !deadline ||
-          Number.isNaN(deadline.getTime()) ||
-          hasPlaceholder
-        ) {
-          throw new Error(
-            "Final MRF approval requires complete qualification standards and an application deadline",
-          );
-        }
 
         const cscAlloc = await nextCscForm9Number(tx);
 
@@ -431,9 +487,28 @@ export async function approveMrfStep(input: ApproveMrfInput): Promise<
       };
     });
 
+    await auditLog({
+      userId: user.id,
+      action:
+        parsed.decision === "returned"
+          ? "rpm.mrf_returned"
+          : "rpm.mrf_step_approved",
+      table: "mrf_approvals",
+      recordId: parsed.mrfId,
+      newValues: {
+        sequenceOrder: parsed.sequenceOrder,
+        decision: parsed.decision,
+        completed: result.completed,
+        vacancyId: result.vacancyId,
+      },
+      reason: parsed.comments ?? undefined,
+      module: "RPM",
+      subModule: "mrf_approval",
+    });
     revalidatePath(`/recruitment/mrf/${result.mrfId}`);
     return ok(result);
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
@@ -482,6 +557,7 @@ export async function returnMrf(
     revalidatePath(`/recruitment/mrf/${parsed.mrfId}`);
     return ok({ id: parsed.mrfId });
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
@@ -652,6 +728,7 @@ export async function publishVacancy(
     revalidatePath(`/recruitment/vacancies/${parsed.vacancyId}`);
     return ok({ id: parsed.vacancyId, pdfPath });
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
@@ -680,6 +757,7 @@ export async function uploadCscReceipt(
     revalidatePath(`/recruitment/vacancies/${parsed.vacancyId}`);
     return ok({ id: row.id });
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
@@ -692,7 +770,7 @@ export async function detectDuplicateItemNumber(
   itemNumber: string,
 ): Promise<ActionResult<{ count: number }>> {
   try {
-    await requirePermission("employees", "view");
+    await requireRecruitmentViewer();
     const trimmed = z.string().trim().min(1).max(20).parse(itemNumber);
 
     const rows = await db
@@ -718,7 +796,7 @@ export async function detectDuplicateItemNumber(
 
 export async function listMrfs(): Promise<ActionResult<Mrf[]>> {
   try {
-    await requirePermission("employees", "view");
+    await requireRecruitmentViewer();
     const rows = await db
       .select()
       .from(mrfs)
@@ -733,12 +811,12 @@ export async function listMrfs(): Promise<ActionResult<Mrf[]>> {
 export async function getMrf(id: string): Promise<
   ActionResult<{
     mrf: Mrf & { officeName: string | null; positionTitle: string | null };
-    approvals: MrfApproval[];
+    approvals: (MrfApproval & { approverName: string })[];
     vacancyId: string | null;
   }>
 > {
   try {
-    await requirePermission("employees", "view");
+    await requireRecruitmentViewer();
     const parsed = z.string().uuid().parse(id);
 
     const [row] = await db
@@ -756,8 +834,13 @@ export async function getMrf(id: string): Promise<
 
     const [approvals, vacancyRows] = await Promise.all([
       db
-        .select()
+        .select({
+          approval: mrfApprovals,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+        })
         .from(mrfApprovals)
+        .leftJoin(employees, eq(mrfApprovals.approverEmployeeId, employees.id))
         .where(eq(mrfApprovals.mrfId, parsed))
         .orderBy(mrfApprovals.sequenceOrder),
       db
@@ -773,7 +856,11 @@ export async function getMrf(id: string): Promise<
         officeName: row.officeName ?? null,
         positionTitle: row.positionTitle ?? null,
       },
-      approvals,
+      approvals: approvals.map((a) => ({
+        ...a.approval,
+        approverName:
+          [a.firstName, a.lastName].filter(Boolean).join(" ") || "—",
+      })),
       vacancyId: vacancyRows[0]?.id ?? null,
     });
   } catch (err: unknown) {
@@ -781,15 +868,27 @@ export async function getMrf(id: string): Promise<
   }
 }
 
-/** Publish the vacancy linked to an MRF using a 30-day default deadline. */
+/**
+ * Publish the vacancy linked to an MRF, keeping the deadline set at final
+ * approval; falls back to 30 days out only if that deadline already passed.
+ */
 export async function publishVacancyForMrf(
   vacancyId: string,
 ): Promise<ActionResult<{ id: string }>> {
   try {
     await requirePermission("employees", "process");
     const parsed = z.string().uuid().parse(vacancyId);
-    const deadline = new Date();
-    deadline.setDate(deadline.getDate() + 30);
+    const [row] = await db
+      .select({ applicationDeadline: vacancies.applicationDeadline })
+      .from(vacancies)
+      .where(eq(vacancies.id, parsed))
+      .limit(1);
+    if (!row) return { error: "Vacancy not found" };
+    let deadline = new Date(row.applicationDeadline);
+    if (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
+      deadline = new Date();
+      deadline.setDate(deadline.getDate() + 30);
+    }
     const result = await publishVacancy({
       vacancyId: parsed,
       applicationDeadline: deadline.toISOString(),
@@ -797,13 +896,14 @@ export async function publishVacancyForMrf(
     if ("error" in result) return result;
     return ok({ id: result.data.id });
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return fail(err);
   }
 }
 
 export async function listActiveVacancies(): Promise<ActionResult<Vacancy[]>> {
   try {
-    await requirePermission("employees", "view");
+    await requireRecruitmentViewer();
     const rows = await db
       .select()
       .from(vacancies)

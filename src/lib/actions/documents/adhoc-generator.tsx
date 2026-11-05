@@ -53,7 +53,8 @@ interface GenerateAdhocCertificateParams {
 interface GenerateAdhocCertificateResult {
   success: boolean;
   serialNumber?: string;
-  documentUrl?: string;
+  /** Object path in the private `documents` bucket — sign at read time (H-19). */
+  documentPath?: string;
   error?: string;
 }
 
@@ -194,10 +195,8 @@ export async function generateAdhocCertificate(
       return { success: false, error: "Failed to save document to storage" };
     }
 
-    // 13. Get public URL.
-    const { data: urlData } = supabase.storage
-      .from("documents")
-      .getPublicUrl(storagePath);
+    // 13. Private bucket: persist the object path; readers sign it after
+    //    authorizing the viewer (H-19).
 
     // 14. Log issuance in the audit trail (PIM-016 serial issuance logging).
     await auditLog({
@@ -212,14 +211,14 @@ export async function generateAdhocCertificate(
         employeeNo: employee.employeeNo,
         issuedById: user.employeeId ?? user.id,
         requestedBy: params.requestedBy ?? null,
-        documentUrl: urlData.publicUrl,
+        documentPath: storagePath,
       },
     });
 
     return {
       success: true,
       serialNumber,
-      documentUrl: urlData.publicUrl,
+      documentPath: storagePath,
     };
   } catch (error) {
     console.error("Ad hoc certificate generation error:", error);

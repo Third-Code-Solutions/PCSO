@@ -16,6 +16,9 @@ import { RecordsTable } from "@/components/payroll/records-table";
 import { ExceptionReport } from "@/components/payroll/exception-report";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 import { requirePermission } from "@/lib/auth/guards";
+import { db } from "@/lib/db";
+import { bankFileConfigs } from "@/lib/db/schema";
+import { asc, isNull } from "drizzle-orm";
 import {
   getPayrollPeriodById,
   getPayrollRecordsByPeriod,
@@ -23,6 +26,7 @@ import {
   getPeriodTotals,
 } from "../queries";
 import { PeriodActionsBar } from "./_components/period-actions-bar";
+import { BankFileDownload } from "./_components/bank-file-download";
 
 interface Props {
   params: Promise<{ periodId: string }>;
@@ -62,6 +66,17 @@ export default async function PayrollPeriodPage({ params }: Props) {
 
   if (!period) notFound();
 
+  // H-15: the bank file is generated only once the run is approved.
+  const canExportBankFile =
+    period.status === "approved" || period.status === "paid";
+  const bankConfigs = canExportBankFile
+    ? await db
+        .select({ id: bankFileConfigs.id, bankName: bankFileConfigs.bankName })
+        .from(bankFileConfigs)
+        .where(isNull(bankFileConfigs.deletedAt))
+        .orderBy(asc(bankFileConfigs.bankName))
+    : [];
+
   return (
     <main className="space-y-6">
       <RealtimeBoundary tables={["payroll_periods", "payroll_records"]} />
@@ -94,6 +109,10 @@ export default async function PayrollPeriodPage({ params }: Props) {
 
       {/* Workflow Actions */}
       <PeriodActionsBar period={period} />
+
+      {canExportBankFile && (
+        <BankFileDownload periodId={periodId} bankConfigs={bankConfigs} />
+      )}
 
       {/* Summary Totals */}
       {records.length > 0 && (

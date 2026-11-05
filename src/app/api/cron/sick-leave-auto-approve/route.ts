@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auditLogs, leaveTypes } from "@/lib/db/schema";
+import { leaveTypes } from "@/lib/db/schema";
 import { leaveAutoApprovalConfig } from "@/lib/db/schema/leave-gaps";
 import { autoApproveSickLeave } from "@/lib/utils/leave/auto-approve-sick-leave";
 import { checkCronAuth } from "../_lib/auth";
+import { recordCronRun } from "../_lib/record-run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,47 +57,39 @@ export async function GET(request: NextRequest) {
 
     // Run-level audit entry (system actor). Per-application entries are
     // written inside autoApproveSickLeave itself.
-    await db.insert(auditLogs).values({
-      userId: null,
-      action: "cron.sick_leave_auto_approve",
-      tableName: "leave_applications",
-      newValues: {
-        timeoutBusinessDays,
-        processed: result.processed,
-        errorCount: result.errors.length,
-        durationMs: Date.now() - startedAt.getTime(),
-      },
+    const httpStatus = await recordCronRun({
+      job: "sick_leave_auto_approve",
+      table: "leave_applications",
+      startedAtMs: startedAt.getTime(),
+      summary: { timeoutBusinessDays, processed: result.processed },
+      errorCount: result.errors.length,
     });
 
-    return NextResponse.json({
-      success: result.errors.length === 0,
-      timeoutBusinessDays,
-      processed: result.processed,
-      errors: result.errors,
-      timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        success: result.errors.length === 0,
+        timeoutBusinessDays,
+        processed: result.processed,
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
+      },
+      { status: httpStatus },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[cron/sick-leave-auto-approve] Job failed:", error);
 
-    await db
-      .insert(auditLogs)
-      .values({
-        userId: null,
-        action: "cron.sick_leave_auto_approve",
-        tableName: "leave_applications",
-        newValues: { outcome: "failure", error: message },
-      })
-      .catch((auditErr) =>
-        console.error(
-          "[cron/sick-leave-auto-approve] Audit write failed:",
-          auditErr,
-        ),
-      );
+    const failStatus = await recordCronRun({
+      job: "sick_leave_auto_approve",
+      table: "leave_applications",
+      startedAtMs: startedAt.getTime(),
+      summary: {},
+      error,
+    });
 
     return NextResponse.json(
       { success: false, error: message, timestamp: new Date().toISOString() },
-      { status: 500 },
+      { status: failStatus },
     );
   }
 }

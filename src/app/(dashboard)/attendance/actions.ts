@@ -514,6 +514,9 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
       undertimeMinutes: computed.undertimeMinutes,
       overtimeMinutes: computed.overtimeMinutes,
       remarks: parsed.notes ?? null,
+      // H-08: HR-entered rows are protected from biometric re-ingest.
+      corrected: true,
+      correctionReason: parsed.correctionReason,
     };
 
     const [upserted] = await tx
@@ -530,6 +533,8 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
           undertimeMinutes: values.undertimeMinutes,
           overtimeMinutes: values.overtimeMinutes,
           remarks: values.remarks,
+          corrected: values.corrected,
+          correctionReason: values.correctionReason,
           updatedAt: new Date(),
         },
       })
@@ -633,6 +638,9 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
         overtimeMinutes: computed.overtimeMinutes,
         remarks: parsed.remarks ?? current.remarks,
         source: "manual",
+        // H-08: HR-corrected rows are protected from biometric re-ingest.
+        corrected: true,
+        correctionReason: parsed.correctionReason,
         updatedAt: new Date(),
       })
       .where(eq(attendanceLogs.id, parsed.attendanceLogId))

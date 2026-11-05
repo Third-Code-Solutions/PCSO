@@ -378,7 +378,14 @@ export async function getTimesheetDetail(
     .where(
       and(
         inArray(leaveApplications.employeeId, allEmployeeIds),
-        eq(leaveApplications.status, "approved"),
+        // cancellation_requested stays approved until the approver confirms;
+        // consumed rows are approved leave whose period has passed.
+        inArray(leaveApplications.status, [
+          "approved",
+          "cancellation_requested",
+          "consumed",
+          "consumed_auto",
+        ]),
         lte(leaveApplications.dateFrom, periodEnd),
         gte(leaveApplications.dateTo, periodStart),
       ),

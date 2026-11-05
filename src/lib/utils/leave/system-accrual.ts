@@ -1,29 +1,37 @@
+import "server-only";
+
 /**
- * LAM-002: Monthly leave credit accrual — system-actor variant.
+ * LAM-002: Monthly leave credit accrual (PRD §10.1.1). Single implementation
+ * shared by the /api/cron/monthly-accrual job and the HR "run accrual" action
+ * (which gates access itself; this module performs no permission check).
  *
- * Mirrors the HR-triggered `accrueMonthlyCredits` server action
- * (src/app/(dashboard)/leave/actions.ts) but runs with direct database
- * access and no user session, so it can be invoked from the scheduled
- * /api/cron/monthly-accrual endpoint (PRD: auto-job on the 1st of each month).
- *
- * Differences from the user-context action:
- *  - No `requirePermission` — callers must gate access (cron secret).
- *  - Audit entries are written with `userId: null` (system actor), following
- *    the convention in year-end-forced-leave.ts / auto-approve-sick-leave.ts.
- *  - Idempotency guard: employees that already have an "accrue" audit entry
- *    for the target month/year are skipped, so scheduler retries and manual
- *    re-runs never double-credit.
+ *  - Credits 1.25 VL + 1.25 SL for a COMPLETED month (default: the previous
+ *    month), so paid service days are known.
+ *  - H-11: no accrual for a month with zero paid service days (whole month on
+ *    LWOP). Balances roll over across years via the ledger (see ledger.ts).
+ *  - Idempotent: employees with an "accrue" audit row for the month/year are
+ *    skipped, so retries and manual re-runs never double-credit.
  */
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   auditLogs,
   employees,
-  leaveCredits,
+  leaveApplications,
   leaveTypes,
 } from "@/lib/db/schema";
-import { accrueMonthlyCredits as accrueEmployeeMonthlyCredits } from "@/lib/utils/leave/credits";
+import { withTx } from "@/lib/db/transaction";
+import {
+  accrueMonthlyCredits as accrueEmployeeMonthlyCredits,
+  resolveAccrualMonth,
+} from "./credits";
+import {
+  ensureCreditRow,
+  loadNonWorkingCalendar,
+  postLedgerEntry,
+} from "./ledger";
+import { countChargeableDays } from "./working-days";
 
 export interface SystemAccrualSummary {
   month: number;
@@ -33,19 +41,41 @@ export interface SystemAccrualSummary {
   errors: Array<{ employeeId: string; message: string }>;
 }
 
-/**
- * Accrue monthly VL/SL credits for all eligible active employees.
- *
- * JO / COS personnel are excluded (no leave credits under CSC rules).
- * Defaults to the current month/year when not provided.
- */
-export async function runMonthlyAccrual(options?: {
+export interface MonthlyAccrualOptions {
   month?: number;
   year?: number;
-}): Promise<SystemAccrualSummary> {
-  const now = new Date();
-  const creditMonth = options?.month ?? now.getMonth() + 1; // 1-indexed
-  const creditYear = options?.year ?? now.getFullYear();
+  /** Restrict to these employees (retry runs). */
+  employeeIds?: string[];
+  /** Acting user for the audit trail; null/omitted = system (cron). */
+  actorUserId?: string | null;
+}
+
+/** Statuses whose LWOP days actually happened. */
+const TAKEN_STATUSES = [
+  "approved",
+  "cancellation_requested",
+  "consumed",
+  "consumed_auto",
+] as const;
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+function manilaToday(): { year: number; month: number } {
+  const [y, m] = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" })
+    .format(new Date())
+    .split("-")
+    .map(Number);
+  return { year: y ?? new Date().getFullYear(), month: m ?? 1 };
+}
+
+export async function runMonthlyAccrual(
+  options: MonthlyAccrualOptions = {},
+): Promise<SystemAccrualSummary> {
+  const { month: creditMonth, year: creditYear } = resolveAccrualMonth(
+    options,
+    manilaToday(),
+  );
+  const actorUserId = options.actorUserId ?? null;
 
   const summary: SystemAccrualSummary = {
     month: creditMonth,
@@ -59,7 +89,6 @@ export async function runMonthlyAccrual(options?: {
     .select({ id: leaveTypes.id, code: leaveTypes.code })
     .from(leaveTypes)
     .where(inArray(leaveTypes.code, ["VL", "SL"]));
-
   const vlType = typeRows.find((t) => t.code === "VL");
   const slType = typeRows.find((t) => t.code === "SL");
   if (!vlType || !slType) {
@@ -68,7 +97,14 @@ export async function runMonthlyAccrual(options?: {
     );
   }
 
-  // Idempotency: collect employees already credited for this month/year.
+  const monthStart = `${creditYear}-${pad2(creditMonth)}-01`;
+  const monthEnd = new Date(Date.UTC(creditYear, creditMonth, 0))
+    .toISOString()
+    .slice(0, 10);
+  const calendar = await loadNonWorkingCalendar(monthStart, monthEnd);
+  const monthWorkingDays = countChargeableDays(monthStart, monthEnd, calendar);
+
+  // Idempotency: employees already credited for this month/year.
   const alreadyAccrued = await db
     .select({ recordId: auditLogs.recordId })
     .from(auditLogs)
@@ -84,19 +120,44 @@ export async function runMonthlyAccrual(options?: {
     alreadyAccrued.map((r) => r.recordId).filter((id): id is string => !!id),
   );
 
-  const empRows = await db
+  // LWOP days per employee within the month (unpaid leave types only).
+  const lwopRows = await db
     .select({
-      id: employees.id,
-      dateHired: employees.dateHired,
+      employeeId: leaveApplications.employeeId,
+      dateFrom: leaveApplications.dateFrom,
+      dateTo: leaveApplications.dateTo,
+      noOfDays: leaveApplications.noOfDays,
     })
+    .from(leaveApplications)
+    .innerJoin(leaveTypes, eq(leaveTypes.id, leaveApplications.leaveTypeId))
+    .where(
+      and(
+        eq(leaveTypes.isWithPay, false),
+        inArray(leaveApplications.status, [...TAKEN_STATUSES]),
+        lte(leaveApplications.dateFrom, monthEnd),
+        gte(leaveApplications.dateTo, monthStart),
+      ),
+    );
+  const lwopDays = new Map<string, number>();
+  for (const r of lwopRows) {
+    const from =
+      String(r.dateFrom) < monthStart ? monthStart : String(r.dateFrom);
+    const to = String(r.dateTo) > monthEnd ? monthEnd : String(r.dateTo);
+    const days = Math.min(
+      Number(r.noOfDays),
+      countChargeableDays(from, to, calendar),
+    );
+    lwopDays.set(r.employeeId, (lwopDays.get(r.employeeId) ?? 0) + days);
+  }
+
+  const empRows = await db
+    .select({ id: employees.id, dateHired: employees.dateHired })
     .from(employees)
     .where(
       and(
         eq(employees.status, "active"),
         isNull(employees.deletedAt),
         // Only organic personnel accrue CSC leave credits (PRD §10.1.1).
-        // Allowlist so a new non-organic type (e.g. consultant) is
-        // excluded by default rather than silently accruing credits.
         inArray(employees.appointmentType, [
           "permanent",
           "temporary",
@@ -104,16 +165,14 @@ export async function runMonthlyAccrual(options?: {
           "casual",
           "cti",
         ]),
+        options.employeeIds && options.employeeIds.length > 0
+          ? inArray(employees.id, options.employeeIds)
+          : undefined,
       ),
     );
 
   for (const emp of empRows) {
     try {
-      if (accruedEmployeeIds.has(emp.id)) {
-        summary.skipped++;
-        continue;
-      }
-
       const hireDate = new Date(String(emp.dateHired));
       if (Number.isNaN(hireDate.getTime())) {
         summary.errors.push({
@@ -123,111 +182,64 @@ export async function runMonthlyAccrual(options?: {
         continue;
       }
 
-      const creditRows = await db
-        .select({
-          leaveTypeId: leaveCredits.leaveTypeId,
-          totalCredits: leaveCredits.totalCredits,
-          usedCredits: leaveCredits.usedCredits,
-          balance: leaveCredits.balance,
-          carryOver: leaveCredits.carryOver,
-        })
-        .from(leaveCredits)
-        .where(
-          and(
-            eq(leaveCredits.employeeId, emp.id),
-            eq(leaveCredits.year, creditYear),
-            inArray(leaveCredits.leaveTypeId, [vlType.id, slType.id]),
-          ),
-        );
-
-      const vlCredit = creditRows.find((c) => c.leaveTypeId === vlType.id);
-      const slCredit = creditRows.find((c) => c.leaveTypeId === slType.id);
-
-      const accrualResult = accrueEmployeeMonthlyCredits(
-        {
-          vl: Number(vlCredit?.balance ?? 0),
-          sl: Number(slCredit?.balance ?? 0),
-        },
+      const paidServiceDays = Math.max(
+        0,
+        monthWorkingDays - (lwopDays.get(emp.id) ?? 0),
+      );
+      const accrual = accrueEmployeeMonthlyCredits(
+        { vl: 0, sl: 0 },
         hireDate,
         creditMonth,
         creditYear,
+        paidServiceDays,
       );
+      const alreadyDone = accruedEmployeeIds.has(emp.id);
+      const credit =
+        !alreadyDone && (accrual.vlAdded > 0 || accrual.slAdded > 0);
 
-      if (accrualResult.vlAdded === 0 && accrualResult.slAdded === 0) {
-        summary.skipped++;
-        continue;
-      }
-
-      const upserts: Array<{
-        leaveTypeId: string;
-        totalCredits: string;
-        balance: string;
-        usedCredits: string;
-        carryOver: string;
-      }> = [
-        {
-          leaveTypeId: vlType.id,
-          totalCredits: String(
-            Number(vlCredit?.totalCredits ?? 0) + accrualResult.vlAdded,
-          ),
-          balance: String(accrualResult.vlBalance),
-          usedCredits: String(vlCredit?.usedCredits ?? 0),
-          carryOver: String(vlCredit?.carryOver ?? 0),
-        },
-        {
-          leaveTypeId: slType.id,
-          totalCredits: String(
-            Number(slCredit?.totalCredits ?? 0) + accrualResult.slAdded,
-          ),
-          balance: String(accrualResult.slBalance),
-          usedCredits: String(slCredit?.usedCredits ?? 0),
-          carryOver: String(slCredit?.carryOver ?? 0),
-        },
-      ];
-
-      for (const row of upserts) {
-        await db
-          .insert(leaveCredits)
-          .values({
+      await withTx(async (tx) => {
+        if (credit) {
+          await postLedgerEntry(tx, {
             employeeId: emp.id,
-            leaveTypeId: row.leaveTypeId,
+            leaveTypeId: vlType.id,
             year: creditYear,
-            totalCredits: row.totalCredits,
-            balance: row.balance,
-            usedCredits: row.usedCredits,
-            carryOver: row.carryOver,
-          })
-          .onConflictDoUpdate({
-            target: [
-              leaveCredits.employeeId,
-              leaveCredits.leaveTypeId,
-              leaveCredits.year,
-            ],
-            set: {
-              totalCredits: row.totalCredits,
-              balance: row.balance,
-              updatedAt: new Date(),
+            delta: accrual.vlAdded,
+            kind: "earn",
+          });
+          await postLedgerEntry(tx, {
+            employeeId: emp.id,
+            leaveTypeId: slType.id,
+            year: creditYear,
+            delta: accrual.slAdded,
+            kind: "earn",
+          });
+          // month/year in newValues doubles as the idempotency marker.
+          await tx.insert(auditLogs).values({
+            userId: actorUserId,
+            action: "accrue",
+            tableName: "leave_credits",
+            recordId: emp.id,
+            newValues: {
+              month: creditMonth,
+              year: creditYear,
+              vlAdded: accrual.vlAdded,
+              slAdded: accrual.slAdded,
+              paidServiceDays,
+              source: actorUserId ? "manual" : "cron",
             },
           });
-      }
-
-      // Per-employee accrual audit entry (system actor). The month/year in
-      // newValues doubles as the idempotency marker for future runs.
-      await db.insert(auditLogs).values({
-        userId: null,
-        action: "accrue",
-        tableName: "leave_credits",
-        recordId: emp.id,
-        newValues: {
-          month: creditMonth,
-          year: creditYear,
-          vlAdded: accrualResult.vlAdded,
-          slAdded: accrualResult.slAdded,
-          source: "cron",
-        },
+        }
+        // H-11: December closes the year — open next year's rows with the
+        // carried-over balances even for employees who earned nothing.
+        if (creditMonth === 12) {
+          for (const typeId of [vlType.id, slType.id]) {
+            await ensureCreditRow(tx, emp.id, typeId, creditYear + 1, true);
+          }
+        }
       });
 
-      summary.processed++;
+      if (credit) summary.processed++;
+      else summary.skipped++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       summary.errors.push({ employeeId: emp.id, message });

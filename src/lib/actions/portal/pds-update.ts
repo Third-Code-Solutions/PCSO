@@ -19,6 +19,7 @@
  *   - Submit: Own employee only (requireAuth + own-record scope).
  *   - Approve / Reject: requirePermission('employees', 'process')
  *     → super_admin + hr_admin.
+ *   - HR queue reads: requirePermission('employees', 'approve') (same roles).
  */
 
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -39,6 +40,12 @@ import { normalizePdsSection31 } from "@/lib/utils/portal/pds-section31";
 type Ok<T> = { data: T };
 type Err = { error: string };
 type Result<T> = Ok<T> | Err;
+
+// Joined people are display-only: never ship TIN / GSIS / bank / salary
+// columns to the client components that render these lists.
+const NAME_ONLY = {
+  columns: { id: true, firstName: true, lastName: true, employeeNumber: true },
+} as const;
 
 // ─── PDS sections ────────────────────────────────────────────────────────────
 //
@@ -438,7 +445,7 @@ export async function getMyPdsUpdateRequests(): Promise<
         eq(pdsUpdateRequests.employeeId, session.employeeId),
         sql`${pdsUpdateRequests.deletedAt} IS NULL`,
       ),
-      with: { hrReviewer: true },
+      with: { hrReviewer: NAME_ONLY },
       orderBy: desc(pdsUpdateRequests.createdAt),
     });
 
@@ -455,10 +462,8 @@ export async function getMyPdsUpdateRequests(): Promise<
 export async function getPendingPdsUpdateRequestsForHR(): Promise<
   Result<PdsUpdateRequest[]>
 > {
-  const user = await requirePermission("employees", "view");
-  if (user.role === "employee_self_service") {
-    return { error: "Employee self-service users cannot access the HR queue" };
-  }
+  // HR only — the same roles that may approve/reject (employees.process).
+  await requirePermission("employees", "approve");
 
   try {
     const requests = await db.query.pdsUpdateRequests.findMany({
@@ -466,7 +471,7 @@ export async function getPendingPdsUpdateRequestsForHR(): Promise<
         eq(pdsUpdateRequests.status, "submitted"),
         sql`${pdsUpdateRequests.deletedAt} IS NULL`,
       ),
-      with: { employee: true },
+      with: { employee: NAME_ONLY },
       orderBy: desc(pdsUpdateRequests.createdAt),
     });
 
@@ -483,15 +488,13 @@ export async function getPendingPdsUpdateRequestsForHR(): Promise<
 export async function getAllPdsUpdateRequestsForHR(): Promise<
   Result<PdsUpdateRequest[]>
 > {
-  const user = await requirePermission("employees", "view");
-  if (user.role === "employee_self_service") {
-    return { error: "Employee self-service users cannot access the HR queue" };
-  }
+  // HR only — the same roles that may approve/reject (employees.process).
+  await requirePermission("employees", "approve");
 
   try {
     const requests = await db.query.pdsUpdateRequests.findMany({
       where: sql`${pdsUpdateRequests.deletedAt} IS NULL`,
-      with: { employee: true, hrReviewer: true },
+      with: { employee: NAME_ONLY, hrReviewer: NAME_ONLY },
       orderBy: desc(pdsUpdateRequests.createdAt),
     });
 

@@ -60,14 +60,13 @@ export interface RecordAssessmentInput {
   /** Assessment date, ISO `YYYY-MM-DD` — required by the DB + schema. */
   assessedAt: string;
   cycleYear: number;
-  assessorEmployeeId: string;
 }
 
 export async function recordAssessment(
   input: RecordAssessmentInput,
 ): Promise<Result<CompetencyAssessment>> {
   try {
-    await requirePermission("learning", "create");
+    const user = await requirePermission("learning", "create");
     const parsed = competencyAssessmentSchema.parse(input);
 
     const [row] = await db
@@ -76,7 +75,8 @@ export async function recordAssessment(
         ...parsed,
         // Drizzle numeric + date columns expect strings in inserts.
         score: String(parsed.score),
-        assessorEmployeeId: parsed.assessorEmployeeId ?? null,
+        // H-26: the assessor is the signed-in user, never a client value.
+        assessorEmployeeId: user.employeeId,
       })
       .returning();
 
@@ -94,7 +94,7 @@ export async function bulkRecordAssessments(
   inputs: unknown,
 ): Promise<Result<CompetencyAssessment[]>> {
   try {
-    await requirePermission("learning", "create");
+    const user = await requirePermission("learning", "create");
 
     if (!Array.isArray(inputs)) {
       return err("Expected an array of assessments");
@@ -109,7 +109,7 @@ export async function bulkRecordAssessments(
         parsed.map((p) => ({
           ...p,
           score: String(p.score),
-          assessorEmployeeId: p.assessorEmployeeId ?? null,
+          assessorEmployeeId: user.employeeId,
         })),
       )
       .returning();

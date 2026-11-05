@@ -7,7 +7,7 @@
  * - Employee name, position, period of employment
  * - Civil status
  * - Salary (optional field, configurable per request)
- * - Configurable signatory (from FM)
+ * - Certifying officer name + position from FM-023 Document Certifiers
  * - Verification token (PRD PIM-017) resolving to /verify/[token]
  * - Detached digital signature over the exact PDF bytes when
  *   DOCUMENT_SIGNING_PRIVATE_KEY is provisioned (TOR 3.5.11/12) — this is
@@ -35,6 +35,7 @@ import {
 } from "@react-pdf/renderer";
 import { createServerClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
+import { resolveDocumentCertifier } from "./certifier";
 import {
   isDocumentSigningConfigured,
   signPdfBytes,
@@ -134,7 +135,8 @@ interface GenerateCOEParams {
 interface GenerateCOEResult {
   success: boolean;
   serialNumber?: string;
-  documentUrl?: string;
+  /** Object path in the private `documents` bucket — sign at read time (H-19). */
+  documentPath?: string;
   /** Public /verify/[token] URL (PIM-017). Absent when no JWT secret is set. */
   verificationUrl?: string;
   /** True when the PDF bytes carry a detached digital signature (TOR 3.5.11/12). */
@@ -168,7 +170,13 @@ export async function generateCOE(
       return { success: false, error: "Organization profile not configured" };
     }
 
-    // 3. Serial number: reuse the request-bound serial (retry-safe, PIM-016) or
+    // 3. Certifier (FM-023) BEFORE drawing a serial so a missing configuration
+    //    never burns a number. Remuneration COEs fall back to the COE certifier.
+    const certifier = await resolveDocumentCertifier(
+      params.includeSalary ? ["COE_REMUNERATION", "COER", "COE"] : ["COE"],
+    );
+
+    // 3b. Serial number: reuse the request-bound serial (retry-safe, PIM-016) or
     //    draw a new one atomically.
     const serialNumber =
       params.serialNumber ?? (await generateSerialNumber(DOCUMENT_TYPES.COE));
@@ -283,11 +291,9 @@ export async function generateCOE(
           {/* Signature */}
           <View style={styles.signature}>
             <Text style={styles.signatureName}>
-              [AUTHORIZED SIGNATORY NAME]
+              {certifier.name.toUpperCase()}
             </Text>
-            <Text style={styles.signatureTitle}>
-              [AUTHORIZED SIGNATORY TITLE]
-            </Text>
+            <Text style={styles.signatureTitle}>{certifier.title}</Text>
           </View>
 
           {/* Footer */}
@@ -334,10 +340,10 @@ export async function generateCOE(
 
     // 11. Upload the signed bytes to Supabase Storage
     const supabase = await createServerClient();
-    const fileName = `${serialNumber}.pdf`;
-    const { data, error } = await supabase.storage
+    const documentPath = `coe/${serialNumber}.pdf`;
+    const { error } = await supabase.storage
       .from("documents")
-      .upload(`coe/${fileName}`, pdfBytes, {
+      .upload(documentPath, pdfBytes, {
         contentType: "application/pdf",
         upsert: false,
       });
@@ -350,10 +356,8 @@ export async function generateCOE(
       };
     }
 
-    // 12. Get public URL
-    const { data: urlData } = supabase.storage
-      .from("documents")
-      .getPublicUrl(`coe/${fileName}`);
+    // 12. The bucket is private: persist the object path; readers sign it
+    //    after authorizing the viewer (H-19).
 
     // 13. Log issuance in the audit trail (PIM-016 serial issuance logging).
     // The FULL detached signature is persisted here — the QR/JWT payload only
@@ -369,7 +373,8 @@ export async function generateCOE(
         employeeNo: employee.employeeNo,
         issuedById: user.employeeId ?? user.id,
         requestedBy: params.requestedBy ?? null,
-        documentUrl: urlData.publicUrl,
+        documentPath,
+        certifiedBy: certifier,
         verificationUrl,
         digitallySigned: signature !== null,
         ...(signature
@@ -392,7 +397,7 @@ export async function generateCOE(
     return {
       success: true,
       serialNumber,
-      documentUrl: urlData.publicUrl,
+      documentPath,
       ...(verificationUrl ? { verificationUrl } : {}),
       digitallySigned: signature !== null,
     };

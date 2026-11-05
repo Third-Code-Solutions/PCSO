@@ -450,8 +450,20 @@ export async function setRecordInclusion(
         .limit(1);
       if (!record) throw new Error("Payroll record not found");
 
-      // Serialize inclusion toggles + totals recompute per period.
+      // Serialize with approval/re-processing (same lock order as
+      // processPayroll), then inclusion toggles + totals recompute per period.
+      await lockKey(tx, `payroll:approve:${record.periodId}`);
       await lockKey(tx, `payroll:inclusion:${record.periodId}`);
+      const [stillThere] = await tx
+        .select({ id: payrollRecords.id })
+        .from(payrollRecords)
+        .where(eq(payrollRecords.id, parsed.recordId))
+        .limit(1);
+      if (!stillThere) {
+        throw new Error(
+          "This payroll record was replaced by re-processing — reload and try again.",
+        );
+      }
 
       const [period] = await tx
         .select()

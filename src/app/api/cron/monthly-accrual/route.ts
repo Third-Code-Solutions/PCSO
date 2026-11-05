@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { db } from "@/lib/db";
-import { auditLogs } from "@/lib/db/schema";
 import { runMonthlyAccrual } from "@/lib/utils/leave/system-accrual";
 import { checkCronAuth } from "../_lib/auth";
+import { recordCronRun } from "../_lib/record-run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,44 +52,42 @@ export async function GET(request: NextRequest) {
     const summary = await runMonthlyAccrual({ month, year });
 
     // Run-level audit entry (system actor).
-    await db.insert(auditLogs).values({
-      userId: null,
-      action: "cron.monthly_accrual",
-      tableName: "leave_credits",
-      newValues: {
+    const httpStatus = await recordCronRun({
+      job: "monthly_accrual",
+      table: "leave_credits",
+      startedAtMs: startedAt.getTime(),
+      summary: {
         month: summary.month,
         year: summary.year,
         processed: summary.processed,
         skipped: summary.skipped,
-        errorCount: summary.errors.length,
-        durationMs: Date.now() - startedAt.getTime(),
       },
+      errorCount: summary.errors.length,
     });
 
-    return NextResponse.json({
-      success: summary.errors.length === 0,
-      ...summary,
-      timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        success: summary.errors.length === 0,
+        ...summary,
+        timestamp: new Date().toISOString(),
+      },
+      { status: httpStatus },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[cron/monthly-accrual] Job failed:", error);
 
-    await db
-      .insert(auditLogs)
-      .values({
-        userId: null,
-        action: "cron.monthly_accrual",
-        tableName: "leave_credits",
-        newValues: { outcome: "failure", error: message },
-      })
-      .catch((auditErr) =>
-        console.error("[cron/monthly-accrual] Audit write failed:", auditErr),
-      );
+    const failStatus = await recordCronRun({
+      job: "monthly_accrual",
+      table: "leave_credits",
+      startedAtMs: startedAt.getTime(),
+      summary: { month: month ?? null, year: year ?? null },
+      error,
+    });
 
     return NextResponse.json(
       { success: false, error: message, timestamp: new Date().toISOString() },
-      { status: 500 },
+      { status: failStatus },
     );
   }
 }

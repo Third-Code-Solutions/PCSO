@@ -16,6 +16,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import type { Tx } from "@/lib/db/transaction";
 import { employees, type Employee, type NewEmployee } from "@/lib/db/schema";
 import {
   APPOINTMENT_TYPE_VALUES,
@@ -206,6 +207,9 @@ function toUpdateValues(input: ApiEmployeeUpdateInput): Partial<NewEmployee> {
   return patch;
 }
 
+/** `db`, or a transaction handle so the batch route can run all-or-nothing. */
+type DbExecutor = typeof db | Tx;
+
 export async function findApiEmployee(id: string): Promise<Employee | null> {
   const [row] = await db
     .select()
@@ -217,9 +221,10 @@ export async function findApiEmployee(id: string): Promise<Employee | null> {
 
 export async function createApiEmployee(
   input: ApiEmployeeCreateInput,
+  executor: DbExecutor = db,
 ): Promise<EmployeeMutationResult> {
   try {
-    const [row] = await db
+    const [row] = await executor
       .insert(employees)
       .values(toInsertValues(input))
       .returning();
@@ -233,9 +238,10 @@ export async function createApiEmployee(
 export async function updateApiEmployee(
   id: string,
   input: ApiEmployeeUpdateInput,
+  executor: DbExecutor = db,
 ): Promise<EmployeeMutationResult> {
   try {
-    const [row] = await db
+    const [row] = await executor
       .update(employees)
       .set({ ...toUpdateValues(input), updatedAt: new Date() })
       .where(and(eq(employees.id, id), isNull(employees.deletedAt)))

@@ -1,14 +1,14 @@
-import { Separator } from '@/components/ui/separator';
-import type { PayrollRecord } from '@/lib/db/schema';
+import { Separator } from "@/components/ui/separator";
+import type { PayrollRecord } from "@/lib/db/schema";
 
 interface RecordBreakdownProps {
   record: PayrollRecord;
 }
 
 function formatPeso(value: string | null | undefined): string {
-  if (!value) return '₱0.00';
+  if (!value) return "₱0.00";
   const num = parseFloat(value);
-  return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₱${num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 interface LineItemProps {
@@ -23,13 +23,13 @@ function LineItem({ label, value, isTotal, isSub, isNegative }: LineItemProps) {
   return (
     <div
       className={`flex items-center justify-between py-1.5 ${
-        isTotal ? 'font-semibold' : ''
-      } ${isSub ? 'pl-4 text-sm text-muted-foreground' : ''}`}
+        isTotal ? "font-semibold" : ""
+      } ${isSub ? "pl-4 text-sm text-muted-foreground" : ""}`}
     >
       <span>{label}</span>
       <span
-        className={`font-mono ${isNegative ? 'text-red-600' : ''} ${
-          isTotal ? 'text-base' : 'text-sm'
+        className={`font-mono ${isNegative ? "text-red-600" : ""} ${
+          isTotal ? "text-base" : "text-sm"
         }`}
       >
         {isNegative ? `(${formatPeso(value)})` : formatPeso(value)}
@@ -50,7 +50,11 @@ export function RecordBreakdown({ record }: RecordBreakdownProps) {
           Earnings
         </h3>
         <div className="rounded-lg border border-border bg-card p-4">
-          <LineItem label="Authorized Salary" value={record.authorizedSalary} isSub />
+          <LineItem
+            label="Authorized Salary"
+            value={record.authorizedSalary}
+            isSub
+          />
           <LineItem label="Basic Pay" value={record.basicPay} />
           <LineItem label="RATA (Rep. & Transportation)" value={record.rata} />
           <LineItem label="Longevity Pay" value={record.longevityPay} />
@@ -71,19 +75,63 @@ export function RecordBreakdown({ record }: RecordBreakdownProps) {
           Deductions
         </h3>
         <div className="rounded-lg border border-border bg-card p-4">
-          <LineItem label="GSIS (Personal)" value={record.gsisPersonal} isNegative />
-          <LineItem label="GSIS Life Insurance" value={record.gsisLifeInsurance} isNegative />
-          <LineItem label="PhilHealth (Personal)" value={record.philhealthPersonal} isNegative />
-          <LineItem label="Pag-IBIG (Personal)" value={record.pagibigPersonal} isNegative />
+          <LineItem
+            label="GSIS (Personal)"
+            value={record.gsisPersonal}
+            isNegative
+          />
+          {/* Life insurance is inside the 9% personal share (C-13); shown only on legacy records that charged it separately. */}
+          {Number(record.gsisLifeInsurance ?? 0) > 0 && (
+            <LineItem
+              label="GSIS Life Insurance"
+              value={record.gsisLifeInsurance}
+              isNegative
+            />
+          )}
+          <LineItem
+            label="PhilHealth (Personal)"
+            value={record.philhealthPersonal}
+            isNegative
+          />
+          <LineItem
+            label="Pag-IBIG (Personal)"
+            value={record.pagibigPersonal}
+            isNegative
+          />
           <Separator className="my-1" />
-          <LineItem label="Withholding Tax" value={record.withholdingTax} isNegative />
+          <LineItem
+            label="Withholding Tax"
+            value={record.withholdingTax}
+            isNegative
+          />
           <Separator className="my-1" />
-          <LineItem label="Late Deduction" value={record.lateDeduction} isNegative />
-          <LineItem label="Undertime Deduction" value={record.undertimeDeduction} isNegative />
-          <LineItem label="Absence Deduction" value={record.absenceDeduction} isNegative />
-          <LineItem label="Other Deductions" value={record.otherDeductions} isNegative />
+          <LineItem
+            label="Late Deduction"
+            value={record.lateDeduction}
+            isNegative
+          />
+          <LineItem
+            label="Undertime Deduction"
+            value={record.undertimeDeduction}
+            isNegative
+          />
+          <LineItem
+            label="Absence Deduction"
+            value={record.absenceDeduction}
+            isNegative
+          />
+          <LineItem
+            label="Other Deductions"
+            value={record.otherDeductions}
+            isNegative
+          />
           <Separator className="my-2" />
-          <LineItem label="TOTAL DEDUCTIONS" value={record.totalDeductions} isTotal isNegative />
+          <LineItem
+            label="TOTAL DEDUCTIONS"
+            value={record.totalDeductions}
+            isTotal
+            isNegative
+          />
         </div>
       </section>
 
@@ -104,9 +152,21 @@ export function RecordBreakdown({ record }: RecordBreakdownProps) {
             Employer Shares (not deducted from net pay)
           </summary>
           <div className="mt-2 rounded-lg border border-dashed border-border p-4 text-sm">
-            <LineItem label="GSIS (Employer Share)" value={record.gsisEmployer} isSub />
-            <LineItem label="PhilHealth (Employer Share)" value={record.philhealthEmployer} isSub />
-            <LineItem label="Pag-IBIG (Employer Share)" value={record.pagibigEmployer} isSub />
+            <LineItem
+              label="GSIS (Employer Share)"
+              value={record.gsisEmployer}
+              isSub
+            />
+            <LineItem
+              label="PhilHealth (Employer Share)"
+              value={record.philhealthEmployer}
+              isSub
+            />
+            <LineItem
+              label="Pag-IBIG (Employer Share)"
+              value={record.pagibigEmployer}
+              isSub
+            />
           </div>
         </details>
       </div>

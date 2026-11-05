@@ -18,19 +18,23 @@
  * writes (qualify / shortlist / notify) use 'edit'.
  */
 
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
 import {
   applicants,
+  applicationDocuments,
   applications,
   assessments,
   vacancies,
 } from "@/lib/db/schema/recruitment";
+import { signedObjectUrl } from "@/lib/storage/signed-url";
 import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import type { Action, Resource } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/guards";
+import { requireRecruitmentViewer } from "@/lib/utils/rpm/recruitment-viewer";
 import { auditLog } from "@/lib/audit";
 import { notifyEmployee } from "@/lib/notifications";
 import {
@@ -53,8 +57,22 @@ import {
 // employees.view/edit/process while super_admin retains full reach. Swap to a
 // dedicated 'recruitment' Resource here if the matrix is later extended.
 const RECRUITMENT_RESOURCE: Resource = "employees";
-const VIEW: Action = "view";
 const EDIT: Action = "edit";
+
+/** Applicant uploads (see /api/rpm/applications/[id]/documents). */
+const APPLICATIONS_BUCKET = "rpm-applications";
+
+/**
+ * Screening decisions are allowed before ranking starts; HR may still flip a
+ * qualified / not_qualified decision. Shortlisted and later stages are owned
+ * by the selection flow.
+ */
+const QUALIFIABLE_STATUSES = new Set([
+  "submitted",
+  "under_review",
+  "qualified",
+  "not_qualified",
+]);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,7 +154,7 @@ export async function listApplications(
   filters: ListApplicationsFilters = {},
 ): Promise<ActionResult<{ rows: ApplicationRow[]; total: number }>> {
   try {
-    await requirePermission(RECRUITMENT_RESOURCE, VIEW);
+    await requireRecruitmentViewer();
 
     const page = Math.max(1, filters.page ?? 1);
     const perPage = Math.min(100, Math.max(1, filters.perPage ?? 25));
@@ -196,7 +214,7 @@ export async function getApplicationDetail(
   id: string,
 ): Promise<ActionResult<ApplicationDetail>> {
   try {
-    await requirePermission(RECRUITMENT_RESOURCE, VIEW);
+    await requireRecruitmentViewer();
 
     const rows = await db
       .select({
@@ -305,6 +323,12 @@ export async function qualifyApplication(
 
     const row = rows[0];
     if (!row) return { ok: false, error: "Application not found" };
+    if (!QUALIFIABLE_STATUSES.has(row.status)) {
+      return {
+        ok: false,
+        error: `Application in status "${row.status}" can no longer be screened`,
+      };
+    }
 
     let matchScoreValue: string;
     let matchBreakdown: unknown = null;
@@ -404,6 +428,92 @@ export async function qualifyApplication(
 
     return { ok: true, data: { id, matchScore: matchScoreValue } };
   } catch (error: unknown) {
+    if (isRedirectError(error)) throw error;
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+/**
+ * HRD starts screening a submitted application: submitted → under_review
+ * (RPM-010 status the applicant sees on the portal).
+ */
+export async function startApplicationReview(
+  id: string,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const user = await requirePermission(RECRUITMENT_RESOURCE, EDIT);
+
+    const [updated] = await db
+      .update(applications)
+      .set({ status: "under_review", updatedAt: new Date() })
+      .where(and(eq(applications.id, id), eq(applications.status, "submitted")))
+      .returning({ id: applications.id });
+    if (!updated) {
+      return {
+        ok: false,
+        error: "Only submitted applications can be moved to review",
+      };
+    }
+
+    await auditLog({
+      userId: user.id,
+      action: "rpm.application_review_started",
+      table: "applications",
+      recordId: id,
+      oldValues: { status: "submitted" },
+      newValues: { status: "under_review" },
+      module: "RPM",
+      subModule: "applicant_screening",
+    });
+
+    revalidatePath(`/recruitment/applicants/${id}`);
+    return { ok: true, data: { id } };
+  } catch (error: unknown) {
+    if (isRedirectError(error)) throw error;
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export interface ApplicationDocumentLink {
+  id: string;
+  docType: string;
+  fileName: string;
+  mimeType: string;
+  /** Short-lived signed URL; null when signing failed. */
+  url: string | null;
+}
+
+/**
+ * Applicant-uploaded documents for HRD review (RPM-009). Restricted to the
+ * screening permission because the files carry applicant PII.
+ */
+export async function listApplicationDocuments(
+  applicationId: string,
+): Promise<ActionResult<ApplicationDocumentLink[]>> {
+  try {
+    await requirePermission(RECRUITMENT_RESOURCE, EDIT);
+
+    const rows = await db
+      .select({
+        id: applicationDocuments.id,
+        docType: applicationDocuments.docType,
+        fileName: applicationDocuments.fileName,
+        mimeType: applicationDocuments.mimeType,
+        fileUrl: applicationDocuments.fileUrl,
+      })
+      .from(applicationDocuments)
+      .where(eq(applicationDocuments.applicationId, applicationId))
+      .orderBy(applicationDocuments.uploadedAt);
+
+    const data = await Promise.all(
+      rows.map(async ({ fileUrl, ...doc }) => ({
+        ...doc,
+        url: await signedObjectUrl(APPLICATIONS_BUCKET, fileUrl),
+      })),
+    );
+    return { ok: true, data };
+  } catch (error: unknown) {
+    if (isRedirectError(error)) throw error;
     return { ok: false, error: toErrorMessage(error) };
   }
 }
@@ -449,6 +559,7 @@ export async function shortlistApplication(
 
     return { ok: true, data: { id } };
   } catch (error: unknown) {
+    if (isRedirectError(error)) throw error;
     return { ok: false, error: toErrorMessage(error) };
   }
 }
@@ -583,6 +694,7 @@ export async function notifyApplicant(
 
     return { ok: true, data: { id, templateId } };
   } catch (error: unknown) {
+    if (isRedirectError(error)) throw error;
     return { ok: false, error: toErrorMessage(error) };
   }
 }

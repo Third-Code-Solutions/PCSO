@@ -5,47 +5,57 @@
  * interactive batch / inline approve / deny to the client component.
  */
 
-import { requirePermission } from '@/lib/auth/guards';
-import { PageHeader } from '@/components/layouts/page-header';
-import { getPendingApprovals } from '@/app/(dashboard)/leave/queries';
-import { CheckSquareIcon } from 'lucide-react';
-import { RealtimeBoundary } from '@/components/realtime/realtime-boundary';
-import { LeaveApprovalsClient } from './_client';
-import type { Metadata } from 'next';
+import { requirePermission } from "@/lib/auth/guards";
+import { approverScopeOf } from "@/lib/utils/leave/approver-scope";
+import { PageHeader } from "@/components/layouts/page-header";
+import { getPendingApprovals } from "@/app/(dashboard)/leave/queries";
+import { CheckSquareIcon } from "lucide-react";
+import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
+import { LeaveApprovalsClient } from "./_client";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: 'Leave Approvals',
+  title: "Leave Approvals",
 };
 
 interface PageProps {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-function parsePage(value: string | string[] | undefined, fallback: number): number {
-  if (typeof value !== 'string') return fallback;
+function parsePage(
+  value: string | string[] | undefined,
+  fallback: number,
+): number {
+  if (typeof value !== "string") return fallback;
   const n = Number.parseInt(value, 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 export default async function LeaveApprovalsPage({ searchParams }: PageProps) {
-  await requirePermission('leave', 'approve');
+  const user = await requirePermission("leave", "approve");
+  const approverScope = await approverScopeOf(user);
 
   const sp = (await searchParams) ?? {};
   const page = parsePage(sp.page, 1);
   const pageSize = Math.min(50, parsePage(sp.pageSize, 25));
 
-  const paged = await getPendingApprovals({ page, pageSize, paginated: true });
+  const paged = await getPendingApprovals({
+    page,
+    pageSize,
+    paginated: true,
+    approverScope,
+  });
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-      <RealtimeBoundary tables={['leave_applications']} />
+      <RealtimeBoundary tables={["leave_applications"]} />
       <PageHeader
         title="Pending Leave Approvals"
-        description={`${paged.total} application${paged.total === 1 ? '' : 's'} awaiting review.`}
+        description={`${paged.total} application${paged.total === 1 ? "" : "s"} awaiting review.`}
         breadcrumbs={[
-          { label: 'Dashboard', href: '/dashboard' },
-          { label: 'Leave', href: '/leave' },
-          { label: 'Approvals' },
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Leave", href: "/leave" },
+          { label: "Approvals" },
         ]}
       />
 

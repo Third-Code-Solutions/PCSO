@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 /**
  * LAM-011: LWOP and No Filed Leave (NFL) notifications

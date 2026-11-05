@@ -20,9 +20,11 @@ export type {
   PayrollResult,
   RataAmount,
   TaxComputationDetail,
-} from './types';
+  TaxBracket,
+  StatutoryRates,
+} from "./types";
 
-export { isJobOrderOrCOS, isRegularEmployee } from './types';
+export { isJobOrderOrCOS, isRegularEmployee } from "./types";
 
 // Rounding utilities
 export {
@@ -31,7 +33,7 @@ export {
   parseMoney,
   addMoney,
   subtractMoney,
-} from './rounding';
+} from "./rounding";
 
 // Salary computations
 export {
@@ -49,7 +51,7 @@ export {
   WORKING_HOURS_PER_DAY,
   WORKING_MINUTES_PER_MONTH,
   OVERTIME_MULTIPLIERS,
-} from './salary';
+} from "./salary";
 
 // Deductions
 export {
@@ -62,7 +64,6 @@ export {
   sumDeductions,
   GSIS_PERSONAL_RATE,
   GSIS_EMPLOYER_RATE,
-  GSIS_LIFE_INSURANCE_MONTHLY,
   PHILHEALTH_PREMIUM_RATE,
   PHILHEALTH_SALARY_FLOOR,
   PHILHEALTH_SALARY_CEILING,
@@ -70,7 +71,7 @@ export {
   PAGIBIG_EMPLOYEE_RATE_HIGH,
   PAGIBIG_EMPLOYER_RATE,
   PAGIBIG_MAX_MONTHLY_CONTRIBUTION,
-} from './deductions';
+} from "./deductions";
 
 // Tax computations
 export {
@@ -82,7 +83,7 @@ export {
   MONTHLY_TAX_BRACKETS,
   SEMI_MONTHLY_TAX_BRACKETS,
   ANNUAL_TAX_BRACKETS,
-} from './tax';
+} from "./tax";
 
 // Bonuses
 export {
@@ -94,7 +95,7 @@ export {
   prorateBonus,
   CASH_GIFT_AMOUNT,
   PERA_MONTHLY_AMOUNT,
-} from './bonuses';
+} from "./bonuses";
 
 // Run-scope support (salary table resolution, allowance config, magna carta)
 export {
@@ -103,18 +104,18 @@ export {
   resolveAllowanceMonthlyAmount,
   monthsInclusive,
   computeMagnaCartaBenefit,
-} from './run-support';
+} from "./run-support";
 export type {
   SalaryGradeRow,
   AllowanceAmountConfig,
   MagnaCartaEligibility,
   MagnaCartaAmounts,
   MagnaCartaBenefit,
-} from './run-support';
+} from "./run-support";
 
 // Loan ledger amortization (PAY-009)
-export { computeLoanDeductions, monthlyScheduleApplies } from './loans';
-export type { LoanForDeduction, LoanDeductionEntry } from './loans';
+export { computeLoanDeductions, monthlyScheduleApplies } from "./loans";
+export type { LoanForDeduction, LoanDeductionEntry } from "./loans";
 
 // Full payroll orchestrator
-export { computeFullPayroll } from './compute-full';
+export { computeFullPayroll } from "./compute-full";

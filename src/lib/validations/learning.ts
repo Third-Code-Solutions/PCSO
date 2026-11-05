@@ -204,7 +204,6 @@ export const issueCertificateSchema = z.object({
     .min(0, "Score cannot be negative.")
     .max(100, "Score cannot exceed 100.")
     .optional(),
-  issuedByEmployeeId: z.string().uuid("Invalid issuer id."),
 });
 
 // ─── Competency & TNA (LDM-012, 013) ─────────────────────────────────────────
@@ -216,7 +215,6 @@ export const competencyAssessmentSchema = z.object({
   score: z.number().min(0).max(5),
   level: competencyLevelSchema,
   assessedAt: z.string().date(),
-  assessorEmployeeId: z.string().uuid().nullable().optional(),
   cycleYear: z.number().int().min(2020).max(2100),
 });
 

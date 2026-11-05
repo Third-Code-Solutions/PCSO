@@ -6,10 +6,16 @@
 
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
+import { StartRatingForm } from "@/components/performance/start-rating-controls";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { RatingBadge } from "@/components/performance/rating-badge";
-import { getOpcfrRatings } from "../queries";
+import {
+  getActiveEmployeeOptions,
+  getOpcfrRatings,
+  getPerformancePeriods,
+} from "../queries";
 import type { AdjectivalRating } from "@/lib/constants/performance";
 import { ChevronRightIcon } from "lucide-react";
 import type { Metadata } from "next";
@@ -30,9 +36,15 @@ const STATUS_BADGE: Record<
 };
 
 export default async function OpcfrPage() {
-  await requirePermission("performance", "view");
+  const user = await requirePermission("performance", "view");
+  const canCreate = hasPermission(user.role, "performance", "create");
 
-  const ratings = await getOpcfrRatings();
+  const [ratings, periods, employeeOptions] = await Promise.all([
+    getOpcfrRatings(),
+    canCreate ? getPerformancePeriods() : Promise.resolve([]),
+    canCreate ? getActiveEmployeeOptions() : Promise.resolve([]),
+  ]);
+  const activePeriods = periods.filter((p) => p.status !== "closed");
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
@@ -45,6 +57,19 @@ export default async function OpcfrPage() {
           { label: "OPCRF" },
         ]}
       />
+
+      {canCreate && (
+        <div className="mb-4 rounded-xl border bg-card p-3 shadow-sm">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Create an OPCRF (rated against the office head)
+          </p>
+          <StartRatingForm
+            ratingType="opcrf"
+            periods={activePeriods}
+            employees={employeeOptions}
+          />
+        </div>
+      )}
 
       {ratings.length === 0 ? (
         <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-muted-foreground">

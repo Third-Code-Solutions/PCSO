@@ -366,7 +366,7 @@ function RequestCard({ request }: { request: DocumentRequest }) {
 
           {request.status === "ready" && request.generatedDocumentUrl && (
             <a
-              href={request.generatedDocumentUrl}
+              href={`/api/documents/requests/${request.id}`}
               target="_blank"
               rel="noopener noreferrer"
             >

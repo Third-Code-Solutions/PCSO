@@ -103,6 +103,18 @@ const STAGE_STYLES: Record<string, { label: string; className: string }> = {
     label: "Recommended",
     className: "bg-teal-100 text-teal-800 border-teal-200",
   },
+  for_interview: {
+    label: "Recommended to Board",
+    className: "bg-teal-100 text-teal-800 border-teal-200",
+  },
+  results_released: {
+    label: "Selected",
+    className: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  },
+  not_selected: {
+    label: "Not Selected",
+    className: "bg-slate-100 text-slate-500 border-slate-200",
+  },
   appointed: {
     label: "Appointed",
     className: "bg-emerald-600 text-white border-emerald-700",

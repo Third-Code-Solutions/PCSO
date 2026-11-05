@@ -14,7 +14,11 @@ import { RoleGate } from "@/components/role-gate";
 import { requireAuth } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { loyaltyAwardRuns } from "@/lib/db/schema/welfare";
-import { generateLoyaltyRun } from "@/lib/actions/ewbm/loyalty";
+import {
+  generateLoyaltyRun,
+  historyByMilestone,
+} from "@/lib/actions/ewbm/loyalty";
+import { hasPermission } from "@/lib/auth/permissions";
 import {
   Table,
   TableBody,
@@ -54,6 +58,12 @@ export default async function LoyaltyListPage() {
     .from(loyaltyAwardRuns)
     .orderBy(desc(loyaltyAwardRuns.generatedAt))
     .limit(100);
+
+  // EWB-002: historical awardees (granted awards only).
+  const history = hasPermission(user.role, "reports", "view")
+    ? await historyByMilestone({})
+    : null;
+  const awardHistory = history && "data" in history ? history.data : [];
 
   return (
     <div className="space-y-6">
@@ -131,6 +141,55 @@ export default async function LoyaltyListPage() {
           )}
         </CardContent>
       </Card>
+
+      {history && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Previous awardees</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {"error" in history ? (
+              <p className="text-sm text-destructive">{history.error}</p>
+            ) : awardHistory.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+                No loyalty awards granted yet.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Milestone</TableHead>
+                    <TableHead>Run year</TableHead>
+                    <TableHead>Granted</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {awardHistory.map((h) => (
+                    <TableRow key={h.awardeeId}>
+                      <TableCell>
+                        {h.lastName
+                          ? `${h.lastName}, ${h.firstName ?? ""}`
+                          : "Unknown employee"}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {h.employeeNo ?? ""}
+                        </span>
+                      </TableCell>
+                      <TableCell>{h.milestoneYears} yrs</TableCell>
+                      <TableCell className="tabular-nums">
+                        {h.runYear}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {new Date(h.awardGrantedAt).toISOString().slice(0, 10)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -43,7 +43,8 @@ export interface AuditLogParams {
  */
 export async function auditLog(params: AuditLogParams): Promise<void> {
   try {
-    await supabaseAdmin.from("audit_logs").insert({
+    // supabase-js reports DB errors in `{ error }`, it does not throw (H-33).
+    const { error } = await supabaseAdmin.from("audit_logs").insert({
       user_id: params.userId ?? null,
       action: params.action,
       table_name: params.table,
@@ -59,6 +60,12 @@ export async function auditLog(params: AuditLogParams): Promise<void> {
       severity: params.severity ?? "info",
       alert_sent: params.alertSent ?? false,
     });
+    if (error) {
+      console.error(
+        `[audit] audit_logs insert rejected (${params.action} ${params.table}):`,
+        error.message,
+      );
+    }
   } catch (err) {
     // Audit failures must not break the primary mutation.
     // TODO: forward to Sentry in production.
@@ -96,7 +103,7 @@ export async function logTransaction(
   params: TransactionLogParams,
 ): Promise<void> {
   try {
-    await supabaseAdmin.from("transaction_logs").insert({
+    const { error } = await supabaseAdmin.from("transaction_logs").insert({
       ...(params.transactionId ? { transaction_id: params.transactionId } : {}),
       user_id: params.userId ?? null,
       transaction_type: params.transactionType,
@@ -109,6 +116,12 @@ export async function logTransaction(
       duration_ms: params.durationMs ?? null,
       size_bytes: params.sizeBytes ?? null,
     });
+    if (error) {
+      console.error(
+        `[audit] transaction_logs insert rejected (${params.transactionType}):`,
+        error.message,
+      );
+    }
   } catch (err) {
     console.error("[audit] Failed to write transaction log:", err);
   }

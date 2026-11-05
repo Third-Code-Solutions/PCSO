@@ -59,7 +59,7 @@ jobs:
       # GitHub environment / STAGING_DATABASE_URL secret is not yet configured.
       - name: Apply incremental SQL migrations
         shell: bash
-        run: npm run db:apply-sql supabase/migrations/2026-07-*.sql
+        run: npm run db:apply-sql supabase/migrations/2026-0[7-9]-*.sql supabase/migrations/2026-1[0-2]-*.sql
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
 # Deployment to Vercel is performed out-of-band via the Vercel CLI, not from

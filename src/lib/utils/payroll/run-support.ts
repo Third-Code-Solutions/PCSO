@@ -9,7 +9,7 @@
 import { parseMoney, roundHalfEven } from "./rounding";
 import { getAuthorizedSalary } from "./salary";
 import { computeGSIS, computePhilHealth, computePagIBIG } from "./deductions";
-import type { AppointmentType } from "./types";
+import type { AppointmentType, StatutoryRates } from "./types";
 import { isJobOrderOrCOS } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -140,9 +140,7 @@ export function isoDayBefore(iso: string): string {
   if (!m) {
     throw new RangeError(`isoDayBefore: invalid date "${iso}"`);
   }
-  const date = new Date(
-    Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])),
-  );
+  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
   date.setUTCDate(date.getUTCDate() - 1);
   return date.toISOString().slice(0, 10);
 }
@@ -164,6 +162,7 @@ export function isoDayBefore(iso: string): string {
 export function computeRegularMonthlyTaxable(
   monthlySalary: number,
   appointmentType: AppointmentType,
+  rates?: StatutoryRates,
 ): number {
   if (monthlySalary < 0) {
     throw new RangeError(
@@ -173,11 +172,15 @@ export function computeRegularMonthlyTaxable(
   if (isJobOrderOrCOS(appointmentType)) {
     return roundHalfEven(monthlySalary, 2);
   }
-  const gsis = parseMoney(computeGSIS(monthlySalary, "monthly").personal);
-  const philHealth = parseMoney(
-    computePhilHealth(monthlySalary, "monthly").personal,
+  const gsis = parseMoney(
+    computeGSIS(monthlySalary, "monthly", rates?.gsis).personal,
   );
-  const pagIBIG = parseMoney(computePagIBIG(monthlySalary, "monthly").personal);
+  const philHealth = parseMoney(
+    computePhilHealth(monthlySalary, "monthly", rates?.philHealth).personal,
+  );
+  const pagIBIG = parseMoney(
+    computePagIBIG(monthlySalary, "monthly", rates?.pagIbig).personal,
+  );
   return roundHalfEven(
     Math.max(0, monthlySalary - (gsis + philHealth + pagIBIG)),
     2,
@@ -225,7 +228,9 @@ export function computeMagnaCartaBenefit(
   const women = eligibility.isFemale
     ? roundHalfEven(amounts.womenMonthlyAmount, 2)
     : 0;
-  const pwd = eligibility.isPwd ? roundHalfEven(amounts.pwdMonthlyAmount, 2) : 0;
+  const pwd = eligibility.isPwd
+    ? roundHalfEven(amounts.pwdMonthlyAmount, 2)
+    : 0;
 
   return { women, pwd, total: roundHalfEven(women + pwd, 2) };
 }

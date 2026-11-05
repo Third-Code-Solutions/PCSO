@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Summary of Ratings exports (TOR 1.2.21) — CSV and printable PDF downloads,
- * surfaced next to the Rating Sheet / ranking table in the selection console.
+ * Selection-console exports: Summary of Ratings (TOR 1.2.21) as CSV / PDF,
+ * plus the Assessment Form (RPM-013) and Rating Sheet (RPM-017) PDFs.
  */
 
 import * as React from "react";
@@ -11,6 +11,12 @@ import { DownloadIcon, FileTextIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
+  downloadBase64Pdf,
+  triggerDownload,
+} from "@/components/recruitment/download";
+import {
+  generateAssessmentFormPdf,
+  generateRatingSheetPdf,
   generateSummaryOfRatingsCsv,
   generateSummaryOfRatingsPdf,
 } from "@/lib/actions/rpm/selection";
@@ -19,30 +25,21 @@ interface SummaryOfRatingsButtonsProps {
   vacancyId: string;
 }
 
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+const PDF_EXPORTS = {
+  assessment: { label: "Assessment Form", generate: generateAssessmentFormPdf },
+  rating: { label: "Rating Sheet", generate: generateRatingSheetPdf },
+  summary: {
+    label: "Summary of Ratings (PDF)",
+    generate: generateSummaryOfRatingsPdf,
+  },
+} as const;
 
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const binary = window.atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return new Blob([bytes], { type: mimeType });
-}
+type PdfKey = keyof typeof PDF_EXPORTS;
 
 export function SummaryOfRatingsButtons({
   vacancyId,
 }: SummaryOfRatingsButtonsProps) {
-  const [pending, setPending] = React.useState<"csv" | "pdf" | null>(null);
+  const [pending, setPending] = React.useState<"csv" | PdfKey | null>(null);
 
   async function handleCsv() {
     setPending("csv");
@@ -63,19 +60,17 @@ export function SummaryOfRatingsButtons({
     }
   }
 
-  async function handlePdf() {
-    setPending("pdf");
+  async function handlePdf(key: PdfKey) {
+    const { label, generate } = PDF_EXPORTS[key];
+    setPending(key);
     try {
-      const result = await generateSummaryOfRatingsPdf(vacancyId);
+      const result = await generate(vacancyId);
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      triggerDownload(
-        base64ToBlob(result.data.pdfBase64, "application/pdf"),
-        result.data.filename,
-      );
-      toast.success(`Summary of Ratings generated (${result.data.serial}).`);
+      downloadBase64Pdf(result.data.pdfBase64, result.data.filename);
+      toast.success(`${label} generated (${result.data.serial}).`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to export PDF");
     } finally {
@@ -84,7 +79,20 @@ export function SummaryOfRatingsButtons({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      {(Object.keys(PDF_EXPORTS) as PdfKey[]).map((key) => (
+        <Button
+          key={key}
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => handlePdf(key)}
+          disabled={pending !== null}
+        >
+          <FileTextIcon className="mr-1.5 h-3.5 w-3.5" />
+          {pending === key ? "Generating…" : PDF_EXPORTS[key].label}
+        </Button>
+      ))}
       <Button
         type="button"
         size="sm"
@@ -94,16 +102,6 @@ export function SummaryOfRatingsButtons({
       >
         <DownloadIcon className="mr-1.5 h-3.5 w-3.5" />
         {pending === "csv" ? "Exporting…" : "Summary of Ratings (CSV)"}
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={handlePdf}
-        disabled={pending !== null}
-      >
-        <FileTextIcon className="mr-1.5 h-3.5 w-3.5" />
-        {pending === "pdf" ? "Generating…" : "Summary of Ratings (PDF)"}
       </Button>
     </div>
   );

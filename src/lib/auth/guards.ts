@@ -99,15 +99,19 @@ export async function requirePermission(
 ): Promise<CurrentUser> {
   const user = await requireAuth();
 
-  // SEC-003 / TOR 3.2.6: super_admin and hr_admin sessions must complete the
-  // TOTP challenge when the account has a verified factor enrolled
-  // (currentLevel aal1 while nextLevel aal2 → verification pending for THIS
-  // session). Accounts WITHOUT an enrolled factor are prompted via a
-  // non-blocking banner instead of a hard lock this release; getAalStatus()
-  // is request-cached and reads the local session (no network call).
+  // SEC-003 / TOR 3.2.6 (H-01): super_admin and hr_admin need an aal2 session.
+  // Enrolled accounts go to the TOTP challenge; accounts without a factor go
+  // to self-service enrollment (guarded by requireAuth, so no redirect loop).
+  // Fails closed: an unreadable assurance level is treated as aal1.
   if (isMfaEnforcedRole(user.role)) {
     const aal = await getAalStatus();
-    if (aal.needsMfaVerification) redirect("/login/mfa");
+    if (aal.currentLevel !== "aal2") {
+      redirect(
+        aal.hasVerifiedTotpFactor
+          ? "/login/mfa"
+          : "/settings/security?mfa=required",
+      );
+    }
   }
 
   if (!hasPermission(user.role, resource, action)) {

@@ -132,7 +132,8 @@ export const submitMrfSchema = z.object({
 export const approveMrfSchema = z.object({
   mrfId: uuid,
   approverEmployeeId: uuid.optional(),
-  sequenceOrder: z.number().int().min(1).max(3),
+  // Chain length comes from FM-022 signatories (default 3, operator-editable).
+  sequenceOrder: z.number().int().min(1).max(50),
   decision: z.enum(["approved", "returned"]),
   comments: optionalText(2000),
   qualificationStandards: qualificationStandardsSchema.optional(),
@@ -294,16 +295,6 @@ export const assessmentCreateSchema = z.object({
     .max(10),
 });
 
-export const assessmentScoreSchema = z.object({
-  assessmentId: uuid,
-  applicationId: uuid,
-  dimension: z.enum(["written_exam", "interview", "physical_exam", "other"]),
-  score: decimalString(6, 2),
-  maxScore: decimalString(6, 2),
-  weight: decimalString(4, 2),
-  raterEmployeeId: uuid,
-});
-
 // ─── Appointment issuance (hand-off to Agent 07) ─────────────────────────────
 
 export const appointmentIssueSchema = z.object({
@@ -341,7 +332,6 @@ export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type SubmitApplicationInput = z.infer<typeof submitApplicationSchema>;
 export type QualifyApplicationInput = z.infer<typeof qualifyApplicationSchema>;
 export type AssessmentCreateInput = z.infer<typeof assessmentCreateSchema>;
-export type AssessmentScoreInput = z.infer<typeof assessmentScoreSchema>;
 export type AppointmentIssueInput = z.infer<typeof appointmentIssueSchema>;
 export type QualificationStandards = z.infer<
   typeof qualificationStandardsSchema

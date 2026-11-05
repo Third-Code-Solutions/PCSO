@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { db } from "@/lib/db";
-import { auditLogs } from "@/lib/db/schema";
 import { generateAnnualNoticesCore } from "@/lib/utils/ewbm/annual-notices";
 import { checkCronAuth } from "../_lib/auth";
+import { recordCronRun } from "../_lib/record-run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,45 +40,38 @@ export async function GET(request: NextRequest) {
     const { generated } = await generateAnnualNoticesCore(year);
 
     // Run-level audit entry (system actor).
-    await db.insert(auditLogs).values({
-      userId: null,
-      action: "cron.annual_retirement_notices",
-      tableName: "retirement_notices",
-      newValues: {
-        forYear: year,
-        generated,
-        durationMs: Date.now() - startedAt.getTime(),
-      },
+    const httpStatus = await recordCronRun({
+      job: "annual_retirement_notices",
+      table: "retirement_notices",
+      startedAtMs: startedAt.getTime(),
+      summary: { forYear: year, generated },
+      errorCount: 0,
     });
 
-    return NextResponse.json({
-      success: true,
-      forYear: year,
-      generated,
-      timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        forYear: year,
+        generated,
+        timestamp: new Date().toISOString(),
+      },
+      { status: httpStatus },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[cron/annual-retirement-notices] Job failed:", error);
 
-    await db
-      .insert(auditLogs)
-      .values({
-        userId: null,
-        action: "cron.annual_retirement_notices",
-        tableName: "retirement_notices",
-        newValues: { outcome: "failure", forYear: year, error: message },
-      })
-      .catch((auditErr) =>
-        console.error(
-          "[cron/annual-retirement-notices] Audit write failed:",
-          auditErr,
-        ),
-      );
+    const failStatus = await recordCronRun({
+      job: "annual_retirement_notices",
+      table: "retirement_notices",
+      startedAtMs: startedAt.getTime(),
+      summary: { forYear: year },
+      error,
+    });
 
     return NextResponse.json(
       { success: false, error: message, timestamp: new Date().toISOString() },
-      { status: 500 },
+      { status: failStatus },
     );
   }
 }

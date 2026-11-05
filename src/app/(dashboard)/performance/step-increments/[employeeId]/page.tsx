@@ -23,6 +23,7 @@ import {
 } from "../../actions";
 import {
   checkStepEligibility,
+  latestReferenceDate,
   toRatingRecord,
 } from "@/lib/utils/performance/step-eligibility";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -78,7 +79,7 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
   const { data: emp, error: empError } = await supabase
     .from("employees")
     .select(
-      "id, first_name, last_name, employee_no, position_title, salary_grade, step, office_id, offices(name)",
+      "id, first_name, last_name, employee_no, position_title, salary_grade, step, office_id, date_last_increment, date_last_promotion, offices(name)",
     )
     .eq("id", employeeId)
     .is("deleted_at", null)
@@ -107,7 +108,11 @@ export default async function EmployeeStepIncrementPage({ params }: Props) {
   const lastIncrement = incrementHistory.find(
     (i) => i.status === "implemented" || i.status === "approved",
   );
-  const lastIncrementDate = lastIncrement?.effectivityDate ?? null;
+  const lastIncrementDate = latestReferenceDate(
+    lastIncrement?.effectivityDate,
+    emp.date_last_increment as string | null,
+    emp.date_last_promotion as string | null,
+  );
 
   // PRD §10.5: pass current step so Step-8 employees are flagged ineligible.
   const eligibility = checkStepEligibility(

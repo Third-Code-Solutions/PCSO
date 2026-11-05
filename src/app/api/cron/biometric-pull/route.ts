@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auditLogs, biometricDevices } from "@/lib/db/schema";
+import { biometricDevices } from "@/lib/db/schema";
 import { pullDeviceOnce } from "@/lib/actions/attendance/biometric-pull";
 import { checkCronAuth } from "../_lib/auth";
+import { recordCronRun } from "../_lib/record-run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,50 +69,46 @@ export async function GET(request: NextRequest) {
         ok: result.ok,
         message: result.message,
         imported: result.summary?.imported ?? 0,
+        protectedSkipped: result.summary?.protectedSkipped ?? 0,
         skipped: result.summary?.skipped ?? 0,
       });
     }
 
     const failures = results.filter((r) => !r.ok).length;
 
-    await db.insert(auditLogs).values({
-      userId: null,
-      action: "cron.biometric_pull",
-      tableName: "attendance_logs",
-      newValues: {
-        activeDevices: devices.length,
-        polled: due.length,
-        failures,
-        durationMs: Date.now() - startedAt,
-      },
+    const httpStatus = await recordCronRun({
+      job: "biometric_pull",
+      table: "attendance_logs",
+      startedAtMs: startedAt,
+      summary: { activeDevices: devices.length, polled: due.length, failures },
+      errorCount: failures,
     });
 
-    return NextResponse.json({
-      success: failures === 0,
-      activeDevices: devices.length,
-      polled: due.length,
-      results,
-      timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        success: failures === 0,
+        activeDevices: devices.length,
+        polled: due.length,
+        results,
+        timestamp: new Date().toISOString(),
+      },
+      { status: httpStatus },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[cron/biometric-pull] Job failed:", error);
 
-    await db
-      .insert(auditLogs)
-      .values({
-        userId: null,
-        action: "cron.biometric_pull",
-        tableName: "attendance_logs",
-        newValues: { outcome: "failure", error: message },
-      })
-      .catch((auditErr) =>
-        console.error("[cron/biometric-pull] Audit write failed:", auditErr),
-      );
+    const failStatus = await recordCronRun({
+      job: "biometric_pull",
+      table: "attendance_logs",
+      startedAtMs: startedAt,
+      summary: {},
+      error,
+    });
 
     return NextResponse.json(
       { success: false, error: message, timestamp: new Date().toISOString() },
-      { status: 500 },
+      { status: failStatus },
     );
   }
 }

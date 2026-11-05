@@ -166,6 +166,8 @@ const ApplicationsAdhocFiltersSchema = z.object({
       "for_exam",
       "for_interview",
       "results_released",
+      "not_selected",
+      "appointed",
       "withdrawn",
       "all",
     ])
@@ -587,7 +589,8 @@ export async function getPDSSubmissionReport(
         .from(employeeDocuments)
         .where(
           and(
-            eq(employeeDocuments.documentTypeCode, "PDS"),
+            // FM-020 seeds the PDS scan as PDS_DOC; "PDS" kept for legacy rows.
+            inArray(employeeDocuments.documentTypeCode, ["PDS_DOC", "PDS"]),
             eq(employeeDocuments.status, "approved"),
           ),
         ),

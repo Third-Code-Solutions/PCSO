@@ -163,7 +163,9 @@ const APPLICATION_STATUS_OPTIONS = [
   { value: "shortlisted", label: "Shortlisted" },
   { value: "for_exam", label: "For Exam" },
   { value: "for_interview", label: "For Interview" },
-  { value: "results_released", label: "Results Released" },
+  { value: "results_released", label: "Results Released (Selected)" },
+  { value: "not_selected", label: "Not Selected" },
+  { value: "appointed", label: "Appointed" },
   { value: "withdrawn", label: "Withdrawn" },
 ] as const;
 

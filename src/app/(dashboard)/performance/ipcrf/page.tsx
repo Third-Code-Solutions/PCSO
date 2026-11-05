@@ -16,7 +16,12 @@ import {
   getMyPerformanceRatings,
   getAllIpcrfPaginated,
   getPerformancePeriods,
+  getActiveEmployeeOptions,
 } from "../queries";
+import {
+  StartMyIpcrfButton,
+  StartRatingForm,
+} from "@/components/performance/start-rating-controls";
 import type { AdjectivalRating } from "@/lib/constants/performance";
 import { ChevronRightIcon, ClipboardListIcon } from "lucide-react";
 import type { Metadata } from "next";
@@ -83,8 +88,15 @@ export default async function IpcrfListPage({ searchParams }: Props) {
         </main>
       );
     }
-    const ratings = await getMyPerformanceRatings(user.employeeId);
+    const [ratings, allPeriods] = await Promise.all([
+      getMyPerformanceRatings(user.employeeId),
+      getPerformancePeriods(),
+    ]);
     const ipcrf = ratings.filter((r) => r.ratingType === "ipcrf");
+    // C-14: open periods without an IPCRF yet can be started by the ratee.
+    const startable = allPeriods.filter(
+      (p) => p.status === "open" && !ipcrf.some((r) => r.periodId === p.id),
+    );
     return (
       <main className="mx-auto max-w-5xl px-4 py-6">
         <RealtimeBoundary tables={["performance_ratings"]} />
@@ -97,6 +109,17 @@ export default async function IpcrfListPage({ searchParams }: Props) {
             { label: "My IPCRF" },
           ]}
         />
+        {startable.length > 0 && ipcrf.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {startable.map((p) => (
+              <StartMyIpcrfButton
+                key={p.id}
+                periodId={p.id}
+                periodLabel={p.label}
+              />
+            ))}
+          </div>
+        )}
         {ipcrf.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed">
             <ClipboardListIcon className="h-10 w-10 text-muted-foreground/40" />
@@ -105,9 +128,18 @@ export default async function IpcrfListPage({ searchParams }: Props) {
                 No IPCRF records yet
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground/70">
-                HR will create your IPCRF when the rating cycle opens.
+                {startable.length > 0
+                  ? "A rating period is open. Start your IPCRF to plan your KRAs."
+                  : "You can start your IPCRF once HR opens a rating period."}
               </p>
             </div>
+            {startable.map((p) => (
+              <StartMyIpcrfButton
+                key={p.id}
+                periodId={p.id}
+                periodLabel={p.label}
+              />
+            ))}
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border">
@@ -182,14 +214,27 @@ export default async function IpcrfListPage({ searchParams }: Props) {
     params.period && params.period !== "all" ? params.period : undefined;
   const q = params.q?.trim() || undefined;
 
-  const [periods, { rows, total }] = await Promise.all([
-    getPerformancePeriods(),
-    getAllIpcrfPaginated(page, PAGE_SIZE, {
-      status: statusFilter,
-      periodId: periodFilter,
-      q,
-    }),
-  ]);
+  const canCreate = hasPermission(user.role, "performance", "create");
+  const [periods, { rows, total }, employeeOptions, myRatings] =
+    await Promise.all([
+      getPerformancePeriods(),
+      getAllIpcrfPaginated(page, PAGE_SIZE, {
+        status: statusFilter,
+        periodId: periodFilter,
+        q,
+      }),
+      canCreate ? getActiveEmployeeOptions() : Promise.resolve([]),
+      user.employeeId
+        ? getMyPerformanceRatings(user.employeeId)
+        : Promise.resolve([]),
+    ]);
+  const activePeriods = periods.filter((p) => p.status !== "closed");
+  // Every employee is a ratee: HR/supervisors/oversight start their own too.
+  const myStartable = periods.filter(
+    (p) =>
+      p.status === "open" &&
+      !myRatings.some((r) => r.ratingType === "ipcrf" && r.periodId === p.id),
+  );
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pendingApproval = rows.filter((r) => r.status === "submitted").length;
 
@@ -216,6 +261,31 @@ export default async function IpcrfListPage({ searchParams }: Props) {
           { label: "IPCRF" },
         ]}
       />
+
+      {myStartable.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {myStartable.map((p) => (
+            <StartMyIpcrfButton
+              key={p.id}
+              periodId={p.id}
+              periodLabel={p.label}
+            />
+          ))}
+        </div>
+      )}
+
+      {canCreate && (
+        <div className="mb-4 rounded-xl border bg-card p-3 shadow-sm">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Start an IPCRF
+          </p>
+          <StartRatingForm
+            ratingType="ipcrf"
+            periods={activePeriods}
+            employees={employeeOptions}
+          />
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border bg-card p-3 shadow-sm">

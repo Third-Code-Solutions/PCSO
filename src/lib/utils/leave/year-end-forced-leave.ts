@@ -1,27 +1,29 @@
-"use server";
+import "server-only";
 
 /**
- * LAM-009: Year-end forced leave auto-deduction
+ * LAM-009: Year-end forced leave auto-deduction (PRD §10.1.3, H-10).
  *
- * Per CSC Omnibus Rules and PRD Section 10.1.3:
- * - Employees with VL balance >= 10 days as of December 31 must use 5 days as forced leave
- * - If unused by December 31, system auto-deducts 5 days from VL balance
- * - Scheduled job runs on December 31 at 23:55
- * - Each deduction is logged in audit trail and employee is notified
+ * Employees with ≥ 10 VL days must take 5 days of Forced Leave (FL, charged
+ * to VL when filed). On December 31 the part of the 5 days NOT taken as FL is
+ * deducted from VL: max(0, 5 − FL days taken this year).
+ *
+ * The deduction is recorded as a `consumed_auto` FL application, so a re-run
+ * counts it as FL already taken and deducts nothing more (idempotent).
+ * System job — callers (the cron route) gate access.
  */
 
+import { and, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  auditLogs,
+  leaveApplications,
   leaveCredits,
   leaveTypes,
-  leaveApplications,
-  auditLogs,
-  employees,
 } from "@/lib/db/schema";
-import { eq, and, gte, sql } from "drizzle-orm";
 import { withTx } from "@/lib/db/transaction";
-import { lockKey } from "@/lib/concurrency";
 import { notifyEmployee } from "@/lib/notifications";
+import { forcedLeaveYearEndDeduction } from "./credits";
+import { ensureCreditRow, postLedgerEntry } from "./ledger";
 
 interface YearEndDeductionResult {
   processed: number;
@@ -29,181 +31,153 @@ interface YearEndDeductionResult {
   errors: Array<{ employeeId: string; message: string }>;
 }
 
-/**
- * Auto-deduct unused forced leave at year end.
- *
- * This function:
- * 1. Identifies employees with VL balance >= 10 days
- * 2. Checks if they've used at least 5 days of forced leave this year
- * 3. If not, deducts 5 days from their VL balance
- * 4. Creates audit log entries
- * 5. Notifies affected employees
- *
- * @param year - The year to process (defaults to current year)
- * @returns Summary of processed deductions
- */
+/** FL statuses that count as leave actually taken. */
+const TAKEN_STATUSES = [
+  "approved",
+  "cancellation_requested",
+  "consumed",
+  "consumed_auto",
+] as const;
+
 export async function yearEndForcedLeaveDeduction(
   year?: number,
 ): Promise<YearEndDeductionResult> {
   const targetYear = year ?? new Date().getFullYear();
-  const FORCED_LEAVE_DAYS = 5;
-  const MINIMUM_VL_BALANCE = 10;
-
   const result: YearEndDeductionResult = {
     processed: 0,
     skipped: 0,
     errors: [],
   };
 
-  try {
-    // Get VL leave type
-    const [vlType] = await db
-      .select({ id: leaveTypes.id, code: leaveTypes.code })
-      .from(leaveTypes)
-      .where(eq(leaveTypes.code, "VL"))
-      .limit(1);
+  const typeRows = await db
+    .select({ id: leaveTypes.id, code: leaveTypes.code })
+    .from(leaveTypes)
+    .where(inArray(leaveTypes.code, ["VL", "FL"]));
+  const vlType = typeRows.find((t) => t.code === "VL");
+  const flType = typeRows.find((t) => t.code === "FL");
+  if (!vlType || !flType) {
+    throw new Error(
+      "VL or FL leave type not found in leave_types (apply migration 2026-11-05-06).",
+    );
+  }
 
-    if (!vlType) {
-      throw new Error("VL leave type not found in leave_types table");
-    }
+  const candidates = await db
+    .select({ employeeId: leaveCredits.employeeId })
+    .from(leaveCredits)
+    .where(
+      and(
+        eq(leaveCredits.leaveTypeId, vlType.id),
+        eq(leaveCredits.year, targetYear),
+        gt(leaveCredits.balance, "0"),
+      ),
+    );
 
-    // Get all employees with VL balance >= 10 days for the target year
-    const eligibleCredits = await db
-      .select({
-        id: leaveCredits.id,
-        employeeId: leaveCredits.employeeId,
-        balance: leaveCredits.balance,
-        usedCredits: leaveCredits.usedCredits,
-        totalCredits: leaveCredits.totalCredits,
-      })
-      .from(leaveCredits)
-      .where(
-        and(
-          eq(leaveCredits.leaveTypeId, vlType.id),
-          eq(leaveCredits.year, targetYear),
-          gte(leaveCredits.balance, String(MINIMUM_VL_BALANCE)),
-        ),
-      );
+  for (const { employeeId } of candidates) {
+    try {
+      const outcome = await withTx(async (tx) => {
+        // Takes the per-employee VL ledger lock before reading FL taken, so a
+        // concurrent run cannot deduct twice.
+        const row = await ensureCreditRow(
+          tx,
+          employeeId,
+          vlType.id,
+          targetYear,
+          false,
+        );
+        if (!row) return null;
 
-    // Process each eligible employee
-    for (const credit of eligibleCredits) {
-      try {
-        await withTx(async (tx) => {
-          // Acquire advisory lock for this employee's leave credits
-          await lockKey(
-            tx,
-            `leave-credits:${credit.employeeId}:${vlType.id}:${targetYear}`,
+        const [taken] = await tx
+          .select({
+            days: sql<string>`coalesce(sum(${leaveApplications.noOfDays}), 0)`,
+          })
+          .from(leaveApplications)
+          .where(
+            and(
+              eq(leaveApplications.employeeId, employeeId),
+              eq(leaveApplications.leaveTypeId, flType.id),
+              inArray(leaveApplications.status, [...TAKEN_STATUSES]),
+              gte(leaveApplications.dateFrom, `${targetYear}-01-01`),
+              lte(leaveApplications.dateFrom, `${targetYear}-12-31`),
+            ),
           );
+        const flDaysTaken = Number(taken?.days ?? 0);
+        const deduction = forcedLeaveYearEndDeduction(
+          Number(row.balance),
+          flDaysTaken,
+        );
+        if (deduction === 0) return null;
 
-          // Re-read credit row inside transaction to ensure consistency
-          const [currentCredit] = await tx
-            .select({
-              id: leaveCredits.id,
-              balance: leaveCredits.balance,
-              usedCredits: leaveCredits.usedCredits,
-            })
-            .from(leaveCredits)
-            .where(eq(leaveCredits.id, credit.id))
-            .limit(1);
+        const posted = await postLedgerEntry(tx, {
+          employeeId,
+          leaveTypeId: vlType.id,
+          year: targetYear,
+          delta: -deduction,
+          kind: "use",
+        });
 
-          if (!currentCredit) {
-            throw new Error(`Credit record ${credit.id} not found`);
-          }
-
-          const currentBalance = Number(currentCredit.balance);
-
-          // Double-check balance is still >= 10 (may have changed since initial query)
-          if (currentBalance < MINIMUM_VL_BALANCE) {
-            result.skipped++;
-            return;
-          }
-
-          // Check if employee has already used forced leave this year
-          // Forced leave applications would have been marked with specific leave type or flag
-          // For now, we assume any VL usage counts - in production, you may want to
-          // track forced leave separately with a flag or special leave type
-          const usedCredits = Number(currentCredit.usedCredits);
-          if (usedCredits >= FORCED_LEAVE_DAYS) {
-            // Employee has used sufficient leave, skip auto-deduction
-            result.skipped++;
-            return;
-          }
-
-          // Calculate new balance after deduction
-          const newBalance = currentBalance - FORCED_LEAVE_DAYS;
-          const newUsedCredits = usedCredits + FORCED_LEAVE_DAYS;
-
-          // Update the credit balance
-          await tx
-            .update(leaveCredits)
-            .set({
-              balance: String(newBalance),
-              usedCredits: String(newUsedCredits),
-              updatedAt: new Date(),
-            })
-            .where(eq(leaveCredits.id, credit.id));
-
-          // Create audit log entry
-          await tx.insert(auditLogs).values({
-            userId: null, // System action
-            action: "year_end_forced_deduct",
-            tableName: "leave_credits",
-            recordId: credit.id,
-            oldValues: {
-              balance: currentBalance,
-              usedCredits,
-            },
-            newValues: {
-              balance: newBalance,
-              usedCredits: newUsedCredits,
-              year: targetYear,
-              deductedDays: FORCED_LEAVE_DAYS,
-              reason: "Year-end forced leave auto-deduction per CSC rules",
-            },
-          });
-
-          // Create a consumed_auto leave application record for tracking
-          await tx.insert(leaveApplications).values({
-            employeeId: credit.employeeId,
-            leaveTypeId: vlType.id,
+        const [app] = await tx
+          .insert(leaveApplications)
+          .values({
+            employeeId,
+            leaveTypeId: flType.id,
             dateFrom: `${targetYear}-12-31`,
             dateTo: `${targetYear}-12-31`,
-            noOfDays: String(FORCED_LEAVE_DAYS),
-            reason: "Year-end forced leave auto-deduction",
+            noOfDays: String(deduction),
+            reason:
+              "Year-end forced leave auto-deduction (unused forced leave)",
             status: "consumed_auto",
             autoApproved: true,
             autoApprovedAt: new Date(),
             approvedAt: new Date(),
-          });
+          })
+          .returning({ id: leaveApplications.id });
+
+        await tx.insert(auditLogs).values({
+          userId: null, // system actor
+          action: "year_end_forced_deduct",
+          tableName: "leave_credits",
+          recordId: posted.id,
+          oldValues: { balance: posted.previousBalance },
+          newValues: {
+            balance: posted.newBalance,
+            year: targetYear,
+            deductedDays: deduction,
+            flDaysTaken,
+            leaveApplicationId: app?.id ?? null,
+            reason: "Year-end forced leave auto-deduction per CSC rules",
+          },
         });
 
-        // Notify employee outside of transaction
-        await notifyEmployee(credit.employeeId, {
-          type: "generic",
-          title: "Year-end forced leave deduction",
-          body: `${FORCED_LEAVE_DAYS} days of Vacation Leave have been automatically deducted from your balance as unused forced leave for ${targetYear}. New VL balance: ${Number(credit.balance) - FORCED_LEAVE_DAYS} days.`,
-          actionUrl: "/leave/credits",
-          entityType: "leave_credits",
-          entityId: credit.id,
-        });
+        return {
+          deduction,
+          newBalance: posted.newBalance,
+          creditId: posted.id,
+        };
+      });
 
-        result.processed++;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        result.errors.push({
-          employeeId: credit.employeeId,
-          message,
-        });
-        console.error(
-          `[year-end-forced-leave] Failed to process employee ${credit.employeeId}:`,
-          err,
-        );
+      if (!outcome) {
+        result.skipped++;
+        continue;
       }
-    }
 
-    return result;
-  } catch (err) {
-    console.error("[year-end-forced-leave] Critical error:", err);
-    throw err;
+      await notifyEmployee(employeeId, {
+        type: "generic",
+        title: "Year-end forced leave deduction",
+        body: `${outcome.deduction} day(s) of Vacation Leave were deducted as unused forced leave for ${targetYear}. New VL balance: ${outcome.newBalance} day(s).`,
+        actionUrl: "/leave/credits",
+        entityType: "leave_credits",
+        entityId: outcome.creditId,
+      });
+      result.processed++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      result.errors.push({ employeeId, message });
+      console.error(
+        `[year-end-forced-leave] Failed to process employee ${employeeId}:`,
+        err,
+      );
+    }
   }
+
+  return result;
 }

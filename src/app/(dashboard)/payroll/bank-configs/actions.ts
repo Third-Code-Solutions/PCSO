@@ -7,8 +7,9 @@ import {
   payrollRecords,
   payrollPeriods,
   employees,
+  bankHashFiles,
 } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import {
   CreateBankConfigSchema,
   UpdateBankConfigSchema,
@@ -19,6 +20,7 @@ import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { withTx } from "@/lib/db/transaction";
 import { format } from "date-fns";
+import { guardFormula } from "@/lib/utils/csv";
 
 // ─── Create Bank Config ───────────────────────────────────────────────────────
 
@@ -202,6 +204,12 @@ export async function generateBankHashFile(input: unknown) {
     .limit(1);
 
   if (!period) throw new Error("Payroll period not found");
+  // PAY-010 / H-15: only an approved (or released) run is disbursed.
+  if (period.status !== "approved" && period.status !== "paid") {
+    throw new Error(
+      `The bank file is available once the payroll is approved (current status: ${period.status}).`,
+    );
+  }
 
   // Fetch all payroll records with employee details
   const records = await db
@@ -219,7 +227,8 @@ export async function generateBankHashFile(input: unknown) {
     .where(
       and(
         eq(payrollRecords.periodId, parsed.periodId),
-        eq(payrollRecords.status, "approved"),
+        // Approved, or already released (paid) — H-15.
+        inArray(payrollRecords.status, ["approved", "paid"]),
         // TOR 1.8.4 (PAY-013): employees tagged for exclusion must never be
         // paid — skip them from the bank hash file.
         eq(payrollRecords.included, true),
@@ -277,7 +286,8 @@ export async function generateBankHashFile(input: unknown) {
   const csvContent = rows
     .map((row) =>
       row
-        .map((cell) => {
+        .map((raw) => {
+          const cell = guardFormula(raw ?? "");
           // Escape cells containing delimiter, quotes, or newlines
           if (
             cell.includes(config.delimiter) ||
@@ -292,6 +302,27 @@ export async function generateBankHashFile(input: unknown) {
     )
     .join("\n");
 
+  const filename = `${config.bankName.replace(/\s+/g, "_")}_${period.name.replace(/\s+/g, "_")}.csv`;
+  const totalCentavos = bankRecords.reduce(
+    (sum, r) => sum + Math.round(Number(r.netPay) * 100),
+    0,
+  );
+  const totalAmount = (totalCentavos / 100).toFixed(2);
+
+  // PAY-010: register every generated file. generated_by_id references
+  // employees, so accounts without an employee profile are audit-logged only.
+  if (user.employeeId) {
+    await db.insert(bankHashFiles).values({
+      payrollRunId: parsed.periodId,
+      bankName: config.bankName,
+      fileName: filename,
+      recordCount: bankRecords.length,
+      totalAmount,
+      generatedById: user.employeeId,
+      generatedAt: new Date().toISOString(),
+    });
+  }
+
   // Audit log
   void auditLog({
     userId: user.id,
@@ -301,13 +332,15 @@ export async function generateBankHashFile(input: unknown) {
     newValues: {
       bankConfigId: parsed.bankConfigId,
       bankName: config.bankName,
+      fileName: filename,
       recordCount: bankRecords.length,
+      totalAmount,
     },
   });
 
   return {
     csvContent,
-    filename: `${config.bankName.replace(/\s+/g, "_")}_${period.name.replace(/\s+/g, "_")}.csv`,
+    filename,
     recordCount: bankRecords.length,
   };
 }

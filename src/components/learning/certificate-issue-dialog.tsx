@@ -14,20 +14,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// Upstream Agent 10 — may not exist yet.
 import { issueCertificate } from "@/lib/actions/ldm/certificates";
 
 interface Props {
   participantId: string;
   participantName: string;
-  issuerEmployeeId: string;
   disabled?: boolean;
 }
 
+/** Issuer is resolved server-side from the session (H-26). */
 export function CertificateIssueDialog({
   participantId,
   participantName,
-  issuerEmployeeId,
   disabled,
 }: Props) {
   const router = useRouter();
@@ -43,7 +41,6 @@ export function CertificateIssueDialog({
       const result = await issueCertificate({
         participantId,
         postAssessmentScore: score === "" ? undefined : Number(score),
-        issuedByEmployeeId: issuerEmployeeId,
       });
       if ("error" in result) {
         setError(result.error);

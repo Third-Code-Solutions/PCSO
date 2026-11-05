@@ -11,9 +11,10 @@ import "server-only";
  * Pipeline: validate rows (Zod) → resolve employee refs (badge / employee_no /
  * uuid → employee uuid, batched) → batch-load day context (schedules,
  * holidays, suspensions, approved leaves — NO per-row queries) → resolve
- * dayType / suspension / schedule / covering leave per row → compute
- * late/undertime with the RESOLVED schedule → chunked upsert into
- * attendance_logs.
+ * dayType / suspension / schedule / covering leave per row → merge with the
+ * punches already stored (H-08; HR-corrected / manual rows are skipped) →
+ * compute late/undertime with the RESOLVED schedule → chunked upsert into
+ * attendance_logs (overtime_minutes is never overwritten).
  *
  * Tardiness rules (TOR 1.5.4 / 1.5.9):
  *   - Holidays, rest days, fully-suspended days, and leave-covered days
@@ -30,15 +31,27 @@ import {
   biometricImports,
   biometricRawRecords,
   employees,
-  employeeSchedules,
   fmWorkSuspensions,
   holidays,
   leaveApplications,
-  officeSchedules,
-  workSchedules,
 } from "@/lib/db/schema";
-import { and, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { logTransaction } from "@/lib/audit";
+import { lockKey, withTx } from "@/lib/db/transaction";
+import {
+  loadScheduleAssignments,
+  pickFromMaps,
+  type ResolvedScheduleAssignment,
+} from "./schedule-context";
 import {
   resolveDayType,
   isRestDay,
@@ -47,14 +60,10 @@ import {
   type HolidayTypeInput,
 } from "@/lib/utils/attendance/day-context";
 import {
-  pickApplicableSchedule,
   normalizeApplicableDays,
   DEFAULT_APPLICABLE_DAYS,
 } from "@/lib/utils/attendance/schedule-resolution";
-import {
-  toComputeSchedule,
-  type WorkScheduleRow,
-} from "@/lib/utils/attendance/schedule-mapping";
+import { toComputeSchedule } from "@/lib/utils/attendance/schedule-mapping";
 import {
   computeLateMinutes,
   computeUndertimeMinutes,
@@ -62,6 +71,9 @@ import {
 import type { DayType } from "@/lib/utils/attendance/types";
 import {
   foldPunchesToDayRows,
+  isProtectedAttendanceLog,
+  mergeDayPunches,
+  PROTECTED_ATTENDANCE_SOURCES,
   type DevicePunch,
 } from "@/lib/utils/attendance/biometric-payload";
 
@@ -100,7 +112,11 @@ export interface IngestPreview {
 }
 
 export interface IngestOutcome {
+  /** Rows actually inserted or updated. */
   imported: number;
+  /** Rows left alone because the stored DTR entry is HR-corrected/manual. */
+  protectedSkipped: number;
+  /** Rows in chunks that failed to commit. */
   skipped: number;
   totalRows: number;
   invalidRows: number;
@@ -212,16 +228,9 @@ async function resolveEmployeeRefs(
 
 // ─── Day-context batch loading ────────────────────────────────────────────────
 
-interface ScheduleAssignmentRow {
-  scheduleId: string;
-  effectiveFrom: string;
-  effectiveTo: string | null;
-  schedule: WorkScheduleRow & { applicableDays: unknown };
-}
-
 interface DayContext {
-  schedulesByEmployee: Map<string, ScheduleAssignmentRow[]>;
-  schedulesByOffice: Map<string, ScheduleAssignmentRow[]>;
+  schedulesByEmployee: Map<string, ResolvedScheduleAssignment[]>;
+  schedulesByOffice: Map<string, ResolvedScheduleAssignment[]>;
   holidayTypeByDate: Map<string, HolidayTypeInput>;
   suspensionsByDate: Map<string, SuspensionEntry[]>;
   leavesByEmployee: Map<
@@ -230,25 +239,17 @@ interface DayContext {
   >;
 }
 
-const scheduleColumns = {
-  timeIn: workSchedules.timeIn,
-  timeOut: workSchedules.timeOut,
-  breakStart: workSchedules.breakStart,
-  breakEnd: workSchedules.breakEnd,
-  gracePeriodMinutes: workSchedules.gracePeriodMinutes,
-  applicableDays: workSchedules.applicableDays,
-};
-
 /** Leave statuses that mean the leave validly covers the date. */
 const COVERING_LEAVE_STATUSES = [
   "approved",
+  "cancellation_requested", // still approved until the approver confirms
   "consumed",
   "consumed_auto",
 ] as const;
 
 /**
  * Batch-loads everything the per-row resolution needs for the whole import
- * date range. Exactly six queries regardless of row count.
+ * date range. Exactly five queries regardless of row count.
  */
 async function loadDayContext(
   employeeIds: readonly string[],
@@ -256,8 +257,6 @@ async function loadDayContext(
   minDate: string,
   maxDate: string,
 ): Promise<DayContext> {
-  const schedulesByEmployee = new Map<string, ScheduleAssignmentRow[]>();
-  const schedulesByOffice = new Map<string, ScheduleAssignmentRow[]>();
   const holidayTypeByDate = new Map<string, HolidayTypeInput>();
   const suspensionsByDate = new Map<string, SuspensionEntry[]>();
   const leavesByEmployee = new Map<
@@ -267,64 +266,17 @@ async function loadDayContext(
 
   if (employeeIds.length === 0) {
     return {
-      schedulesByEmployee,
-      schedulesByOffice,
+      schedulesByEmployee: new Map(),
+      schedulesByOffice: new Map(),
       holidayTypeByDate,
       suspensionsByDate,
       leavesByEmployee,
     };
   }
 
-  const [empRows, officeRows, holidayRows, suspensionRows, leaveRows] =
+  const [scheduleMaps, holidayRows, suspensionRows, leaveRows] =
     await Promise.all([
-      db
-        .select({
-          ownerId: employeeSchedules.employeeId,
-          scheduleId: employeeSchedules.scheduleId,
-          effectiveFrom: employeeSchedules.effectiveFrom,
-          effectiveTo: employeeSchedules.effectiveTo,
-          ...scheduleColumns,
-        })
-        .from(employeeSchedules)
-        .innerJoin(
-          workSchedules,
-          eq(employeeSchedules.scheduleId, workSchedules.id),
-        )
-        .where(
-          and(
-            inArray(employeeSchedules.employeeId, [...employeeIds]),
-            lte(employeeSchedules.effectiveFrom, maxDate),
-            or(
-              isNull(employeeSchedules.effectiveTo),
-              gte(employeeSchedules.effectiveTo, minDate),
-            ),
-          ),
-        ),
-      officeIds.length === 0
-        ? Promise.resolve([])
-        : db
-            .select({
-              ownerId: officeSchedules.officeId,
-              scheduleId: officeSchedules.scheduleId,
-              effectiveFrom: officeSchedules.effectiveFrom,
-              effectiveTo: officeSchedules.effectiveTo,
-              ...scheduleColumns,
-            })
-            .from(officeSchedules)
-            .innerJoin(
-              workSchedules,
-              eq(officeSchedules.scheduleId, workSchedules.id),
-            )
-            .where(
-              and(
-                inArray(officeSchedules.officeId, [...officeIds]),
-                lte(officeSchedules.effectiveFrom, maxDate),
-                or(
-                  isNull(officeSchedules.effectiveTo),
-                  gte(officeSchedules.effectiveTo, minDate),
-                ),
-              ),
-            ),
+      loadScheduleAssignments(employeeIds, officeIds, minDate, maxDate),
       db
         .select({ holidayDate: holidays.holidayDate, type: holidays.type })
         .from(holidays)
@@ -367,41 +319,6 @@ async function loadDayContext(
         ),
     ]);
 
-  const toAssignment = (row: {
-    ownerId: string;
-    scheduleId: string;
-    effectiveFrom: string;
-    effectiveTo: string | null;
-    timeIn: string;
-    timeOut: string;
-    breakStart: string | null;
-    breakEnd: string | null;
-    gracePeriodMinutes: number;
-    applicableDays: unknown;
-  }): ScheduleAssignmentRow => ({
-    scheduleId: row.scheduleId,
-    effectiveFrom: row.effectiveFrom,
-    effectiveTo: row.effectiveTo,
-    schedule: {
-      timeIn: row.timeIn,
-      timeOut: row.timeOut,
-      breakStart: row.breakStart,
-      breakEnd: row.breakEnd,
-      gracePeriodMinutes: row.gracePeriodMinutes,
-      applicableDays: row.applicableDays,
-    },
-  });
-
-  for (const row of empRows) {
-    const list = schedulesByEmployee.get(row.ownerId) ?? [];
-    list.push(toAssignment(row));
-    schedulesByEmployee.set(row.ownerId, list);
-  }
-  for (const row of officeRows) {
-    const list = schedulesByOffice.get(row.ownerId) ?? [];
-    list.push(toAssignment(row));
-    schedulesByOffice.set(row.ownerId, list);
-  }
   for (const row of holidayRows) {
     holidayTypeByDate.set(row.holidayDate, row.type);
   }
@@ -417,8 +334,8 @@ async function loadDayContext(
   }
 
   return {
-    schedulesByEmployee,
-    schedulesByOffice,
+    schedulesByEmployee: scheduleMaps.byEmployee,
+    schedulesByOffice: scheduleMaps.byOffice,
     holidayTypeByDate,
     suspensionsByDate,
     leavesByEmployee,
@@ -469,13 +386,12 @@ function enrichRow(
   employee: ResolvedEmployee,
   ctx: DayContext,
 ): EnrichedRecord {
-  const assignment = pickApplicableSchedule({
-    date: row.date,
-    employeeAssignments: ctx.schedulesByEmployee.get(employee.id) ?? [],
-    officeAssignments: employee.officeId
-      ? (ctx.schedulesByOffice.get(employee.officeId) ?? [])
-      : [],
-  });
+  const assignment = pickFromMaps(
+    { byEmployee: ctx.schedulesByEmployee, byOffice: ctx.schedulesByOffice },
+    employee.id,
+    employee.officeId,
+    row.date,
+  );
 
   const scheduleRow = assignment?.schedule ?? null;
   const computeSchedule = toComputeSchedule(scheduleRow);
@@ -623,10 +539,135 @@ export async function previewAttendanceRows(
   };
 }
 
+type IngestEntry = { row: ValidRow; employee: ResolvedEmployee };
+
+const sqlExcluded = (column: string) => sql.raw(`excluded.${column}`);
+
+/**
+ * Writes one chunk in its own transaction. Per-employee advisory locks
+ * (sorted, so concurrent imports cannot deadlock) serialize the
+ * read -> merge -> upsert, so two pushes for the same day cannot lose a punch.
+ */
+async function writeChunk(
+  chunk: readonly IngestEntry[],
+  ctx: DayContext,
+): Promise<{
+  imported: number;
+  protectedRows: Array<{ rowNumber: number; date: string }>;
+}> {
+  return withTx(async (tx) => {
+    const employeeIds = Array.from(
+      new Set(chunk.map((e) => e.employee.id)),
+    ).sort();
+    for (const id of employeeIds) {
+      await lockKey(tx, `attendance:log:${id}`);
+    }
+
+    const dates = chunk.map((e) => e.row.date).sort();
+    const existingRows = await tx
+      .select({
+        employeeId: attendanceLogs.employeeId,
+        logDate: attendanceLogs.logDate,
+        timeIn: attendanceLogs.timeIn,
+        timeOut: attendanceLogs.timeOut,
+        timeInPm: attendanceLogs.timeInPm,
+        timeOutPm: attendanceLogs.timeOutPm,
+        corrected: attendanceLogs.corrected,
+        source: attendanceLogs.source,
+      })
+      .from(attendanceLogs)
+      .where(
+        and(
+          inArray(attendanceLogs.employeeId, employeeIds),
+          gte(attendanceLogs.logDate, dates[0] ?? ""),
+          lte(attendanceLogs.logDate, dates[dates.length - 1] ?? ""),
+        ),
+      );
+    const existingByKey = new Map<string, (typeof existingRows)[number]>(
+      existingRows.map((r) => [`${r.employeeId}|${r.logDate}`, r]),
+    );
+
+    // H-08: HR-corrected / manual rows are never touched; otherwise the new
+    // punches are merged into the stored ones instead of replacing them.
+    const protectedRows: Array<{ rowNumber: number; date: string }> = [];
+    const pending: Array<{
+      key: string;
+      rowNumber: number;
+      date: string;
+      record: EnrichedRecord;
+    }> = [];
+    for (const { row, employee } of chunk) {
+      const key = `${employee.id}|${row.date}`;
+      const existing = existingByKey.get(key) ?? null;
+      if (existing && isProtectedAttendanceLog(existing)) {
+        protectedRows.push({ rowNumber: row.rowNumber, date: row.date });
+        continue;
+      }
+      const merged = mergeDayPunches(existing, {
+        timeIn: row.timeIn,
+        timeOut: row.timeOut,
+        timeInPm: row.timeInPm ?? null,
+        timeOutPm: row.timeOutPm ?? null,
+      });
+      pending.push({
+        key,
+        rowNumber: row.rowNumber,
+        date: row.date,
+        record: enrichRow({ ...row, ...merged }, employee, ctx),
+      });
+    }
+    if (pending.length === 0) return { imported: 0, protectedRows };
+
+    const written = await tx
+      .insert(attendanceLogs)
+      .values(pending.map((p) => p.record))
+      .onConflictDoUpdate({
+        target: [attendanceLogs.employeeId, attendanceLogs.logDate],
+        // overtime_minutes is deliberately NOT updated: it comes only
+        // from approved OT requests and must survive re-ingest (H-08).
+        set: {
+          timeIn: sqlExcluded("time_in"),
+          timeOut: sqlExcluded("time_out"),
+          timeInPm: sqlExcluded("time_in_pm"),
+          timeOutPm: sqlExcluded("time_out_pm"),
+          source: sqlExcluded("source"),
+          isLate: sqlExcluded("is_late"),
+          lateMinutes: sqlExcluded("late_minutes"),
+          undertimeMinutes: sqlExcluded("undertime_minutes"),
+          dayType: sqlExcluded("day_type"),
+          isSuspended: sqlExcluded("is_suspended"),
+          scheduleId: sqlExcluded("schedule_id"),
+          leaveApplicationId: sqlExcluded("leave_application_id"),
+          updatedAt: new Date(),
+        },
+        // Manual entry / DTR correction don't take the lock and may commit a
+        // correction after our read; such a row is neither updated nor returned.
+        setWhere: and(
+          eq(attendanceLogs.corrected, false),
+          notInArray(attendanceLogs.source, [...PROTECTED_ATTENDANCE_SOURCES]),
+        ),
+      })
+      .returning({
+        employeeId: attendanceLogs.employeeId,
+        logDate: attendanceLogs.logDate,
+      });
+
+    const writtenKeys = new Set(
+      written.map((w) => `${w.employeeId}|${w.logDate}`),
+    );
+    for (const p of pending) {
+      if (!writtenKeys.has(p.key)) {
+        protectedRows.push({ rowNumber: p.rowNumber, date: p.date });
+      }
+    }
+    return { imported: written.length, protectedRows };
+  });
+}
+
 /**
  * Full ingest: validate → resolve → enrich (day context) → chunked upsert.
- * Each chunk commits in its own transaction so a bad chunk cannot poison
- * the whole import (mirrors the original CSV import behavior).
+ * Each chunk commits in its own transaction (see writeChunk) so a bad chunk
+ * cannot poison the whole import.
  */
 export async function ingestAttendanceRows(
   rows: readonly IngestRowInput[],
@@ -657,6 +698,7 @@ export async function ingestAttendanceRows(
   if (deduped.length === 0) {
     return {
       imported: 0,
+      protectedSkipped: 0,
       skipped: 0,
       totalRows: pass.totalRows,
       invalidRows: pass.totalRows - pass.valid.length,
@@ -680,47 +722,33 @@ export async function ingestAttendanceRows(
 
   const ctx = await loadDayContext(employeeIds, officeIds, minDate, maxDate);
 
-  const records = deduped.map(({ row, employee }) =>
-    enrichRow(row, employee, ctx),
+  // Keep each employee's rows together so a chunk takes few advisory locks.
+  const ordered = [...deduped].sort((a, b) =>
+    a.employee.id === b.employee.id
+      ? a.row.date.localeCompare(b.row.date)
+      : a.employee.id.localeCompare(b.employee.id),
   );
 
-  const sqlExcluded = (column: string) => sql.raw(`excluded.${column}`);
   let imported = 0;
+  let protectedSkipped = 0;
   let skipped = 0;
-
-  for (let offset = 0; offset < records.length; offset += CHUNK_SIZE) {
-    const chunk = records.slice(offset, offset + CHUNK_SIZE);
+  for (let offset = 0; offset < ordered.length; offset += CHUNK_SIZE) {
+    const chunk = ordered.slice(offset, offset + CHUNK_SIZE);
     try {
-      await db.transaction(async (tx) => {
-        await tx
-          .insert(attendanceLogs)
-          .values(chunk)
-          .onConflictDoUpdate({
-            target: [attendanceLogs.employeeId, attendanceLogs.logDate],
-            set: {
-              timeIn: sqlExcluded("time_in"),
-              timeOut: sqlExcluded("time_out"),
-              timeInPm: sqlExcluded("time_in_pm"),
-              timeOutPm: sqlExcluded("time_out_pm"),
-              source: sqlExcluded("source"),
-              isLate: sqlExcluded("is_late"),
-              lateMinutes: sqlExcluded("late_minutes"),
-              undertimeMinutes: sqlExcluded("undertime_minutes"),
-              overtimeMinutes: sqlExcluded("overtime_minutes"),
-              dayType: sqlExcluded("day_type"),
-              isSuspended: sqlExcluded("is_suspended"),
-              scheduleId: sqlExcluded("schedule_id"),
-              leaveApplicationId: sqlExcluded("leave_application_id"),
-              updatedAt: new Date(),
-            },
-          });
-      });
-      imported += chunk.length;
+      const result = await writeChunk(chunk, ctx);
+      imported += result.imported;
+      protectedSkipped += result.protectedRows.length;
+      for (const p of result.protectedRows) {
+        errors.push({
+          row: p.rowNumber,
+          message: `HR-corrected DTR entry for ${p.date} kept; biometric punches not applied`,
+        });
+      }
     } catch (err: unknown) {
       skipped += chunk.length;
       const msg = err instanceof Error ? err.message : "Chunk commit failed";
       errors.push({
-        row: deduped[offset]?.row.rowNumber ?? offset + 1,
+        row: chunk[0]?.row.rowNumber ?? offset + 1,
         message: `Chunk ${Math.floor(offset / CHUNK_SIZE) + 1}: ${msg}`,
       });
     }
@@ -728,6 +756,7 @@ export async function ingestAttendanceRows(
 
   return {
     imported,
+    protectedSkipped,
     skipped,
     totalRows: pass.totalRows,
     invalidRows: pass.totalRows - pass.valid.length,
@@ -804,6 +833,8 @@ export interface DeviceIngestSummary {
   receivedPunches: number;
   dayRows: number;
   imported: number;
+  /** Day rows left alone because the DTR entry is HR-corrected. */
+  protectedSkipped: number;
   skipped: number;
   matchedEmployeeCount: number;
   unmatchedBadgeCount: number;
@@ -886,6 +917,7 @@ export async function ingestDevicePunches(
       parseErrors: params.parseErrorCount,
       dayRows: dayRows.length,
       imported: outcome.imported,
+      protectedSkipped: outcome.protectedSkipped,
       skipped: outcome.skipped,
       unmatchedBadges: unmatchedBadges.size,
       importId,
@@ -905,6 +937,7 @@ export async function ingestDevicePunches(
     receivedPunches: params.punches.length,
     dayRows: dayRows.length,
     imported: outcome.imported,
+    protectedSkipped: outcome.protectedSkipped,
     skipped: outcome.skipped,
     matchedEmployeeCount: outcome.matchedEmployeeCount,
     unmatchedBadgeCount: unmatchedBadges.size,

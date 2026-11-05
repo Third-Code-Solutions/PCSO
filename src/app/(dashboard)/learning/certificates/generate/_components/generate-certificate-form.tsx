@@ -22,12 +22,11 @@ interface Participant {
 
 interface GenerateCertificateFormProps {
   participants: Participant[];
-  issuedByEmployeeId: string;
 }
 
+/** Issuer is resolved server-side from the session (H-26). */
 export function GenerateCertificateForm({
   participants,
-  issuedByEmployeeId,
 }: GenerateCertificateFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -56,10 +55,7 @@ export function GenerateCertificateForm({
     setGeneratingId(participantId);
     startTransition(async () => {
       try {
-        const result = await generateTrainingCertificate({
-          participantId,
-          issuedByEmployeeId,
-        });
+        const result = await generateTrainingCertificate({ participantId });
 
         if (result.success) {
           router.push(
@@ -90,10 +86,7 @@ export function GenerateCertificateForm({
       for (const participantId of selectedIds) {
         setGeneratingId(participantId);
         try {
-          const result = await generateTrainingCertificate({
-            participantId,
-            issuedByEmployeeId,
-          });
+          const result = await generateTrainingCertificate({ participantId });
 
           if (result.success) {
             successCount++;

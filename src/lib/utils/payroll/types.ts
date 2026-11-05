@@ -133,6 +133,59 @@ export interface PayrollInput {
    */
   includeRata?: boolean;
   otherAdjustments?: OtherAdjustment[];
+  /**
+   * Statutory rates effective for the period, loaded from the government
+   * rate tables (C-13). Any table left undefined falls back to the built-in
+   * constants.
+   */
+  rates?: StatutoryRates;
+}
+
+// ---------------------------------------------------------------------------
+// Statutory rate tables (gsis_rates / philhealth_rates / pagibig_rates /
+// bir_tax_tables), converted to numbers for the pure engine.
+// ---------------------------------------------------------------------------
+
+export interface TaxBracket {
+  /** Lower bound of the bracket; tax on the excess is computed over it. */
+  floor: number;
+  /** Upper bound of the bracket (exclusive). Infinity for the top bracket. */
+  ceiling: number;
+  /** Fixed tax amount at the floor of this bracket. */
+  baseAmount: number;
+  /** Marginal rate applied to excess over floor. */
+  rate: number;
+}
+
+export interface GsisRateConfig {
+  personalRate: number;
+  employerRate: number;
+}
+
+export interface PhilHealthRateConfig {
+  employeeRate: number;
+  employerRate: number;
+  salaryFloor: number;
+  salaryCeiling: number;
+}
+
+export interface PagIbigRateConfig {
+  employeeRateLow: number;
+  employeeRateHigh: number;
+  employerRate: number;
+  salaryThreshold: number;
+  /** Monthly cap PER SIDE (employee and employer each). */
+  maxContribution: number;
+}
+
+export interface StatutoryRates {
+  gsis?: GsisRateConfig;
+  philHealth?: PhilHealthRateConfig;
+  pagIbig?: PagIbigRateConfig;
+  taxBrackets?: {
+    monthly: readonly TaxBracket[];
+    semiMonthly: readonly TaxBracket[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -145,11 +198,9 @@ export interface GSISBreakdown {
   /** Government (employer) share — 12% */
   employer: string;
   /**
-   * Life insurance premium.
-   * Per GSIS policy the life insurance premium is ₱100/month for rank-and-file
-   * and scales with salary for higher grades. We apply a flat ₱100/month
-   * (₱50 per semi-monthly period) as a conservative default per GSIS Circular 2012-001.
-   * Caller may override per employee policy.
+   * Separate life-insurance premium. Always "0.00": under RA 8291 the life
+   * insurance (PLI) is part of the 9% personal / 12% government shares, so
+   * no extra charge applies (PRD §10.7). Kept for the stored column.
    */
   lifeInsurance: string;
 }

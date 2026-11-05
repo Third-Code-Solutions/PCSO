@@ -110,17 +110,20 @@ export function LeaveApplyForm({
   const leaveTypeCode = watch("leaveTypeCode") as LeaveTypeCode | undefined;
   const startDate = watch("startDate");
   const endDate = watch("endDate");
+  const period = watch("period");
 
-  // Compute working days when dates change
+  // Estimate working days when dates change (display only — the server
+  // recomputes against holidays/suspensions and charges its own figure).
   useEffect(() => {
     if (!startDate || !endDate) return;
     const start = new Date(startDate);
     const end = new Date(endDate);
     if (end < start) return;
-    const days = countWorkingDays(start, end);
+    const weekdays = countWorkingDays(start, end);
+    const days = period === "am" || period === "pm" ? weekdays * 0.5 : weekdays;
     setWorkingDays(days);
     setValue("workingDays", days);
-  }, [startDate, endDate, setValue]);
+  }, [startDate, endDate, period, setValue]);
 
   const selectedLeaveType = leaveTypeCode ? LEAVE_TYPES[leaveTypeCode] : null;
 

@@ -14,6 +14,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { requirePermission } from "@/lib/auth/guards";
+import { approverScopeOf } from "@/lib/utils/leave/approver-scope";
 import { hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -159,7 +160,11 @@ export default async function LeaveDashboardPage({ searchParams }: PageProps) {
     user.employeeId
       ? getLeaveCreditBalance(user.employeeId, currentYear)
       : Promise.resolve(null),
-    canApprove ? getPendingApprovals() : Promise.resolve([]),
+    canApprove
+      ? approverScopeOf(user).then((approverScope) =>
+          getPendingApprovals({ approverScope }),
+        )
+      : Promise.resolve([]),
     getApprovedLeavesForCalendar(
       format(startOfDay(new Date()), "yyyy-MM-dd"),
       format(addDays(new Date(), 7), "yyyy-MM-dd"),

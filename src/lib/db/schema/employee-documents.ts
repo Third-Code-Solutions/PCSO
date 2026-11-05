@@ -11,6 +11,7 @@ import {
   uuid,
   varchar,
   text,
+  integer,
   timestamp,
   pgEnum,
   index,
@@ -41,7 +42,7 @@ export const employeeDocuments = pgTable(
     // File details
     fileName: varchar("file_name", { length: 255 }).notNull(),
     fileUrl: text("file_url").notNull(), // Supabase Storage URL
-    fileSizeBytes: uuid("file_size_bytes"), // For storage tracking
+    fileSizeBytes: integer("file_size_bytes"), // For storage tracking
 
     // Upload tracking
     uploadedById: uuid("uploaded_by_id")

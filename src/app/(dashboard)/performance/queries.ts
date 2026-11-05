@@ -10,6 +10,7 @@ import type { AdjectivalRating } from "@/lib/constants/performance";
 import { RATING_BANDS } from "@/lib/constants/performance";
 import {
   checkStepEligibility,
+  latestReferenceDate,
   toRatingRecord,
 } from "@/lib/utils/performance/step-eligibility";
 import { fetchPbbGateFlags } from "@/lib/db/pbb-gate-queries";
@@ -615,6 +616,8 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<
       salary_grade,
       step,
       office_id,
+      date_last_increment,
+      date_last_promotion,
       offices ( name )
     `,
     )
@@ -676,10 +679,13 @@ export async function getEligibleEmployeesForStepIncrement(): Promise<
       });
     });
 
-    const lastIncrementDate =
-      lastIncrement && typeof lastIncrement.effectivity_date === "string"
+    const lastIncrementDate = latestReferenceDate(
+      typeof lastIncrement?.effectivity_date === "string"
         ? lastIncrement.effectivity_date
-        : null;
+        : null,
+      emp.date_last_increment as string | null,
+      emp.date_last_promotion as string | null,
+    );
 
     // PRD §10.5: pass current step so Step-8 employees are excluded.
     const eligibility = checkStepEligibility(
@@ -1364,4 +1370,26 @@ export async function getPbbQualificationList(
   });
 
   return batchValidatePbbQualification(employeeData);
+}
+
+// ─── Rating initialization options (C-14) ─────────────────────────────────────
+
+export interface EmployeeOption {
+  id: string;
+  label: string;
+}
+
+/** Active employees for the HR "Start IPCRF" / "Create OPCRF" pickers. */
+export async function getActiveEmployeeOptions(): Promise<EmployeeOption[]> {
+  const { data, error } = await supabaseAdmin
+    .from("employees")
+    .select("id, employee_no, first_name, last_name")
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .order("last_name");
+  if (error) throw new Error(`Failed to fetch employees: ${error.message}`);
+  return (data ?? []).map((e) => ({
+    id: String(e.id),
+    label: `${String(e.last_name)}, ${String(e.first_name)} (${String(e.employee_no)})`,
+  }));
 }

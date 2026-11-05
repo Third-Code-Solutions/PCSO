@@ -13,15 +13,12 @@
  * Every step runs inside the caller's Drizzle transaction. Any thrown error
  * rolls back the whole tx — partial employee records must NEVER be committed.
  *
- * The RPM-specific tables (applications, vacancies, recruitment_pipeline) are
- * owned by Agent 01. At the time this file was written that schema had not
- * landed yet, so we touch those tables via raw SQL inside the same tx. If
- * Agent 01 publishes typed Drizzle tables later, swap the `sql` calls for
- * table references — the transaction boundary is already correct.
+ * Internal promotion (application filed by a current employee, H-38): the
+ * existing 201 record is updated in place — no new employee number, no second
+ * leave ledger — and the employee's previous plantilla item is vacated.
  */
 
-import { sql } from "drizzle-orm";
-import { eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import {
   employees,
   plantillaPositions,
@@ -29,6 +26,8 @@ import {
   leaveCredits,
   auditLogs,
 } from "@/lib/db/schema";
+import { employeeSchedules } from "@/lib/db/schema/attendance";
+import { applications, vacancies } from "@/lib/db/schema/recruitment";
 import type { Tx } from "@/lib/db/transaction";
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -84,8 +83,13 @@ export interface AppointmentIssueInput {
   appointingAuthorityEmployeeId: string;
   /** Optional — populated only when migrating existing employees. */
   openingLeaveBalances?: ReadonlyArray<OpeningLeaveBalance>;
-  /** Optional — links to an attendance/shift schedule if the linkage table exists. */
+  /** Optional — work_schedules.id assigned from the effective date. */
   workScheduleId?: string;
+  /**
+   * Set for internal promotion: the applicant is already this employee, so
+   * the 201 record is updated instead of a new one being created.
+   */
+  existingEmployeeId?: string;
   /** Applicant personal info lifted from the application. */
   applicant: ApplicantPersonalInfo;
   /** The system user issuing the appointment (drives audit_logs.userId). */
@@ -133,6 +137,10 @@ export async function atomicallyProvisionNewEmployee(
   tx: Tx,
   input: AppointmentIssueInput,
 ): Promise<AutoProvisionResult> {
+  if (input.existingEmployeeId) {
+    return promoteExistingEmployee(tx, input, input.existingEmployeeId);
+  }
+
   // 1. Generate employee number (PCSO-YYYY-NNNN)
   const employeeNo = await generateEmployeeNoInTx(tx);
 
@@ -239,23 +247,13 @@ export async function atomicallyProvisionNewEmployee(
     leaveLedgerIds.push(creditRow.id);
   }
 
-  // 6. Attendance / shift schedule assignment.
-  //    The current attendance schema (src/lib/db/schema/attendance.ts) has no
-  //    shift_schedules or employees_shift_schedules table — logs + DTR periods
-  //    are created on-demand by the attendance importer. If workScheduleId is
-  //    provided, we record it via raw SQL against the expected future table
-  //    so this still runs inside the tx. If the table does not exist, we
-  //    swallow the notice silently and leave an audit breadcrumb.
+  // 6. Attendance schedule assignment (TAM-001 employee_schedules).
   if (input.workScheduleId) {
-    try {
-      await tx.execute(sql`
-        insert into employee_shift_schedules (employee_id, shift_schedule_id, effective_from)
-        values (${employeeId}, ${input.workScheduleId}, ${input.effectiveDate})
-      `);
-    } catch {
-      // Table may not exist yet — Agent 15 (attendance integrator) owns it.
-      // The audit trail below still captures the intended linkage.
-    }
+    await tx.insert(employeeSchedules).values({
+      employeeId,
+      scheduleId: input.workScheduleId,
+      effectiveFrom: input.effectiveDate,
+    });
   }
 
   // 7. Audit trail — one immutable row for the provisioning event
@@ -264,6 +262,9 @@ export async function atomicallyProvisionNewEmployee(
     action: "rpm.employee_provisioned",
     tableName: "employees",
     recordId: employeeId,
+    outcome: "success",
+    module: "RPM",
+    subModule: "appointment",
     newValues: {
       employeeNo,
       applicationId: input.applicationId,
@@ -279,31 +280,121 @@ export async function atomicallyProvisionNewEmployee(
     },
   });
 
-  // 8. Update application + vacancy pipeline. Agent 01 owns these tables; we
-  //    update via raw SQL so we participate in the same transaction. The
-  //    guarded WHERE clauses make this a no-op if the tables are missing
-  //    columns — an exception here WILL roll back the whole provisioning.
-  await tx.execute(sql`
-    update applications
-      set status = 'appointed',
-          updated_at = now()
-      where id = ${input.applicationId}
-  `);
-
-  await tx.execute(sql`
-    update vacancies v
-      set pipeline_stage = 'appointed',
-          status = 'filled',
-          updated_at = now()
-      from applications a
-      where a.id = ${input.applicationId}
-        and v.id = a.vacancy_id
-  `);
+  // 8. Advance the application + vacancy pipeline to APPOINTED.
+  await markApplicationAppointed(tx, input.applicationId);
 
   return {
     employeeId,
     employeeNo,
     plantillaId: plantillaRow.id,
     leaveLedgerIds,
+  };
+}
+
+async function markApplicationAppointed(
+  tx: Tx,
+  applicationId: string,
+): Promise<void> {
+  const [app] = await tx
+    .update(applications)
+    .set({ status: "appointed", updatedAt: new Date() })
+    .where(eq(applications.id, applicationId))
+    .returning({ vacancyId: applications.vacancyId });
+  if (!app) {
+    throw new Error(`Auto-provision: application ${applicationId} not found`);
+  }
+  await tx
+    .update(vacancies)
+    .set({
+      pipelineStage: "appointed",
+      status: "filled",
+      updatedAt: new Date(),
+    })
+    .where(eq(vacancies.id, app.vacancyId));
+}
+
+/**
+ * Internal promotion: move the existing employee to the new item. Their leave
+ * ledger, employee number and schedule carry over unchanged.
+ */
+/**
+ * 201-record changes for an internal promotion. CSC MC 6 s. 2012: promotion
+ * restarts the 3-year step-increment clock, so the last-increment date moves
+ * to the promotion's effective date. SG/step come from the appointment.
+ */
+export function promotionUpdate(input: AppointmentIssueInput) {
+  return {
+    appointmentType: input.appointmentType,
+    positionTitle: input.positionTitle,
+    salaryGrade: input.salaryGrade,
+    step: input.stepIncrement,
+    officeId: input.officeId,
+    dateLastPromotion: input.effectiveDate,
+    dateLastIncrement: input.effectiveDate,
+  };
+}
+
+async function promoteExistingEmployee(
+  tx: Tx,
+  input: AppointmentIssueInput,
+  employeeId: string,
+): Promise<AutoProvisionResult> {
+  const [employeeRow] = await tx
+    .update(employees)
+    .set({ ...promotionUpdate(input), updatedAt: new Date() })
+    .where(eq(employees.id, employeeId))
+    .returning({ id: employees.id, employeeNo: employees.employeeNo });
+  if (!employeeRow) {
+    throw new Error(`Auto-provision: employee ${employeeId} not found`);
+  }
+
+  // The previous item becomes vacant; the new one is filled.
+  await tx
+    .update(plantillaPositions)
+    .set({ isFilled: false, employeeId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(plantillaPositions.employeeId, employeeId),
+        ne(plantillaPositions.id, input.positionId),
+      ),
+    );
+  const [plantillaRow] = await tx
+    .update(plantillaPositions)
+    .set({ isFilled: true, employeeId, updatedAt: new Date() })
+    .where(eq(plantillaPositions.id, input.positionId))
+    .returning({ id: plantillaPositions.id });
+  if (!plantillaRow) {
+    throw new Error(
+      `Auto-provision: plantilla position ${input.positionId} not found`,
+    );
+  }
+
+  await tx.insert(auditLogs).values({
+    userId: input.issuedByUserId,
+    action: "rpm.employee_promoted",
+    tableName: "employees",
+    recordId: employeeId,
+    outcome: "success",
+    module: "RPM",
+    subModule: "appointment",
+    newValues: {
+      applicationId: input.applicationId,
+      positionId: input.positionId,
+      officeId: input.officeId,
+      itemNumber: input.itemNumber,
+      salaryGrade: input.salaryGrade,
+      stepIncrement: input.stepIncrement,
+      appointmentType: input.appointmentType,
+      effectiveDate: input.effectiveDate,
+    },
+  });
+
+  await markApplicationAppointed(tx, input.applicationId);
+
+  return {
+    employeeId,
+    employeeNo: employeeRow.employeeNo,
+    plantillaId: plantillaRow.id,
+    leaveLedgerIds: [],
   };
 }

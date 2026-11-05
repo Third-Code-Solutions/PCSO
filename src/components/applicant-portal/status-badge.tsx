@@ -30,10 +30,24 @@ const STATUS_STYLES: Record<string, string> = {
   hired: "bg-emerald-200 text-emerald-900 border-emerald-400",
   rejected: "bg-rose-50 text-rose-700 border-rose-200",
   withdrawn: "bg-zinc-100 text-zinc-700 border-zinc-300",
+  // applications.status values (RPM-010)
+  qualified: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  not_qualified: "bg-rose-50 text-rose-700 border-rose-200",
+  for_exam: "bg-blue-50 text-blue-700 border-blue-200",
+  for_interview: "bg-blue-50 text-blue-700 border-blue-200",
+  results_released: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  not_selected: "bg-zinc-100 text-zinc-700 border-zinc-300",
+  appointed: "bg-emerald-200 text-emerald-900 border-emerald-400",
+};
+
+// Statuses whose raw name would mislead the applicant.
+const STATUS_LABELS: Record<string, string> = {
+  results_released: "selected",
+  not_selected: "not selected",
 };
 
 function humanize(status: string): string {
-  return status.replace(/_/g, " ");
+  return STATUS_LABELS[status] ?? status.replace(/_/g, " ");
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {

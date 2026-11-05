@@ -232,6 +232,7 @@ export async function pullBiometricDeviceNow(input: unknown): Promise<{
   success: boolean;
   message: string;
   imported: number;
+  protectedSkipped: number;
   skipped: number;
   unmatchedBadges: number;
 }> {
@@ -287,6 +288,7 @@ export async function pullBiometricDeviceNow(input: unknown): Promise<{
       device: device.name,
       message: result.message,
       imported: result.summary?.imported ?? 0,
+      protectedSkipped: result.summary?.protectedSkipped ?? 0,
       skipped: result.summary?.skipped ?? 0,
     },
   });
@@ -297,6 +299,7 @@ export async function pullBiometricDeviceNow(input: unknown): Promise<{
     success: result.ok,
     message: result.message,
     imported: result.summary?.imported ?? 0,
+    protectedSkipped: result.summary?.protectedSkipped ?? 0,
     skipped: result.summary?.skipped ?? 0,
     unmatchedBadges: result.summary?.unmatchedBadgeCount ?? 0,
   };

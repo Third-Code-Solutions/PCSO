@@ -16,21 +16,17 @@ import type {
   GSISBreakdown,
   PhilHealthBreakdown,
   PagIBIGBreakdown,
+  GsisRateConfig,
+  PhilHealthRateConfig,
+  PagIbigRateConfig,
 } from "./types";
 
 // ---------------------------------------------------------------------------
-// GSIS constants (2024)
+// GSIS constants (2024) — fallback when gsis_rates has no effective row
 // ---------------------------------------------------------------------------
 
 export const GSIS_PERSONAL_RATE = 0.09; // 9% employee share
 export const GSIS_EMPLOYER_RATE = 0.12; // 12% government share
-/**
- * Life insurance premium (GSIS Policy Loan): ₱100/month flat for SG 1–24.
- * Higher grades have separate computation via GSIS actuarial table.
- * FORMULA INVENTED: We use ₱100/month as the standard assumption per
- * GSIS Circular 2012-001. Callers should override for high-ranking officials.
- */
-export const GSIS_LIFE_INSURANCE_MONTHLY = 100;
 
 /**
  * Compute GSIS contributions.
@@ -38,15 +34,18 @@ export const GSIS_LIFE_INSURANCE_MONTHLY = 100;
  * For a semi-monthly period, the half-period amount is returned.
  *
  * GSIS law (RA 8291 §5): contributions are computed on the monthly
- * compensation; each period is 1/2 of the monthly contribution.
+ * compensation; each period is 1/2 of the monthly contribution. Life
+ * insurance is inside the 9%/12% shares, so no separate premium is charged.
  *
  * @param monthlySalary - Authorized monthly basic salary
  * @param periodType - 'monthly' or 'semi-monthly'
+ * @param rates - Effective gsis_rates row (C-13); constants when undefined
  * @returns GSIS contribution breakdown
  */
 export function computeGSIS(
   monthlySalary: number,
   periodType: "semi-monthly" | "monthly" = "semi-monthly",
+  rates?: GsisRateConfig,
 ): GSISBreakdown {
   if (monthlySalary < 0) {
     throw new RangeError(
@@ -54,18 +53,17 @@ export function computeGSIS(
     );
   }
 
-  const monthlyPersonal = roundHalfEven(monthlySalary * GSIS_PERSONAL_RATE, 2);
-  const monthlyEmployer = roundHalfEven(monthlySalary * GSIS_EMPLOYER_RATE, 2);
+  const personalRate = rates?.personalRate ?? GSIS_PERSONAL_RATE;
+  const employerRate = rates?.employerRate ?? GSIS_EMPLOYER_RATE;
+  const monthlyPersonal = roundHalfEven(monthlySalary * personalRate, 2);
+  const monthlyEmployer = roundHalfEven(monthlySalary * employerRate, 2);
 
   const divisor = periodType === "semi-monthly" ? 2 : 1;
 
   return {
     personal: roundHalfEven(monthlyPersonal / divisor, 2).toFixed(2),
     employer: roundHalfEven(monthlyEmployer / divisor, 2).toFixed(2),
-    lifeInsurance: roundHalfEven(
-      GSIS_LIFE_INSURANCE_MONTHLY / divisor,
-      2,
-    ).toFixed(2),
+    lifeInsurance: "0.00",
   };
 }
 
@@ -90,11 +88,13 @@ export const PHILHEALTH_CEILING_PREMIUM = 5_000; // premium at ceiling salary (1
  *
  * @param monthlySalary - Monthly basic salary
  * @param periodType - 'monthly' or 'semi-monthly'
+ * @param rates - Effective philhealth_rates row (C-13); constants when undefined
  * @returns PhilHealth breakdown
  */
 export function computePhilHealth(
   monthlySalary: number,
   periodType: "semi-monthly" | "monthly" = "semi-monthly",
+  rates?: PhilHealthRateConfig,
 ): PhilHealthBreakdown {
   if (monthlySalary < 0) {
     throw new RangeError(
@@ -102,14 +102,17 @@ export function computePhilHealth(
     );
   }
 
+  const floor = rates?.salaryFloor ?? PHILHEALTH_SALARY_FLOOR;
+  const ceiling = rates?.salaryCeiling ?? PHILHEALTH_SALARY_CEILING;
+  const employeeRate = rates?.employeeRate ?? PHILHEALTH_PREMIUM_RATE / 2;
+  const totalRate = rates
+    ? rates.employeeRate + rates.employerRate
+    : PHILHEALTH_PREMIUM_RATE;
+
   // Apply floor and ceiling to the monthly salary for premium computation
-  const mss = Math.max(
-    PHILHEALTH_SALARY_FLOOR,
-    Math.min(PHILHEALTH_SALARY_CEILING, monthlySalary),
-  );
-  const monthlyTotal = roundHalfEven(mss * PHILHEALTH_PREMIUM_RATE, 2);
-  const monthlyPersonal =
-    Math.round(mss * (PHILHEALTH_PREMIUM_RATE / 2) * 100) / 100;
+  const mss = Math.max(floor, Math.min(ceiling, monthlySalary));
+  const monthlyTotal = roundHalfEven(mss * totalRate, 2);
+  const monthlyPersonal = Math.round(mss * employeeRate * 100) / 100;
   const monthlyEmployer = roundHalfEven(monthlyTotal - monthlyPersonal, 2); // avoids rounding gap
 
   const divisor = periodType === "semi-monthly" ? 2 : 1;
@@ -151,11 +154,13 @@ export const PAGIBIG_MAX_MSS = 10_000; // ceiling for mandatory contribution bas
  *
  * @param monthlySalary - Monthly basic salary
  * @param periodType - 'monthly' or 'semi-monthly'
+ * @param rates - Effective pagibig_rates row (C-13); constants when undefined
  * @returns Pag-IBIG breakdown
  */
 export function computePagIBIG(
   monthlySalary: number,
   periodType: "semi-monthly" | "monthly" = "semi-monthly",
+  rates?: PagIbigRateConfig,
 ): PagIBIGBreakdown {
   if (monthlySalary < 0) {
     throw new RangeError(
@@ -163,23 +168,23 @@ export function computePagIBIG(
     );
   }
 
+  const threshold = rates?.salaryThreshold ?? PAGIBIG_SALARY_THRESHOLD;
   const employeeRate =
-    monthlySalary <= PAGIBIG_SALARY_THRESHOLD
-      ? PAGIBIG_EMPLOYEE_RATE_LOW
-      : PAGIBIG_EMPLOYEE_RATE_HIGH;
+    monthlySalary <= threshold
+      ? (rates?.employeeRateLow ?? PAGIBIG_EMPLOYEE_RATE_LOW)
+      : (rates?.employeeRateHigh ?? PAGIBIG_EMPLOYEE_RATE_HIGH);
+  const employerRate = rates?.employerRate ?? PAGIBIG_EMPLOYER_RATE;
+  // Per-side cap; equals rate × max fund salary (₱10,000 → ₱200 since 2024).
+  const cap = rates?.maxContribution ?? PAGIBIG_MAX_MONTHLY_CONTRIBUTION;
 
-  // Cap the salary base at PAGIBIG_MAX_MSS for mandatory computation
-  const computationBase = Math.min(monthlySalary, PAGIBIG_MAX_MSS);
-
-  let monthlyEmployee = roundHalfEven(computationBase * employeeRate, 2);
-  let monthlyEmployer = roundHalfEven(
-    computationBase * PAGIBIG_EMPLOYER_RATE,
-    2,
+  const monthlyEmployee = Math.min(
+    roundHalfEven(monthlySalary * employeeRate, 2),
+    cap,
   );
-
-  // Apply maximum cap
-  monthlyEmployee = Math.min(monthlyEmployee, PAGIBIG_MAX_MONTHLY_CONTRIBUTION);
-  monthlyEmployer = Math.min(monthlyEmployer, PAGIBIG_MAX_MONTHLY_CONTRIBUTION);
+  const monthlyEmployer = Math.min(
+    roundHalfEven(monthlySalary * employerRate, 2),
+    cap,
+  );
 
   const divisor = periodType === "semi-monthly" ? 2 : 1;
 

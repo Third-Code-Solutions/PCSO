@@ -32,6 +32,10 @@ BEGIN
          )
     FROM public.system_users su
     WHERE su.auth_uid = u.id::text
-      AND su.role IS NOT NULL;
+      AND su.role IS NOT NULL
+      -- Fill only missing claims. This file re-runs on every deploy, and
+      -- system_users.role was self-writable before 2026-11-05-01 (C-01), so it
+      -- must never overwrite an existing app_metadata role.
+      AND u.raw_app_meta_data->>'role' IS NULL;
   END IF;
 END $$;

@@ -6,6 +6,7 @@
  * Scope: LDM-005 (recompute training-run cost + render budget-summary PDF).
  */
 
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import React from "react";
@@ -21,7 +22,7 @@ import {
 } from "@/lib/utils/ldm/cost-calculator";
 import { TrainingBudgetSummary } from "@/components/pdf/training-budget-summary";
 
-import { _readRun } from "./scheduling";
+import { readRun as _readRun } from "./run-store";
 import type { TrainingRun } from "@/lib/utils/ldm/schedule-generator";
 
 type Result<T> = { data: T } | { error: string };
@@ -68,6 +69,7 @@ export async function recomputeRunCost(
       },
     };
   } catch (err: unknown) {
+    if (isRedirectError(err)) throw err;
     return {
       error: err instanceof Error ? err.message : "Failed to recompute cost.",
     };
@@ -81,6 +83,8 @@ export async function generateBudgetSummaryPdf(
   runId: string,
   context: BudgetSummaryContext,
 ): Promise<Buffer> {
+  // "use server" exports are public endpoints (H-25): gate before reading.
+  await requirePermission("learning", "export");
   const run = await _readRun(runId);
   if (!run) throw new Error(`Training run ${runId} not found`);
 

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import type * as React from "react";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { PageHeader } from "@/components/layouts/page-header";
@@ -7,11 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ScoreEncoder,
   type QualifiedApplicantRow,
+  type ScoreDimension,
 } from "@/components/recruitment/score-encoder";
-import {
-  RankingTable,
-  type RankingRow,
-} from "@/components/recruitment/ranking-table";
+import { RankingTable } from "@/components/recruitment/ranking-table";
 import { ExamSchedulerForm } from "@/components/recruitment/exam-scheduler-form";
 import { NotifyResultsButton } from "@/components/recruitment/notify-results-button";
 import { RoleGate } from "@/components/role-gate";
@@ -23,6 +20,7 @@ import {
   recordAssessmentScore,
   shortlistTop5,
   recommendForBoard,
+  releaseResults,
   listRanked,
   notifyExamResults,
 } from "@/lib/actions/rpm/selection";
@@ -48,17 +46,11 @@ interface VacancyDetail {
   status: string;
 }
 
-interface AssessmentData {
-  id: string;
-  vacancyId: string;
-}
-
 interface ApplicationRow {
   id: string;
   applicantFirstName?: string | null;
   applicantLastName?: string | null;
   applicantName?: string;
-  matchScore: number | null;
   status: string;
 }
 
@@ -79,9 +71,7 @@ export default async function SelectionDetailPage({
     listApplications({ vacancyId, status: "qualified", perPage: 100 }).catch(
       () => null,
     ),
-    (listRanked as unknown as (vacancyId: string) => Promise<unknown>)(
-      vacancyId,
-    ).catch(() => null),
+    listRanked(vacancyId).catch(() => null),
     db
       .select()
       .from(assessments)
@@ -117,23 +107,15 @@ export default async function SelectionDetailPage({
           .filter(Boolean)
           .join(" ") ||
           "Applicant"),
-      currentScore: r.matchScore,
     }),
   );
 
-  const assessment: AssessmentData | null = assessmentRows[0]
-    ? { id: assessmentRows[0].id, vacancyId: assessmentRows[0].vacancyId }
-    : null;
+  const assessment = assessmentRows[0] ?? null;
+  const dimensions = (assessment?.dimensions ?? []) as ScoreDimension[];
+  const ranking = rankingResult?.ok ? rankingResult.data : [];
 
-  const rankingData = unwrap<RankingRow[] | { rows?: RankingRow[] }>(
-    rankingResult,
-  );
-  const ranking: RankingRow[] = Array.isArray(rankingData)
-    ? rankingData
-    : (rankingData?.rows ?? []);
-
-  const raterEmployeeId = user?.employeeId ?? "";
   const role = user?.role ?? "employee_self_service";
+  const canManage = role === "super_admin" || role === "hr_admin";
 
   return (
     <div>
@@ -189,13 +171,9 @@ export default async function SelectionDetailPage({
                 <CardContent>
                   <ScoreEncoder
                     assessmentId={assessment.id}
-                    raterEmployeeId={raterEmployeeId}
+                    dimensions={dimensions}
                     applicants={qualifiedApplicants}
-                    recordScoreAction={
-                      recordAssessmentScore as unknown as React.ComponentProps<
-                        typeof ScoreEncoder
-                      >["recordScoreAction"]
-                    }
+                    recordScoreAction={recordAssessmentScore}
                   />
                 </CardContent>
               </Card>
@@ -211,26 +189,17 @@ export default async function SelectionDetailPage({
               <RankingTable
                 vacancyId={vacancy.id}
                 rows={ranking}
-                shortlistTop5={
-                  shortlistTop5 as unknown as React.ComponentProps<
-                    typeof RankingTable
-                  >["shortlistTop5"]
-                }
-                recommendForBoard={
-                  recommendForBoard as unknown as React.ComponentProps<
-                    typeof RankingTable
-                  >["recommendForBoard"]
-                }
+                canManage={canManage}
+                shortlistTop5={shortlistTop5}
+                recommendForBoard={recommendForBoard}
+                releaseResults={releaseResults}
               />
             </section>
           </>
         )}
 
         <section>
-          <InterviewSection
-            vacancyId={vacancyId}
-            canManage={role === "super_admin" || role === "hr_admin"}
-          />
+          <InterviewSection vacancyId={vacancyId} canManage={canManage} />
         </section>
       </div>
     </div>

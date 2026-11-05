@@ -322,7 +322,7 @@ async function RequestDetailContent({ id }: { id: string }) {
                         asChild
                       >
                         <a
-                          href={request.generatedDocumentUrl}
+                          href={`/api/documents/requests/${request.id}`}
                           target="_blank"
                           rel="noopener noreferrer"
                         >

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import type * as React from "react";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +15,6 @@ import {
   getMrf,
   submitMrf,
   approveMrfStep,
-  returnMrf,
   publishVacancyForMrf,
 } from "@/lib/actions/rpm/mrf";
 import { unwrap } from "@/components/recruitment/_result";
@@ -119,7 +117,7 @@ export default async function MrfDetailPage({ params }: MrfDetailPageProps) {
           {isDraft && (
             <RoleGate
               role={role}
-              roles={["super_admin", "hr_admin", "supervisor"]}
+              roles={["super_admin", "hr_admin"]}
               fallback={null}
             >
               <Card>
@@ -130,8 +128,8 @@ export default async function MrfDetailPage({ params }: MrfDetailPageProps) {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Submit this MRF to start the approval chain: Department Head
-                    → AGM → General Manager.
+                    Submit this MRF to start the approval chain configured under
+                    File Maintenance → Document Signatories (MRF).
                   </p>
                   <SubmitMrfButton mrfId={mrf.id} submitAction={submitMrf} />
                 </CardContent>
@@ -171,16 +169,7 @@ export default async function MrfDetailPage({ params }: MrfDetailPageProps) {
             mrfId={mrf.id}
             steps={approvals}
             currentApproverEmployeeId={currentApproverEmployeeId}
-            approveAction={
-              approveMrfStep as unknown as React.ComponentProps<
-                typeof MrfApprovalList
-              >["approveAction"]
-            }
-            returnAction={
-              returnMrf as unknown as React.ComponentProps<
-                typeof MrfApprovalList
-              >["returnAction"]
-            }
+            approveAction={approveMrfStep}
           />
         </div>
       </div>

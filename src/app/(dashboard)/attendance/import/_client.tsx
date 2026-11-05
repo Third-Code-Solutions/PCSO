@@ -348,6 +348,12 @@ SEN-0042,2025-03-01,08:00,17:00`}
               <div className="text-xs text-gray-500">Skipped</div>
             </div>
             <div>
+              <div className="text-2xl font-bold text-[#0B2545]">
+                {result.protectedSkipped}
+              </div>
+              <div className="text-xs text-gray-500">Kept (HR-corrected)</div>
+            </div>
+            <div>
               <div className="text-2xl font-bold text-red-600">
                 {result.errors.length}
               </div>

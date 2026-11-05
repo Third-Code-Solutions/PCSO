@@ -19,20 +19,16 @@ import {
   performancePeriods,
   performanceCycles,
 } from "@/lib/db/schema/performance";
-import { employees } from "@/lib/db/schema/employees";
-import { eq, and, gte } from "drizzle-orm";
+import { eq, and, gte, isNull } from "drizzle-orm";
 import { fetchPbbGateFlags } from "@/lib/db/pbb-gate-queries";
 import { semesterDateRange } from "@/lib/utils/performance/pbb-qualification";
+import {
+  derivePcrRating,
+  pcrReviewDenial,
+} from "@/lib/utils/performance/pcr-review";
+import { auditLog } from "@/lib/audit";
 
 // ─── DPCR Actions ─────────────────────────────────────────────────────────────
-
-const adjectivalEnum = z.enum([
-  "outstanding",
-  "very_satisfactory",
-  "satisfactory",
-  "unsatisfactory",
-  "poor",
-]);
 
 /**
  * Resolves — lazily creating when needed — the `performance_cycles` row that
@@ -114,24 +110,151 @@ async function resolveCycleForPeriod(
   return afterRace[0].id;
 }
 
+type PcrVariant = "dpcr" | "bpcr";
+type PcrResult = { success: boolean; error?: string };
+
+const formIdSchema = z.string().uuid();
+
 const dpcrCreateSchema = z.object({
   periodId: z.string().uuid(),
   officeId: z.string().uuid().optional(),
-  divisionName: z.string().min(1).max(200),
+  divisionName: z.string().trim().min(1).max(200),
   phase: z.enum(["planning", "monitoring", "review"]),
   numericalRating: z.string().optional(),
-  adjectivalRating: adjectivalEnum.optional(),
-  scannedDocUrl: z.string().optional(),
 });
 
 const dpcrUpdateSchema = z.object({
   officeId: z.string().uuid().optional(),
-  divisionName: z.string().min(1).max(200).optional(),
+  divisionName: z.string().trim().min(1).max(200).optional(),
   phase: z.enum(["planning", "monitoring", "review"]).optional(),
   numericalRating: z.string().optional(),
-  adjectivalRating: adjectivalEnum.optional(),
-  scannedDocUrl: z.string().optional(),
 });
+
+function firstError(error: z.ZodError): PcrResult {
+  return {
+    success: false,
+    error: error.errors[0]?.message ?? "Validation failed",
+  };
+}
+
+function revalidatePcr(variant: PcrVariant, id?: string): void {
+  revalidatePath(`/performance/${variant}`);
+  if (id) revalidatePath(`/performance/${variant}/${id}`);
+}
+
+/** H-34: every DPCR/BPCR write is audited. */
+function pcrAudit(
+  userId: string,
+  action: string,
+  variant: PcrVariant,
+  recordId: string | undefined,
+  newValues?: Record<string, unknown>,
+  reason?: string,
+): Promise<void> {
+  return auditLog({
+    userId,
+    action,
+    table: variant === "dpcr" ? "dpcr_forms" : "bpcr_forms",
+    recordId,
+    newValues,
+    reason,
+    module: "PMM",
+    subModule: variant,
+  });
+}
+
+async function loadPcr(variant: PcrVariant, id: string) {
+  if (variant === "dpcr") {
+    const [row] = await db
+      .select({
+        status: dpcrForms.status,
+        numericalRating: dpcrForms.numericalRating,
+        submittedBy: dpcrForms.submittedBy,
+        unitId: dpcrForms.officeId,
+      })
+      .from(dpcrForms)
+      .where(and(eq(dpcrForms.id, id), isNull(dpcrForms.deletedAt)))
+      .limit(1);
+    return row ?? null;
+  }
+  const [row] = await db
+    .select({
+      status: bpcrForms.status,
+      numericalRating: bpcrForms.numericalRating,
+      submittedBy: bpcrForms.submittedBy,
+      unitId: bpcrForms.branchId,
+    })
+    .from(bpcrForms)
+    .where(and(eq(bpcrForms.id, id), isNull(bpcrForms.deletedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
+type PcrStatePatch = Pick<
+  typeof dpcrForms.$inferInsert,
+  | "status"
+  | "submittedAt"
+  | "submittedBy"
+  | "reviewedAt"
+  | "reviewedBy"
+  | "updatedAt"
+>;
+
+/** Compare-and-set on status so two reviewers cannot both act. */
+async function movePcr(
+  variant: PcrVariant,
+  id: string,
+  from: "draft" | "submitted",
+  patch: PcrStatePatch,
+): Promise<boolean> {
+  const rows =
+    variant === "dpcr"
+      ? await db
+          .update(dpcrForms)
+          .set(patch)
+          .where(and(eq(dpcrForms.id, id), eq(dpcrForms.status, from)))
+          .returning({ id: dpcrForms.id })
+      : await db
+          .update(bpcrForms)
+          .set(patch)
+          .where(and(eq(bpcrForms.id, id), eq(bpcrForms.status, from)))
+          .returning({ id: bpcrForms.id });
+  return rows.length > 0;
+}
+
+async function submitPcr(variant: PcrVariant, id: string): Promise<PcrResult> {
+  const user = await requirePermission("performance", "edit");
+  if (!formIdSchema.safeParse(id).success) {
+    return { success: false, error: "Invalid form id." };
+  }
+  const form = await loadPcr(variant, id);
+  if (!form) return { success: false, error: "Form not found." };
+  if (form.status !== "draft") {
+    return { success: false, error: "Only a draft form can be submitted." };
+  }
+  if (!form.numericalRating) {
+    return {
+      success: false,
+      error: "Enter the numerical rating before submitting.",
+    };
+  }
+  const now = new Date();
+  const moved = await movePcr(variant, id, "draft", {
+    status: "submitted",
+    submittedAt: now,
+    submittedBy: user.id,
+    updatedAt: now,
+  });
+  if (!moved) {
+    return {
+      success: false,
+      error: "The form changed meanwhile. Reload and try again.",
+    };
+  }
+  await pcrAudit(user.id, "submit", variant, id, { status: "submitted" });
+  revalidatePcr(variant, id);
+  return { success: true };
+}
 
 export async function createDpcr(
   data: z.infer<typeof dpcrCreateSchema>,
@@ -139,38 +262,37 @@ export async function createDpcr(
   const user = await requirePermission("performance", "create");
 
   const parsed = dpcrCreateSchema.safeParse(data);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.errors[0]?.message ?? "Validation failed",
-    };
-  }
+  if (!parsed.success) return firstError(parsed.error);
+  const { numericalRating, periodId, ...fields } = parsed.data;
+  const rating = derivePcrRating(numericalRating);
+  if ("error" in rating) return { success: false, error: rating.error };
 
   try {
     // Multi-write (cycle mirror + form insert) — atomic per transaction.md.
     const id = await withTx(async (tx) => {
       const cycleId = await resolveCycleForPeriod(
         tx,
-        parsed.data.periodId,
+        periodId,
         user.employeeId,
       );
       const [dpcr] = await tx
         .insert(dpcrForms)
         .values({
           performanceCycleId: cycleId,
-          officeId: parsed.data.officeId,
-          divisionName: parsed.data.divisionName,
-          phase: parsed.data.phase,
-          numericalRating: parsed.data.numericalRating,
-          adjectivalRating: parsed.data.adjectivalRating,
-          scannedDocUrl: parsed.data.scannedDocUrl,
+          ...fields,
+          ...rating,
           status: "draft",
         })
         .returning({ id: dpcrForms.id });
       return dpcr?.id;
     });
 
-    revalidatePath("/performance/dpcr");
+    await pcrAudit(user.id, "create", "dpcr", id, {
+      periodId,
+      ...fields,
+      ...rating,
+    });
+    revalidatePcr("dpcr");
     return { success: true, id };
   } catch (error) {
     return {
@@ -181,60 +303,44 @@ export async function createDpcr(
   }
 }
 
+/** Edits are allowed only while the form is a draft (or returned to draft). */
 export async function updateDpcr(
   id: string,
   data: z.infer<typeof dpcrUpdateSchema>,
-): Promise<{ success: boolean; error?: string }> {
-  await requirePermission("performance", "edit");
+): Promise<PcrResult> {
+  const user = await requirePermission("performance", "edit");
 
+  if (!formIdSchema.safeParse(id).success) {
+    return { success: false, error: "Invalid form id." };
+  }
   const parsed = dpcrUpdateSchema.safeParse(data);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.errors[0]?.message ?? "Validation failed",
-    };
+  if (!parsed.success) return firstError(parsed.error);
+  const { numericalRating, ...fields } = parsed.data;
+  const rating = derivePcrRating(numericalRating);
+  if ("error" in rating) return { success: false, error: rating.error };
+
+  const rows = await db
+    .update(dpcrForms)
+    .set({ ...fields, ...rating, updatedAt: new Date() })
+    .where(
+      and(
+        eq(dpcrForms.id, id),
+        eq(dpcrForms.status, "draft"),
+        isNull(dpcrForms.deletedAt),
+      ),
+    )
+    .returning({ id: dpcrForms.id });
+  if (rows.length === 0) {
+    return { success: false, error: "Only a draft form can be edited." };
   }
 
-  try {
-    await db
-      .update(dpcrForms)
-      .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(dpcrForms.id, id));
-
-    revalidatePath("/performance/dpcr");
-    revalidatePath(`/performance/dpcr/${id}`);
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error ? error.message : "Failed to update DPCR form",
-    };
-  }
+  await pcrAudit(user.id, "edit", "dpcr", id, { ...fields, ...rating });
+  revalidatePcr("dpcr", id);
+  return { success: true };
 }
 
-export async function submitDpcr(
-  id: string,
-): Promise<{ success: boolean; error?: string }> {
-  await requirePermission("performance", "edit");
-
-  try {
-    await db
-      .update(dpcrForms)
-      .set({
-        status: "submitted",
-        submittedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(dpcrForms.id, id));
-
-    revalidatePath("/performance/dpcr");
-    revalidatePath(`/performance/dpcr/${id}`);
-    return { success: true };
-  } catch (error) {
-    console.error("[submitDpcr]", error);
-    return { success: false, error: "Failed to submit DPCR form" };
-  }
+export async function submitDpcr(id: string): Promise<PcrResult> {
+  return submitPcr("dpcr", id);
 }
 
 // ─── BPCR Actions ─────────────────────────────────────────────────────────────
@@ -242,20 +348,16 @@ export async function submitDpcr(
 const bpcrCreateSchema = z.object({
   periodId: z.string().uuid(),
   branchId: z.string().uuid().optional(),
-  branchName: z.string().min(1).max(200),
+  branchName: z.string().trim().min(1).max(200),
   phase: z.enum(["planning", "monitoring", "review"]),
   numericalRating: z.string().optional(),
-  adjectivalRating: adjectivalEnum.optional(),
-  scannedDocUrl: z.string().optional(),
 });
 
 const bpcrUpdateSchema = z.object({
   branchId: z.string().uuid().optional(),
-  branchName: z.string().min(1).max(200).optional(),
+  branchName: z.string().trim().min(1).max(200).optional(),
   phase: z.enum(["planning", "monitoring", "review"]).optional(),
   numericalRating: z.string().optional(),
-  adjectivalRating: adjectivalEnum.optional(),
-  scannedDocUrl: z.string().optional(),
 });
 
 export async function createBpcr(
@@ -264,38 +366,37 @@ export async function createBpcr(
   const user = await requirePermission("performance", "create");
 
   const parsed = bpcrCreateSchema.safeParse(data);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.errors[0]?.message ?? "Validation failed",
-    };
-  }
+  if (!parsed.success) return firstError(parsed.error);
+  const { numericalRating, periodId, ...fields } = parsed.data;
+  const rating = derivePcrRating(numericalRating);
+  if ("error" in rating) return { success: false, error: rating.error };
 
   try {
     // Multi-write (cycle mirror + form insert) — atomic per transaction.md.
     const id = await withTx(async (tx) => {
       const cycleId = await resolveCycleForPeriod(
         tx,
-        parsed.data.periodId,
+        periodId,
         user.employeeId,
       );
       const [bpcr] = await tx
         .insert(bpcrForms)
         .values({
           performanceCycleId: cycleId,
-          branchId: parsed.data.branchId,
-          branchName: parsed.data.branchName,
-          phase: parsed.data.phase,
-          numericalRating: parsed.data.numericalRating,
-          adjectivalRating: parsed.data.adjectivalRating,
-          scannedDocUrl: parsed.data.scannedDocUrl,
+          ...fields,
+          ...rating,
           status: "draft",
         })
         .returning({ id: bpcrForms.id });
       return bpcr?.id;
     });
 
-    revalidatePath("/performance/bpcr");
+    await pcrAudit(user.id, "create", "bpcr", id, {
+      periodId,
+      ...fields,
+      ...rating,
+    });
+    revalidatePcr("bpcr");
     return { success: true, id };
   } catch (error) {
     return {
@@ -306,60 +407,97 @@ export async function createBpcr(
   }
 }
 
+/** Edits are allowed only while the form is a draft (or returned to draft). */
 export async function updateBpcr(
   id: string,
   data: z.infer<typeof bpcrUpdateSchema>,
-): Promise<{ success: boolean; error?: string }> {
-  await requirePermission("performance", "edit");
+): Promise<PcrResult> {
+  const user = await requirePermission("performance", "edit");
 
+  if (!formIdSchema.safeParse(id).success) {
+    return { success: false, error: "Invalid form id." };
+  }
   const parsed = bpcrUpdateSchema.safeParse(data);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.errors[0]?.message ?? "Validation failed",
-    };
+  if (!parsed.success) return firstError(parsed.error);
+  const { numericalRating, ...fields } = parsed.data;
+  const rating = derivePcrRating(numericalRating);
+  if ("error" in rating) return { success: false, error: rating.error };
+
+  const rows = await db
+    .update(bpcrForms)
+    .set({ ...fields, ...rating, updatedAt: new Date() })
+    .where(
+      and(
+        eq(bpcrForms.id, id),
+        eq(bpcrForms.status, "draft"),
+        isNull(bpcrForms.deletedAt),
+      ),
+    )
+    .returning({ id: bpcrForms.id });
+  if (rows.length === 0) {
+    return { success: false, error: "Only a draft form can be edited." };
   }
 
-  try {
-    await db
-      .update(bpcrForms)
-      .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(bpcrForms.id, id));
-
-    revalidatePath("/performance/bpcr");
-    revalidatePath(`/performance/bpcr/${id}`);
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error ? error.message : "Failed to update BPCR form",
-    };
-  }
+  await pcrAudit(user.id, "edit", "bpcr", id, { ...fields, ...rating });
+  revalidatePcr("bpcr", id);
+  return { success: true };
 }
 
-export async function submitBpcr(
-  id: string,
-): Promise<{ success: boolean; error?: string }> {
-  await requirePermission("performance", "edit");
+export async function submitBpcr(id: string): Promise<PcrResult> {
+  return submitPcr("bpcr", id);
+}
 
-  try {
-    await db
-      .update(bpcrForms)
-      .set({
-        status: "submitted",
-        submittedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(bpcrForms.id, id));
+// ─── DPCR/BPCR Review (approve / return) ─────────────────────────────────────
 
-    revalidatePath("/performance/bpcr");
-    revalidatePath(`/performance/bpcr/${id}`);
-    return { success: true };
-  } catch (error) {
-    console.error("[submitBpcr]", error);
-    return { success: false, error: "Failed to submit BPCR form" };
+const pcrReviewSchema = z.object({
+  variant: z.enum(["dpcr", "bpcr"]),
+  id: z.string().uuid(),
+  decision: z.enum(["approve", "return"]),
+  remarks: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Approves a submitted DPCR/BPCR, or returns it to draft with a reason.
+ * Maker-checker: the submitter and members of the rated unit cannot review.
+ */
+export async function reviewPcrForm(
+  input: z.infer<typeof pcrReviewSchema>,
+): Promise<PcrResult> {
+  const user = await requirePermission("performance", "approve");
+
+  const parsed = pcrReviewSchema.safeParse(input);
+  if (!parsed.success) return firstError(parsed.error);
+  const { variant, id, decision, remarks } = parsed.data;
+  if (decision === "return" && !remarks) {
+    return { success: false, error: "State why the form is being returned." };
   }
+
+  const form = await loadPcr(variant, id);
+  if (!form) return { success: false, error: "Form not found." };
+  if (form.status !== "submitted") {
+    return { success: false, error: "Only a submitted form can be reviewed." };
+  }
+  const denial = pcrReviewDenial(user, form);
+  if (denial) return { success: false, error: denial };
+
+  const status = decision === "approve" ? "approved" : "draft";
+  const now = new Date();
+  const moved = await movePcr(variant, id, "submitted", {
+    status,
+    reviewedAt: now,
+    reviewedBy: user.id,
+    updatedAt: now,
+  });
+  if (!moved) {
+    return {
+      success: false,
+      error: "The form changed meanwhile. Reload and try again.",
+    };
+  }
+
+  await pcrAudit(user.id, decision, variant, id, { status }, remarks);
+  revalidatePcr(variant, id);
+  return { success: true };
 }
 
 // ─── PBB Qualified List Generation ───────────────────────────────────────────
@@ -498,10 +636,9 @@ export async function generatePbbList(
 // ─── DPCR/BPCR scanned-document upload (PMM-005) ─────────────────────────────
 
 /**
- * Uploads a scanned DPCR/BPCR document to Supabase Storage and attaches its URL
- * to the form via {@link updateDpcr} / {@link updateBpcr}. The file body arrives
- * as base64 from the client; only the resulting public URL is persisted.
- * Guarded by `performance.edit`.
+ * Uploads a scanned DPCR/BPCR document to the private "documents" bucket and
+ * stores its object PATH on the form (H-19); readers sign at view time. The
+ * file body arrives as base64 from the client. Guarded by `performance.edit`.
  */
 export async function uploadPcrDocumentFile(input: {
   variant: "dpcr" | "bpcr";
@@ -524,7 +661,7 @@ export async function uploadPcrDocumentFile(input: {
       error: parsed.error.errors[0]?.message ?? "Validation failed",
     };
   }
-  await requirePermission("performance", "edit");
+  const user = await requirePermission("performance", "edit");
 
   try {
     const supabase = await createServerClient();
@@ -558,13 +695,23 @@ export async function uploadPcrDocumentFile(input: {
       };
     }
 
-    const { data: urlData } = supabase.storage
-      .from("documents")
-      .getPublicUrl(storagePath);
-
-    return parsed.data.variant === "dpcr"
-      ? updateDpcr(parsed.data.formId, { scannedDocUrl: urlData.publicUrl })
-      : updateBpcr(parsed.data.formId, { scannedDocUrl: urlData.publicUrl });
+    const patch = { scannedDocUrl: storagePath, updatedAt: new Date() };
+    if (parsed.data.variant === "dpcr") {
+      await db
+        .update(dpcrForms)
+        .set(patch)
+        .where(eq(dpcrForms.id, parsed.data.formId));
+    } else {
+      await db
+        .update(bpcrForms)
+        .set(patch)
+        .where(eq(bpcrForms.id, parsed.data.formId));
+    }
+    await pcrAudit(user.id, "upload", parsed.data.variant, parsed.data.formId, {
+      scannedDocUrl: storagePath,
+    });
+    revalidatePcr(parsed.data.variant, parsed.data.formId);
+    return { success: true };
   } catch (error) {
     return {
       success: false,

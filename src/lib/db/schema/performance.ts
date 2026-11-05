@@ -247,7 +247,10 @@ export const dpcrForms = pgTable(
     adjectivalRating: adjectivalRatingEnum("adjectival_rating"),
     status: performanceRatingStatusEnum("status").notNull().default("draft"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    /** auth user id of the submitter (maker-checker, migration 2026-11-05-10) */
+    submittedBy: uuid("submitted_by"),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by"),
     scannedDocUrl: varchar("scanned_doc_url", { length: 500 }),
     ...timestamps,
     ...softDelete,
@@ -280,7 +283,10 @@ export const bpcrForms = pgTable(
     adjectivalRating: adjectivalRatingEnum("adjectival_rating"),
     status: performanceRatingStatusEnum("status").notNull().default("draft"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    /** auth user id of the submitter (maker-checker, migration 2026-11-05-10) */
+    submittedBy: uuid("submitted_by"),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by"),
     scannedDocUrl: varchar("scanned_doc_url", { length: 500 }),
     ...timestamps,
     ...softDelete,

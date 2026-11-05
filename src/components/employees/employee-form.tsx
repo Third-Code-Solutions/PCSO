@@ -19,8 +19,8 @@ import type { OfficeSelectOption } from "@/app/(dashboard)/employees/queries";
 import {
   createEmployee,
   updateEmployee,
-  uploadDocument,
 } from "@/app/(dashboard)/employees/actions";
+import { uploadEmployeeDocument } from "@/lib/actions/pimm/employee-documents";
 
 interface EmployeeFormProps {
   mode: "create" | "edit";
@@ -63,10 +63,19 @@ export function EmployeeForm({
     fileName: string,
     fileBase64: string,
     mimeType: string,
+    docType: string,
   ) => {
     if (!employeeId)
       throw new Error("Employee ID required for document upload");
-    return uploadDocument(employeeId, fileName, fileBase64, mimeType);
+    // PIM-004: stage in employee_documents for HR validation.
+    const result = await uploadEmployeeDocument({
+      employeeId,
+      documentTypeCode: docType.toUpperCase(),
+      fileName,
+      fileBase64,
+      mimeType,
+    });
+    if ("error" in result) throw new Error(result.error);
   };
 
   const onSubmit = async (data: EmployeeInput) => {

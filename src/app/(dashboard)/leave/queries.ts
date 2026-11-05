@@ -18,6 +18,11 @@ import {
   EMPLOYEE_DOCUMENTS_BUCKET,
   LEAVE_ATTACHMENT_SIGNED_URL_TTL_SECONDS,
 } from "@/lib/constants/storage";
+import {
+  isLeaveHr,
+  isOwnLeaveAttachmentPath,
+} from "@/lib/utils/leave/workflow";
+import type { Role } from "@/lib/auth/permissions";
 
 // Known leave type codes we surface across the module. Used to defensively
 // filter out any junk rows the DB might have from pre-migration seed scripts.
@@ -103,17 +108,23 @@ function toLeaveCreditBalance(
 
 /**
  * LAM-008: convert stored attachment storage paths into short-lived signed
- * URLs. Tolerates legacy rows that stored absolute URLs (passed through) and
- * falls back to the raw path when signing fails, so the UI never breaks.
+ * URLs. Only objects under the applicant's own `leave-attachments/{id}/`
+ * prefix are signed (the service role can read every employee's documents);
+ * anything else — another prefix, a raw URL, a failed signature — is dropped
+ * so a stored string is never rendered as a link.
  */
 async function resolveAttachmentUrls(
   storagePaths: string[] | null,
+  employeeId: string,
 ): Promise<string[] | null> {
   if (!storagePaths || storagePaths.length === 0) return storagePaths;
 
   const resolved = await Promise.all(
-    storagePaths.map(async (path) => {
-      if (/^https?:\/\//i.test(path)) return path;
+    storagePaths.map(async (path): Promise<string | null> => {
+      if (!isOwnLeaveAttachmentPath(path, employeeId)) {
+        console.error("[leave/queries] resolveAttachmentUrls: rejected path");
+        return null;
+      }
       try {
         const { data, error } = await supabaseAdmin.storage
           .from(EMPLOYEE_DOCUMENTS_BUCKET)
@@ -123,17 +134,17 @@ async function resolveAttachmentUrls(
             "[leave/queries] resolveAttachmentUrls sign failed:",
             error?.message ?? "no url",
           );
-          return path;
+          return null;
         }
         return data.signedUrl;
       } catch (err) {
         console.error("[leave/queries] resolveAttachmentUrls:", err);
-        return path;
+        return null;
       }
     }),
   );
 
-  return resolved;
+  return resolved.filter((url): url is string => url !== null);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +235,9 @@ export interface GetPendingApprovalsOptions {
    *  caller is `employee_self_service` so they only see their own pending
    *  items (defence-in-depth alongside RLS). */
   scopeEmployeeId?: string;
+  /** Approver unit scope: non-HR approvers see only their own office's
+   *  applications; no office → empty queue (fails closed). */
+  approverScope?: { role: Role; officeId: string | null };
   /** 1-indexed page (defaults to 1). */
   page?: number;
   /** Rows per page (defaults to 25, max 100). */
@@ -274,7 +288,7 @@ export async function getPendingApprovals(
       remarks,
       created_at,
       leave_types ( code, name ),
-      employees ( first_name, last_name, employee_no )
+      employees!inner ( first_name, last_name, employee_no, office_id )
     `,
       { count: "exact" },
     )
@@ -283,6 +297,16 @@ export async function getPendingApprovals(
 
   if (options?.scopeEmployeeId) {
     pendingQuery = pendingQuery.eq("employee_id", options.scopeEmployeeId);
+  }
+
+  const scope = options?.approverScope;
+  if (scope && !isLeaveHr(scope.role)) {
+    if (!scope.officeId) {
+      return options?.paginated
+        ? { rows: [], total: 0, page, pageSize, totalPages: 1 }
+        : [];
+    }
+    pendingQuery = pendingQuery.eq("employees.office_id", scope.officeId);
   }
 
   const { data, error, count } = await pendingQuery
@@ -446,7 +470,10 @@ export async function getLeaveApplicationDetail(
 
   // LAM-008: attachment_paths stores storage object paths. Resolve them to
   // short-lived signed URLs so the approval UI can link to the documents.
-  const attachmentPaths = await resolveAttachmentUrls(base.attachmentPaths);
+  const attachmentPaths = await resolveAttachmentUrls(
+    base.attachmentPaths,
+    String(data.employee_id),
+  );
 
   return {
     ...base,
@@ -815,6 +842,9 @@ export interface GetAllLeaveApplicationsFilters {
   /** Forces every row to match this employee id. Pass when the caller is
    *  `employee_self_service`. Overrides `employeeId` if both are provided. */
   scopeEmployeeId?: string;
+  /** Unit scope: only applicants in this office. `null` = the caller has no
+   *  office, so nothing is returned. Omit (undefined) for org-wide roles. */
+  scopeOfficeId?: string | null;
   /** 1-indexed page number (defaults to 1). */
   page?: number;
   /** Rows per page (defaults to 50, max 200). */
@@ -857,7 +887,7 @@ async function runLeaveApplicationsQuery(
       remarks,
       created_at,
       leave_types ( code, name ),
-      employees ( first_name, last_name, employee_no )
+      employees!inner ( first_name, last_name, employee_no, office_id )
     `,
       withCount ? { count: "exact" } : {},
     )
@@ -865,6 +895,12 @@ async function runLeaveApplicationsQuery(
     .order("created_at", { ascending: false })
     .range(from, to);
 
+  if (filters?.scopeOfficeId === null) {
+    return { rows: [], total: 0, page, pageSize, totalPages: 1 };
+  }
+  if (filters?.scopeOfficeId) {
+    query = query.eq("employees.office_id", filters.scopeOfficeId);
+  }
   if (filters?.status) query = query.eq("status", filters.status);
   if (filters?.scopeEmployeeId) {
     query = query.eq("employee_id", filters.scopeEmployeeId);

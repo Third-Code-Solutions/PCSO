@@ -4,7 +4,8 @@
 
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { requireAuth } from "@/lib/auth/guards";
+import { requirePermission } from "@/lib/auth/guards";
+import { learningScopeFor, scopeAllowsEmployee } from "@/lib/actions/ldm/scope";
 import { hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { TnaGapCard, type TnaGapRow } from "@/components/learning/tna-gap-card";
@@ -22,7 +23,7 @@ interface PageProps {
 }
 
 export default async function EmployeeTnaPage({ params }: PageProps) {
-  const user = await requireAuth();
+  const user = await requirePermission("learning", "view");
   const { employeeId } = await params;
   const canManage = hasPermission(user.role, "learning", "create");
   const cycleYear = new Date().getFullYear();
@@ -33,12 +34,14 @@ export default async function EmployeeTnaPage({ params }: PageProps) {
       employeeNo: employees.employeeNo,
       firstName: employees.firstName,
       lastName: employees.lastName,
+      officeId: employees.officeId,
     })
     .from(employees)
     .where(eq(employees.id, employeeId))
     .limit(1);
 
-  if (!emp) notFound();
+  // H-24: same 404 for missing and out-of-scope employees.
+  if (!emp || !scopeAllowsEmployee(learningScopeFor(user), emp)) notFound();
 
   const rows = await db
     .select({

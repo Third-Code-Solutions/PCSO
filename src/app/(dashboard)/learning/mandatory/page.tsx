@@ -2,7 +2,9 @@
  * /learning/mandatory — Mandatory program compliance (LDM-007, LDM-011).
  */
 
-import { requireAuth } from "@/lib/auth/guards";
+import { redirect } from "next/navigation";
+import { requirePermission } from "@/lib/auth/guards";
+import { learningScopeFor } from "@/lib/actions/ldm/scope";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +25,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = { title: "Mandatory Compliance" };
 
 export default async function MandatoryCompliancePage() {
-  await requireAuth();
+  const user = await requirePermission("learning", "view");
+  // H-24: org-wide compliance is for HR + read-only oversight only.
+  if (learningScopeFor(user).kind !== "all") redirect("/learning");
 
   // Get compliance summary using the new server action
   const summary = await getComplianceSummary();

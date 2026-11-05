@@ -20,58 +20,61 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { AssessmentScoreInput } from "@/lib/validations/recruitment";
+import type { RecordScoreInput } from "@/lib/actions/rpm/selection";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-type Dimension = AssessmentScoreInput["dimension"];
+type Dimension = RecordScoreInput["dimension"];
 
-const DIMENSIONS: { value: Dimension; label: string }[] = [
-  { value: "written_exam", label: "Written Exam" },
-  { value: "interview", label: "Interview" },
-  { value: "physical_exam", label: "Physical Exam" },
-  { value: "other", label: "Other" },
-];
+const DIMENSION_LABELS: Record<Dimension, string> = {
+  written_exam: "Written Exam",
+  interview: "Interview",
+  physical_exam: "Physical Exam",
+  other: "Other",
+};
+
+/** Dimension config stored on the assessment (weight and max are fixed there). */
+export interface ScoreDimension {
+  key: Dimension;
+  label?: string;
+  maxScore: number;
+}
 
 export interface QualifiedApplicantRow {
   applicationId: string;
   applicantName: string;
-  currentScore: number | null;
 }
 
 interface ScoreEncoderProps {
   assessmentId: string;
-  raterEmployeeId: string;
+  dimensions: ScoreDimension[];
   applicants: QualifiedApplicantRow[];
   recordScoreAction: (
-    input: AssessmentScoreInput,
-  ) => Promise<ActionResult<{ applicationId: string }>>;
+    input: RecordScoreInput,
+  ) => Promise<ActionResult<{ completed: boolean }>>;
 }
 
 interface RowState {
   dimension: Dimension;
   score: string;
-  maxScore: string;
-  weight: string;
   pending: boolean;
 }
 
 export function ScoreEncoder({
   assessmentId,
-  raterEmployeeId,
+  dimensions,
   applicants,
   recordScoreAction,
 }: ScoreEncoderProps) {
   const router = useRouter();
+  const firstDimension: Dimension = dimensions[0]?.key ?? "written_exam";
   const [rowState, setRowState] = React.useState<Record<string, RowState>>(
     () => {
       const init: Record<string, RowState> = {};
       for (const a of applicants) {
         init[a.applicationId] = {
-          dimension: "written_exam",
+          dimension: firstDimension,
           score: "",
-          maxScore: "100.00",
-          weight: "1.00",
           pending: false,
         };
       }
@@ -90,8 +93,8 @@ export function ScoreEncoder({
   async function saveRow(applicationId: string) {
     const row = rowState[applicationId];
     if (!row) return;
-    if (!row.score || !row.maxScore || !row.weight) {
-      toast.error("Score, max score, and weight are required.");
+    if (!row.score.trim()) {
+      toast.error("Enter a score.");
       return;
     }
     updateRow(applicationId, { pending: true });
@@ -100,15 +103,17 @@ export function ScoreEncoder({
         assessmentId,
         applicationId,
         dimension: row.dimension,
-        score: row.score,
-        maxScore: row.maxScore,
-        weight: row.weight,
-        raterEmployeeId,
+        score: row.score.trim(),
       });
       if (!result.ok) {
         toast.error(result.error);
       } else {
-        toast.success("Score recorded.");
+        toast.success(
+          result.data.completed
+            ? "Score recorded. All scores are in; ranking updated."
+            : "Score recorded.",
+        );
+        updateRow(applicationId, { score: "" });
         router.refresh();
       }
     } catch (err) {
@@ -133,21 +138,20 @@ export function ScoreEncoder({
           <TableRow>
             <TableHead>Applicant</TableHead>
             <TableHead>Dimension</TableHead>
-            <TableHead className="w-28">Score</TableHead>
-            <TableHead className="w-28">Max</TableHead>
-            <TableHead className="w-24">Weight</TableHead>
+            <TableHead className="w-36">Score</TableHead>
             <TableHead className="w-28" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {applicants.map((a) => {
             const row: RowState = rowState[a.applicationId] ?? {
-              dimension: "written_exam",
+              dimension: firstDimension,
               score: "",
-              maxScore: "100.00",
-              weight: "1.00",
               pending: false,
             };
+            const maxScore = dimensions.find(
+              (d) => d.key === row.dimension,
+            )?.maxScore;
             return (
               <TableRow key={a.applicationId}>
                 <TableCell className="font-medium">{a.applicantName}</TableCell>
@@ -162,43 +166,31 @@ export function ScoreEncoder({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {DIMENSIONS.map((d) => (
-                        <SelectItem key={d.value} value={d.value}>
-                          {d.label}
+                      {dimensions.map((d) => (
+                        <SelectItem key={d.key} value={d.key}>
+                          {d.label ?? DIMENSION_LABELS[d.key]}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </TableCell>
                 <TableCell>
-                  <Input
-                    inputMode="decimal"
-                    className="font-mono"
-                    value={row.score}
-                    onChange={(e) =>
-                      updateRow(a.applicationId, { score: e.target.value })
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    inputMode="decimal"
-                    className="font-mono"
-                    value={row.maxScore}
-                    onChange={(e) =>
-                      updateRow(a.applicationId, { maxScore: e.target.value })
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    inputMode="decimal"
-                    className="font-mono"
-                    value={row.weight}
-                    onChange={(e) =>
-                      updateRow(a.applicationId, { weight: e.target.value })
-                    }
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      inputMode="decimal"
+                      className="font-mono"
+                      value={row.score}
+                      aria-label={`Score for ${a.applicantName}`}
+                      onChange={(e) =>
+                        updateRow(a.applicationId, { score: e.target.value })
+                      }
+                    />
+                    {maxScore !== undefined ? (
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
+                        / {maxScore}
+                      </span>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
                   <Button

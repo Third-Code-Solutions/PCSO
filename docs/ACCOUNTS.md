@@ -1,12 +1,14 @@
 # Dashboard Email Password DB Role Use case
 
-1 Employee Self-Service ess@pcso.gov.ph PCSO-employee-self-service-B7RlGdel employee_self_service Rank-and-file: leave, DTR, payslips, 201, SALN, PDS
-2 Supervisor / Manager supervisor@pcso.gov.ph PCSO-supervisor-tqCcVJI3 supervisor Approve leave, review DTR, SPMS reviews, team analytics
-3 HR Administrator hr@pcso.gov.ph PCSO-hr-admin-y8R9fUQM hr_admin 201 file, recruitment, appointments, movements, clearance
-4 Payroll & Compensation payroll@pcso.gov.ph PCSO-payroll-admin-2EBCCrQt payroll_admin Payroll runs, remittances (GSIS / PhilHealth / Pag-IBIG / BIR), bonuses
-5 Executive / Leadership executive@pcso.gov.ph PCSO-executive-2_3XZENR executive Workforce analytics, headcount vs plantilla, GAD, KPIs (read-only)
-6 Compliance & Audit audit@pcso.gov.ph PCSO-auditor-l36e_poM auditor COA, CSC, DPA logs, SALN tracking, RA 6713, DPO (read-only)
-7 System Administrator sysadmin@pcso.gov.ph PCSO-super-admin-vAs45Fhn super_admin User provisioning, RBAC, health, integrations, security logs
+1 Employee Self-Service ess@pcso.gov.ph (not stored in repo) employee_self_service Rank-and-file: leave, DTR, payslips, 201, SALN, PDS
+2 Supervisor / Manager supervisor@pcso.gov.ph (not stored in repo) supervisor Approve leave, review DTR, SPMS reviews, team analytics
+3 HR Administrator hr@pcso.gov.ph (not stored in repo) hr_admin 201 file, recruitment, appointments, movements, clearance
+4 Payroll & Compensation payroll@pcso.gov.ph (not stored in repo) payroll_admin Payroll runs, remittances (GSIS / PhilHealth / Pag-IBIG / BIR), bonuses
+5 Executive / Leadership executive@pcso.gov.ph (not stored in repo) executive Workforce analytics, headcount vs plantilla, GAD, KPIs (read-only)
+6 Compliance & Audit audit@pcso.gov.ph (not stored in repo) auditor COA, CSC, DPA logs, SALN tracking, RA 6713, DPO (read-only)
+7 System Administrator sysadmin@pcso.gov.ph (not stored in repo) super_admin User provisioning, RBAC, health, integrations, security logs
+
+> **Passwords are not kept in this repository.** The previous values were committed to git history and must be treated as compromised: rotate every account above in Supabase Auth. Local seeding reads `SEED_DEFAULT_PASSWORD` / `SEED_<ROLE>_PASSWORD` from `.env.local` (see `scripts/seed-auth-users.ts`).
 
 ---
 

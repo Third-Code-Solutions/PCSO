@@ -381,6 +381,7 @@ export function parsePunchXml(xmlText: string): PayloadParseResult {
  *   timeOutPm = last out (PM departure). Matches the attendance_logs
  *   AM+PM session columns.
  * - Inconsistent 4-punch ordering degrades safely to the 2-punch pair.
+ * - See `foldDayTimes` for the exact rules (incl. the 3-punch case).
  */
 export function foldPunchesToDayRows(
   punches: readonly DevicePunch[],
@@ -401,56 +402,140 @@ export function foldPunchesToDayRows(
     const first = group[0];
     if (!first) continue;
 
-    const ins = group
-      .filter((p) => p.recordType === "in")
-      .map((p) => p.time)
-      .sort();
-    const outs = group
-      .filter((p) => p.recordType === "out")
-      .map((p) => p.time)
-      .sort();
-
-    const firstIn = ins[0] ?? null;
-    const lastOut = outs.length > 0 ? (outs[outs.length - 1] ?? null) : null;
-
-    let row: FoldedDayRow = {
+    rows.push({
       badgeId: first.badgeId,
       date: first.date,
-      timeIn: firstIn,
-      timeOut: lastOut,
-      timeInPm: null,
-      timeOutPm: null,
-    };
-
-    if (ins.length >= 2 && outs.length >= 2) {
-      const amOut = outs[0] ?? null;
-      const pmIn = ins[ins.length - 1] ?? null;
-      // Chronological sanity: in ≤ amOut ≤ pmIn ≤ pmOut
-      if (
-        firstIn !== null &&
-        amOut !== null &&
-        pmIn !== null &&
-        lastOut !== null &&
-        firstIn <= amOut &&
-        amOut <= pmIn &&
-        pmIn <= lastOut
-      ) {
-        row = {
-          badgeId: first.badgeId,
-          date: first.date,
-          timeIn: firstIn,
-          timeOut: amOut,
-          timeInPm: pmIn,
-          timeOutPm: lastOut,
-        };
-      }
-    }
-
-    rows.push(row);
+      ...foldDayTimes(
+        group.filter((p) => p.recordType === "in").map((p) => p.time),
+        group.filter((p) => p.recordType === "out").map((p) => p.time),
+      ),
+    });
   }
 
   return rows.sort(
     (a, b) =>
       a.date.localeCompare(b.date) || a.badgeId.localeCompare(b.badgeId),
+  );
+}
+
+export interface DayTimes {
+  timeIn: string | null;
+  timeOut: string | null;
+  timeInPm: string | null;
+  timeOutPm: string | null;
+}
+
+/** "HH:MM" → "HH:MM:SS" so device and DB (`time` column) values compare. */
+function normalizeTime(time: string): string {
+  return time.length === 5 ? `${time}:00` : time;
+}
+
+/**
+ * Folds one day's "in" and "out" times into AM/PM session columns.
+ *
+ * - 4 punches (≥2 ins, ≥2 outs, in ≤ amOut ≤ pmIn ≤ lastOut): full lunch TITO.
+ * - 3 punches (≥2 ins, 1 out, in < amOut < pmIn): AM pair + PM arrival with
+ *   the PM departure still pending, so a later out-only push can complete it.
+ * - Otherwise: earliest in / latest out (double-taps and inconsistent
+ *   orderings degrade safely to the 2-punch pair).
+ */
+export function foldDayTimes(
+  inTimes: readonly string[],
+  outTimes: readonly string[],
+): DayTimes {
+  const ins = Array.from(new Set(inTimes)).sort();
+  const outs = Array.from(new Set(outTimes)).sort();
+  const firstIn = ins[0] ?? null;
+  const lastIn = ins[ins.length - 1] ?? null;
+  const firstOut = outs[0] ?? null;
+  const lastOut = outs[outs.length - 1] ?? null;
+
+  if (
+    ins.length >= 2 &&
+    outs.length >= 2 &&
+    firstIn !== null &&
+    firstOut !== null &&
+    lastIn !== null &&
+    lastOut !== null &&
+    firstIn <= firstOut &&
+    firstOut <= lastIn &&
+    lastIn <= lastOut
+  ) {
+    return {
+      timeIn: firstIn,
+      timeOut: firstOut,
+      timeInPm: lastIn,
+      timeOutPm: lastOut,
+    };
+  }
+
+  if (
+    ins.length >= 2 &&
+    outs.length === 1 &&
+    firstIn !== null &&
+    firstOut !== null &&
+    lastIn !== null &&
+    firstIn < firstOut &&
+    firstOut < lastIn
+  ) {
+    return {
+      timeIn: firstIn,
+      timeOut: firstOut,
+      timeInPm: lastIn,
+      timeOutPm: null,
+    };
+  }
+
+  return { timeIn: firstIn, timeOut: lastOut, timeInPm: null, timeOutPm: null };
+}
+
+/**
+ * H-08: merges an incoming biometric day row into the punches already stored
+ * for that employee/date, instead of overwriting them. An out-only push no
+ * longer nulls the stored time-in (and vice versa); the union of punches is
+ * re-folded, so earliest in / latest out and lunch TITO are preserved.
+ *
+ * Returns `incoming` untouched when nothing is stored yet.
+ */
+export function mergeDayPunches(
+  existing: DayTimes | null,
+  incoming: DayTimes,
+): DayTimes {
+  if (!existing) return incoming;
+  const present = (values: Array<string | null>): string[] =>
+    values.filter((v): v is string => v !== null).map(normalizeTime);
+  return foldDayTimes(
+    present([
+      existing.timeIn,
+      existing.timeInPm,
+      incoming.timeIn,
+      incoming.timeInPm,
+    ]),
+    present([
+      existing.timeOut,
+      existing.timeOutPm,
+      incoming.timeOut,
+      incoming.timeOutPm,
+    ]),
+  );
+}
+
+/**
+ * Sources whose rows are HR/employee-reviewed DTR entries. Biometric ingest
+ * never overwrites them, even for legacy rows saved before `corrected` was set.
+ */
+export const PROTECTED_ATTENDANCE_SOURCES = [
+  "manual",
+  "manual_employee_request",
+] as const;
+
+/** H-08: true when a stored attendance row must not be touched by re-ingest. */
+export function isProtectedAttendanceLog(row: {
+  corrected: boolean;
+  source: string;
+}): boolean {
+  return (
+    row.corrected ||
+    (PROTECTED_ATTENDANCE_SOURCES as readonly string[]).includes(row.source)
   );
 }

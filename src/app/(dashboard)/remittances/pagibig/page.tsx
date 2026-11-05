@@ -38,7 +38,7 @@ export default async function PagibigPage() {
       <RealtimeBoundary tables={["remittance_batches"]} />
       <PageHeader
         title="Pag-IBIG Remittance"
-        description="Virtual Pag-IBIG portal CSV export · Employee & employer contribution tracking. Max contribution: ₱100/month each (2% of salary up to ₱5,000 MSC)."
+        description="Virtual Pag-IBIG portal CSV export · Employee & employer contribution tracking. Max contribution: ₱200/month each (2% of salary up to the ₱10,000 Monthly Fund Salary)."
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Remittances", href: "/remittances" },

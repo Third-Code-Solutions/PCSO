@@ -24,12 +24,19 @@ import { createAppointment } from "@/lib/actions/recruitment-appointments";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-export function NewAppointmentForm() {
+interface NewAppointmentFormProps {
+  /** Prefilled from the selection console's "Create appointment" link. */
+  defaultApplicationId?: string;
+}
+
+export function NewAppointmentForm({
+  defaultApplicationId = "",
+}: NewAppointmentFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const [formData, setFormData] = useState({
-    applicationId: "",
+    applicationId: defaultApplicationId,
     appointmentDate: "",
     effectiveDate: "",
     appointmentType: "permanent",
@@ -84,7 +91,8 @@ export function NewAppointmentForm() {
               required
             />
             <p className="text-xs text-muted-foreground">
-              Application must be in &quot;results_released&quot; status
+              Only applicants released as selected after Board confirmation can
+              be appointed.
             </p>
           </div>
 

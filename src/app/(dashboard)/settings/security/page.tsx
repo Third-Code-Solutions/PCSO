@@ -10,8 +10,8 @@ export const metadata = { title: "Security — Two-Factor Authentication" };
  * Two-factor authentication management — TOR 3.2.6 / SEC-003.
  *
  * Any authenticated user may enroll a TOTP factor; super_admin and hr_admin
- * are REQUIRED to (enforced via the requirePermission guard once a factor is
- * verified, and prompted via a persistent banner until they enroll).
+ * are REQUIRED to: requirePermission redirects them here until enrolled. This
+ * page must stay on requireAuth (not requirePermission) to avoid a loop.
  */
 export default async function SecuritySettingsPage() {
   const user = await requireAuth();

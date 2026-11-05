@@ -10,11 +10,12 @@
  *
  * Authorization:
  *   - Submit: Own employee only
- *   - Approve (Supervisor): Own unit employees
- *   - Process (HR): requirePermission('attendance', 'edit')
+ *   - Approve (Supervisor): requirePermission('attendance', 'approve'),
+ *     own-office requesters only, never one's own request
+ *   - Process (HR): requirePermission('attendance', 'edit'), never one's own
  */
 
-import { and, eq, desc, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, desc, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
@@ -25,11 +26,7 @@ import {
   holidays,
   type DtrCorrectionRequest,
 } from "@/lib/db/schema";
-import {
-  attendanceLogs,
-  employeeSchedules,
-  workSchedules,
-} from "@/lib/db/schema/attendance";
+import { attendanceLogs } from "@/lib/db/schema/attendance";
 import { employees } from "@/lib/db/schema/employees";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
@@ -46,12 +43,19 @@ import {
   resolveSuspension,
 } from "@/lib/utils/attendance/day-context";
 import { normalizeApplicableDays } from "@/lib/utils/attendance/schedule-resolution";
+import { resolveEmployeeScheduleOn } from "@/lib/actions/attendance/schedule-context";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
 type Ok<T> = { data: T };
 type Err = { error: string };
 type Result<T> = Ok<T> | Err;
+
+// Joined people are display-only: never ship TIN / GSIS / bank / salary
+// columns to the client components that render these lists.
+const NAME_ONLY = {
+  columns: { id: true, firstName: true, lastName: true, employeeNumber: true },
+} as const;
 
 // ─── Validation schemas ──────────────────────────────────────────────────────
 
@@ -86,6 +90,10 @@ export async function submitDtrCorrectionRequest(
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
+  if (!session.employeeId) {
+    return { error: "No employee record is linked to your account" };
+  }
+  const employeeId = session.employeeId;
 
   const {
     attendanceDate,
@@ -99,7 +107,7 @@ export async function submitDtrCorrectionRequest(
   try {
     // Fetch employee
     const employee = await db.query.employees.findFirst({
-      where: eq(employees.id, session.employeeId!),
+      where: eq(employees.id, employeeId),
     });
 
     if (!employee) {
@@ -109,17 +117,20 @@ export async function submitDtrCorrectionRequest(
     // Fetch existing attendance log for this date (if any)
     const existingRecord = await db.query.attendanceLogs.findFirst({
       where: and(
-        eq(attendanceLogs.employeeId, session.employeeId!),
+        eq(attendanceLogs.employeeId, employeeId),
         eq(attendanceLogs.logDate, attendanceDate),
       ),
     });
 
-    // Find supervisor
+    // Find supervisor (department head) in the SAME office, never the
+    // requester. The OR group is parenthesised: unparenthesised it escaped the
+    // office filter and matched any head/chief/manager agency-wide.
     const supervisor = employee.officeId
       ? await db.query.employees.findFirst({
           where: and(
             eq(employees.officeId, employee.officeId),
-            sql`${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%'`,
+            ne(employees.id, employee.id),
+            sql`(${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%')`,
           ),
         })
       : undefined;
@@ -128,7 +139,7 @@ export async function submitDtrCorrectionRequest(
     const [request] = await db
       .insert(dtrCorrectionRequests)
       .values({
-        employeeId: session.employeeId!,
+        employeeId,
         attendanceDate: attendanceDate,
         correctionType,
         currentTimeIn: existingRecord?.timeIn
@@ -182,8 +193,7 @@ export async function submitDtrCorrectionRequest(
 export async function supervisorReviewDtrCorrection(
   input: z.infer<typeof reviewSchema>,
 ): Promise<Result<DtrCorrectionRequest>> {
-  await requirePermission("attendance", "approve");
-  const session = await requireAuth();
+  const session = await requirePermission("attendance", "approve");
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
@@ -205,26 +215,49 @@ export async function supervisorReviewDtrCorrection(
       return { error: "Request is not pending supervisor review" };
     }
 
-    // Verify supervisor authority
-    const supervisor = await db.query.employees.findFirst({
-      where: eq(employees.id, session.employeeId!),
-    });
+    // No self-endorsement.
+    if (session.employeeId && request.employeeId === session.employeeId) {
+      return { error: "You cannot endorse your own DTR correction request" };
+    }
 
-    if (!supervisor || supervisor.officeId !== request.employee.officeId) {
+    // Verify supervisor authority: own office only, fails closed on a
+    // missing office (null === null must not match).
+    const supervisor = session.employeeId
+      ? await db.query.employees.findFirst({
+          where: eq(employees.id, session.employeeId),
+          columns: { officeId: true },
+        })
+      : undefined;
+
+    if (
+      !supervisor?.officeId ||
+      supervisor.officeId !== request.employee.officeId
+    ) {
       return { error: "Unauthorized: Not the supervisor for this employee" };
     }
 
-    // Update request
+    // Status guard in WHERE: a concurrent decision cannot be overwritten.
+    // The endorsing actor is recorded from the session, never the client.
     const [updated] = await db
       .update(dtrCorrectionRequests)
       .set({
         status: decision === "approve" ? "pending_hr" : "rejected",
+        supervisorId: session.employeeId ?? request.supervisorId,
         supervisorApprovedAt: decision === "approve" ? new Date() : null,
         supervisorNotes: notes || null,
         rejectionReason: decision === "reject" ? rejectionReason || null : null,
       })
-      .where(eq(dtrCorrectionRequests.id, requestId))
+      .where(
+        and(
+          eq(dtrCorrectionRequests.id, requestId),
+          eq(dtrCorrectionRequests.status, "submitted"),
+        ),
+      )
       .returning();
+
+    if (!updated) {
+      return { error: "Request is no longer pending supervisor review" };
+    }
 
     await auditLog({
       userId: session.id,
@@ -246,7 +279,7 @@ export async function supervisorReviewDtrCorrection(
     });
 
     revalidatePath("/portal/dtr-correction");
-    return { data: updated! };
+    return { data: updated };
   } catch (error) {
     console.error("[supervisorReviewDtrCorrection]", error);
     return { error: "Failed to review DTR correction request" };
@@ -260,8 +293,7 @@ export async function supervisorReviewDtrCorrection(
 export async function processDtrCorrection(
   input: z.infer<typeof reviewSchema>,
 ): Promise<Result<DtrCorrectionRequest>> {
-  await requirePermission("attendance", "edit");
-  const session = await requireAuth();
+  const session = await requirePermission("attendance", "edit");
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
@@ -283,12 +315,27 @@ export async function processDtrCorrection(
       return { error: "Request is not pending HR review" };
     }
 
+    if (session.employeeId && request.employeeId === session.employeeId) {
+      return { error: "You cannot process your own DTR correction request" };
+    }
+
     // Audit payload for the attendance mutation, captured inside the tx.
     let appliedLog: {
       id: string;
       oldValues: Record<string, unknown> | undefined;
       newValues: Record<string, unknown>;
     } | null = null;
+
+    // Schedule on the attendance date: employee -> office -> agency default
+    // (toComputeSchedule falls back to the default when null).
+    const assignment =
+      decision === "approve"
+        ? await resolveEmployeeScheduleOn(
+            request.employeeId,
+            request.employee.officeId,
+            request.attendanceDate,
+          )
+        : null;
 
     const updated = await withTx(async (tx) => {
       // Serialize concurrent HR reviewers of the same request.
@@ -307,28 +354,6 @@ export async function processDtrCorrection(
       let attendanceRecordId: string | null = null;
 
       if (decision === "approve") {
-        // Resolve the schedule assigned to the employee on the attendance date;
-        // toComputeSchedule falls back to the default agency schedule.
-        const [assignment] = await tx
-          .select({ schedule: workSchedules })
-          .from(employeeSchedules)
-          .innerJoin(
-            workSchedules,
-            eq(employeeSchedules.scheduleId, workSchedules.id),
-          )
-          .where(
-            and(
-              eq(employeeSchedules.employeeId, request.employeeId),
-              lte(employeeSchedules.effectiveFrom, request.attendanceDate),
-              or(
-                isNull(employeeSchedules.effectiveTo),
-                gte(employeeSchedules.effectiveTo, request.attendanceDate),
-              ),
-            ),
-          )
-          .orderBy(desc(employeeSchedules.effectiveFrom))
-          .limit(1);
-
         const [existing] = await tx
           .select()
           .from(attendanceLogs)
@@ -474,7 +499,12 @@ export async function processDtrCorrection(
             decision === "reject" ? rejectionReason || null : null,
           appliedToAttendanceRecordId: attendanceRecordId,
         })
-        .where(eq(dtrCorrectionRequests.id, requestId))
+        .where(
+          and(
+            eq(dtrCorrectionRequests.id, requestId),
+            eq(dtrCorrectionRequests.status, "pending_hr"),
+          ),
+        )
         .returning();
 
       if (!row) {
@@ -536,16 +566,17 @@ export async function getMyDtrCorrectionRequests(): Promise<
   Result<DtrCorrectionRequest[]>
 > {
   const session = await requireAuth();
+  if (!session.employeeId) return { data: [] };
 
   try {
     const requests = await db.query.dtrCorrectionRequests.findMany({
       where: and(
-        eq(dtrCorrectionRequests.employeeId, session.employeeId!),
+        eq(dtrCorrectionRequests.employeeId, session.employeeId),
         sql`${dtrCorrectionRequests.deletedAt} IS NULL`,
       ),
       with: {
-        supervisor: true,
-        hrReviewer: true,
+        supervisor: NAME_ONLY,
+        hrReviewer: NAME_ONLY,
       },
       orderBy: desc(dtrCorrectionRequests.createdAt),
     });
@@ -563,17 +594,19 @@ export async function getMyDtrCorrectionRequests(): Promise<
 export async function getPendingDtrCorrectionsForSupervisor(): Promise<
   Result<DtrCorrectionRequest[]>
 > {
-  const session = await requireAuth();
+  const session = await requirePermission("attendance", "approve");
+  if (!session.employeeId) return { data: [] };
 
   try {
     const requests = await db.query.dtrCorrectionRequests.findMany({
       where: and(
-        eq(dtrCorrectionRequests.supervisorId, session.employeeId!),
+        eq(dtrCorrectionRequests.supervisorId, session.employeeId),
+        ne(dtrCorrectionRequests.employeeId, session.employeeId),
         eq(dtrCorrectionRequests.status, "submitted"),
         sql`${dtrCorrectionRequests.deletedAt} IS NULL`,
       ),
       with: {
-        employee: true,
+        employee: NAME_ONLY,
       },
       orderBy: desc(dtrCorrectionRequests.createdAt),
     });
@@ -591,15 +624,17 @@ export async function getPendingDtrCorrectionsForSupervisor(): Promise<
 export async function getAllDtrCorrectionsForHR(): Promise<
   Result<DtrCorrectionRequest[]>
 > {
-  await requirePermission("attendance", "view");
+  // HR only (matches the /attendance/dtr-corrections route and the
+  // processDtrCorrection gate) — ESS/supervisors must not list every request.
+  await requirePermission("attendance", "edit");
 
   try {
     const requests = await db.query.dtrCorrectionRequests.findMany({
       where: sql`${dtrCorrectionRequests.deletedAt} IS NULL`,
       with: {
-        employee: true,
-        supervisor: true,
-        hrReviewer: true,
+        employee: NAME_ONLY,
+        supervisor: NAME_ONLY,
+        hrReviewer: NAME_ONLY,
       },
       orderBy: desc(dtrCorrectionRequests.createdAt),
     });

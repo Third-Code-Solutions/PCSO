@@ -14,8 +14,9 @@
  * Rejects submissions less than 30 days before `payrollPeriodStart`.
  */
 
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
@@ -49,6 +50,8 @@ function err(message: string): Err {
   return { error: message };
 }
 function toErrMsg(e: unknown): string {
+  // Never swallow Next's redirect (e.g. requirePermission access denial).
+  if (isRedirectError(e)) throw e;
   return e instanceof Error ? e.message : "Unexpected error";
 }
 
@@ -171,9 +174,14 @@ export async function getPraiseEligibleEmployees(): Promise<
         })
         .from(loyaltyAwardees)
         .where(
-          inArray(
-            loyaltyAwardees.employeeId,
-            candidates.map((c) => c.employeeId),
+          and(
+            inArray(
+              loyaltyAwardees.employeeId,
+              candidates.map((c) => c.employeeId),
+            ),
+            // Only GRANTED awards count; a listed-but-ungranted row is not
+            // an award (H-22).
+            isNotNull(loyaltyAwardees.awardGrantedAt),
           ),
         );
     }

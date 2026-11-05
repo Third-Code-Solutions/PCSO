@@ -1,8 +1,9 @@
 /**
  * Reports Hub — entry point for all PIMM workforce reports.
  *
- * TOR coverage: 1.3.3 (personnel categories), 1.3.4 (qualifications, via
- * server action), 1.3.15 (step increments), 1.3.19 (NAP archival),
+ * TOR coverage: 1.3.3 (personnel categories), 1.3.4 (qualifications),
+ * 1.3.15 (step increments), 1.3.17 (PDS submission), 1.3.18 (office
+ * clearance), 1.3.19 (NAP archival),
  * 1.3.21 (personnel complement), 1.3.24 (HR accomplishments),
  * 1.3.26 / 1.2.29 (ad hoc report builder), plus the existing PIM-019
  * retirement and PIM-020 loyalty reports.
@@ -16,6 +17,9 @@ import {
   Building2,
   CalendarClock,
   ClipboardCheck,
+  FileCheck,
+  GraduationCap,
+  UserCheck,
   Table2,
   TrendingUp,
   Users,
@@ -71,6 +75,13 @@ const REPORT_GROUPS = [
         description: "10 to 45-year service milestone awardees (PIM-020).",
         icon: Award,
       },
+      {
+        href: "/reports/workforce/qualifications",
+        title: "Employee Qualifications",
+        description:
+          "Education, eligibilities, trainings and experience per employee (TOR 1.3.4).",
+        icon: GraduationCap,
+      },
     ],
   },
   {
@@ -82,6 +93,20 @@ const REPORT_GROUPS = [
         description:
           "Separated employees with service history for NAP archival (TOR 1.3.19).",
         icon: Archive,
+      },
+      {
+        href: "/reports/workforce/pds-submissions",
+        title: "PDS Submission",
+        description:
+          "Employees with and without a submitted Personal Data Sheet (TOR 1.3.17).",
+        icon: FileCheck,
+      },
+      {
+        href: "/reports/workforce/clearance",
+        title: "Office Clearance",
+        description:
+          "Clearance processing status for active and separated employees (TOR 1.3.18).",
+        icon: UserCheck,
       },
       {
         href: "/reports/hr-accomplishments",

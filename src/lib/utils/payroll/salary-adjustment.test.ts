@@ -15,6 +15,11 @@ import {
   SALARY_ADJUSTMENT_TYPE_VALUES,
   SALARY_ADJUSTMENT_TYPE_LABELS,
   MAX_ADJUSTMENT_SALARY,
+  manilaToday,
+  isAdjustmentDue,
+  resolveAdjustedSalary,
+  salaryAdjustmentSegregationError,
+  type EffectedAdjustmentRow,
 } from "./salary-adjustment";
 
 const EMPLOYEE_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
@@ -273,5 +278,141 @@ describe("catalog and display helpers", () => {
     expect(formatGradeStep(null, 2)).toBe("Step 2");
     expect(formatGradeStep(null, null)).toBeNull();
     expect(formatGradeStep(undefined, undefined)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H-17: effective-date gating and adjusted salary resolution
+// ---------------------------------------------------------------------------
+
+describe("manilaToday / isAdjustmentDue", () => {
+  it("uses the Manila calendar date (UTC+8)", () => {
+    // 2026-11-04T17:30Z is already 2026-11-05 01:30 in Manila.
+    expect(manilaToday(new Date("2026-11-04T17:30:00Z"))).toBe("2026-11-05");
+    expect(manilaToday(new Date("2026-11-04T15:59:00Z"))).toBe("2026-11-04");
+  });
+
+  it("is due on or after the effective date only", () => {
+    expect(isAdjustmentDue("2026-11-05", "2026-11-05")).toBe(true);
+    expect(isAdjustmentDue("2026-11-01", "2026-11-05")).toBe(true);
+    expect(isAdjustmentDue("2026-12-01", "2026-11-05")).toBe(false);
+  });
+});
+
+describe("resolveAdjustedSalary", () => {
+  const amountOnly: EffectedAdjustmentRow = {
+    effectiveDate: "2026-07-01",
+    newSalary: "31000.00",
+    oldGrade: 15,
+    oldStep: 2,
+    newGrade: null,
+    newStep: null,
+  };
+  const schedule = [
+    {
+      grade: 15,
+      step: 2,
+      monthlySalary: "30000.00",
+      effectiveDate: "2026-01-01",
+    },
+  ];
+
+  it("applies an amount-only adjustment to the unchanged grade/step", () => {
+    expect(
+      resolveAdjustedSalary([amountOnly], schedule, 15, 2, "2026-11-30"),
+    ).toBe(31000);
+  });
+
+  it("ignores an adjustment not yet effective for the period", () => {
+    expect(
+      resolveAdjustedSalary([amountOnly], schedule, 15, 2, "2026-06-30"),
+    ).toBeUndefined();
+  });
+
+  it("is superseded by a later grade/step change", () => {
+    expect(
+      resolveAdjustedSalary([amountOnly], schedule, 15, 3, "2026-11-30"),
+    ).toBeUndefined();
+  });
+
+  it("is superseded by a newer salary schedule tranche", () => {
+    const newer = [
+      ...schedule,
+      {
+        grade: 15,
+        step: 2,
+        monthlySalary: "32000.00",
+        effectiveDate: "2026-10-01",
+      },
+    ];
+    expect(
+      resolveAdjustedSalary([amountOnly], newer, 15, 2, "2026-11-30"),
+    ).toBeUndefined();
+  });
+
+  it("uses the latest effective adjustment", () => {
+    const later = {
+      ...amountOnly,
+      effectiveDate: "2026-09-01",
+      newSalary: "31500.00",
+    };
+    expect(
+      resolveAdjustedSalary([amountOnly, later], schedule, 15, 2, "2026-11-30"),
+    ).toBe(31500);
+  });
+
+  it("matches promotions on the new grade/step", () => {
+    const promotion = {
+      ...amountOnly,
+      newGrade: 16,
+      newStep: 1,
+      newSalary: "34000.00",
+    };
+    expect(
+      resolveAdjustedSalary([promotion], schedule, 16, 1, "2026-11-30"),
+    ).toBe(34000);
+  });
+});
+
+describe("salaryAdjustmentSegregationError", () => {
+  const actor = { id: "user-a", employeeId: "emp-a" };
+
+  it("blocks creating an adjustment for your own record", () => {
+    expect(
+      salaryAdjustmentSegregationError(actor, { employeeId: "emp-a" }),
+    ).toMatch(/your own employee record/);
+  });
+
+  it("blocks approving your own record even if someone else requested it", () => {
+    expect(
+      salaryAdjustmentSegregationError(actor, {
+        employeeId: "emp-a",
+        requestedBy: "user-b",
+      }),
+    ).toMatch(/your own employee record/);
+  });
+
+  it("blocks the requester from approving", () => {
+    expect(
+      salaryAdjustmentSegregationError(actor, {
+        employeeId: "emp-b",
+        requestedBy: "user-a",
+      }),
+    ).toMatch(/another authorized officer/);
+  });
+
+  it("allows a different officer on someone else's record", () => {
+    expect(
+      salaryAdjustmentSegregationError(actor, {
+        employeeId: "emp-b",
+        requestedBy: "user-b",
+      }),
+    ).toBeNull();
+    expect(
+      salaryAdjustmentSegregationError(
+        { id: "user-a", employeeId: null },
+        { employeeId: "emp-b" },
+      ),
+    ).toBeNull();
   });
 });

@@ -79,6 +79,11 @@ export const applicationStatusEnum = pgEnum("application_status", [
   "for_interview",
   "results_released",
   "withdrawn",
+  // Migration 2026-11-05-02: "appointed" is set by auto-provisioning when the
+  // appointment is issued; "not_selected" by releaseResults for applicants
+  // the Board did not confirm.
+  "appointed",
+  "not_selected",
 ]);
 
 /**

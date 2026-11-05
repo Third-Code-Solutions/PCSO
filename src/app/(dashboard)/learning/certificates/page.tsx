@@ -6,7 +6,8 @@
  */
 
 import { desc, eq, isNull, and, count } from "drizzle-orm";
-import { requireAuth } from "@/lib/auth/guards";
+import { requirePermission } from "@/lib/auth/guards";
+import { learningScopeFor, learningScopeWhere } from "@/lib/actions/ldm/scope";
 import { PageHeader } from "@/components/layouts/page-header";
 import { ActionStatusBanner } from "@/components/feedback/action-status-banner";
 import { RoleGate } from "@/components/role-gate";
@@ -32,7 +33,9 @@ interface PageProps {
 export default async function CertificatesListPage({
   searchParams,
 }: PageProps) {
-  const user = await requireAuth();
+  const user = await requirePermission("learning", "view");
+  // H-24: ESS own only, supervisors own office, HR/oversight all.
+  const scopeWhere = learningScopeWhere(learningScopeFor(user));
   const params = await searchParams;
 
   const rows = await db
@@ -63,7 +66,7 @@ export default async function CertificatesListPage({
       eq(trainingPrograms.id, trainingRuns.programId),
     )
     .innerJoin(employees, eq(employees.id, trainingParticipants.employeeId))
-    .where(isNull(trainingRuns.deletedAt))
+    .where(and(isNull(trainingRuns.deletedAt), scopeWhere))
     .orderBy(desc(trainingCertificates.issuedAt))
     .limit(500);
 
@@ -73,6 +76,12 @@ export default async function CertificatesListPage({
       totalCertificates: count(trainingCertificates.id),
     })
     .from(trainingCertificates)
+    .innerJoin(
+      trainingParticipants,
+      eq(trainingParticipants.id, trainingCertificates.participantId),
+    )
+    .innerJoin(employees, eq(employees.id, trainingParticipants.employeeId))
+    .where(scopeWhere)
     .then((r) => r[0]);
 
   // Get completed participants without certificates (for generation)
@@ -99,6 +108,7 @@ export default async function CertificatesListPage({
         eq(trainingParticipants.status, "completed"),
         isNull(trainingCertificates.id),
         isNull(trainingRuns.deletedAt),
+        scopeWhere,
       ),
     )
     .limit(100);
@@ -269,7 +279,7 @@ export default async function CertificatesListPage({
                     <div className="flex flex-col gap-1.5">
                       {r.pdfUrl ? (
                         <a
-                          href={r.pdfUrl}
+                          href={`/api/learning/certificates/${r.id}`}
                           target="_blank"
                           rel="noreferrer"
                           className="flex items-center gap-1.5 text-pcso-navy hover:underline"

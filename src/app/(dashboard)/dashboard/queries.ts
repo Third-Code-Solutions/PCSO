@@ -1185,6 +1185,7 @@ export async function getEmployeeDashboardKpis(
             and(
               eq(payrollRecords.employeeId, employeeId),
               eq(payrollRecords.status, "paid"),
+              eq(payrollRecords.included, true),
             ),
           )
           .orderBy(desc(payrollPeriods.periodEnd))

@@ -5,13 +5,18 @@
  * (PAY-011 / PIM-015).
  *
  * Actions: createSalaryAdjustment (snapshot + pending), approveSalaryAdjustment
- * (NOSA serial + PDF to storage, 201 grade/step update + status "effected" in
- * one transaction), disapproveSalaryAdjustment (reason required),
- * listSalaryAdjustments (status/employee filters).
+ * (NOSA serial + PDF to storage; if the effectivity date has arrived, 201
+ * grade/step update + status "effected" in one transaction, else status
+ * "approved" until applyDueSalaryAdjustments effects it — H-17),
+ * disapproveSalaryAdjustment (reason required), listSalaryAdjustments.
+ *
+ * The adjusted amount reaches payroll through the effected row itself
+ * (resolveAdjustedSalary), so amount-only adjustments take effect too.
  *
  * Conventions: zod at the boundary, requirePermission on every action, audit
- * log on every write (module "PM"), PDF→storage mirrors the COE generator
- * (documents bucket → public URL), signatory titles from the FM-022 chain.
+ * log on every write (module "PM"), NOSA PDF stored by object path in the
+ * private documents bucket and served via a signed URL (H-19), signatory
+ * titles from the FM-022 chain.
  */
 
 import { revalidatePath } from "next/cache";
@@ -24,10 +29,15 @@ import {
   offices,
   salaryGrades,
 } from "@/lib/db/schema";
-import { and, desc, eq, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { withTx, withRetry } from "@/lib/db/transaction";
+import {
+  applyDueSalaryAdjustments,
+  auditEffectedAdjustments,
+  type EffectedAdjustment,
+} from "@/lib/payroll/salary-adjustment-effect";
 import { lockKey } from "@/lib/concurrency";
 import { notifyEmployee } from "@/lib/notifications";
 import { createServerClient } from "@/lib/supabase/server";
@@ -52,12 +62,20 @@ import {
   resolveAdjustmentTarget,
   isSalaryAdjustableAppointmentType,
   formatGradeStep,
+  isAdjustmentDue,
+  manilaToday,
+  salaryAdjustmentSegregationError,
   SALARY_ADJUSTMENT_TYPE_LABELS,
   type SalaryAdjustmentTypeValue,
   type ListSalaryAdjustmentsInput,
 } from "@/lib/utils/payroll/salary-adjustment";
 
 // ─── Internal helpers ───────────────────────────────────────────────────────
+
+/** Authorized route that redirects to a short-lived signed NOSA URL. */
+function nosaDownloadPath(adjustmentId: string): string {
+  return `/api/payroll/salary-adjustments/${adjustmentId}/nosa`;
+}
 
 /**
  * Resolve the authorized monthly salary for (grade, step) as of a date:
@@ -151,6 +169,11 @@ export async function createSalaryAdjustment(
   const parsed = CreateSalaryAdjustmentSchema.parse(input);
   const user = await requirePermission("payroll", "edit");
 
+  const selfError = salaryAdjustmentSegregationError(user, {
+    employeeId: parsed.employeeId,
+  });
+  if (selfError) throw new Error(selfError);
+
   const [employee] = await db
     .select({
       id: employees.id,
@@ -181,22 +204,24 @@ export async function createSalaryAdjustment(
     );
   }
 
-  // One in-flight adjustment per employee: a second pending row would make
-  // the old-state snapshot ambiguous.
+  // One in-flight adjustment per employee: a second pending (or approved,
+  // not yet effective) row would make the old-state snapshot ambiguous.
   const [existing] = await db
-    .select({ id: salaryAdjustments.id })
+    .select({ status: salaryAdjustments.status })
     .from(salaryAdjustments)
     .where(
       and(
         eq(salaryAdjustments.employeeId, parsed.employeeId),
-        eq(salaryAdjustments.status, "pending"),
+        inArray(salaryAdjustments.status, ["pending", "approved"]),
         isNull(salaryAdjustments.deletedAt),
       ),
     )
     .limit(1);
   if (existing) {
     throw new Error(
-      "This employee already has a pending salary adjustment. Approve or disapprove it first.",
+      existing.status === "pending"
+        ? "This employee already has a pending salary adjustment. Approve or disapprove it first."
+        : "This employee has an approved salary adjustment that is not yet effective. Wait for its effectivity date first.",
     );
   }
 
@@ -282,15 +307,20 @@ export async function createSalaryAdjustment(
 export interface ApproveSalaryAdjustmentResult {
   adjustmentId: string;
   nosaSerial: string;
+  /** Authorized download route (redirects to a signed URL). */
   nosaDocumentUrl: string;
+  /** "effected" when the effectivity date has arrived, else "approved". */
+  status: "effected" | "approved";
 }
 
 /**
  * Approve a pending adjustment: issues the NOSA (serial NOSA-YYYY-NNNNNN +
  * PDF in the documents bucket), then in ONE transaction marks the adjustment
- * `effected` and updates the employee's 201 salary grade/step (PIM-015 auto
- * 201 update). The PDF is rendered BEFORE the transaction so a document
- * failure aborts the approval with zero state change.
+ * approved and, when its effectivity date has arrived (Manila time), effects
+ * it — 201 salary grade/step update (PIM-015) + status `effected`. A
+ * future-dated adjustment stays `approved` until applyDueSalaryAdjustments
+ * effects it (H-17). The PDF is rendered BEFORE the transaction so a
+ * document failure aborts the approval with zero state change.
  */
 export async function approveSalaryAdjustment(
   input: unknown,
@@ -333,6 +363,8 @@ export async function approveSalaryAdjustment(
       `Only pending adjustments can be approved (current status: ${adjustment.status}).`,
     );
   }
+  const segregationError = salaryAdjustmentSegregationError(user, adjustment);
+  if (segregationError) throw new Error(segregationError);
 
   // ── NOSA document (PIM-015) — rendered before any state change ───────────
   const [org, chain, issuedByName] = await Promise.all([
@@ -394,13 +426,14 @@ export async function approveSalaryAdjustment(
   if (uploadError) {
     throw new Error(`Failed to store the NOSA PDF: ${uploadError.message}`);
   }
-  const { data: urlData } = supabase.storage
-    .from("documents")
-    .getPublicUrl(storagePath);
-  const nosaDocumentUrl = urlData.publicUrl;
+  // H-19: private bucket — persist the object path; reads go through the
+  // authorized route, which signs a short-lived URL.
+  const nosaDocumentUrl = nosaDownloadPath(parsed.adjustmentId);
+  const today = manilaToday();
+  const isDue = isAdjustmentDue(adjustment.effectiveDate, today);
 
-  // ── Atomic state change: adjustment → effected + 201 grade/step update ───
-  await withRetry(() =>
+  // ── Atomic state change: adjustment → approved (→ effected when due) ─────
+  const effected: EffectedAdjustment[] = await withRetry(() =>
     withTx(async (tx) => {
       // Serialize double-approvals (two tabs / double click).
       await lockKey(tx, `salary_adjustment:${parsed.adjustmentId}`);
@@ -416,29 +449,26 @@ export async function approveSalaryAdjustment(
         );
       }
 
-      if (adjustment.newGrade !== null && adjustment.newStep !== null) {
-        await tx
-          .update(employees)
-          .set({
-            salaryGrade: adjustment.newGrade,
-            step: adjustment.newStep,
-            updatedAt: new Date(),
-          })
-          .where(eq(employees.id, adjustment.employeeId));
-      }
-
       await tx
         .update(salaryAdjustments)
         .set({
-          status: "effected",
+          status: "approved",
           approvedBy: user.id,
           approvedAt: new Date(),
           nosaSerial,
-          nosaDocumentUrl,
+          nosaDocumentUrl: storagePath,
           updatedAt: new Date(),
         })
         .where(eq(salaryAdjustments.id, parsed.adjustmentId));
+
+      // Effects this adjustment (and any other that has come due).
+      return isDue ? applyDueSalaryAdjustments(tx, today) : [];
     }),
+  );
+  const status = isDue ? "effected" : "approved";
+  auditEffectedAdjustments(
+    effected.filter((e) => e.id !== parsed.adjustmentId),
+    user.id,
   );
 
   void auditLog({
@@ -452,9 +482,9 @@ export async function approveSalaryAdjustment(
       step: row.employee.step,
     },
     newValues: {
-      status: "effected",
+      status,
       nosaSerial,
-      nosaDocumentUrl,
+      nosaStoragePath: storagePath,
       newGrade: adjustment.newGrade,
       newStep: adjustment.newStep,
       newSalary: adjustment.newSalary,
@@ -483,7 +513,12 @@ export async function approveSalaryAdjustment(
   revalidatePath("/payroll/salary-adjustments");
   revalidatePath("/employees");
 
-  return { adjustmentId: parsed.adjustmentId, nosaSerial, nosaDocumentUrl };
+  return {
+    adjustmentId: parsed.adjustmentId,
+    nosaSerial,
+    nosaDocumentUrl,
+    status,
+  };
 }
 
 // ─── Action: disapproveSalaryAdjustment (TOR 1.8.12) ────────────────────────
@@ -582,6 +617,7 @@ export interface SalaryAdjustmentListRow {
   reason: string | null;
   disapprovalReason: string | null;
   nosaSerial: string | null;
+  /** Authorized download route for the NOSA, or null when none issued. */
   nosaDocumentUrl: string | null;
   createdAt: string;
 }
@@ -641,7 +677,9 @@ export async function listSalaryAdjustments(
       reason: row.adjustment.reason,
       disapprovalReason: row.adjustment.disapprovalReason,
       nosaSerial: row.adjustment.nosaSerial,
-      nosaDocumentUrl: row.adjustment.nosaDocumentUrl,
+      nosaDocumentUrl: row.adjustment.nosaDocumentUrl
+        ? nosaDownloadPath(row.adjustment.id)
+        : null,
       createdAt:
         row.adjustment.createdAt instanceof Date
           ? row.adjustment.createdAt.toISOString()

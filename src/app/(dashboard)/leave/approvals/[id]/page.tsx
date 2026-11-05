@@ -4,6 +4,8 @@
 
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth/guards";
+import { approverScopeOf } from "@/lib/utils/leave/approver-scope";
+import { isLeaveHr } from "@/lib/utils/leave/workflow";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,12 +56,20 @@ function attachmentLabel(pathOrUrl: string): string {
 }
 
 export default async function LeaveApprovalDetailPage({ params }: PageProps) {
-  await requirePermission("leave", "approve");
+  const user = await requirePermission("leave", "approve");
 
   const { id } = await params;
   const application = await getLeaveApplicationDetail(id);
 
   if (!application) notFound();
+  // Unit scope (PRD §11): other offices' applications are not visible.
+  const scope = await approverScopeOf(user);
+  if (
+    !isLeaveHr(scope.role) &&
+    (!scope.officeId || scope.officeId !== application.employee.officeId)
+  ) {
+    notFound();
+  }
 
   const leaveType = LEAVE_TYPES[application.leaveTypeCode as LeaveTypeCode];
   const isMultiLevel =

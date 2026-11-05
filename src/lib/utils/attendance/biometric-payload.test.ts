@@ -13,6 +13,9 @@ import {
   parsePunchCsv,
   parsePunchXml,
   foldPunchesToDayRows,
+  foldDayTimes,
+  mergeDayPunches,
+  isProtectedAttendanceLog,
   type DevicePunch,
 } from "./biometric-payload";
 
@@ -344,5 +347,167 @@ describe("foldPunchesToDayRows", () => {
       "B1 2026-07-16",
       "B2 2026-07-16",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H-08 — punch merge on re-ingest / protected rows
+// ---------------------------------------------------------------------------
+
+describe("foldDayTimes", () => {
+  it("keeps a 3-punch day as AM pair + pending PM arrival", () => {
+    expect(foldDayTimes(["08:00", "13:00"], ["12:00"])).toEqual({
+      timeIn: "08:00",
+      timeOut: "12:00",
+      timeInPm: "13:00",
+      timeOutPm: null,
+    });
+  });
+});
+
+describe("mergeDayPunches", () => {
+  const stored = {
+    timeIn: "08:00:00",
+    timeOut: null,
+    timeInPm: null,
+    timeOutPm: null,
+  };
+
+  it("returns the incoming row unchanged when nothing is stored", () => {
+    const incoming = {
+      timeIn: "08:00",
+      timeOut: "17:00",
+      timeInPm: null,
+      timeOutPm: null,
+    };
+    expect(mergeDayPunches(null, incoming)).toBe(incoming);
+  });
+
+  it("an out-only push keeps the stored time-in (no nulling)", () => {
+    expect(
+      mergeDayPunches(stored, {
+        timeIn: null,
+        timeOut: "17:05",
+        timeInPm: null,
+        timeOutPm: null,
+      }),
+    ).toEqual({
+      timeIn: "08:00:00",
+      timeOut: "17:05:00",
+      timeInPm: null,
+      timeOutPm: null,
+    });
+  });
+
+  it("an in-only push keeps the stored time-out", () => {
+    expect(
+      mergeDayPunches(
+        { timeIn: null, timeOut: "17:00:00", timeInPm: null, timeOutPm: null },
+        { timeIn: "07:58", timeOut: null, timeInPm: null, timeOutPm: null },
+      ),
+    ).toMatchObject({ timeIn: "07:58:00", timeOut: "17:00:00" });
+  });
+
+  it("takes the earliest in and latest out across both sides", () => {
+    expect(
+      mergeDayPunches(
+        {
+          timeIn: "08:10:00",
+          timeOut: "16:00:00",
+          timeInPm: null,
+          timeOutPm: null,
+        },
+        { timeIn: "08:02", timeOut: "17:30", timeInPm: null, timeOutPm: null },
+      ),
+    ).toMatchObject({ timeIn: "08:02:00", timeOut: "17:30:00" });
+  });
+
+  it("rebuilds lunch TITO from an AM push followed by a PM push", () => {
+    expect(
+      mergeDayPunches(
+        {
+          timeIn: "08:00:00",
+          timeOut: "12:00:00",
+          timeInPm: null,
+          timeOutPm: null,
+        },
+        { timeIn: "13:00", timeOut: "17:00", timeInPm: null, timeOutPm: null },
+      ),
+    ).toEqual({
+      timeIn: "08:00:00",
+      timeOut: "12:00:00",
+      timeInPm: "13:00:00",
+      timeOutPm: "17:00:00",
+    });
+  });
+
+  it("is idempotent for a re-push of the same punches", () => {
+    const row = {
+      timeIn: "08:00:00",
+      timeOut: "12:00:00",
+      timeInPm: "13:00:00",
+      timeOutPm: "17:00:00",
+    };
+    expect(
+      mergeDayPunches(row, {
+        timeIn: "08:00",
+        timeOut: "12:00",
+        timeInPm: "13:00",
+        timeOutPm: "17:00",
+      }),
+    ).toEqual(row);
+  });
+
+  it("keeps every punch when two pushes for the day are applied in either order", () => {
+    const am = {
+      timeIn: "08:00",
+      timeOut: "12:00",
+      timeInPm: null,
+      timeOutPm: null,
+    };
+    const pm = {
+      timeIn: "13:00",
+      timeOut: "17:00",
+      timeInPm: null,
+      timeOutPm: null,
+    };
+    const full = {
+      timeIn: "08:00:00",
+      timeOut: "12:00:00",
+      timeInPm: "13:00:00",
+      timeOutPm: "17:00:00",
+    };
+    // Ingest serializes per employee, so each push merges onto the other's write.
+    expect(mergeDayPunches(mergeDayPunches(null, am), pm)).toEqual(full);
+    expect(mergeDayPunches(mergeDayPunches(null, pm), am)).toEqual(full);
+  });
+});
+
+describe("isProtectedAttendanceLog", () => {
+  it("protects HR-corrected rows regardless of source", () => {
+    expect(
+      isProtectedAttendanceLog({ corrected: true, source: "biometric" }),
+    ).toBe(true);
+  });
+
+  it("protects manual / employee-request rows even when not flagged", () => {
+    expect(
+      isProtectedAttendanceLog({ corrected: false, source: "manual" }),
+    ).toBe(true);
+    expect(
+      isProtectedAttendanceLog({
+        corrected: false,
+        source: "manual_employee_request",
+      }),
+    ).toBe(true);
+  });
+
+  it("lets biometric and web rows be merged", () => {
+    expect(
+      isProtectedAttendanceLog({ corrected: false, source: "biometric" }),
+    ).toBe(false);
+    expect(isProtectedAttendanceLog({ corrected: false, source: "web" })).toBe(
+      false,
+    );
   });
 });

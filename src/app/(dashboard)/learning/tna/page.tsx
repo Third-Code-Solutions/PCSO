@@ -6,7 +6,8 @@
 
 import Link from "next/link";
 import { and, count, desc, eq, isNull } from "drizzle-orm";
-import { requireAuth } from "@/lib/auth/guards";
+import { requirePermission } from "@/lib/auth/guards";
+import { learningScopeFor, learningScopeWhere } from "@/lib/actions/ldm/scope";
 import { PageHeader } from "@/components/layouts/page-header";
 import { db } from "@/lib/db";
 import { tnaGaps } from "@/lib/db/schema/learning";
@@ -21,20 +22,27 @@ interface PageProps {
 }
 
 export default async function TnaListPage({ searchParams }: PageProps) {
-  await requireAuth();
+  const user = await requirePermission("learning", "view");
+  const scope = learningScopeFor(user);
   const params = await searchParams;
   const officeId = Array.isArray(params["officeId"])
     ? params["officeId"][0]
     : params["officeId"];
 
-  const officeFilters = [isNull(employees.deletedAt)];
+  // H-24: ESS own row, supervisors own office, HR/oversight all.
+  const officeFilters = [
+    isNull(employees.deletedAt),
+    learningScopeWhere(scope),
+  ];
   if (officeId) officeFilters.push(eq(employees.officeId, officeId));
 
   const [officeRows, aggregatedRows] = await Promise.all([
-    db
-      .select({ id: offices.id, name: offices.name })
-      .from(offices)
-      .orderBy(offices.name),
+    scope.kind === "all"
+      ? db
+          .select({ id: offices.id, name: offices.name })
+          .from(offices)
+          .orderBy(offices.name)
+      : Promise.resolve([]),
     db
       .select({
         employeeId: employees.id,

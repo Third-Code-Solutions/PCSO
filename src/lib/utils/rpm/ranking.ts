@@ -95,3 +95,41 @@ export function topN(
   if (n <= 0) return [];
   return ranked.slice(0, n);
 }
+
+/**
+ * Application statuses still "in the running" (or decided after the board)
+ * whose assessment composite belongs on a ranking / rating sheet. Excludes
+ * incomplete, submitted, under_review, not_qualified and withdrawn.
+ */
+const RANKABLE_STATUSES: ReadonlySet<string> = new Set([
+  "qualified",
+  "shortlisted",
+  "for_exam",
+  "for_interview",
+  "results_released",
+  "not_selected",
+  "appointed",
+]);
+
+export interface RankCandidate {
+  status: string;
+  matchScore: string | number | null;
+  matchBreakdown: unknown;
+}
+
+/**
+ * True once the application carries an assessment composite and is still
+ * rankable. `matchScore` alone is not enough: screening also writes it (the
+ * qualification match score), but only `recordAssessmentScore` writes the
+ * `perDimension` breakdown.
+ */
+export function isAssessmentRated(candidate: RankCandidate): boolean {
+  if (!RANKABLE_STATUSES.has(candidate.status)) return false;
+  if (candidate.matchScore === null) return false;
+  const breakdown = candidate.matchBreakdown as {
+    perDimension?: unknown;
+  } | null;
+  return (
+    Array.isArray(breakdown?.perDimension) && breakdown.perDimension.length > 0
+  );
+}

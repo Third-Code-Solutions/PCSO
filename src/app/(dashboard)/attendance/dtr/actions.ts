@@ -30,6 +30,8 @@ import {
   getEmployeeSummaries,
 } from "@/app/(dashboard)/attendance/queries";
 import { DtrCscForm48 } from "@/components/pdf/dtr-csc-form48";
+import { loadDtrMonth } from "@/lib/actions/attendance/dtr-days";
+import { to12Hour } from "@/lib/utils/attendance/dtr-calendar";
 import { db } from "@/lib/db";
 import { withTx } from "@/lib/db/transaction";
 import { lockKey } from "@/lib/concurrency";
@@ -124,6 +126,7 @@ export async function exportDtrPdf(
       suffix: employees.suffix,
       positionTitle: employees.positionTitle,
       salaryGrade: employees.salaryGrade,
+      officeId: employees.officeId,
       officeName: offices.name,
     })
     .from(employees)
@@ -149,6 +152,16 @@ export async function exportDtrPdf(
     new Date(parsed.year, parsed.month - 1, 1),
     "MMMM yyyy",
   );
+
+  // H-40: real days in month, resolved schedule, holiday/leave/suspension/
+  // rest-day markers.
+  const dtr = await loadDtrMonth({
+    employeeId: targetEmployeeId,
+    officeId: employeeRow.officeId,
+    year: parsed.year,
+    month: parsed.month,
+    logs,
+  });
 
   const totalLateMinutes = logs.reduce((sum, l) => sum + l.lateMinutes, 0);
   const totalUndertimeMinutes = logs.reduce(
@@ -180,8 +193,8 @@ export async function exportDtrPdf(
               : "",
         },
         month: monthLabel,
-        schedule: { start: "8:00 AM", end: "5:00 PM" },
-        logs,
+        scheduleLabel: dtr.scheduleLabel,
+        days: dtr.days,
         totalLateMinutes,
         totalUndertimeMinutes,
         // DtrCscForm48 returns a <Document> root; createElement's generic
@@ -232,43 +245,26 @@ export async function exportDtrPdf(
     `# Employee No.,${escape(employeeRow.employeeNo)}`,
     `# Office/Dept.,${escape(employeeRow.officeName ?? "Unassigned")}`,
     `# Month,${escape(monthLabel)}`,
-    "# Schedule,8:00 AM – 5:00 PM",
+    `# Schedule,${escape(dtr.scheduleLabel)}`,
     "",
     "Day,AM Arrival,AM Departure,PM Arrival,PM Departure,Undertime (Hrs),Undertime (Mins),Remarks",
   ];
 
-  const byDay = new Map<number, (typeof logs)[number]>();
-  for (const log of logs) {
-    const day = Number(log.date.split("-")[2] ?? "0");
-    if (day >= 1 && day <= 31) byDay.set(day, log);
-  }
-
-  const rows: string[] = [];
-  for (let d = 1; d <= 31; d += 1) {
-    const log = byDay.get(d);
-    if (!log) {
-      rows.push([d, "", "", "", "", "", "", ""].map(escape).join(","));
-      continue;
-    }
-    const isAbsent = !log.timeIn && !log.timeOut;
-    const under = log.undertimeMinutes ?? 0;
-    const hours = Math.floor(under / 60);
-    const mins = under % 60;
-    rows.push(
-      [
-        d,
-        isAbsent ? "ABSENT" : (log.timeIn ?? ""),
-        isAbsent ? "" : "12:00 PM",
-        isAbsent ? "" : "1:00 PM",
-        isAbsent ? "" : (log.timeOut ?? ""),
-        under > 0 ? hours : "",
-        under > 0 ? mins : "",
-        log.remarks ?? "",
-      ]
-        .map(escape)
-        .join(","),
-    );
-  }
+  const rows = dtr.days.map((d) => {
+    const under = d.undertimeMinutes;
+    return [
+      d.day,
+      d.marker ?? to12Hour(d.amArrival),
+      to12Hour(d.amDeparture),
+      to12Hour(d.pmArrival),
+      to12Hour(d.pmDeparture),
+      under > 0 ? Math.floor(under / 60) : "",
+      under > 0 ? under % 60 : "",
+      d.remarks ?? "",
+    ]
+      .map(escape)
+      .join(",");
+  });
 
   const totalUnderHrs = Math.floor(
     (totalLateMinutes + totalUndertimeMinutes) / 60,

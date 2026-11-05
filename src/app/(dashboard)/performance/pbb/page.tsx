@@ -9,7 +9,9 @@
  *   Gate 4: SALN filed within prescribed period
  */
 
+import { redirect } from "next/navigation";
 import { requirePermission } from "@/lib/auth/guards";
+import { effectiveRolesOf, hasPermission } from "@/lib/auth/permissions";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { RatingBadge } from "@/components/performance/rating-badge";
@@ -27,7 +29,16 @@ interface Props {
 }
 
 export default async function PbbQualificationPage({ searchParams }: Props) {
-  await requirePermission("performance", "view");
+  const user = await requirePermission("performance", "view");
+  // H-23: org-wide PBB eligibility is HR data — HR admins plus the read-only
+  // oversight profiles (executive / audit). ESS and supervisors carry
+  // performance.view for their own/team records only. Mirrors ROUTE_ACCESS.
+  if (
+    !hasPermission(user.role, "performance", "edit") &&
+    !effectiveRolesOf(user.role).includes("viewer")
+  ) {
+    redirect("/performance");
+  }
 
   // PMM-007: the list is scoped to one rating period so Gates 2-4 evaluate the
   // correct AWOL/SALN window and employees rated in several periods aren't

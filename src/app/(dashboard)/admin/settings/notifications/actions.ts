@@ -1,5 +1,6 @@
 "use server";
 
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
@@ -105,6 +106,7 @@ export async function updateNotificationTemplate(
 
     return { success: true };
   } catch (error) {
+    if (isRedirectError(error)) throw error;
     if (error instanceof z.ZodError) {
       return {
         success: false,

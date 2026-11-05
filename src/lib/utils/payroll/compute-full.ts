@@ -16,7 +16,7 @@
  * 8. Compute net pay = gross - total deductions
  */
 
-import { roundHalfEven } from './rounding';
+import { roundHalfEven } from "./rounding";
 import {
   getAuthorizedSalary,
   computeSemiMonthlyBasic,
@@ -25,7 +25,7 @@ import {
   computeOvertimePay,
   computeHourlyRate,
   getEffectiveMonthlySalary,
-} from './salary';
+} from "./salary";
 import {
   computeGSIS,
   computePhilHealth,
@@ -34,16 +34,16 @@ import {
   computeUndertimeDeduction,
   computeAbsenceDeduction,
   sumDeductions,
-} from './deductions';
-import { computeTaxableIncome, computeWithholdingTax } from './tax';
-import { computePERA } from './bonuses';
+} from "./deductions";
+import { computeTaxableIncome, computeWithholdingTax } from "./tax";
+import { computePERA } from "./bonuses";
 import type {
   PayrollInput,
   PayrollResult,
   EarningsBreakdown,
   DeductionBreakdown,
-} from './types';
-import { isJobOrderOrCOS } from './types';
+} from "./types";
+import { isJobOrderOrCOS } from "./types";
 
 // ---------------------------------------------------------------------------
 // Main computation function
@@ -69,6 +69,7 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
     attendance,
     otherAdjustments = [],
     includeRata = true,
+    rates,
   } = input;
   const periodType = period.type;
   const isJO = isJobOrderOrCOS(employee.appointmentType);
@@ -92,7 +93,7 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
   const hourlyRate = computeHourlyRate(monthlySalary);
   let basicPay: number;
 
-  if (periodType === 'semi-monthly') {
+  if (periodType === "semi-monthly") {
     basicPay = computeSemiMonthlyBasic(monthlySalary);
   } else {
     basicPay = roundHalfEven(monthlySalary, 2);
@@ -115,11 +116,7 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
 
   const longevityPay = isJO
     ? 0
-    : computeLongevityPay(
-        employee.yearsInService,
-        monthlySalary,
-        periodType,
-      );
+    : computeLongevityPay(employee.yearsInService, monthlySalary, periodType);
 
   const pera = computePERA(employee.appointmentType, periodType);
 
@@ -129,18 +126,18 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
   const overtimePay = computeOvertimePay(
     attendance.approvedOvertimeHours,
     hourlyRate,
-    attendance.overtimeType ?? 'regular_day',
+    attendance.overtimeType ?? "regular_day",
   );
 
   // ------------------------------------------------------------------
   // 5. Other adjustments (earnings side)
   // ------------------------------------------------------------------
   const otherEarnings = otherAdjustments
-    .filter((adj) => adj.type === 'earning')
+    .filter((adj) => adj.type === "earning")
     .reduce((sum, adj) => sum + adj.amount, 0);
 
   const otherDeductionsAmount = otherAdjustments
-    .filter((adj) => adj.type === 'deduction')
+    .filter((adj) => adj.type === "deduction")
     .reduce((sum, adj) => sum + adj.amount, 0);
 
   // ------------------------------------------------------------------
@@ -163,16 +160,16 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
   // 7. Mandatory deductions (JO/COS: none)
   // ------------------------------------------------------------------
   const gsis = isJO
-    ? { personal: '0.00', employer: '0.00', lifeInsurance: '0.00' }
-    : computeGSIS(monthlySalary, periodType);
+    ? { personal: "0.00", employer: "0.00", lifeInsurance: "0.00" }
+    : computeGSIS(monthlySalary, periodType, rates?.gsis);
 
   const philHealth = isJO
-    ? { personal: '0.00', employer: '0.00', total: '0.00' }
-    : computePhilHealth(monthlySalary, periodType);
+    ? { personal: "0.00", employer: "0.00", total: "0.00" }
+    : computePhilHealth(monthlySalary, periodType, rates?.philHealth);
 
   const pagIBIG = isJO
-    ? { personal: '0.00', employer: '0.00' }
-    : computePagIBIG(monthlySalary, periodType);
+    ? { personal: "0.00", employer: "0.00" }
+    : computePagIBIG(monthlySalary, periodType, rates?.pagIbig);
 
   const gsisPersonal = parseFloat(gsis.personal);
   const philHealthPersonal = parseFloat(philHealth.personal);
@@ -201,7 +198,12 @@ export function computeFullPayroll(input: PayrollInput): PayrollResult {
   // ------------------------------------------------------------------
   // 9. Withholding tax
   // ------------------------------------------------------------------
-  const withholdingTax = computeWithholdingTax(taxableIncome, periodType);
+  // Rounded to centavos here so the stored tax, totalDeductions and netPay
+  // agree exactly (the journal export asserts debits == credits).
+  const withholdingTax = roundHalfEven(
+    computeWithholdingTax(taxableIncome, periodType, rates),
+    2,
+  );
 
   // ------------------------------------------------------------------
   // 10. Attendance deductions

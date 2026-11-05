@@ -69,7 +69,9 @@ const STATUS_LABELS: Record<string, string> = {
   shortlisted: "Shortlisted",
   for_exam: "For Exam",
   for_interview: "For Interview",
-  results_released: "Results Released",
+  results_released: "Selected",
+  not_selected: "Not Selected",
+  appointed: "Appointed",
   withdrawn: "Withdrawn",
 };
 
@@ -92,7 +94,9 @@ const STATUS_VARIANTS: Record<
   shortlisted: "success",
   for_exam: "info",
   for_interview: "info",
-  results_released: "default",
+  results_released: "success",
+  not_selected: "muted",
+  appointed: "success",
   withdrawn: "muted",
 };
 

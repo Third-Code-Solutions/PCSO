@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 /**
  * LAM-006: Auto-approval of sick leave after 5 business days
@@ -11,13 +11,8 @@
  */
 
 import { db } from "@/lib/db";
-import {
-  leaveApplications,
-  leaveTypes,
-  auditLogs,
-  employees,
-} from "@/lib/db/schema";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { leaveApplications, leaveTypes, auditLogs } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import { notifyEmployee, notifyRoles } from "@/lib/notifications";
 
 interface AutoApprovalResult {

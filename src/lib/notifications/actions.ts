@@ -1,17 +1,18 @@
-'use server';
+"use server";
 
-import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/db';
-import { systemUsers } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
-import { requireAuth } from '@/lib/auth/guards';
+import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { systemUsers } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { requireAuth } from "@/lib/auth/guards";
 import {
   clearReadNotifications as dbClearRead,
   clearAllNotifications as dbClearAll,
   markAllNotificationsRead as dbMarkAllRead,
   type ClearResult,
   type MarkResult,
-} from './index';
+} from "./index";
 
 /**
  * Resolve the caller's system_users.id from the Supabase session.
@@ -29,7 +30,8 @@ async function currentSystemUserId(): Promise<string | null> {
       .where(eq(systemUsers.authUid, authUser.id))
       .limit(1);
     return row?.id ?? null;
-  } catch {
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
     return null;
   }
 }
@@ -49,13 +51,13 @@ export type MarkActionResult =
  */
 export async function markAllReadAction(): Promise<MarkActionResult> {
   const userId = await currentSystemUserId();
-  if (!userId) return { ok: false, error: 'Not authenticated' };
+  if (!userId) return { ok: false, error: "Not authenticated" };
   try {
     const result: MarkResult = await dbMarkAllRead(userId);
-    revalidatePath('/', 'layout');
+    revalidatePath("/", "layout");
     return { ok: true, updatedCount: result.updatedCount };
   } catch {
-    return { ok: false, error: 'Failed to mark all read' };
+    return { ok: false, error: "Failed to mark all read" };
   }
 }
 
@@ -66,13 +68,13 @@ export async function markAllReadAction(): Promise<MarkActionResult> {
  */
 export async function clearReadAction(): Promise<ClearActionResult> {
   const userId = await currentSystemUserId();
-  if (!userId) return { ok: false, error: 'Not authenticated' };
+  if (!userId) return { ok: false, error: "Not authenticated" };
   try {
     const result: ClearResult = await dbClearRead(userId);
-    revalidatePath('/', 'layout');
+    revalidatePath("/", "layout");
     return { ok: true, deletedCount: result.deletedCount };
   } catch {
-    return { ok: false, error: 'Failed to clear read notifications' };
+    return { ok: false, error: "Failed to clear read notifications" };
   }
 }
 
@@ -82,12 +84,12 @@ export async function clearReadAction(): Promise<ClearActionResult> {
  */
 export async function clearAllAction(): Promise<ClearActionResult> {
   const userId = await currentSystemUserId();
-  if (!userId) return { ok: false, error: 'Not authenticated' };
+  if (!userId) return { ok: false, error: "Not authenticated" };
   try {
     const result: ClearResult = await dbClearAll(userId);
-    revalidatePath('/', 'layout');
+    revalidatePath("/", "layout");
     return { ok: true, deletedCount: result.deletedCount };
   } catch {
-    return { ok: false, error: 'Failed to clear notifications' };
+    return { ok: false, error: "Failed to clear notifications" };
   }
 }

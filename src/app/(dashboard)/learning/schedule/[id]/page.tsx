@@ -7,8 +7,9 @@
 
 import { notFound } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
-import { requireAuth } from "@/lib/auth/guards";
+import { requirePermission } from "@/lib/auth/guards";
 import type { Role } from "@/lib/auth/permissions";
+import { learningScopeFor, scopeAllowsEmployee } from "@/lib/actions/ldm/scope";
 import { PageHeader } from "@/components/layouts/page-header";
 import { Badge } from "@/components/ui/badge";
 import { RoleGate } from "@/components/role-gate";
@@ -56,7 +57,8 @@ export default async function RunDetailPage({
   params,
   searchParams,
 }: PageProps) {
-  const user = await requireAuth();
+  const user = await requirePermission("learning", "view");
+  const scope = learningScopeFor(user);
   const { id } = await params;
   const query = await searchParams;
   const statusRaw = Array.isArray(query["status"])
@@ -115,10 +117,11 @@ export default async function RunDetailPage({
     .where(eq(trainingRunApprovals.runId, id))
     .orderBy(trainingRunApprovals.sequenceOrder);
 
-  const participants = await db
+  const allParticipants = await db
     .select({
       id: trainingParticipants.id,
       employeeId: trainingParticipants.employeeId,
+      officeId: employees.officeId,
       status: trainingParticipants.status,
       confirmedAt: trainingParticipants.confirmedAt,
       completedAt: trainingParticipants.completedAt,
@@ -126,6 +129,7 @@ export default async function RunDetailPage({
       firstName: employees.firstName,
       lastName: employees.lastName,
       employeeNo: employees.employeeNo,
+      certificateId: trainingCertificates.id,
       certificateNumber: trainingCertificates.certificateNumber,
       certificatePdfUrl: trainingCertificates.pdfUrl,
     })
@@ -136,6 +140,10 @@ export default async function RunDetailPage({
       eq(trainingCertificates.participantId, trainingParticipants.id),
     )
     .where(eq(trainingParticipants.runId, id));
+  // H-24: ESS sees own row, supervisors their office, HR/oversight all.
+  const participants = allParticipants.filter((p) =>
+    scopeAllowsEmployee(scope, { id: p.employeeId, officeId: p.officeId }),
+  );
 
   const runDetail: RunDetailData = {
     id: runRow.id,
@@ -190,7 +198,7 @@ export default async function RunDetailPage({
     }));
   }
 
-  const nominated = new Set(participants.map((p) => p.employeeId));
+  const nominated = new Set(allParticipants.map((p) => p.employeeId));
 
   // First still-pending approver slot — the next actionable decision.
   const nextPendingSequence =
@@ -214,6 +222,7 @@ export default async function RunDetailPage({
               status={runRow.status}
               nextPendingSequence={nextPendingSequence}
               approverEmployeeId={user.employeeId}
+              hasEnded={runRow.scheduledEnd.getTime() <= Date.now()}
             />
           </RoleGate>
         }
@@ -226,7 +235,7 @@ export default async function RunDetailPage({
 
       <section className="mt-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Participants ({participants.length}/{runRow.plannedHeadcount})
+          Participants ({allParticipants.length}/{runRow.plannedHeadcount})
         </h2>
         {participants.length === 0 ? (
           <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
@@ -280,9 +289,9 @@ export default async function RunDetailPage({
                           <span className="font-mono text-[11px]">
                             {p.certificateNumber}
                           </span>
-                          {p.certificatePdfUrl && (
+                          {p.certificateId && p.certificatePdfUrl && (
                             <a
-                              href={p.certificatePdfUrl}
+                              href={`/api/learning/certificates/${p.certificateId}`}
                               target="_blank"
                               rel="noreferrer"
                               className="text-[11px] text-pcso-navy hover:underline"
@@ -306,12 +315,12 @@ export default async function RunDetailPage({
                         {isAdmin &&
                           !p.certificateNumber &&
                           user.employeeId &&
-                          (p.status === "completed" ||
-                            p.status === "attended") && (
+                          // Server issues only for "completed" (LDM-010);
+                          // "Mark completed" lives in ParticipantStatusActions.
+                          p.status === "completed" && (
                             <CertificateIssueDialog
                               participantId={p.id}
                               participantName={`${p.firstName} ${p.lastName}`}
-                              issuerEmployeeId={user.employeeId}
                             />
                           )}
                       </div>

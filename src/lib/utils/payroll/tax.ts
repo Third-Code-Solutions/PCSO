@@ -17,22 +17,12 @@
  */
 
 import { roundHalfEven } from "./rounding";
-import type { TaxComputationDetail } from "./types";
+import type { StatutoryRates, TaxBracket, TaxComputationDetail } from "./types";
 
 // ---------------------------------------------------------------------------
-// Tax bracket definitions
+// Tax bracket definitions — fallback when bir_tax_tables has no effective
+// rows (C-13). Loaded DB brackets are passed in via `rates`.
 // ---------------------------------------------------------------------------
-
-interface TaxBracket {
-  /** Lower bound of the bracket (exclusive for the upper tiers, inclusive for lowest). */
-  floor: number;
-  /** Upper bound of the bracket (exclusive). Use Infinity for the highest bracket. */
-  ceiling: number;
-  /** Fixed tax amount at the floor of this bracket. */
-  baseAmount: number;
-  /** Marginal rate applied to excess over floor. */
-  rate: number;
-}
 
 /**
  * Monthly TRAIN Law brackets (2023+).
@@ -95,27 +85,23 @@ function computeTaxFromBrackets(
     );
   }
 
-  // Find applicable bracket
-  const bracket = brackets.find(
+  // Find applicable bracket. Income in a gap between published brackets
+  // (e.g. 33,332.50 between 33,332 and 33,333) belongs to the bracket with
+  // the greatest floor at or below it — never the top bracket.
+  let bracket = brackets.find(
     (b) => taxableIncome >= b.floor && taxableIncome < b.ceiling,
   );
-
   if (!bracket) {
-    // Taxable income exceeds all brackets — use the last bracket
-    const last = brackets[brackets.length - 1]!;
-    const excess = taxableIncome - last.floor;
-    const tax = last.baseAmount + excess * last.rate;
-    return {
-      tax,
-      detail: {
-        taxableIncome,
-        bracketFloor: last.floor,
-        bracketTaxBase: last.baseAmount,
-        bracketRate: last.rate,
-        excessAmount: excess,
-        tax,
-      },
-    };
+    for (const b of brackets) {
+      if (b.floor <= taxableIncome && (!bracket || b.floor > bracket.floor)) {
+        bracket = b;
+      }
+    }
+  }
+  if (!bracket) {
+    throw new RangeError(
+      `computeTaxFromBrackets: no bracket covers taxable income ${taxableIncome}`,
+    );
   }
 
   const excess = taxableIncome - bracket.floor;
@@ -177,17 +163,27 @@ export function computeTaxableIncome(
  *
  * @param taxableIncome - Taxable income for the period
  * @param periodType - 'semi-monthly' or 'monthly'
- * @returns Withholding tax amount
+ * @param rates - Effective statutory rates (bir_tax_tables); constants when undefined
+ * @returns Withholding tax amount (unrounded; callers round to centavos)
  */
 export function computeWithholdingTax(
   taxableIncome: number,
   periodType: "semi-monthly" | "monthly" = "semi-monthly",
+  rates?: StatutoryRates,
 ): number {
-  const brackets =
-    periodType === "semi-monthly"
-      ? SEMI_MONTHLY_TAX_BRACKETS
-      : MONTHLY_TAX_BRACKETS;
-  return computeTaxFromBrackets(taxableIncome, brackets).tax;
+  return computeTaxFromBrackets(taxableIncome, bracketsFor(periodType, rates))
+    .tax;
+}
+
+/** Effective bracket table: loaded bir_tax_tables rows, else the constants. */
+function bracketsFor(
+  periodType: "semi-monthly" | "monthly",
+  rates?: StatutoryRates,
+): readonly TaxBracket[] {
+  if (periodType === "semi-monthly") {
+    return rates?.taxBrackets?.semiMonthly ?? SEMI_MONTHLY_TAX_BRACKETS;
+  }
+  return rates?.taxBrackets?.monthly ?? MONTHLY_TAX_BRACKETS;
 }
 
 /**
@@ -203,11 +199,13 @@ export function computeWithholdingTax(
  *
  * @param regularMonthlyTaxable - Employee's regular monthly taxable income
  * @param supplementalTaxable - Taxable portion of the supplemental payment
+ * @param rates - Effective statutory rates (bir_tax_tables); constants when undefined
  * @returns Withholding tax attributable to the supplemental payment
  */
 export function computeSupplementalWithholding(
   regularMonthlyTaxable: number,
   supplementalTaxable: number,
+  rates?: StatutoryRates,
 ): number {
   if (regularMonthlyTaxable < 0) {
     throw new RangeError(
@@ -222,10 +220,12 @@ export function computeSupplementalWithholding(
   const withSupplemental = computeWithholdingTax(
     regularMonthlyTaxable + supplementalTaxable,
     "monthly",
+    rates,
   );
   const withoutSupplemental = computeWithholdingTax(
     regularMonthlyTaxable,
     "monthly",
+    rates,
   );
   return roundHalfEven(withSupplemental - withoutSupplemental, 2);
 }

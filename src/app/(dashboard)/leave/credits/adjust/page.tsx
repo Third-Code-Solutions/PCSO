@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 };
 
 export default async function AdjustLeaveCreditsPage() {
-  await requirePermission("leave", "approve");
+  await requirePermission("leave", "process");
 
   const currentYear = new Date().getFullYear();
   const summaries = await getAllActiveEmployeesWithCredits(currentYear);

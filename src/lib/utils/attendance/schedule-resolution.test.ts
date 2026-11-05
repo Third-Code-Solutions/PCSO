@@ -15,6 +15,8 @@ import {
   assignmentCoversDate,
   normalizeApplicableDays,
   DEFAULT_APPLICABLE_DAYS,
+  planScheduleAssignment,
+  previousDay,
   type ScheduleAssignment,
 } from "./schedule-resolution";
 
@@ -196,5 +198,71 @@ describe("normalizeApplicableDays", () => {
     expect(normalizeApplicableDays(["mon", "tue"])).toEqual([
       ...DEFAULT_APPLICABLE_DAYS,
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// previousDay / planScheduleAssignment (H-13)
+// ---------------------------------------------------------------------------
+
+describe("previousDay", () => {
+  it("crosses month and leap-year boundaries", () => {
+    expect(previousDay("2026-03-01")).toBe("2026-02-28");
+    expect(previousDay("2028-03-01")).toBe("2028-02-29");
+    expect(previousDay("2026-01-01")).toBe("2025-12-31");
+  });
+});
+
+describe("planScheduleAssignment", () => {
+  const row = (
+    id: string,
+    effectiveFrom: string,
+    effectiveTo: string | null,
+  ) => ({ id, scheduleId: `s-${id}`, effectiveFrom, effectiveTo });
+
+  it("inserts a first assignment with nothing to close", () => {
+    expect(planScheduleAssignment([], "2026-11-01")).toEqual({
+      kind: "insert",
+      closeIds: [],
+      closeOn: "2026-10-31",
+    });
+  });
+
+  it("closes the open assignment the day before the new one starts", () => {
+    const plan = planScheduleAssignment(
+      [row("a", "2026-01-01", null), row("old", "2025-01-01", "2025-12-31")],
+      "2026-11-01",
+    );
+    expect(plan).toEqual({
+      kind: "insert",
+      closeIds: ["a"],
+      closeOn: "2026-10-31",
+    });
+  });
+
+  it("updates the row that already starts on the same date", () => {
+    expect(
+      planScheduleAssignment(
+        [row("a", "2026-11-01", "2026-12-31")],
+        "2026-11-01",
+      ),
+    ).toEqual({ kind: "update", id: "a", effectiveTo: null });
+  });
+
+  it("keeps a same-date update ending before a later assignment", () => {
+    expect(
+      planScheduleAssignment(
+        [row("a", "2026-11-01", "2026-11-30"), row("b", "2026-12-01", null)],
+        "2026-11-01",
+      ),
+    ).toEqual({ kind: "update", id: "a", effectiveTo: "2026-11-30" });
+  });
+
+  it("refuses back-dating behind a later-starting assignment", () => {
+    const plan = planScheduleAssignment(
+      [row("b", "2026-12-01", null)],
+      "2026-11-01",
+    );
+    expect(plan.kind).toBe("error");
   });
 });

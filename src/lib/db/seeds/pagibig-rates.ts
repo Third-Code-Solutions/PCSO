@@ -1,18 +1,18 @@
 /**
  * Pag-IBIG (HDMF) Contribution Rates
- * Source: RA 9679 — Home Development Mutual Fund Law of 2009
- *         HDMF Circular No. 274 (revised contribution schedule)
+ * Source: RA 9679 — Home Development Mutual Fund Law of 2009;
+ *         HDMF Circular No. 460 (max Monthly Fund Salary raised to PHP 10,000,
+ *         effective February 2024).
  *
  * Rate structure:
  *   Salary ≤ PHP 1,500:  Employee 1%, Employer 2%
  *   Salary > PHP 1,500:  Employee 2%, Employer 2%
  *
- *   Maximum monthly contribution = PHP 200 per side (PHP 100 employee + PHP 100 employer)
- *   when salary exceeds PHP 5,000 (contributions are capped at PHP 5,000 base).
- *
- * In practice for government employees with SSL V salaries (all > 13,530),
- * the effective contribution is PHP 100 employee + PHP 100 employer = PHP 200/month.
- * The maximum combined = PHP 200; stored as maxContribution per side.
+ * maxContribution is the monthly cap PER SIDE (employee and employer each):
+ *   2009-06-17: 2% × PHP 5,000 MFS  = PHP 100
+ *   2024-02-01: 2% × PHP 10,000 MFS = PHP 200
+ * The payroll engine uses the row with the latest effectiveDate on or before
+ * the period end.
  */
 
 export interface PagibigRateSeed {
@@ -27,12 +27,20 @@ export interface PagibigRateSeed {
 export function buildPagibigRateSeeds(): PagibigRateSeed[] {
   return [
     {
-      effectiveDate: '2009-06-17', // RA 9679 effectivity
-      employeeRateLow: '0.0100',   // 1% for salary ≤ threshold
-      employeeRateHigh: '0.0200',  // 2% for salary > threshold
-      employerRate: '0.0200',      // 2% (employer always 2%)
-      salaryThreshold: '1500.00',  // PHP 1,500 breakpoint
-      maxContribution: '100.00',   // PHP 100 cap per employee side (PHP 200 total)
+      effectiveDate: "2009-06-17", // RA 9679 effectivity
+      employeeRateLow: "0.0100", // 1% for salary ≤ threshold
+      employeeRateHigh: "0.0200", // 2% for salary > threshold
+      employerRate: "0.0200", // 2% (employer always 2%)
+      salaryThreshold: "1500.00", // PHP 1,500 breakpoint
+      maxContribution: "100.00", // PHP 100 per side (PHP 5,000 MFS)
+    },
+    {
+      effectiveDate: "2024-02-01", // HDMF Circular 460: MFS PHP 10,000
+      employeeRateLow: "0.0100",
+      employeeRateHigh: "0.0200",
+      employerRate: "0.0200",
+      salaryThreshold: "1500.00",
+      maxContribution: "200.00", // PHP 200 per side
     },
   ];
 }

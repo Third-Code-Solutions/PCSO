@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/security-alerts",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/salary-adjustments",
+      "schedule": "5 16 * * *"
     }
   ]
 }

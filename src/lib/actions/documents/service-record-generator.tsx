@@ -8,7 +8,7 @@
  * - Chronological service history reconstructed from appointments, step
  *   increments, and salary adjustments (buildServiceHistory)
  * - Honest current-state fallback when no appointment history exists
- * - Configurable certifier title (FM signatory chain via getPayrollSignatories)
+ * - Certifying officer name + position from FM-023 Document Certifiers
  * - Serial number from the centralized serial sequence system (PIM-016)
  */
 
@@ -34,7 +34,7 @@ import { pdf } from "@react-pdf/renderer";
 import { createServerClient } from "@/lib/supabase/server";
 import { ServiceRecordPdf } from "@/components/pdf/service-record";
 import { buildServiceHistory } from "@/lib/utils/documents/service-history";
-import { getPayrollSignatories } from "@/lib/utils/payroll/signatories";
+import { resolveDocumentCertifier } from "./certifier";
 import { getEffectiveMonthlySalary } from "@/lib/utils/payroll/salary";
 import type { AppointmentType } from "@/lib/utils/payroll/types";
 
@@ -52,7 +52,8 @@ interface GenerateServiceRecordParams {
 interface GenerateServiceRecordResult {
   success: boolean;
   serialNumber?: string;
-  documentUrl?: string;
+  /** Object path in the private `documents` bucket — sign at read time (H-19). */
+  documentPath?: string;
   error?: string;
 }
 
@@ -192,13 +193,9 @@ export async function generateServiceRecord(
       })),
     });
 
-    // 5. Resolve the certifier title from the FM signatory chain (fallback: COA
-    //    default chain). The signature NAME is a placeholder, mirroring the COE.
-    const signatories = await getPayrollSignatories("SERVICE_RECORD");
-    const certifier =
-      signatories.find((s) => s.role.trim().toLowerCase() === "certified_by") ??
-      signatories[0];
-    const issuedByTitle = certifier?.title ?? "HRD Manager";
+    // 5. Certifying officer (FM-023) BEFORE drawing a serial so a missing
+    //    configuration never burns a number (H-18: no placeholder names).
+    const certifier = await resolveDocumentCertifier(["SERVICE_RECORD", "SR"]);
 
     // 6. Serial number: reuse the request-bound serial (retry-safe, PIM-016) or
     //    draw a new one atomically.
@@ -232,8 +229,8 @@ export async function generateServiceRecord(
         rows={rows}
         isCurrentStateFallback={apptRows.length === 0}
         issuedDate={issuedDate}
-        issuedByName="[AUTHORIZED SIGNATORY NAME]"
-        issuedByTitle={issuedByTitle}
+        issuedByName={certifier.name.toUpperCase()}
+        issuedByTitle={certifier.title}
       />,
     ).toBlob();
 
@@ -255,10 +252,8 @@ export async function generateServiceRecord(
       };
     }
 
-    // 9. Get public URL
-    const { data: urlData } = supabase.storage
-      .from("documents")
-      .getPublicUrl(filePath);
+    // 9. Private bucket: persist the object path; readers sign it after
+    //    authorizing the viewer (H-19).
 
     // 10. Log issuance in the audit trail (PIM-016 serial issuance logging)
     await auditLog({
@@ -272,14 +267,15 @@ export async function generateServiceRecord(
         employeeNo: employee.employeeNo,
         issuedById: user.employeeId ?? user.id,
         requestedBy: params.requestedBy ?? null,
-        documentUrl: urlData.publicUrl,
+        documentPath: filePath,
+        certifiedBy: certifier,
       },
     });
 
     return {
       success: true,
       serialNumber,
-      documentUrl: urlData.publicUrl,
+      documentPath: filePath,
     };
   } catch (error) {
     console.error("Service Record generation error:", error);

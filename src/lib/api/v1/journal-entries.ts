@@ -2,24 +2,11 @@ import "server-only";
 
 /**
  * Payroll journal entry computation for the v1 accounting integration —
- * PAY-015 / TOR 3.3.1, 3.3.10 (API-007).
+ * PAY-015 / TOR 3.3.1, 3.3.10 (API-007). Also used by the session-
+ * authenticated route `src/app/api/payroll/journal-entries/route.ts`.
  *
- * NOTE ON DUPLICATION: the interactive route
- * `src/app/api/payroll/journal-entries/route.ts` contains the same query +
- * aggregation inline. That route is session-authenticated and owned by the
- * payroll surface; to avoid cross-agent file contention it was NOT refactored
- * — the query (including the mandatory `included = true` PAY-013 filter and
- * the approved/paid record-status filter) is duplicated here for the
- * API-key/OAuth surface. If the journal structure ever changes, update BOTH
- * (grep: "Due to BIR").
- *
- * Journal entry structure (double-entry, balanced):
- *   Debit  Personnel Services              (total gross pay)
- *   Credit Due to BIR                      (withholding tax)
- *   Credit Due to GSIS                     (employee + employer + life ins.)
- *   Credit Due to PhilHealth               (employee + employer)
- *   Credit Due to Pag-IBIG                 (employee + employer)
- *   Credit Cash                            (net pay)
+ * The entry structure and the debits == credits guarantee live in the pure
+ * builder `@/lib/payroll/journal` (H-16).
  */
 
 import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
@@ -27,6 +14,8 @@ import { format as dateFnsFormat } from "date-fns";
 
 import { db } from "@/lib/db";
 import { payrollPeriods, payrollRecords } from "@/lib/db/schema";
+import { buildPayrollJournal } from "@/lib/payroll/journal";
+import { csvCell } from "@/lib/utils/csv";
 
 export interface JournalEntry {
   account: string;
@@ -52,7 +41,7 @@ export type JournalResult =
   | { ok: true; journal: PeriodJournal }
   | {
       ok: false;
-      code: "not_found" | "invalid_status" | "no_records";
+      code: "not_found" | "invalid_status" | "no_records" | "unbalanced";
       message: string;
     };
 
@@ -110,47 +99,18 @@ export async function computeJournalEntriesForPeriod(
     };
   }
 
-  let totalGrossPay = 0;
-  let totalWithholdingTax = 0;
-  let totalGSIS = 0;
-  let totalPhilHealth = 0;
-  let totalPagIBIG = 0;
-  let totalNetPay = 0;
-
-  for (const record of records) {
-    totalGrossPay += parseFloat(record.grossPay);
-    totalWithholdingTax += parseFloat(record.withholdingTax);
-    totalGSIS +=
-      parseFloat(record.gsisPersonal) +
-      parseFloat(record.gsisEmployer) +
-      parseFloat(record.gsisLifeInsurance);
-    totalPhilHealth +=
-      parseFloat(record.philhealthPersonal) +
-      parseFloat(record.philhealthEmployer);
-    totalPagIBIG +=
-      parseFloat(record.pagibigPersonal) + parseFloat(record.pagibigEmployer);
-    totalNetPay += parseFloat(record.netPay);
+  const built = buildPayrollJournal(records, {
+    collectionOnly: period.scope === "cash_advance",
+  });
+  if (!built.ok) {
+    return {
+      ok: false,
+      code: "unbalanced",
+      message: `Journal cannot balance: ${built.unbalancedRecordIds.length} payroll record(s) where gross − deductions ≠ net pay (e.g. after a manual override). Correct them first. Record IDs: ${built.unbalancedRecordIds.slice(0, 20).join(", ")}`,
+    };
   }
 
   const entryDate = dateFnsFormat(new Date(period.payDate), "yyyy-MM-dd");
-  const entry = (
-    account: string,
-    type: "Debit" | "Credit",
-    amount: number,
-  ): JournalEntry => ({
-    account,
-    type,
-    amount: amount.toFixed(2),
-    reference: period.name,
-    date: entryDate,
-  });
-
-  const totalCredit =
-    totalWithholdingTax +
-    totalGSIS +
-    totalPhilHealth +
-    totalPagIBIG +
-    totalNetPay;
 
   return {
     ok: true,
@@ -159,17 +119,14 @@ export async function computeJournalEntriesForPeriod(
       period_name: period.name,
       pay_date: period.payDate,
       record_count: records.length,
-      entries: [
-        entry("Personnel Services", "Debit", totalGrossPay),
-        entry("Due to BIR", "Credit", totalWithholdingTax),
-        entry("Due to GSIS", "Credit", totalGSIS),
-        entry("Due to PhilHealth", "Credit", totalPhilHealth),
-        entry("Due to Pag-IBIG", "Credit", totalPagIBIG),
-        entry("Cash", "Credit", totalNetPay),
-      ],
+      entries: built.lines.map((line) => ({
+        ...line,
+        reference: period.name,
+        date: entryDate,
+      })),
       summary: {
-        total_debit: totalGrossPay.toFixed(2),
-        total_credit: totalCredit.toFixed(2),
+        total_debit: built.totalDebit,
+        total_credit: built.totalCredit,
       },
     },
   };
@@ -203,7 +160,9 @@ export function journalEntriesToCsv(journals: PeriodJournal[]): string {
   for (const journal of journals) {
     for (const entry of journal.entries) {
       lines.push(
-        `"${entry.account.replace(/"/g, '""')}",${entry.type},${entry.amount},"${entry.reference.replace(/"/g, '""')}",${entry.date}`,
+        [entry.account, entry.type, entry.amount, entry.reference, entry.date]
+          .map(csvCell)
+          .join(","),
       );
     }
   }

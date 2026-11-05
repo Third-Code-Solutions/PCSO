@@ -130,7 +130,7 @@ export default async function RecruitmentOverviewPage() {
     (r) => r.status === "published" || r.status === "posted",
   ).length;
   const underReview = applicationRows.filter(
-    (r) => r.status === "under_review" || r.status === "received",
+    (r) => r.status === "under_review" || r.status === "submitted",
   ).length;
   const examScheduled = applicationRows.filter(
     (r) => r.status === "exam_scheduled",

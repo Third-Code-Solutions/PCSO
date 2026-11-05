@@ -479,7 +479,9 @@ export async function processDocumentRequest(
         .where(eq(documentRequests.id, validated.requestId));
     }
 
-    let documentUrl: string | undefined;
+    // Object path in the private `documents` bucket (H-19) — served via
+    // /api/documents/requests/[id], which authorizes then signs it.
+    let documentPath: string | undefined;
 
     // Run PDF generator for types that have one; for others the serial is
     // already assigned above and the request moves to READY so HR can manually
@@ -497,7 +499,7 @@ export async function processDocumentRequest(
           error: generated.error || "COE generation failed",
         };
       }
-      documentUrl = generated.documentUrl;
+      documentPath = generated.documentPath;
     } else if (request.documentType === "COE_REMUNERATION") {
       const generated = await generateCOE({
         employeeId: request.employeeId,
@@ -511,7 +513,7 @@ export async function processDocumentRequest(
           error: generated.error || "COE generation failed",
         };
       }
-      documentUrl = generated.documentUrl;
+      documentPath = generated.documentPath;
     } else if (request.documentType === "SERVICE_RECORD") {
       const generated = await generateServiceRecord({
         employeeId: request.employeeId,
@@ -523,7 +525,7 @@ export async function processDocumentRequest(
           error: generated.error || "Service Record generation failed",
         };
       }
-      documentUrl = generated.documentUrl;
+      documentPath = generated.documentPath;
     } else if (request.documentType === "PDS") {
       const generated = await generatePds({
         employeeId: request.employeeId,
@@ -535,7 +537,7 @@ export async function processDocumentRequest(
           error: generated.error || "PDS generation failed",
         };
       }
-      documentUrl = generated.documentUrl;
+      documentPath = generated.documentPath;
     } else if (request.documentType === "AD_HOC") {
       if (!validated.certificateTemplateId) {
         return {
@@ -556,7 +558,7 @@ export async function processDocumentRequest(
           error: generated.error || "Ad hoc certificate generation failed",
         };
       }
-      documentUrl = generated.documentUrl;
+      documentPath = generated.documentPath;
     }
 
     // Update request to READY
@@ -565,7 +567,7 @@ export async function processDocumentRequest(
       .set({
         status: "ready",
         serialNumber,
-        generatedDocumentUrl: documentUrl ?? null,
+        generatedDocumentUrl: documentPath ?? null,
         readyAt: new Date(),
         updatedAt: new Date(),
       })

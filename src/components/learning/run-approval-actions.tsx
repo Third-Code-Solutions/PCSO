@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  completeRun,
   recordApprovalDecision,
   submitRunForApproval,
 } from "@/lib/actions/ldm/approval";
@@ -14,8 +15,10 @@ interface Props {
   status: string;
   /** Sequence of the first still-pending approval, or null when none pending. */
   nextPendingSequence: number | null;
-  /** Current user's employee id — required to record an approval decision. */
+  /** Current user's employee id. UI hint only; the server uses the session. */
   approverEmployeeId: string | null;
+  /** Whether the run's scheduled end has passed (enables "Mark Completed"). */
+  hasEnded: boolean;
 }
 
 /**
@@ -24,12 +27,14 @@ interface Props {
  * Replaces the previous decoy `?action=submit` link. Renders:
  *   - draft → "Submit for Approval" (creates the chain, flips to for_approval)
  *   - for_approval → Approve / Reject on the next pending approver slot
+ *   - approved / scheduled / in_progress + ended → "Mark Completed" (C-15)
  */
 export function RunApprovalActions({
   runId,
   status,
   nextPendingSequence,
   approverEmployeeId,
+  hasEnded,
 }: Props) {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
@@ -88,12 +93,7 @@ export function RunApprovalActions({
             disabled={pending || !canDecide}
             onClick={() =>
               void run(() =>
-                recordApprovalDecision(
-                  runId,
-                  nextPendingSequence,
-                  "approved",
-                  approverEmployeeId as string,
-                ),
+                recordApprovalDecision(runId, nextPendingSequence, "approved"),
               )
             }
           >
@@ -126,7 +126,6 @@ export function RunApprovalActions({
                     runId,
                     nextPendingSequence,
                     "returned",
-                    approverEmployeeId as string,
                     reason.trim() === "" ? null : reason.trim(),
                   ),
                 )
@@ -139,6 +138,26 @@ export function RunApprovalActions({
         {!canDecide && (
           <p className="text-[11px] text-muted-foreground">
             Your account is not linked to an employee record.
+          </p>
+        )}
+        {error && <p className="text-[11px] text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
+  if (["approved", "scheduled", "in_progress"].includes(status)) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <Button
+          size="sm"
+          disabled={pending || !hasEnded}
+          onClick={() => void run(() => completeRun(runId))}
+        >
+          {pending ? "Completing…" : "Mark Completed"}
+        </Button>
+        {!hasEnded && (
+          <p className="text-[11px] text-muted-foreground">
+            Available after the run&apos;s scheduled end.
           </p>
         )}
         {error && <p className="text-[11px] text-destructive">{error}</p>}

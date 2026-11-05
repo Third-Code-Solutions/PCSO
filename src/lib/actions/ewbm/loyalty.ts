@@ -6,9 +6,12 @@
  * EWB-001: Auto-generate loyalty award eligibility list for milestones
  *          10/15/20/25/30/35/40/45 years (FM-019). Filterable by office.
  *          Exportable for awards ceremony planning.
- * EWB-002: Historical awardees report per milestone year. Previous grants
- *          are tracked via `previousAwardFlag` + the pruning helper in
- *          `@/lib/utils/ewbm/loyalty-calc`.
+ * EWB-002: Historical awardees report per milestone year. A grant is
+ *          recorded on the awardee row (award_granted_at / award_granted_by)
+ *          via `markAwardGranted`; only GRANTED milestones exclude an
+ *          employee from later runs (H-22). Re-generating a run for the same
+ *          year + office reconciles that run instead of creating a new one
+ *          (`planLoyaltyRun`).
  *
  * Authorization:
  *   - Writes:  requirePermission('employees', 'create' | 'edit' | 'process')
@@ -20,16 +23,17 @@
  * successful generation via `notifyRoles`.
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
+import { withTx, lockKey } from "@/lib/db/transaction";
 import { employees } from "@/lib/db/schema/employees";
 import {
   loyaltyAwardRuns,
   loyaltyAwardees,
-  type LoyaltyAwardRun,
   type LoyaltyAwardee,
 } from "@/lib/db/schema/welfare";
 import { fmLongevityMilestones } from "@/lib/db/schema/fm-extensions";
@@ -38,10 +42,10 @@ import { auditLog } from "@/lib/audit";
 import { notifyRoles } from "@/lib/notifications";
 import {
   milestoneFor,
-  pruneAlreadyAwarded,
   yearsOfService,
   type LoyaltyCandidate,
 } from "@/lib/utils/ewbm/loyalty-calc";
+import { planLoyaltyRun } from "./loyalty-plan";
 
 // ─── Result envelope ─────────────────────────────────────────────────────────
 
@@ -56,6 +60,8 @@ function err(message: string): Err {
   return { error: message };
 }
 function toErrMsg(e: unknown): string {
+  // Never swallow Next's redirect (e.g. requirePermission access denial).
+  if (isRedirectError(e)) throw e;
   return e instanceof Error ? e.message : "Unexpected error";
 }
 
@@ -81,8 +87,8 @@ const exportRunSchema = z.object({
 });
 
 const historyByMilestoneSchema = z.object({
-  year: z.number().int().min(2000).max(2100),
-  milestoneYears: z.number().int().min(1).max(100),
+  year: z.number().int().min(2000).max(2100).optional(),
+  milestoneYears: z.number().int().min(1).max(100).optional(),
 });
 
 // ─── generateLoyaltyRun (EWB-001) ───────────────────────────────────────────
@@ -90,6 +96,10 @@ const historyByMilestoneSchema = z.object({
 export interface GenerateLoyaltyRunResult {
   runId: string;
   totalEligible: number;
+  /** Rows added by this generation (0 on an unchanged re-run). */
+  added: number;
+  /** True when an existing run for the same year + office was reconciled. */
+  reused: boolean;
 }
 
 export async function generateLoyaltyRun(
@@ -154,73 +164,163 @@ export async function generateLoyaltyRun(
       });
     }
 
-    // Prune anyone who already received THIS milestone in a prior run.
     const employeeIds = eligible.map((x) => x.employeeId);
-    let priorAwards: { employeeId: string; milestoneYears: number }[] = [];
-    if (employeeIds.length > 0) {
-      priorAwards = await db
-        .select({
-          employeeId: loyaltyAwardees.employeeId,
-          milestoneYears: loyaltyAwardees.milestoneYears,
-        })
-        .from(loyaltyAwardees)
-        .where(inArray(loyaltyAwardees.employeeId, employeeIds));
-    }
+    const officeId = parsed.officeId ?? null;
 
-    const filtered = pruneAlreadyAwarded(eligible, priorAwards);
+    // One run per (year, office filter); serialised so concurrent clicks
+    // reconcile the same run instead of creating duplicates (H-22).
+    const outcome = await withTx(async (tx) => {
+      await lockKey(tx, `ewbm:loyalty-run:${parsed.year}:${officeId ?? "all"}`);
 
-    // Insert run + awardees.
-    const [runRow] = await db
-      .insert(loyaltyAwardRuns)
-      .values({
-        runYear: parsed.year,
-        generatedByEmployeeId: user.employeeId,
-        filterUnitOfficeId: parsed.officeId ?? null,
-        totalEligible: filtered.length,
-      })
-      .returning();
+      const [existingRun] = await tx
+        .select({ id: loyaltyAwardRuns.id })
+        .from(loyaltyAwardRuns)
+        .where(
+          and(
+            eq(loyaltyAwardRuns.runYear, parsed.year),
+            officeId
+              ? eq(loyaltyAwardRuns.filterUnitOfficeId, officeId)
+              : isNull(loyaltyAwardRuns.filterUnitOfficeId),
+            isNull(loyaltyAwardRuns.deletedAt),
+          ),
+        )
+        .orderBy(desc(loyaltyAwardRuns.generatedAt))
+        .limit(1);
 
-    if (!runRow) {
-      return err("Failed to create loyalty award run.");
-    }
+      const grantedAwards =
+        employeeIds.length === 0
+          ? []
+          : await tx
+              .select({
+                employeeId: loyaltyAwardees.employeeId,
+                milestoneYears: loyaltyAwardees.milestoneYears,
+                runId: loyaltyAwardees.runId,
+              })
+              .from(loyaltyAwardees)
+              .where(
+                and(
+                  inArray(loyaltyAwardees.employeeId, employeeIds),
+                  isNotNull(loyaltyAwardees.awardGrantedAt),
+                ),
+              );
 
-    if (filtered.length > 0) {
-      await db.insert(loyaltyAwardees).values(
-        filtered.map((c) => ({
-          runId: runRow.id,
-          employeeId: c.employeeId,
-          milestoneYears: c.milestoneYears,
-          hireDate: c.hireDate.toISOString().slice(0, 10),
-          yearsOfServiceComputed: c.years.toFixed(2),
-          previousAwardFlag: false,
-        })),
-      );
-    }
+      const existingRows = existingRun
+        ? (
+            await tx
+              .select({
+                id: loyaltyAwardees.id,
+                employeeId: loyaltyAwardees.employeeId,
+                milestoneYears: loyaltyAwardees.milestoneYears,
+                awardGrantedAt: loyaltyAwardees.awardGrantedAt,
+              })
+              .from(loyaltyAwardees)
+              .where(eq(loyaltyAwardees.runId, existingRun.id))
+          ).map((r) => ({ ...r, granted: r.awardGrantedAt !== null }))
+        : [];
+
+      const plan = planLoyaltyRun({
+        candidates: eligible,
+        grantedAwards,
+        runId: existingRun?.id ?? null,
+        existingRows,
+      });
+
+      let runId = existingRun?.id;
+      if (runId) {
+        await tx
+          .update(loyaltyAwardRuns)
+          .set({
+            totalEligible: plan.total,
+            generatedAt: new Date(),
+            generatedByEmployeeId: user.employeeId,
+            updatedAt: new Date(),
+          })
+          .where(eq(loyaltyAwardRuns.id, runId));
+      } else {
+        const [runRow] = await tx
+          .insert(loyaltyAwardRuns)
+          .values({
+            runYear: parsed.year,
+            generatedByEmployeeId: user.employeeId,
+            filterUnitOfficeId: officeId,
+            totalEligible: plan.total,
+          })
+          .returning({ id: loyaltyAwardRuns.id });
+        if (!runRow) throw new Error("Failed to create loyalty award run.");
+        runId = runRow.id;
+      }
+
+      if (plan.staleIds.length > 0) {
+        await tx
+          .delete(loyaltyAwardees)
+          .where(
+            and(
+              inArray(loyaltyAwardees.id, plan.staleIds),
+              isNull(loyaltyAwardees.awardGrantedAt),
+            ),
+          );
+      }
+
+      if (plan.toInsert.length > 0) {
+        const newRunId = runId;
+        await tx
+          .insert(loyaltyAwardees)
+          .values(
+            plan.toInsert.map((c) => ({
+              runId: newRunId,
+              employeeId: c.employeeId,
+              milestoneYears: c.milestoneYears,
+              hireDate: c.hireDate.toISOString().slice(0, 10),
+              yearsOfServiceComputed: c.years.toFixed(2),
+              previousAwardFlag: c.previousAward,
+            })),
+          )
+          .onConflictDoNothing();
+      }
+
+      return {
+        runId,
+        total: plan.total,
+        added: plan.toInsert.length,
+        removed: plan.staleIds.length,
+        reused: Boolean(existingRun),
+      };
+    });
 
     await auditLog({
       userId: user.id,
       action: "loyalty_run.generate",
       table: "loyalty_award_runs",
-      recordId: runRow.id,
+      recordId: outcome.runId,
       newValues: {
         runYear: parsed.year,
-        officeId: parsed.officeId ?? null,
-        totalEligible: filtered.length,
+        officeId,
+        totalEligible: outcome.total,
+        added: outcome.added,
+        removed: outcome.removed,
+        reused: outcome.reused,
       },
     });
 
-    // N-033 — notify HRD that a new eligibility list is ready.
-    await notifyRoles(["hr_admin", "super_admin"], {
-      type: "generic",
-      title: "Loyalty award eligibility list generated",
-      body: `Run ${parsed.year}: ${filtered.length} eligible employee(s).`,
-      entityType: "loyalty_award_run",
-      entityId: runRow.id,
-    });
+    // N-033 — notify HRD only when the list actually changed.
+    if (outcome.added > 0) {
+      await notifyRoles(["hr_admin", "super_admin"], {
+        type: "generic",
+        title: "Loyalty award eligibility list generated",
+        body: `Run ${parsed.year}: ${outcome.total} eligible employee(s), ${outcome.added} new.`,
+        entityType: "loyalty_award_run",
+        entityId: outcome.runId,
+      });
+    }
 
     revalidatePath("/welfare/loyalty");
 
-    return ok({ runId: runRow.id, totalEligible: filtered.length });
+    return ok({
+      runId: outcome.runId,
+      totalEligible: outcome.total,
+      added: outcome.added,
+      reused: outcome.reused,
+    });
   } catch (e) {
     return err(toErrMsg(e));
   }
@@ -231,6 +331,9 @@ export async function generateLoyaltyRun(
 export interface AwardeeRow {
   id: string;
   employeeId: string;
+  employeeNo: string | null;
+  firstName: string | null;
+  lastName: string | null;
   milestoneYears: number;
   yearsOfServiceComputed: string;
   awardGrantedAt: Date | null;
@@ -249,6 +352,9 @@ export async function listAwardeesForRun(
       .select({
         id: loyaltyAwardees.id,
         employeeId: loyaltyAwardees.employeeId,
+        employeeNo: employees.employeeNo,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
         milestoneYears: loyaltyAwardees.milestoneYears,
         yearsOfServiceComputed: loyaltyAwardees.yearsOfServiceComputed,
         awardGrantedAt: loyaltyAwardees.awardGrantedAt,
@@ -256,7 +362,9 @@ export async function listAwardeesForRun(
         notes: loyaltyAwardees.notes,
       })
       .from(loyaltyAwardees)
-      .where(eq(loyaltyAwardees.runId, parsed.runId));
+      .leftJoin(employees, eq(loyaltyAwardees.employeeId, employees.id))
+      .where(eq(loyaltyAwardees.runId, parsed.runId))
+      .orderBy(loyaltyAwardees.milestoneYears, employees.lastName);
 
     return ok(rows);
   } catch (e) {
@@ -273,26 +381,70 @@ export async function markAwardGranted(
     const user = await requirePermission("employees", "edit");
     const parsed = markAwardGrantedSchema.parse(input);
 
+    const [awardee] = await db
+      .select({
+        employeeId: loyaltyAwardees.employeeId,
+        milestoneYears: loyaltyAwardees.milestoneYears,
+        awardGrantedAt: loyaltyAwardees.awardGrantedAt,
+      })
+      .from(loyaltyAwardees)
+      .where(eq(loyaltyAwardees.id, parsed.awardeeId))
+      .limit(1);
+    if (!awardee) return err("Awardee not found.");
+    if (awardee.awardGrantedAt) return err("This award is already granted.");
+
+    // EWB-002: one grant per employee + milestone (DB partial unique index
+    // loyalty_awardees_granted_employee_milestone_idx is the backstop).
+    const [prior] = await db
+      .select({ id: loyaltyAwardees.id })
+      .from(loyaltyAwardees)
+      .where(
+        and(
+          eq(loyaltyAwardees.employeeId, awardee.employeeId),
+          eq(loyaltyAwardees.milestoneYears, awardee.milestoneYears),
+          isNotNull(loyaltyAwardees.awardGrantedAt),
+          ne(loyaltyAwardees.id, parsed.awardeeId),
+        ),
+      )
+      .limit(1);
+    if (prior) {
+      return err(
+        `This employee already received the ${awardee.milestoneYears}-year award.`,
+      );
+    }
+
     const [updated] = await db
       .update(loyaltyAwardees)
       .set({
         awardGrantedAt: parsed.grantedAt,
+        awardGrantedBy: user.id,
         notes: parsed.notes ?? null,
+        updatedAt: new Date(),
       })
-      .where(eq(loyaltyAwardees.id, parsed.awardeeId))
+      .where(
+        and(
+          eq(loyaltyAwardees.id, parsed.awardeeId),
+          isNull(loyaltyAwardees.awardGrantedAt),
+        ),
+      )
       .returning();
 
-    if (!updated) return err("Awardee not found.");
+    if (!updated) return err("This award is already granted.");
 
     await auditLog({
       userId: user.id,
       action: "loyalty_awardee.grant",
       table: "loyalty_awardees",
       recordId: updated.id,
-      newValues: { grantedAt: parsed.grantedAt.toISOString() },
+      newValues: {
+        employeeId: updated.employeeId,
+        milestoneYears: updated.milestoneYears,
+        grantedAt: parsed.grantedAt.toISOString(),
+        grantedBy: user.id,
+      },
     });
 
-    revalidatePath("/welfare/loyalty");
+    revalidatePath("/welfare/loyalty", "layout");
     return ok(updated);
   } catch (e) {
     return err(toErrMsg(e));
@@ -404,22 +556,31 @@ export async function exportRunToExcelOrCsv(
 export interface HistoryRow {
   awardeeId: string;
   employeeId: string;
+  employeeNo: string | null;
+  firstName: string | null;
+  lastName: string | null;
   runYear: number;
   milestoneYears: number;
-  awardGrantedAt: Date | null;
+  awardGrantedAt: Date;
 }
 
+const HISTORY_LIMIT = 500;
+
+/** Granted awards only (EWB-002), optionally filtered by run year / milestone. */
 export async function historyByMilestone(
   input: unknown,
 ): Promise<Result<HistoryRow[]>> {
   try {
     await requirePermission("reports", "view");
-    const parsed = historyByMilestoneSchema.parse(input);
+    const parsed = historyByMilestoneSchema.parse(input ?? {});
 
     const rows = await db
       .select({
         awardeeId: loyaltyAwardees.id,
         employeeId: loyaltyAwardees.employeeId,
+        employeeNo: employees.employeeNo,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
         runYear: loyaltyAwardRuns.runYear,
         milestoneYears: loyaltyAwardees.milestoneYears,
         awardGrantedAt: loyaltyAwardees.awardGrantedAt,
@@ -429,18 +590,27 @@ export async function historyByMilestone(
         loyaltyAwardRuns,
         eq(loyaltyAwardees.runId, loyaltyAwardRuns.id),
       )
+      .leftJoin(employees, eq(loyaltyAwardees.employeeId, employees.id))
       .where(
         and(
-          eq(loyaltyAwardRuns.runYear, parsed.year),
-          eq(loyaltyAwardees.milestoneYears, parsed.milestoneYears),
+          isNotNull(loyaltyAwardees.awardGrantedAt),
+          parsed.year !== undefined
+            ? eq(loyaltyAwardRuns.runYear, parsed.year)
+            : undefined,
+          parsed.milestoneYears !== undefined
+            ? eq(loyaltyAwardees.milestoneYears, parsed.milestoneYears)
+            : undefined,
         ),
-      );
+      )
+      .orderBy(desc(loyaltyAwardees.awardGrantedAt))
+      .limit(HISTORY_LIMIT);
 
-    return ok(rows);
+    return ok(
+      rows.flatMap((r) =>
+        r.awardGrantedAt ? [{ ...r, awardGrantedAt: r.awardGrantedAt }] : [],
+      ),
+    );
   } catch (e) {
     return err(toErrMsg(e));
   }
 }
-
-// Unused import guard — keep `sql` import available for any later raw usage.
-void sql;

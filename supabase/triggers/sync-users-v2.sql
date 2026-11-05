@@ -33,21 +33,11 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-DECLARE
-  _role text := 'employee_self_service';
 BEGIN
-  -- Read role from metadata if provided by the Admin SDK
-  IF NEW.raw_user_meta_data ? 'role' THEN
-    _role := NEW.raw_user_meta_data->>'role';
-  END IF;
-
-  -- Defensive: if role isn't a valid enum value, fall back to default
-  IF _role NOT IN ('super_admin', 'hr_admin', 'payroll_admin', 'leave_approver', 'viewer', 'employee_self_service') THEN
-    _role := 'employee_self_service';
-  END IF;
-
+  -- raw_user_meta_data is client-controlled (public signUp) and is NEVER read
+  -- here (C-01). Admin provisioning sets the real role via the service role.
   INSERT INTO public.system_users (auth_uid, email, role, is_active)
-  VALUES (NEW.id::text, NEW.email, _role::system_role, true)
+  VALUES (NEW.id::text, NEW.email, 'employee_self_service'::system_role, true)
   ON CONFLICT (auth_uid) DO UPDATE
     SET email = EXCLUDED.email,
         updated_at = now();

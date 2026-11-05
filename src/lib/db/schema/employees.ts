@@ -125,6 +125,8 @@ export const employees = pgTable(
      * 3-year step-increment eligibility clock.
      */
     dateLastIncrement: date("date_last_increment"),
+    /** Effective date of the last promotion (PRD §14.1), set by RPM provisioning. */
+    dateLastPromotion: date("date_last_promotion"),
 
     // Status
     status: employeeStatusEnum("status").notNull().default("active"),

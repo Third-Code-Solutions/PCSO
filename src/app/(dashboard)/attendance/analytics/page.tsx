@@ -10,7 +10,8 @@
 import { requirePermission } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { attendanceLogs, employees, offices } from "@/lib/db/schema";
-import { gte, lte, and, isNull } from "drizzle-orm";
+import { gte, lte, and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { attendanceViewScope } from "@/lib/utils/attendance/scope";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import Link from "next/link";
 
@@ -27,13 +28,22 @@ export const metadata = { title: "Attendance Analytics" };
 export default async function AttendanceAnalyticsPage({
   searchParams,
 }: PageProps) {
-  await requirePermission("attendance", "view");
+  const user = await requirePermission("attendance", "view");
   const params = await searchParams;
+
+  // H-06: ESS sees own records only; supervisors their own office; HR and
+  // read-all oversight roles the whole agency. Enforced in the query.
+  const scope = attendanceViewScope(user);
 
   const now = new Date();
   const year = params.year ? Number(params.year) : now.getFullYear();
   const month = params.month ? Number(params.month) : now.getMonth() + 1;
-  const officeId = params.officeId || undefined;
+  const officeId =
+    scope.kind === "office"
+      ? scope.officeId
+      : scope.kind === "all"
+        ? params.officeId || undefined
+        : undefined;
 
   const periodStart = format(
     startOfMonth(new Date(year, month - 1, 1)),
@@ -45,22 +55,42 @@ export default async function AttendanceAnalyticsPage({
   );
   const monthLabel = format(new Date(year, month - 1, 1), "MMMM yyyy");
 
-  // Get all offices for filter
+  // Offices offered in the filter — only the caller's own when unit-scoped.
   const allOffices = await db.query.offices
     .findMany({
-      where: isNull(offices.deletedAt),
+      where:
+        scope.kind === "office"
+          ? and(isNull(offices.deletedAt), eq(offices.id, scope.officeId))
+          : isNull(offices.deletedAt),
       orderBy: [offices.name],
     })
     .catch(() => []);
 
   // Build attendance query
-  const attendanceConditions = [
+  const attendanceConditions: SQL[] = [
     gte(attendanceLogs.logDate, periodStart),
     lte(attendanceLogs.logDate, periodEnd),
   ];
+  if (scope.kind === "self") {
+    attendanceConditions.push(
+      scope.employeeId
+        ? eq(attendanceLogs.employeeId, scope.employeeId)
+        : sql`false`,
+    );
+  } else if (officeId) {
+    attendanceConditions.push(
+      inArray(
+        attendanceLogs.employeeId,
+        db
+          .select({ id: employees.id })
+          .from(employees)
+          .where(eq(employees.officeId, officeId)),
+      ),
+    );
+  }
 
   // Get attendance logs for the period
-  const logs = await db.query.attendanceLogs
+  const filteredLogs = await db.query.attendanceLogs
     .findMany({
       where: and(...attendanceConditions),
       with: {
@@ -76,11 +106,6 @@ export default async function AttendanceAnalyticsPage({
       },
     })
     .catch(() => []);
-
-  // Filter by office if selected
-  const filteredLogs = officeId
-    ? logs.filter((log) => log.employee?.officeId === officeId)
-    : logs;
 
   // Calculate analytics
   const totalLogs = filteredLogs.length;
@@ -166,9 +191,11 @@ export default async function AttendanceAnalyticsPage({
           </h1>
           <p className="mt-0.5 text-sm text-gray-500">
             {monthLabel} —{" "}
-            {officeId
-              ? allOffices.find((o) => o.id === officeId)?.name
-              : "All Offices"}
+            {scope.kind === "self"
+              ? "My attendance"
+              : officeId
+                ? allOffices.find((o) => o.id === officeId)?.name
+                : "All Offices"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -211,51 +238,53 @@ export default async function AttendanceAnalyticsPage({
         ))}
       </div>
 
-      {/* Filters */}
-      <form
-        method="GET"
-        className="mb-6 grid grid-cols-1 gap-3 rounded-xl border border-[#0B2545]/10 bg-white p-4 shadow-sm sm:grid-cols-12"
-      >
-        <input type="hidden" name="year" value={year} />
-        <input type="hidden" name="month" value={month} />
+      {/* Filters — office choice only for org-wide viewers */}
+      {scope.kind === "all" && (
+        <form
+          method="GET"
+          className="mb-6 grid grid-cols-1 gap-3 rounded-xl border border-[#0B2545]/10 bg-white p-4 shadow-sm sm:grid-cols-12"
+        >
+          <input type="hidden" name="year" value={year} />
+          <input type="hidden" name="month" value={month} />
 
-        <div className="sm:col-span-4">
-          <label
-            htmlFor="filter-office"
-            className="block text-xs font-medium text-gray-500"
-          >
-            Office
-          </label>
-          <select
-            id="filter-office"
-            name="officeId"
-            defaultValue={officeId ?? ""}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-[#C8A84B] focus:outline-none"
-          >
-            <option value="">All Offices</option>
-            {allOffices.map((office) => (
-              <option key={office.id} value={office.id}>
-                {office.name}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div className="sm:col-span-4">
+            <label
+              htmlFor="filter-office"
+              className="block text-xs font-medium text-gray-500"
+            >
+              Office
+            </label>
+            <select
+              id="filter-office"
+              name="officeId"
+              defaultValue={officeId ?? ""}
+              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-[#C8A84B] focus:outline-none"
+            >
+              <option value="">All Offices</option>
+              {allOffices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div className="sm:col-span-8 flex items-end gap-3">
-          <button
-            type="submit"
-            className="rounded bg-[#0B2545] px-4 py-2 text-sm font-medium text-[#FAF4E6] hover:bg-[#13315C]"
-          >
-            Apply Filter
-          </button>
-          <Link
-            href={`/attendance/analytics?year=${year}&month=${month}`}
-            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-          >
-            Reset
-          </Link>
-        </div>
-      </form>
+          <div className="sm:col-span-8 flex items-end gap-3">
+            <button
+              type="submit"
+              className="rounded bg-[#0B2545] px-4 py-2 text-sm font-medium text-[#FAF4E6] hover:bg-[#13315C]"
+            >
+              Apply Filter
+            </button>
+            <Link
+              href={`/attendance/analytics?year=${year}&month=${month}`}
+              className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Reset
+            </Link>
+          </div>
+        </form>
+      )}
 
       {/* Perfect Attendance */}
       <div className="mb-6">

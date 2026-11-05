@@ -23,6 +23,7 @@ import { withTx, type Tx } from "@/lib/db/transaction";
 import { offices, plantillaPositions, employees } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth/guards";
+import { requireRecruitmentViewer } from "@/lib/utils/rpm/recruitment-viewer";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   atomicallyProvisionNewEmployee,
@@ -424,7 +425,7 @@ export interface AppointmentListItem {
 export async function listAppointments(
   limit = 50,
 ): Promise<AppointmentListItem[]> {
-  await requirePermission("employees", "view");
+  await requireRecruitmentViewer();
   const rows = await db
     .select({
       id: employees.id,
@@ -474,7 +475,7 @@ export interface AppointmentDetail {
 export async function getAppointment(
   employeeId: string,
 ): Promise<AppointmentDetail | null> {
-  await requirePermission("employees", "view");
+  await requireRecruitmentViewer();
   const [row] = await db
     .select({
       id: employees.id,

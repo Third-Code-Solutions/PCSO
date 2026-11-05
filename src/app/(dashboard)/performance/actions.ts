@@ -16,7 +16,15 @@ import { revalidatePath } from "next/cache";
 import { createElement, type ReactElement } from "react";
 import { pdf, type DocumentProps } from "@react-pdf/renderer";
 import { createServerClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requirePermission, requireAuth } from "@/lib/auth/guards";
+import {
+  candidateBreachesCap,
+  evaluateOfficeForcedRanking,
+  finalizableAdjectival,
+  planningEditDenial,
+} from "./_lib/rating-rules";
+import { ratingSegregationDenial } from "./_lib/rating-segregation";
 import {
   generateSerialNumber,
   DOCUMENT_TYPES,
@@ -46,32 +54,32 @@ import {
   computeFinalRating,
   type KraRatingInput,
 } from "@/lib/utils/performance/rating";
+import { formatForcedRankingError } from "@/lib/utils/performance/forced-ranking";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-async function writeAuditLog(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  params: {
-    userId: string;
-    action: string;
-    tableName: string;
-    recordId: string;
-    oldValues?: Record<string, unknown>;
-    newValues?: Record<string, unknown>;
-  },
-): Promise<void> {
-  const { error } = await supabase.from("audit_logs").insert({
-    user_id: params.userId,
+/**
+ * PMM audit trail via the service-role writer (C-16): session-client inserts
+ * into audit_logs are RLS-blocked for most actors and threw after the write.
+ */
+function pmmAudit(params: {
+  userId: string;
+  action: string;
+  tableName: string;
+  recordId: string;
+  oldValues?: Record<string, unknown>;
+  newValues?: Record<string, unknown>;
+}): Promise<void> {
+  return auditLog({
+    userId: params.userId,
     action: params.action,
-    table_name: params.tableName,
-    record_id: params.recordId,
-    old_values: params.oldValues ?? null,
-    new_values: params.newValues ?? null,
+    table: params.tableName,
+    recordId: params.recordId,
+    oldValues: params.oldValues,
+    newValues: params.newValues,
+    module: "PMM",
+    subModule: params.tableName,
   });
-
-  if (error) {
-    throw new Error(`Audit log write failed: ${error.message}`);
-  }
 }
 
 // ─── Performance Period Actions ───────────────────────────────────────────────
@@ -112,7 +120,7 @@ export async function createPerformancePeriod(
     throw new Error(`Failed to create performance period: ${error?.message}`);
   }
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "create",
     tableName: "performance_periods",
@@ -149,7 +157,7 @@ export async function updatePeriodStatus(input: unknown): Promise<void> {
   if (error)
     throw new Error(`Failed to update period status: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "update",
     tableName: "performance_periods",
@@ -165,38 +173,50 @@ export async function updatePeriodStatus(input: unknown): Promise<void> {
 // ─── Initialize Performance Rating ───────────────────────────────────────────
 
 /**
- * Creates a draft performance rating record for an employee + period.
- * Called when HR opens the IPCRF or OPCRF for an employee.
+ * Creates (or reuses) the draft rating row for employee + period + type.
+ * Service-role write: callers authorize first (RLS only lets admins insert,
+ * which blocked the employee self-start path — C-14). The 0.000 score is a
+ * placeholder; approval requires a review-phase score (H-28).
  */
-export async function initializePerformanceRating(
-  input: unknown,
+async function createDraftRating(
+  actorUserId: string,
+  params: {
+    employeeId: string;
+    periodId: string;
+    ratingType: "ipcrf" | "opcrf" | "dpcr" | "bpcr";
+  },
+  allowedPeriodStatuses: readonly string[],
 ): Promise<{ ratingId: string }> {
-  const parsed = InitializePerformanceRatingSchema.parse(input);
-  const user = await requirePermission("performance", "create");
-  const supabase = await createServerClient();
-
-  // Check for duplicate
-  const { data: existing } = await supabase
-    .from("performance_ratings")
-    .select("id")
-    .eq("employee_id", parsed.employeeId)
-    .eq("period_id", parsed.periodId)
-    .eq("rating_type", parsed.ratingType)
-    .single();
-
-  if (existing) {
-    return { ratingId: String(existing.id) };
+  const { data: period } = await supabaseAdmin
+    .from("performance_periods")
+    .select("id, status")
+    .eq("id", params.periodId)
+    .maybeSingle();
+  if (!period) throw new Error("Performance period not found.");
+  if (!allowedPeriodStatuses.includes(String(period.status))) {
+    throw new Error(
+      `Ratings cannot be started while the period is ${String(period.status)}.`,
+    );
   }
 
-  const { data, error } = await supabase
+  const { data: existing } = await supabaseAdmin
+    .from("performance_ratings")
+    .select("id")
+    .eq("employee_id", params.employeeId)
+    .eq("period_id", params.periodId)
+    .eq("rating_type", params.ratingType)
+    .maybeSingle();
+  if (existing) return { ratingId: String(existing.id) };
+
+  const { data, error } = await supabaseAdmin
     .from("performance_ratings")
     .insert({
-      employee_id: parsed.employeeId,
-      period_id: parsed.periodId,
-      rating_type: parsed.ratingType,
+      employee_id: params.employeeId,
+      period_id: params.periodId,
+      rating_type: params.ratingType,
       numerical_rating: "0",
       adjectival_rating: "satisfactory",
-      rated_by: user.id,
+      rated_by: actorUserId,
       status: "draft",
     })
     .select("id")
@@ -206,48 +226,68 @@ export async function initializePerformanceRating(
     throw new Error(`Failed to initialize rating: ${error?.message}`);
   }
 
-  await writeAuditLog(supabase, {
-    userId: user.id,
+  await pmmAudit({
+    userId: actorUserId,
     action: "create",
     tableName: "performance_ratings",
     recordId: String(data.id),
-    newValues: parsed,
+    newValues: params,
   });
 
   revalidatePath("/performance");
   revalidatePath("/performance/ipcrf");
+  revalidatePath("/performance/opcrf");
 
   return { ratingId: String(data.id) };
 }
 
+/** HR starts an IPCRF / OPCRF for an employee (OPCRF: the office head). */
+export async function initializePerformanceRating(
+  input: unknown,
+): Promise<{ ratingId: string }> {
+  const parsed = InitializePerformanceRatingSchema.parse(input);
+  const user = await requirePermission("performance", "create");
+  return createDraftRating(user.id, parsed, ["open", "rating", "review"]);
+}
+
 // ─── IPCRF Phase 1: Planning ──────────────────────────────────────────────────
+
+/**
+ * Loads a rating plus the ratee's office and enforces H-27 before any KRA
+ * write. Writes go through the service role afterwards: RLS only grants
+ * UPDATE to admins, so the ratee/rater paths could never persist before.
+ */
+async function authorizePlanningEdit(ratingId: string) {
+  const user = await requireAuth();
+  const { data: rating } = await supabaseAdmin
+    .from("performance_ratings")
+    .select(
+      "id, employee_id, status, numerical_rating, employees ( office_id )",
+    )
+    .eq("id", ratingId)
+    .maybeSingle();
+  if (!rating) throw new Error("Performance rating not found.");
+
+  const denial = planningEditDenial(
+    { role: user.role, employeeId: user.employeeId, officeId: user.officeId },
+    {
+      employeeId: String(rating.employee_id),
+      rateeOfficeId:
+        (rating.employees as { office_id?: string | null } | null)?.office_id ??
+        null,
+      status: String(rating.status),
+      numericalRating: Number(rating.numerical_rating),
+    },
+  );
+  if (denial) throw new Error(denial);
+  return { user, status: String(rating.status) };
+}
 
 export async function saveIpcrfPlanning(input: unknown): Promise<void> {
   const parsed = SaveIpcrfPlanningSchema.parse(input);
-  const user = await requireAuth();
-  const supabase = await createServerClient();
+  const { user } = await authorizePlanningEdit(parsed.performanceRatingId);
 
-  const { data: rating, error: fetchError } = await supabase
-    .from("performance_ratings")
-    .select("id, employee_id, status")
-    .eq("id", parsed.performanceRatingId)
-    .single();
-
-  if (fetchError || !rating) throw new Error("Performance rating not found.");
-
-  // Employees may edit their own draft; HR/admin may edit any
-  if (
-    user.role === "employee_self_service" &&
-    user.employeeId !== String(rating.employee_id)
-  ) {
-    throw new Error("Forbidden: you may only edit your own IPCRF.");
-  }
-
-  if (!["draft", "submitted"].includes(String(rating.status))) {
-    throw new Error("Cannot edit KRAs once the review phase has started.");
-  }
-
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from("performance_ratings")
     .update({
       kras: { items: parsed.kras },
@@ -257,7 +297,7 @@ export async function saveIpcrfPlanning(input: unknown): Promise<void> {
 
   if (error) throw new Error(`Failed to save IPCRF planning: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "update",
     tableName: "performance_ratings",
@@ -272,41 +312,28 @@ export async function saveIpcrfPlanning(input: unknown): Promise<void> {
 
 export async function submitIpcrfPlanning(input: unknown): Promise<void> {
   const parsed = SubmitIpcrfPlanningSchema.parse(input);
-  const user = await requireAuth();
-  const supabase = await createServerClient();
+  const { user, status } = await authorizePlanningEdit(
+    parsed.performanceRatingId,
+  );
 
-  const { data: rating, error: fetchError } = await supabase
-    .from("performance_ratings")
-    .select("id, employee_id, status")
-    .eq("id", parsed.performanceRatingId)
-    .single();
-
-  if (fetchError || !rating) throw new Error("Performance rating not found.");
-
-  if (
-    user.role === "employee_self_service" &&
-    user.employeeId !== String(rating.employee_id)
-  ) {
-    throw new Error("Forbidden: you may only submit your own IPCRF.");
-  }
-
-  if (String(rating.status) !== "draft") {
+  if (status !== "draft") {
     throw new Error("Only draft ratings can be submitted for planning.");
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from("performance_ratings")
     .update({
       kras: { items: parsed.kras },
       status: "submitted",
       updated_at: new Date().toISOString(),
     })
-    .eq("id", parsed.performanceRatingId);
+    .eq("id", parsed.performanceRatingId)
+    .eq("status", "draft");
 
   if (error)
     throw new Error(`Failed to submit IPCRF planning: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "submit",
     tableName: "performance_ratings",
@@ -325,6 +352,23 @@ export async function submitIpcrfPlanning(input: unknown): Promise<void> {
 
 // ─── IPCRF Phase 2: Monitoring ────────────────────────────────────────────────
 
+/** Ratee ≠ rater ≠ approver; throws the pure rule's denial. */
+function assertRatingSegregation(
+  user: { id: string; employeeId: string | null },
+  rating: { employee_id?: unknown; rated_by?: unknown },
+  step: "rate" | "approve",
+): void {
+  const denial = ratingSegregationDenial(
+    user,
+    {
+      employeeId: String(rating.employee_id),
+      ratedBy: rating.rated_by == null ? null : String(rating.rated_by),
+    },
+    step,
+  );
+  if (denial) throw new Error(denial);
+}
+
 export async function saveIpcrfMonitoring(input: unknown): Promise<void> {
   const parsed = SaveIpcrfMonitoringSchema.parse(input);
   const user = await requirePermission("performance", "edit");
@@ -332,11 +376,12 @@ export async function saveIpcrfMonitoring(input: unknown): Promise<void> {
 
   const { data: rating, error: fetchError } = await supabase
     .from("performance_ratings")
-    .select("id, status")
+    .select("id, status, employee_id")
     .eq("id", parsed.performanceRatingId)
     .single();
 
   if (fetchError || !rating) throw new Error("Performance rating not found.");
+  assertRatingSegregation(user, rating, "rate");
 
   if (!["submitted", "reviewed"].includes(String(rating.status))) {
     throw new Error(
@@ -385,7 +430,7 @@ export async function saveIpcrfMonitoring(input: unknown): Promise<void> {
   if (error)
     throw new Error(`Failed to save monitoring notes: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "update",
     tableName: "performance_ratings",
@@ -403,6 +448,59 @@ export async function saveIpcrfMonitoring(input: unknown): Promise<void> {
 
 // ─── IPCRF Phase 3: Review / Rating ──────────────────────────────────────────
 
+/**
+ * §10.4.2 forced-ranking gate (H-29). Evaluates the WHOLE IPCRF population of
+ * the ratee's office for the period — every IPCRF counts toward the
+ * denominator, scored ones toward the caps — so the verdict is the same no
+ * matter which ratings were submitted or approved first. Blocks only when the
+ * candidate's own band is the one over its cap.
+ */
+async function assertForcedRankingAllows(
+  ratingId: string,
+  numericalRating: number,
+): Promise<void> {
+  const { data: rating } = await supabaseAdmin
+    .from("performance_ratings")
+    .select("id, rating_type, period_id, employees ( office_id )")
+    .eq("id", ratingId)
+    .maybeSingle();
+  if (!rating) throw new Error("Performance rating not found.");
+  // OPCRF/DPCR/BPCR are unit rollups, not a rated population.
+  if (String(rating.rating_type) !== "ipcrf") return;
+
+  const officeOf = (row: { employees?: unknown }): string | null =>
+    (row.employees as { office_id?: string | null } | null)?.office_id ?? null;
+  const officeId = officeOf(rating);
+
+  const { data: rows, error } = await supabaseAdmin
+    .from("performance_ratings")
+    .select("id, status, numerical_rating, employees ( office_id )")
+    .eq("period_id", String(rating.period_id))
+    .eq("rating_type", "ipcrf");
+  if (error) {
+    throw new Error(`Failed to evaluate forced ranking: ${error.message}`);
+  }
+
+  const population = (rows ?? [])
+    .filter((r) => officeOf(r) === officeId)
+    .map((r) => ({
+      id: String(r.id),
+      status: String(r.status),
+      numericalRating: Number(r.numerical_rating),
+    }));
+
+  const result = evaluateOfficeForcedRanking(population, {
+    id: ratingId,
+    numericalRating,
+  });
+  if (candidateBreachesCap(result, numericalRating)) {
+    throw new Error(
+      formatForcedRankingError(result) ??
+        "Forced ranking limits exceeded for this office and rating period.",
+    );
+  }
+}
+
 export async function saveIpcrfReview(input: unknown): Promise<void> {
   const parsed = SaveIpcrfReviewSchema.parse(input);
   const user = await requirePermission("performance", "edit");
@@ -410,11 +508,12 @@ export async function saveIpcrfReview(input: unknown): Promise<void> {
 
   const { data: rating, error: fetchError } = await supabase
     .from("performance_ratings")
-    .select("id, status")
+    .select("id, status, employee_id")
     .eq("id", parsed.performanceRatingId)
     .single();
 
   if (fetchError || !rating) throw new Error("Performance rating not found.");
+  assertRatingSegregation(user, rating, "rate");
 
   if (!["reviewed", "submitted"].includes(String(rating.status))) {
     throw new Error(
@@ -435,6 +534,14 @@ export async function saveIpcrfReview(input: unknown): Promise<void> {
     );
   }
 
+  // Re-scoring an already-submitted rating changes the office distribution.
+  if (String(rating.status) === "submitted") {
+    await assertForcedRankingAllows(
+      parsed.performanceRatingId,
+      finalRating.numerical,
+    );
+  }
+
   const { error } = await supabase
     .from("performance_ratings")
     .update({
@@ -448,7 +555,7 @@ export async function saveIpcrfReview(input: unknown): Promise<void> {
 
   if (error) throw new Error(`Failed to save review rating: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "update",
     tableName: "performance_ratings",
@@ -474,11 +581,12 @@ export async function submitIpcrfReview(input: unknown): Promise<void> {
   // (re-)submitted for approval.
   const { data: current, error: fetchError } = await supabase
     .from("performance_ratings")
-    .select("id, status")
+    .select("id, status, employee_id")
     .eq("id", parsed.performanceRatingId)
     .single();
 
   if (fetchError || !current) throw new Error("Performance rating not found.");
+  assertRatingSegregation(user, current, "rate");
   if (!["draft", "submitted", "reviewed"].includes(String(current.status))) {
     throw new Error(
       "This rating can no longer be submitted — it has already been approved or disapproved.",
@@ -497,6 +605,12 @@ export async function submitIpcrfReview(input: unknown): Promise<void> {
     );
   }
 
+  // PRD §10.4.2: the system "prevents submission" over the office caps.
+  await assertForcedRankingAllows(
+    parsed.performanceRatingId,
+    finalRating.numerical,
+  );
+
   const { error } = await supabase
     .from("performance_ratings")
     .update({
@@ -511,7 +625,7 @@ export async function submitIpcrfReview(input: unknown): Promise<void> {
 
   if (error) throw new Error(`Failed to submit review: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "submit",
     tableName: "performance_ratings",
@@ -528,70 +642,6 @@ export async function submitIpcrfReview(input: unknown): Promise<void> {
   revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}/review`);
 }
 
-/**
- * Enforces the CSC forced-ranking distribution cap (PRD §10.4.2) at the moment
- * an IPCRF rating is approved. Aggregates the office's already-approved IPCRF
- * population for the period, adds the rating being approved, and blocks when
- * Outstanding > 10% or Very Satisfactory > 25% (round-up-when-<1 rule lives in
- * `validateForcedRanking`).
- *
- * Only individual (IPCRF) Outstanding / Very Satisfactory approvals can breach a
- * cap: OPCRF/DPCR/BPCR rollups are not a rated population, and approving a
- * Satisfactory-or-lower rating only grows the denominator.
- */
-async function enforceForcedRankingOnApproval(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  params: {
-    ratingType: string;
-    adjectival: string;
-    employeeId: string;
-    periodId: string;
-  },
-): Promise<void> {
-  if (params.ratingType !== "ipcrf") return;
-  if (!["outstanding", "very_satisfactory"].includes(params.adjectival)) return;
-
-  const { data: emp } = await supabase
-    .from("employees")
-    .select("office_id")
-    .eq("id", params.employeeId)
-    .single();
-  const officeId = (emp?.office_id as string | null | undefined) ?? null;
-
-  const { data: approvedRows, error } = await supabase
-    .from("performance_ratings")
-    .select("adjectival_rating, employees ( office_id )")
-    .eq("period_id", params.periodId)
-    .eq("rating_type", "ipcrf")
-    .eq("status", "approved");
-
-  if (error) {
-    throw new Error(`Failed to evaluate forced ranking: ${error.message}`);
-  }
-
-  const population = (approvedRows ?? [])
-    .filter(
-      (r) =>
-        ((r.employees as { office_id?: string | null } | null)?.office_id ??
-          null) === officeId,
-    )
-    .map((r) => String(r.adjectival_rating));
-  // Include the rating currently being approved.
-  population.push(params.adjectival);
-
-  const { validateForcedRanking, formatForcedRankingError } =
-    await import("@/lib/utils/performance/forced-ranking");
-  const result = validateForcedRanking(
-    population as Parameters<typeof validateForcedRanking>[0],
-  );
-  if (!result.valid) {
-    throw new Error(
-      formatForcedRankingError(result) ??
-        "Forced ranking limits exceeded for this office and rating period.",
-    );
-  }
-}
-
 export async function approveRating(input: unknown): Promise<void> {
   const parsed = ApproveRatingSchema.parse(input);
   const user = await requirePermission("performance", "approve");
@@ -600,38 +650,44 @@ export async function approveRating(input: unknown): Promise<void> {
   const { data: rating, error: fetchError } = await supabase
     .from("performance_ratings")
     .select(
-      "id, status, rating_type, employee_id, period_id, adjectival_rating",
+      "id, status, numerical_rating, adjectival_rating, employee_id, rated_by",
     )
     .eq("id", parsed.performanceRatingId)
     .single();
 
   if (fetchError || !rating) throw new Error("Performance rating not found.");
-  if (String(rating.status) !== "submitted") {
-    throw new Error("Only submitted ratings can be approved.");
-  }
+  assertRatingSegregation(user, rating, "approve");
 
-  // PRD §10.4.2 — block approvals that breach the forced-ranking distribution.
-  await enforceForcedRankingOnApproval(supabase, {
-    ratingType: String(rating.rating_type),
-    adjectival: String(rating.adjectival_rating),
-    employeeId: String(rating.employee_id),
-    periodId: String(rating.period_id),
+  // H-28: only a review-phase score can be finalized; the adjectival is
+  // re-derived from it (§10.4.1), never trusted from the stored column.
+  const numericalRating = Number(rating.numerical_rating);
+  const adjectival = finalizableAdjectival({
+    status: String(rating.status),
+    numericalRating,
   });
 
-  const oldValues = { status: rating.status };
+  // H-29: same whole-office evaluation as at submission.
+  await assertForcedRankingAllows(parsed.performanceRatingId, numericalRating);
+
+  const oldValues = {
+    status: rating.status,
+    adjectivalRating: rating.adjectival_rating,
+  };
 
   const { error } = await supabase
     .from("performance_ratings")
     .update({
       status: "approved",
+      adjectival_rating: adjectival,
       approved_by: user.id,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", parsed.performanceRatingId);
+    .eq("id", parsed.performanceRatingId)
+    .eq("status", "submitted");
 
   if (error) throw new Error(`Failed to approve rating: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "approve",
     tableName: "performance_ratings",
@@ -639,6 +695,8 @@ export async function approveRating(input: unknown): Promise<void> {
     oldValues,
     newValues: {
       status: "approved",
+      numericalRating,
+      adjectivalRating: adjectival,
       approvedBy: user.id,
       remarks: parsed.remarks,
     },
@@ -656,11 +714,12 @@ export async function disapproveRating(input: unknown): Promise<void> {
 
   const { data: rating, error: fetchError } = await supabase
     .from("performance_ratings")
-    .select("id, status")
+    .select("id, status, employee_id, rated_by")
     .eq("id", parsed.performanceRatingId)
     .single();
 
   if (fetchError || !rating) throw new Error("Performance rating not found.");
+  assertRatingSegregation(user, rating, "approve");
   if (String(rating.status) !== "submitted") {
     throw new Error("Only submitted ratings can be disapproved.");
   }
@@ -678,7 +737,7 @@ export async function disapproveRating(input: unknown): Promise<void> {
 
   if (error) throw new Error(`Failed to disapprove rating: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "disapprove",
     tableName: "performance_ratings",
@@ -717,11 +776,12 @@ export async function saveOpcrf(input: unknown): Promise<void> {
 
   const { data: rating, error: fetchError } = await supabase
     .from("performance_ratings")
-    .select("id, status")
+    .select("id, status, employee_id")
     .eq("id", parsed.performanceRatingId)
     .single();
 
   if (fetchError || !rating) throw new Error("OPCRF rating record not found.");
+  assertRatingSegregation(user, rating, "rate");
 
   const { error } = await supabase
     .from("performance_ratings")
@@ -736,7 +796,7 @@ export async function saveOpcrf(input: unknown): Promise<void> {
 
   if (error) throw new Error(`Failed to save OPCRF: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "update",
     tableName: "performance_ratings",
@@ -760,6 +820,9 @@ export async function processStepIncrement(
   const parsed = ProcessStepIncrementSchema.parse(input);
   const user = await requirePermission("performance", "process");
   const supabase = await createServerClient();
+  if (user.employeeId && user.employeeId === parsed.employeeId) {
+    throw new Error("You cannot process your own step increment.");
+  }
 
   // Verify employee exists and get current step
   const { data: emp, error: empError } = await supabase
@@ -809,7 +872,7 @@ export async function processStepIncrement(
     throw new Error(`Failed to create step increment: ${error?.message}`);
   }
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "create",
     tableName: "step_increments",
@@ -835,6 +898,9 @@ export async function approveStepIncrement(input: unknown): Promise<void> {
     .single();
 
   if (fetchError || !increment) throw new Error("Step increment not found.");
+  if (user.employeeId && user.employeeId === String(increment.employee_id)) {
+    throw new Error("You cannot approve your own step increment.");
+  }
   if (String(increment.status) !== "pending") {
     throw new Error("Only pending step increments can be approved.");
   }
@@ -854,7 +920,7 @@ export async function approveStepIncrement(input: unknown): Promise<void> {
   if (error)
     throw new Error(`Failed to approve step increment: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "approve",
     tableName: "step_increments",
@@ -896,6 +962,9 @@ export async function implementStepIncrement(
     .single();
 
   if (fetchError || !increment) throw new Error("Step increment not found.");
+  if (user.employeeId && user.employeeId === String(increment.employee_id)) {
+    throw new Error("You cannot implement your own step increment.");
+  }
   if (String(increment.status) !== "approved") {
     throw new Error("Only approved step increments can be implemented.");
   }
@@ -932,7 +1001,7 @@ export async function implementStepIncrement(
       `Failed to mark increment as implemented: ${error.message}`,
     );
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "implement",
     tableName: "step_increments",
@@ -947,7 +1016,7 @@ export async function implementStepIncrement(
     },
   });
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "update",
     tableName: "employees",
@@ -1154,10 +1223,9 @@ async function issueNosiForIncrement(
     throw new Error(`Failed to store NOSI PDF: ${uploadError.message}`);
   }
 
-  const { data: urlData } = supabase.storage
-    .from("documents")
-    .getPublicUrl(storagePath);
-  const documentUrl = urlData.publicUrl;
+  // H-19: "documents" is private — store the object path; the download route
+  // (/performance/nosi/[id]) authorizes and signs it at read time.
+  const documentUrl = storagePath;
 
   // 5. Attach the artifact to the increment record (nosi_serial / nosi_document_url)
   const { error: attachError } = await supabase
@@ -1177,7 +1245,7 @@ async function issueNosiForIncrement(
     type: "step_increment_implemented",
     title: `Notice of Salary Step Increment issued (${serialNumber})`,
     body: `Your step increment from Step ${params.fromStep} to Step ${params.toStep} is effective ${params.effectivityDate}. Your NOSI document is available for download.`,
-    actionUrl: documentUrl,
+    actionUrl: `/performance/nosi/${params.stepIncrementId}`,
     entityType: "step_increment",
     entityId: params.stepIncrementId,
   });
@@ -1232,7 +1300,7 @@ export async function cancelStepIncrement(input: unknown): Promise<void> {
   if (error)
     throw new Error(`Failed to cancel step increment: ${error.message}`);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "cancel",
     tableName: "step_increments",
@@ -1299,6 +1367,14 @@ export async function bulkProcessStepIncrements(input: unknown): Promise<{
     const errors: Array<{ employeeId: string; message: string }> = [];
 
     for (const employeeId of parsed.employeeIds) {
+      if (user.employeeId && user.employeeId === employeeId) {
+        failed++;
+        errors.push({
+          employeeId,
+          message: "You cannot process your own step increment.",
+        });
+        continue;
+      }
       try {
         const { data: emp, error: empErr } = await supabase
           .from("employees")
@@ -1378,7 +1454,7 @@ export async function bulkProcessStepIncrements(input: unknown): Promise<{
           continue;
         }
 
-        await writeAuditLog(supabase, {
+        await pmmAudit({
           userId: user.id,
           action: "bulk_create",
           tableName: "step_increments",
@@ -1410,12 +1486,13 @@ export async function bulkProcessStepIncrements(input: unknown): Promise<{
   });
 }
 
-// ─── Employee-initiated IPCRF draft creation ──────────────────────────────────
+/// ─── Employee-initiated IPCRF draft creation ──────────────────────────────────
 
 /**
- * Convenience wrapper: creates (or reuses) a draft IPCRF record for the
- * currently authenticated employee against a given period.
- * Used by the self-service "Start my IPCRF" button.
+ * Creates (or reuses) a draft IPCRF for the signed-in employee against an
+ * open period (C-14). Scope is fixed to the caller's own employee record, so
+ * no `performance.create` grant is needed — the period must still be in
+ * planning ("open").
  */
 export async function startMyIpcrf(
   input: unknown,
@@ -1423,17 +1500,23 @@ export async function startMyIpcrf(
   const { z } = await import("zod");
   const Schema = z.object({ periodId: z.string().uuid("Invalid period ID.") });
   const parsed = Schema.parse(input);
-  const user = await requireAuth();
+  // Own-record self-service path: performance.view (ESS selfOnly) is enough;
+  // the ratee is always the session's employee, never client input.
+  const user = await requirePermission("performance", "view");
 
   if (!user.employeeId) {
     throw new Error("No employee record is linked to your account.");
   }
 
-  return initializePerformanceRating({
-    employeeId: user.employeeId,
-    periodId: parsed.periodId,
-    ratingType: "ipcrf",
-  });
+  return createDraftRating(
+    user.id,
+    {
+      employeeId: user.employeeId,
+      periodId: parsed.periodId,
+      ratingType: "ipcrf",
+    },
+    ["open"],
+  );
 }
 
 // NOTE: DPCR (PMM-003) and BPCR (PMM-004) are persisted in the dedicated
@@ -1447,60 +1530,11 @@ export async function startMyIpcrf(
 // ─── Document Upload (PMM-005) ────────────────────────────────────────────────
 
 /**
- * Attaches a scanned performance document (IPCRF/OPCRF/DPCR/BPCR) to a rating record.
- * File must already be uploaded to Supabase Storage; this action only stores the URL.
- */
-export async function uploadPerformanceDocument(input: unknown): Promise<void> {
-  const { UploadPerformanceDocumentSchema } =
-    await import("@/lib/validations/performance");
-  const parsed = UploadPerformanceDocumentSchema.parse(input);
-  const user = await requirePermission("performance", "edit");
-  const supabase = await createServerClient();
-
-  const { data: rating, error: fetchError } = await supabase
-    .from("performance_ratings")
-    .select("id, rating_type, employee_id")
-    .eq("id", parsed.performanceRatingId)
-    .single();
-
-  if (fetchError || !rating) {
-    throw new Error("Performance rating record not found.");
-  }
-
-  const { error } = await supabase
-    .from("performance_ratings")
-    .update({
-      scanned_doc_url: parsed.documentUrl,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", parsed.performanceRatingId);
-
-  if (error) {
-    throw new Error(`Failed to upload document URL: ${error.message}`);
-  }
-
-  await writeAuditLog(supabase, {
-    userId: user.id,
-    action: "upload_document",
-    tableName: "performance_ratings",
-    recordId: parsed.performanceRatingId,
-    newValues: {
-      scannedDocUrl: parsed.documentUrl,
-      originalFilename: parsed.originalFilename,
-      ratingType: rating.rating_type,
-      employeeId: rating.employee_id,
-    },
-  });
-
-  revalidatePath("/performance");
-  revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
-}
-
-/**
- * Uploads a scanned IPCRF/OPCRF document to Supabase Storage and attaches its
- * URL to the rating via {@link uploadPerformanceDocument} (PMM-005). The file
- * body is sent as base64 from the client; only the resulting public URL is
- * persisted. Guarded by `performance.edit`.
+ * Uploads a scanned IPCRF/OPCRF document to the private "documents" bucket and
+ * stores its OBJECT PATH on the rating (H-19 — a public URL is dead on a
+ * private bucket, and accepting a client-supplied URL let callers point the
+ * record anywhere). Readers must authorize, then sign via signedObjectUrl.
+ * Guarded by `performance.edit`.
  */
 export async function uploadPerformanceDocumentFile(input: {
   performanceRatingId: string;
@@ -1516,8 +1550,17 @@ export async function uploadPerformanceDocumentFile(input: {
     mimeType: z.enum(["application/pdf", "image/jpeg", "image/png"]),
   });
   const parsed = Schema.parse(input);
-  await requirePermission("performance", "edit");
+  const user = await requirePermission("performance", "edit");
   const supabase = await createServerClient();
+
+  const { data: rating, error: fetchError } = await supabase
+    .from("performance_ratings")
+    .select("id, rating_type, employee_id")
+    .eq("id", parsed.performanceRatingId)
+    .single();
+  if (fetchError || !rating) {
+    throw new Error("Performance rating record not found.");
+  }
 
   const buffer = Buffer.from(parsed.fileBase64, "base64");
   const MAX_BYTES = 10 * 1024 * 1024;
@@ -1546,16 +1589,32 @@ export async function uploadPerformanceDocumentFile(input: {
     );
   }
 
-  const { data: urlData } = supabase.storage
-    .from("documents")
-    .getPublicUrl(storagePath);
+  const { error } = await supabase
+    .from("performance_ratings")
+    .update({
+      scanned_doc_url: storagePath,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.performanceRatingId);
+  if (error) {
+    throw new Error(`Failed to attach document: ${error.message}`);
+  }
 
-  // Delegate the DB write + audit to the canonical PMM-005 action.
-  await uploadPerformanceDocument({
-    performanceRatingId: parsed.performanceRatingId,
-    documentUrl: urlData.publicUrl,
-    originalFilename: parsed.fileName,
+  await pmmAudit({
+    userId: user.id,
+    action: "upload_document",
+    tableName: "performance_ratings",
+    recordId: parsed.performanceRatingId,
+    newValues: {
+      scannedDocPath: storagePath,
+      originalFilename: parsed.fileName,
+      ratingType: rating.rating_type,
+      employeeId: rating.employee_id,
+    },
   });
+
+  revalidatePath("/performance");
+  revalidatePath(`/performance/ipcrf/${parsed.performanceRatingId}`);
 }
 
 // ─── Forced Ranking Validation (PMM-006) ─────────────────────────────────────
@@ -1703,7 +1762,7 @@ export async function generatePbbList(input: unknown): Promise<{
 
   const validationResult = batchValidatePbbQualification(employeeData);
 
-  await writeAuditLog(supabase, {
+  await pmmAudit({
     userId: user.id,
     action: "generate_pbb_list",
     tableName: "performance_ratings",

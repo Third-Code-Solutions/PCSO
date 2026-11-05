@@ -8,19 +8,14 @@
  *  - FilterToolbar        : status / leave-type / date / search / page-size
  *  - Pagination           : URL-preserving pagination with page-size selector
  *  - TableSkeleton        : shimmer skeleton shown via Suspense fallback
- *  - MyApplicationsTable  : own applications with cancel action
+ *  - MyApplicationsTable  : own applications with cancel / cancellation request
+ *  - CancellationRequestsTable : approver confirm/deny of cancellation requests
  *  - PendingApprovalTable : approval queue with inline + bulk approve
  *  - AllApplicationsTable : full filterable history + CSV export
  */
 
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import {
-  useTransition,
-  useState,
-  useCallback,
-  useEffect,
-  useMemo,
-} from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { useTransition, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +30,11 @@ import {
   FilterIcon,
   SearchIcon,
 } from "lucide-react";
-import { cancelLeaveApplication, bulkApprove, exportCsv } from "./actions";
+import { bulkApprove, exportCsv } from "./actions";
+import {
+  cancelLeave,
+  decideLeaveCancellation,
+} from "@/app/(dashboard)/leave/actions";
 import { Form6DownloadButton } from "./_form6-button";
 import type {
   LeaveApplicationRow,
@@ -68,6 +67,7 @@ const STATUS_VARIANT: Record<
   disapproved: "destructive",
   cancelled: "muted",
   pending: "warning",
+  cancellation_requested: "warning",
   recalled: "muted",
 };
 
@@ -226,6 +226,7 @@ const STATUS_OPTIONS = [
   { value: "approved", label: "Approved" },
   { value: "disapproved", label: "Disapproved" },
   { value: "cancelled", label: "Cancelled" },
+  { value: "cancellation_requested", label: "Cancellation Requested" },
   { value: "recalled", label: "Recalled" },
 ];
 
@@ -240,16 +241,15 @@ export function FilterToolbar({
   const [local, setLocal] = useState<AllFilters>(filters);
   const [announce, setAnnounce] = useState<string>("");
 
-  // Keep local state in sync when a navigation changes the URL.
-  useEffect(() => {
+  // Keep local state in sync when a navigation changes the URL. `filters` is
+  // a fresh object every render, so compare by value and adjust during render
+  // (React's "adjusting state when a prop changes" pattern) instead of an effect.
+  const filtersKey = JSON.stringify(filters);
+  const [syncedKey, setSyncedKey] = useState(filtersKey);
+  if (syncedKey !== filtersKey) {
+    setSyncedKey(filtersKey);
     setLocal(filters);
-  }, [
-    filters.status,
-    filters.leaveType,
-    filters.dateFrom,
-    filters.dateTo,
-    filters.q,
-  ]);
+  }
 
   const push = useCallback(
     (next: AllFilters, nextPageSize: number = pageSize) => {
@@ -635,8 +635,12 @@ export function MyApplicationsTable({
     setCancellingId(id);
     startTransition(async () => {
       try {
-        await cancelLeaveApplication({ leaveApplicationId: id });
-        toast.success("Leave application cancelled.");
+        const { status } = await cancelLeave({ leaveApplicationId: id });
+        toast.success(
+          status === "cancellation_requested"
+            ? "Cancellation requested. Your approver will review it."
+            : "Leave application cancelled.",
+        );
         router.refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to cancel.");
@@ -714,7 +718,9 @@ export function MyApplicationsTable({
                   disabled={isPending}
                 >
                   <XIcon className="mr-1 h-3.5 w-3.5" />
-                  Cancel
+                  {app.status === "approved"
+                    ? "Request cancellation"
+                    : "Cancel"}
                 </Button>
               )}
             </div>
@@ -1022,6 +1028,122 @@ function SingleApproveDisapprove({
         </Button>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CancellationRequestsTable (PRD §12.1 CANCELLATION_REQUESTED)
+// ---------------------------------------------------------------------------
+
+export function CancellationRequestsTable({
+  applications,
+}: {
+  applications: LeaveApplicationRowEnriched[];
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  function decide(id: string, decision: "confirm" | "deny") {
+    setBusyId(id);
+    startTransition(async () => {
+      try {
+        await decideLeaveCancellation({ leaveApplicationId: id, decision });
+        toast.success(
+          decision === "confirm"
+            ? "Leave cancelled and credits restored."
+            : "Cancellation denied. Leave stays approved.",
+        );
+        router.refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Action failed.");
+      } finally {
+        setBusyId(null);
+      }
+    });
+  }
+
+  if (applications.length === 0) return null;
+
+  return (
+    <section className="space-y-2" aria-labelledby="cancellation-requests">
+      <h2
+        id="cancellation-requests"
+        className="text-sm font-semibold text-pcso-navy"
+      >
+        Cancellation requests ({applications.length})
+      </h2>
+      <TableShell
+        headers={[
+          "Applicant",
+          "Leave Type",
+          "Date From",
+          "Date To",
+          "Days",
+          "Reason",
+          "Actions",
+        ]}
+      >
+        {applications.map((app) => (
+          <tr
+            key={app.id}
+            className={cn(
+              "hover:bg-muted/20 transition-colors",
+              busyId === app.id && "opacity-50 pointer-events-none",
+            )}
+          >
+            <td className="px-4 py-3">
+              <div className="font-medium">{app.employeeFullName}</div>
+              {app.employeeNo && (
+                <div className="text-xs text-muted-foreground">
+                  {app.employeeNo}
+                </div>
+              )}
+            </td>
+            <td className="px-4 py-3">
+              {LEAVE_TYPES[app.leaveTypeCode as LeaveTypeCode]?.name ??
+                app.leaveTypeName}
+            </td>
+            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+              {fmtDate(app.startDate)}
+            </td>
+            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+              {fmtDate(app.endDate)}
+            </td>
+            <td className="px-4 py-3 text-center tabular-nums">
+              {app.workingDays}
+            </td>
+            <td className="px-4 py-3 max-w-[180px]">
+              <span className="line-clamp-2 text-xs text-muted-foreground">
+                {app.approverRemarks ?? "—"}
+              </span>
+            </td>
+            <td className="px-4 py-3">
+              <div className="flex items-center gap-1 whitespace-nowrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7 px-2"
+                  onClick={() => decide(app.id, "deny")}
+                  disabled={isPending}
+                >
+                  Deny
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs h-7 px-2"
+                  onClick={() => decide(app.id, "confirm")}
+                  disabled={isPending}
+                >
+                  <CheckIcon className="mr-1 h-3 w-3" />
+                  Confirm cancellation
+                </Button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </TableShell>
+    </section>
   );
 }
 

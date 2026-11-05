@@ -18,8 +18,10 @@ import {
   createBpcr,
   updateBpcr,
   submitBpcr,
+  reviewPcrForm,
   uploadPcrDocumentFile,
 } from "@/lib/actions/performance-gaps";
+import { ratingToAdjectival } from "@/lib/utils/performance/rating";
 import { PerformanceDocUpload } from "./performance-doc-upload";
 
 type Variant = "dpcr" | "bpcr";
@@ -51,6 +53,8 @@ interface PcrFormProps {
   mode: "create" | "edit";
   periods?: PeriodOption[];
   initial?: PcrInitial;
+  /** performance.approve — shows approve / return on a submitted form */
+  canReview?: boolean;
 }
 
 const ADJECTIVALS: { value: Adjectival; label: string }[] = [
@@ -70,6 +74,7 @@ export function PcrForm({
   mode,
   periods = [],
   initial,
+  canReview = false,
 }: PcrFormProps) {
   const router = useRouter();
   const unitLabel = variant === "dpcr" ? "Division" : "Branch";
@@ -80,15 +85,20 @@ export function PcrForm({
   const [numerical, setNumerical] = React.useState(
     initial?.numericalRating ?? "",
   );
-  const [adjectival, setAdjectival] = React.useState<Adjectival | "">(
-    initial?.adjectivalRating ?? "",
-  );
+  const [remarks, setRemarks] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState<string | null>(null);
 
   const numericalValue = numerical.trim() || undefined;
-  const adjectivalValue: Adjectival | undefined = adjectival || undefined;
+  // Display only — the server derives the stored adjectival (PRD §10.4.1).
+  const derivedAdjectival = numericalValue
+    ? ratingToAdjectival(Number(numericalValue))
+    : null;
+  const derivedLabel = numericalValue
+    ? (ADJECTIVALS.find((a) => a.value === derivedAdjectival)?.label ??
+      "Out of range (1.000–5.000)")
+    : "—";
 
   async function handleCreate(
     e: React.FormEvent<HTMLFormElement>,
@@ -108,14 +118,12 @@ export function PcrForm({
               divisionName: unitName,
               phase,
               numericalRating: numericalValue,
-              adjectivalRating: adjectivalValue,
             })
           : await createBpcr({
               periodId,
               branchName: unitName,
               phase,
               numericalRating: numericalValue,
-              adjectivalRating: adjectivalValue,
             });
       if (!res.success || !res.id) {
         setError(res.error ?? "Failed to create.");
@@ -142,13 +150,11 @@ export function PcrForm({
               divisionName: unitName || undefined,
               phase,
               numericalRating: numericalValue,
-              adjectivalRating: adjectivalValue,
             })
           : await updateBpcr(initial.id, {
               branchName: unitName || undefined,
               phase,
               numericalRating: numericalValue,
-              adjectivalRating: adjectivalValue,
             });
       if (!res.success) {
         setError(res.error ?? "Failed to save.");
@@ -176,6 +182,28 @@ export function PcrForm({
       else router.refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to submit.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleReview(decision: "approve" | "return"): Promise<void> {
+    if (!initial) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await reviewPcrForm({
+        variant,
+        id: initial.id,
+        decision,
+        remarks: remarks.trim() || undefined,
+      });
+      if (!res.success) setError(res.error ?? "Failed to record the review.");
+      else router.refresh();
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to record the review.",
+      );
     } finally {
       setBusy(false);
     }
@@ -230,22 +258,10 @@ export function PcrForm({
           />
         </div>
         <div>
-          <label className={LABEL_CLASS} htmlFor="pcr-adjectival">
-            Adjectival rating (optional)
-          </label>
-          <select
-            id="pcr-adjectival"
-            value={adjectival}
-            onChange={(e) => setAdjectival(e.target.value as Adjectival | "")}
-            className={INPUT_CLASS}
-          >
-            <option value="">—</option>
-            {ADJECTIVALS.map((a) => (
-              <option key={a.value} value={a.value}>
-                {a.label}
-              </option>
-            ))}
-          </select>
+          <span className={LABEL_CLASS}>Adjectival rating</span>
+          <p className="mt-1 flex h-9 items-center text-sm" aria-live="polite">
+            {derivedLabel}
+          </p>
         </div>
       </div>
     </>
@@ -308,23 +324,27 @@ export function PcrForm({
   }
 
   const isDraft = initial?.status === "draft";
+  const isSubmitted = initial?.status === "submitted";
 
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        {sharedFields}
+        {/* Only drafts are editable; the server enforces the same rule. */}
+        <fieldset disabled={!isDraft} className="space-y-4">
+          {sharedFields}
+        </fieldset>
         {errorBlock}
         {savedMsg && <p className="text-xs text-emerald-600">{savedMsg}</p>}
-        <div className="flex items-center gap-3 pt-1">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={busy}
-            className="rounded-md bg-pcso-navy px-4 py-2 text-sm font-medium text-pcso-cream transition-colors hover:bg-pcso-navy-light disabled:opacity-50"
-          >
-            {busy ? "Saving…" : "Save"}
-          </button>
-          {isDraft && (
+        {isDraft && (
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={busy}
+              className="rounded-md bg-pcso-navy px-4 py-2 text-sm font-medium text-pcso-cream transition-colors hover:bg-pcso-navy-light disabled:opacity-50"
+            >
+              {busy ? "Saving…" : "Save"}
+            </button>
             <button
               type="button"
               onClick={handleSubmitForApproval}
@@ -333,8 +353,43 @@ export function PcrForm({
             >
               Submit for approval
             </button>
-          )}
-        </div>
+          </div>
+        )}
+        {isSubmitted && canReview && (
+          <div className="space-y-3 border-t pt-4">
+            <div>
+              <label className={LABEL_CLASS} htmlFor="pcr-remarks">
+                Review remarks (required to return)
+              </label>
+              <textarea
+                id="pcr-remarks"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                maxLength={500}
+                rows={2}
+                className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleReview("approve")}
+                disabled={busy}
+                className="rounded-md bg-pcso-navy px-4 py-2 text-sm font-medium text-pcso-cream transition-colors hover:bg-pcso-navy-light disabled:opacity-50"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReview("return")}
+                disabled={busy || !remarks.trim()}
+                className="rounded-md border px-4 py-2 text-sm hover:bg-muted/40 disabled:opacity-50"
+              >
+                Return to draft
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {initial && (

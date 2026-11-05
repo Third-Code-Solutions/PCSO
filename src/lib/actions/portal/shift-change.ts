@@ -10,11 +10,12 @@
  *
  * Authorization:
  *   - Submit: Own employee only
- *   - Approve (Supervisor): Own unit employees
- *   - Process (HR): requirePermission('employees', 'edit')
+ *   - Endorse (Supervisor): requirePermission('attendance', 'approve'),
+ *     own-unit requesters only (HR: any unit), never one's own request
+ *   - Process (HR): requirePermission('employees', 'edit'), never one's own
  */
 
-import { and, asc, eq, desc, sql } from "drizzle-orm";
+import { and, asc, eq, desc, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
@@ -29,7 +30,10 @@ import {
 } from "@/lib/db/schema";
 import { employees } from "@/lib/db/schema/employees";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import { auditLog } from "@/lib/audit";
+import { resolveEmployeeScheduleOn } from "@/lib/actions/attendance/schedule-context";
+import { planScheduleAssignment } from "@/lib/utils/attendance/schedule-resolution";
 import { notifyEmployee } from "@/lib/notifications";
 import { withTx, lockKey } from "@/lib/db/transaction";
 
@@ -38,6 +42,12 @@ import { withTx, lockKey } from "@/lib/db/transaction";
 type Ok<T> = { data: T };
 type Err = { error: string };
 type Result<T> = Ok<T> | Err;
+
+// Joined people are display-only: never ship TIN / GSIS / bank / salary
+// columns to the client components that render these lists.
+const NAME_ONLY = {
+  columns: { id: true, firstName: true, lastName: true, employeeNumber: true },
+} as const;
 
 // ─── Validation schemas ──────────────────────────────────────────────────────
 
@@ -71,6 +81,9 @@ export async function submitShiftChangeRequest(
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
   }
+  if (!session.employeeId) {
+    return { error: "No employee record is linked to your account" };
+  }
 
   const { requestedScheduleId, effectiveDate, reason, supportingDocumentUrls } =
     parsed.data;
@@ -78,27 +91,28 @@ export async function submitShiftChangeRequest(
   try {
     // Fetch employee
     const employee = await db.query.employees.findFirst({
-      where: eq(employees.id, session.employeeId!),
+      where: eq(employees.id, session.employeeId),
     });
 
     if (!employee) {
       return { error: "Employee not found" };
     }
 
-    // Fetch current schedule assignment
-    const currentAssignment = await db.query.employeeSchedules.findFirst({
-      where: and(
-        eq(employeeSchedules.employeeId, session.employeeId!),
-        sql`${employeeSchedules.effectiveTo} IS NULL`,
-      ),
-      orderBy: desc(employeeSchedules.effectiveFrom),
-    });
+    // Current schedule: employee assignment, else the office assignment (H-13).
+    const current = await resolveEmployeeScheduleOn(
+      employee.id,
+      employee.officeId,
+      new Date().toISOString().slice(0, 10),
+    );
 
-    if (!currentAssignment) {
-      return { error: "Current schedule not found" };
+    if (!current) {
+      return {
+        error:
+          "No work schedule is assigned to you or your office yet. Ask HR to assign one first.",
+      };
     }
 
-    const currentScheduleId = currentAssignment.scheduleId;
+    const currentScheduleId = current.scheduleId;
 
     // Verify requested schedule exists
     const requestedSchedule = await db.query.workSchedules.findFirst({
@@ -109,12 +123,15 @@ export async function submitShiftChangeRequest(
       return { error: "Requested schedule not found" };
     }
 
-    // Find supervisor (department head)
+    // Find supervisor (department head) in the SAME office, never the
+    // requester. The OR group is parenthesised: unparenthesised it escaped the
+    // office filter and matched any head/chief/manager agency-wide.
     const supervisor = employee.officeId
       ? await db.query.employees.findFirst({
           where: and(
             eq(employees.officeId, employee.officeId),
-            sql`${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%'`,
+            ne(employees.id, employee.id),
+            sql`(${employees.positionTitle} ILIKE '%head%' OR ${employees.positionTitle} ILIKE '%chief%' OR ${employees.positionTitle} ILIKE '%manager%')`,
           ),
         })
       : undefined;
@@ -123,7 +140,7 @@ export async function submitShiftChangeRequest(
     const [request] = await db
       .insert(shiftChangeRequests)
       .values({
-        employeeId: session.employeeId!,
+        employeeId: session.employeeId,
         currentScheduleId,
         requestedScheduleId,
         effectiveDate: effectiveDate,
@@ -171,7 +188,7 @@ export async function submitShiftChangeRequest(
 export async function supervisorReviewShiftChange(
   input: z.infer<typeof reviewSchema>,
 ): Promise<Result<ShiftChangeRequest>> {
-  const session = await requireAuth();
+  const session = await requirePermission("attendance", "approve");
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
@@ -194,26 +211,49 @@ export async function supervisorReviewShiftChange(
       return { error: "Request is not pending supervisor review" };
     }
 
-    // Verify supervisor has authority (same office)
-    const supervisor = await db.query.employees.findFirst({
-      where: eq(employees.id, session.employeeId!),
-    });
-
-    if (!supervisor || supervisor.officeId !== request.employee.officeId) {
-      return { error: "Unauthorized: Not the supervisor for this employee" };
+    // H-07: no self-endorsement.
+    if (session.employeeId && request.employeeId === session.employeeId) {
+      return { error: "You cannot endorse your own shift change request" };
     }
 
-    // Update request
+    // Unit scope: HR (attendance.edit) may endorse any unit; a supervisor
+    // only requesters in their own office. Fails closed on missing offices.
+    if (!hasPermission(session.role, "attendance", "edit")) {
+      const supervisor = session.employeeId
+        ? await db.query.employees.findFirst({
+            where: eq(employees.id, session.employeeId),
+          })
+        : undefined;
+      if (
+        !supervisor?.officeId ||
+        supervisor.officeId !== request.employee.officeId
+      ) {
+        return { error: "Unauthorized: Not the supervisor for this employee" };
+      }
+    }
+
+    // Status guard in WHERE: a concurrent decision cannot be overwritten.
+    // The endorsing actor is recorded from the session, never the client.
     const [updated] = await db
       .update(shiftChangeRequests)
       .set({
         status: decision === "approve" ? "pending_hr" : "rejected",
+        supervisorId: session.employeeId ?? request.supervisorId,
         supervisorApprovedAt: decision === "approve" ? new Date() : null,
         supervisorNotes: notes || null,
         rejectionReason: decision === "reject" ? rejectionReason || null : null,
       })
-      .where(eq(shiftChangeRequests.id, requestId))
+      .where(
+        and(
+          eq(shiftChangeRequests.id, requestId),
+          eq(shiftChangeRequests.status, "submitted"),
+        ),
+      )
       .returning();
+
+    if (!updated) {
+      return { error: "Request is no longer pending supervisor review" };
+    }
 
     await auditLog({
       userId: session.id,
@@ -235,7 +275,7 @@ export async function supervisorReviewShiftChange(
     });
 
     revalidatePath("/portal/shift-change");
-    return { data: updated! };
+    return { data: updated };
   } catch (error) {
     console.error("[supervisorReviewShiftChange]", error);
     return { error: "Failed to review shift change request" };
@@ -249,8 +289,7 @@ export async function supervisorReviewShiftChange(
 export async function processShiftChange(
   input: z.infer<typeof reviewSchema>,
 ): Promise<Result<ShiftChangeRequest>> {
-  await requirePermission("employees", "edit");
-  const session = await requireAuth();
+  const session = await requirePermission("employees", "edit");
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.errors[0]?.message ?? "Validation failed" };
@@ -273,6 +312,10 @@ export async function processShiftChange(
       return { error: "Request is not pending HR review" };
     }
 
+    if (session.employeeId && request.employeeId === session.employeeId) {
+      return { error: "You cannot process your own shift change request" };
+    }
+
     // Atomic commit: closing the current assignment, inserting the new one,
     // and updating the request status must all land together. A bare sequence
     // of writes could close the old assignment then fail the insert, leaving
@@ -280,7 +323,12 @@ export async function processShiftChange(
     // fall back to the agency default forever). The per-employee advisory lock
     // serializes concurrent HR approvals for the same employee.
     const updated = await withTx(async (tx) => {
-      await lockKey(tx, `shift_change:${request.employeeId}`);
+      // Same key as assignWorkSchedule so HR page edits and shift-change
+      // commits for one employee serialise against each other.
+      await lockKey(
+        tx,
+        `attendance:schedule-assign:employee:${request.employeeId}`,
+      );
 
       // Re-check status under the lock so two HR reviewers cannot both commit.
       const [locked] = await tx
@@ -293,24 +341,43 @@ export async function processShiftChange(
       }
 
       if (decision === "approve") {
-        // End current schedule assignment (effectiveTo is a date string column)
-        await tx
-          .update(employeeSchedules)
-          .set({ effectiveTo: request.effectiveDate })
-          .where(
-            and(
-              eq(employeeSchedules.employeeId, request.employeeId),
-              sql`${employeeSchedules.effectiveTo} IS NULL`,
-            ),
-          );
+        // Same non-overlapping range rules as HR's assignment page (H-13):
+        // the previous assignment ends the day BEFORE the new one starts.
+        const existing = await tx
+          .select({
+            id: employeeSchedules.id,
+            scheduleId: employeeSchedules.scheduleId,
+            effectiveFrom: employeeSchedules.effectiveFrom,
+            effectiveTo: employeeSchedules.effectiveTo,
+          })
+          .from(employeeSchedules)
+          .where(eq(employeeSchedules.employeeId, request.employeeId));
+        const plan = planScheduleAssignment(existing, request.effectiveDate);
+        if (plan.kind === "error") throw new Error(`PLAN:${plan.message}`);
 
-        // Create new schedule assignment
-        await tx.insert(employeeSchedules).values({
-          employeeId: request.employeeId,
-          scheduleId: request.requestedScheduleId,
-          effectiveFrom: request.effectiveDate,
-          effectiveTo: null,
-        });
+        if (plan.kind === "update") {
+          await tx
+            .update(employeeSchedules)
+            .set({
+              scheduleId: request.requestedScheduleId,
+              effectiveTo: plan.effectiveTo,
+              updatedAt: new Date(),
+            })
+            .where(eq(employeeSchedules.id, plan.id));
+        } else {
+          if (plan.closeIds.length > 0) {
+            await tx
+              .update(employeeSchedules)
+              .set({ effectiveTo: plan.closeOn, updatedAt: new Date() })
+              .where(inArray(employeeSchedules.id, plan.closeIds));
+          }
+          await tx.insert(employeeSchedules).values({
+            employeeId: request.employeeId,
+            scheduleId: request.requestedScheduleId,
+            effectiveFrom: request.effectiveDate,
+            effectiveTo: null,
+          });
+        }
       }
 
       // Update request in the same transaction as the schedule mutation.
@@ -318,7 +385,7 @@ export async function processShiftChange(
         .update(shiftChangeRequests)
         .set({
           status: decision === "approve" ? "approved" : "rejected",
-          hrReviewerId: session.employeeId!,
+          hrReviewerId: session.employeeId,
           hrApprovedAt: decision === "approve" ? new Date() : null,
           hrNotes: notes || null,
           rejectionReason:
@@ -360,6 +427,9 @@ export async function processShiftChange(
     if (error instanceof Error && error.message === "REQUEST_NOT_PENDING") {
       return { error: "Request is not pending HR review" };
     }
+    if (error instanceof Error && error.message.startsWith("PLAN:")) {
+      return { error: error.message.slice("PLAN:".length) };
+    }
     return { error: "Failed to process shift change request" };
   }
 }
@@ -371,18 +441,19 @@ export async function getMyShiftChangeRequests(): Promise<
   Result<ShiftChangeRequest[]>
 > {
   const session = await requireAuth();
+  if (!session.employeeId) return { data: [] };
 
   try {
     const requests = await db.query.shiftChangeRequests.findMany({
       where: and(
-        eq(shiftChangeRequests.employeeId, session.employeeId!),
+        eq(shiftChangeRequests.employeeId, session.employeeId),
         sql`${shiftChangeRequests.deletedAt} IS NULL`,
       ),
       with: {
         currentSchedule: true,
         requestedSchedule: true,
-        supervisor: true,
-        hrReviewer: true,
+        supervisor: NAME_ONLY,
+        hrReviewer: NAME_ONLY,
       },
       orderBy: desc(shiftChangeRequests.createdAt),
     });
@@ -400,17 +471,19 @@ export async function getMyShiftChangeRequests(): Promise<
 export async function getPendingShiftChangeRequestsForSupervisor(): Promise<
   Result<ShiftChangeRequest[]>
 > {
-  const session = await requireAuth();
+  const session = await requirePermission("attendance", "approve");
+  if (!session.employeeId) return { data: [] };
 
   try {
     const requests = await db.query.shiftChangeRequests.findMany({
       where: and(
-        eq(shiftChangeRequests.supervisorId, session.employeeId!),
+        eq(shiftChangeRequests.supervisorId, session.employeeId),
+        ne(shiftChangeRequests.employeeId, session.employeeId),
         eq(shiftChangeRequests.status, "submitted"),
         sql`${shiftChangeRequests.deletedAt} IS NULL`,
       ),
       with: {
-        employee: true,
+        employee: NAME_ONLY,
         currentSchedule: true,
         requestedSchedule: true,
       },
@@ -448,13 +521,12 @@ export async function getShiftChangeFormContext(): Promise<
       orderBy: asc(workSchedules.name),
     });
 
-    const currentAssignment = await db.query.employeeSchedules.findFirst({
-      where: and(
-        eq(employeeSchedules.employeeId, session.employeeId),
-        sql`${employeeSchedules.effectiveTo} IS NULL`,
-      ),
-      orderBy: desc(employeeSchedules.effectiveFrom),
-    });
+    // Employee assignment, else the office's (H-13).
+    const currentAssignment = await resolveEmployeeScheduleOn(
+      session.employeeId,
+      session.officeId,
+      new Date().toISOString().slice(0, 10),
+    );
 
     let currentSchedule: WorkSchedule | null = null;
     if (currentAssignment) {
@@ -545,17 +617,19 @@ export async function cancelMyShiftChangeRequest(
 export async function getAllShiftChangeRequestsForHR(): Promise<
   Result<ShiftChangeRequest[]>
 > {
-  await requirePermission("employees", "view");
+  // HR only (matches the /attendance/shift-changes route and the
+  // processShiftChange gate) — ESS/supervisors must not list every request.
+  await requirePermission("employees", "edit");
 
   try {
     const requests = await db.query.shiftChangeRequests.findMany({
       where: sql`${shiftChangeRequests.deletedAt} IS NULL`,
       with: {
-        employee: true,
+        employee: NAME_ONLY,
         currentSchedule: true,
         requestedSchedule: true,
-        supervisor: true,
-        hrReviewer: true,
+        supervisor: NAME_ONLY,
+        hrReviewer: NAME_ONLY,
       },
       orderBy: desc(shiftChangeRequests.createdAt),
     });

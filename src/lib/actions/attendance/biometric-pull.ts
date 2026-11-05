@@ -150,7 +150,8 @@ export async function pullDeviceOnce(
       : "success";
     message =
       `${summary.receivedPunches} punches → ${summary.dayRows} day rows; ` +
-      `${summary.imported} imported, ${summary.skipped} skipped, ` +
+      `${summary.imported} imported, ${summary.protectedSkipped} kept (HR-corrected), ` +
+      `${summary.skipped} skipped, ` +
       `${summary.unmatchedBadgeCount} unmatched badges, ` +
       `${parsed.errors.length} parse errors`;
   } catch (err: unknown) {

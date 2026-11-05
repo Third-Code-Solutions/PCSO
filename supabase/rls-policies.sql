@@ -18,10 +18,15 @@ CREATE OR REPLACE FUNCTION public.current_role()
 RETURNS TEXT
 LANGUAGE sql STABLE
 AS $$
-  SELECT COALESCE(
-    current_setting('request.jwt.claims', true)::jsonb->>'role',
-    (auth.jwt()->'app_metadata'->>'role')
-  );
+  -- app_metadata.role only: the top-level JWT `role` claim is always
+  -- 'authenticated'. Admin roles count only on an aal2 (MFA) session (SEC-003).
+  -- Mirrors supabase/migrations/2026-11-05-01-r0-security-containment.sql.
+  SELECT CASE
+    WHEN auth.jwt()->'app_metadata'->>'role' IN ('super_admin', 'hr_admin')
+         AND coalesce(auth.jwt()->>'aal', 'aal1') <> 'aal2'
+      THEN NULL
+    ELSE auth.jwt()->'app_metadata'->>'role'
+  END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.current_employee_id()
@@ -189,11 +194,8 @@ CREATE POLICY "attendance_logs_select"
 CREATE POLICY "attendance_logs_insert"
   ON attendance_logs FOR INSERT
   TO authenticated
-  -- Biometric/web self-service allowed; admin can insert on behalf
-  WITH CHECK (
-    public.is_admin()
-    OR employee_id = public.current_employee_id()
-  );
+  -- Attendance is written by server code only; no self-insert over PostgREST.
+  WITH CHECK (public.is_admin());
 
 CREATE POLICY "attendance_logs_update_admin"
   ON attendance_logs FOR UPDATE
@@ -304,24 +306,13 @@ CREATE POLICY "leave_applications_select"
     OR employee_id = public.current_employee_id()
   );
 
--- Employees can file their own leave
-CREATE POLICY "leave_applications_insert"
-  ON leave_applications FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    public.is_admin()
-    OR employee_id = public.current_employee_id()
-  );
-
--- Admins and approvers can update (approve/disapprove); employee can cancel own
-CREATE POLICY "leave_applications_update"
-  ON leave_applications FOR UPDATE
-  TO authenticated
-  USING (
-    public.is_admin()
-    OR public.current_role() = 'leave_approver'
-    OR (employee_id = public.current_employee_id() AND status = 'pending')
-  );
+-- No INSERT/UPDATE for session clients (2026-11-05-09-leave-write-lockdown):
+-- filing, approval and cancellation all run server-side (Drizzle / service
+-- role) where credits are charged and restored. A self INSERT/UPDATE policy
+-- let an employee forge no_of_days and have credits "restored" on cancel.
+REVOKE INSERT, UPDATE ON leave_applications FROM anon, authenticated;
+DROP POLICY IF EXISTS "leave_applications_insert" ON leave_applications;
+DROP POLICY IF EXISTS "leave_applications_update" ON leave_applications;
 
 CREATE POLICY "leave_applications_delete_super_admin"
   ON leave_applications FOR DELETE
@@ -685,11 +676,10 @@ CREATE POLICY "system_users_insert_super_admin"
 CREATE POLICY "system_users_update"
   ON system_users FOR UPDATE
   TO authenticated
-  USING (
-    public.is_super_admin()
-    -- User can update their own non-privileged fields
-    OR auth_uid = auth.uid()::TEXT
-  );
+  -- super_admin only: self-update let users rewrite their own role (C-01).
+  -- Self-service prefs are written server-side via the service role.
+  USING (public.is_super_admin())
+  WITH CHECK (public.is_super_admin());
 
 CREATE POLICY "system_users_delete_super_admin"
   ON system_users FOR DELETE

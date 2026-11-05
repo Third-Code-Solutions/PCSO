@@ -16,6 +16,7 @@
  * Notifications: N-001 through N-007 handled by leave/attendance modules.
  */
 
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
@@ -226,6 +227,7 @@ export async function createEmployee(
 
     return ok({ id: newEmployee.id, employeeNo: newEmployee.employeeNo });
   } catch (e) {
+    if (isRedirectError(e)) throw e;
     return err(toErrMsg(e));
   }
 }
@@ -262,6 +264,7 @@ export async function updateEmployee(
 
     return ok(updated);
   } catch (e) {
+    if (isRedirectError(e)) throw e;
     return err(toErrMsg(e));
   }
 }
@@ -291,6 +294,7 @@ export async function getEmployee(input: unknown): Promise<Result<Employee>> {
 
     return ok(employee);
   } catch (e) {
+    if (isRedirectError(e)) throw e;
     return err(toErrMsg(e));
   }
 }
@@ -371,6 +375,7 @@ export async function searchEmployees(
 
     return ok({ employees: results, total: totalCount ?? 0 });
   } catch (e) {
+    if (isRedirectError(e)) throw e;
     return err(toErrMsg(e));
   }
 }

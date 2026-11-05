@@ -10,6 +10,13 @@ import {
   EmployeeListParamsSchema,
 } from "@/lib/validations/employees";
 import { APPOINTMENT_TYPE_LABELS } from "@/lib/constants/appointment-types";
+import { csvCell } from "@/lib/utils/csv";
+import {
+  maskGsis,
+  maskPagibig,
+  maskPhilhealth,
+  maskTin,
+} from "@/lib/utils/masking";
 
 export const dynamic = "force-dynamic";
 
@@ -18,22 +25,10 @@ export const dynamic = "force-dynamic";
 
 export const runtime = "nodejs";
 
-/**
- * Escape a single CSV cell per RFC 4180.
- * Empty values become empty strings; anything containing a comma, quote or
- * newline gets wrapped in double quotes with embedded quotes doubled.
- */
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const str = String(value);
-  if (/[",\n\r]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
 export async function GET(request: NextRequest) {
-  const user = await requirePermission("employees", "view");
+  // Bulk PII export: HR admin / super admin only (C-02). `employees.view`
+  // includes ESS, supervisors, executives and auditors.
+  const user = await requirePermission("employees", "export");
 
   // Parse + validate query params with the same schema used by the list page.
   const searchParams = request.nextUrl.searchParams;
@@ -172,10 +167,12 @@ export async function GET(request: NextRequest) {
         r.birthDate,
         r.gender,
         r.civilStatus,
-        r.tin ?? "",
-        r.gsisNo ?? "",
-        r.philhealthNo ?? "",
-        r.pagibigNo ?? "",
+        // Government IDs are masked in bulk exports (TOR 3.2.8); full values
+        // stay on the permission-gated 201 file and remittance generators.
+        maskTin(r.tin) ?? "",
+        maskGsis(r.gsisNo) ?? "",
+        maskPhilhealth(r.philhealthNo) ?? "",
+        maskPagibig(r.pagibigNo) ?? "",
       ]
         .map(csvCell)
         .join(","),
@@ -193,6 +190,7 @@ export async function GET(request: NextRequest) {
     recordId: "bulk",
     newValues: {
       exportedRows: rows.length,
+      governmentIdsMasked: true,
       filters: {
         search,
         appointmentType,

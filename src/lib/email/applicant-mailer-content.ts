@@ -22,6 +22,8 @@ export function mapStatusToResultOutcome(
   status: string,
 ): ApplicationResultOutcome {
   switch (status) {
+    // results_released = Board-confirmed selection, bound for appointment.
+    case "results_released":
     case "appointed":
       return "appointed";
     case "shortlisted":
@@ -29,6 +31,7 @@ export function mapStatusToResultOutcome(
       return "shortlisted";
     case "withdrawn":
       return "withdrawn";
+    case "not_selected":
     default:
       return "not_selected";
   }

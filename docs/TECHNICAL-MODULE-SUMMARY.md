@@ -357,12 +357,12 @@ The current audit_logs schema does not have the required fields (severity, alert
 
 Use the accounts in `/docs/ACCOUNTS.md` to test different role access:
 
-| Role                  | Email                | Password                            | Dashboard Access            |
-| --------------------- | -------------------- | ----------------------------------- | --------------------------- |
-| System Administrator  | sysadmin@pcso.gov.ph | PCSO-super-admin-vAs45Fhn           | All settings pages          |
-| Compliance & Audit    | audit@pcso.gov.ph    | PCSO-auditor-l36e_poM               | Audit logs (read-only)      |
-| HR Administrator      | hr@pcso.gov.ph       | PCSO-hr-admin-y8R9fUQM              | Settings (edit), audit logs |
-| Employee Self-Service | ess@pcso.gov.ph      | PCSO-employee-self-service-B7RlGdel | Notification bell only      |
+| Role                  | Email                | Password                       | Dashboard Access            |
+| --------------------- | -------------------- | ------------------------------ | --------------------------- |
+| System Administrator  | sysadmin@pcso.gov.ph | (rotated — not stored in repo) | All settings pages          |
+| Compliance & Audit    | audit@pcso.gov.ph    | (rotated — not stored in repo) | Audit logs (read-only)      |
+| HR Administrator      | hr@pcso.gov.ph       | (rotated — not stored in repo) | Settings (edit), audit logs |
+| Employee Self-Service | ess@pcso.gov.ph      | (rotated — not stored in repo) | Notification bell only      |
 
 ---
 

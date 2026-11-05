@@ -22,7 +22,9 @@
 
 import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import React, { type ReactElement } from "react";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { withConcurrentGuard, withTx, type Tx } from "@/lib/db/transaction";
@@ -40,6 +42,7 @@ import { plantillaPositions } from "@/lib/db/schema/plantilla";
 import { systemUsers } from "@/lib/db/schema/users";
 import { notifications } from "@/lib/db/schema/notifications";
 import { requireAuth, requirePermission } from "@/lib/auth/guards";
+import { requireRecruitmentViewer } from "@/lib/utils/rpm/recruitment-viewer";
 import { auditLog } from "@/lib/audit";
 import { getOrgProfile } from "@/lib/org-profile";
 import {
@@ -52,6 +55,7 @@ import {
 import { RpmApplicationResultEmail } from "@/lib/email/templates/rpm-application-result";
 import { RpmExamScheduleEmail } from "@/lib/email/templates/rpm-exam-schedule";
 import {
+  isAssessmentRated,
   rankApplications,
   topN,
   weightedScore,
@@ -136,6 +140,76 @@ async function currentEmployeeId(): Promise<string | null> {
     .limit(1);
   return row?.employeeId ?? null;
 }
+
+/**
+ * In-app notifications reach internal (promotion) applicants only: their
+ * application row carries `employeeId`; external applicants have no portal
+ * user and are reached by email.
+ */
+async function notifyInternalApplicants(
+  tx: Tx | typeof db,
+  applicationIds: readonly string[],
+  message: { title: string; body: string; vacancyId: string },
+): Promise<void> {
+  if (applicationIds.length === 0) return;
+  const internal = await tx
+    .select({ employeeId: applications.employeeId })
+    .from(applications)
+    .where(
+      and(
+        inArray(applications.id, [...applicationIds]),
+        isNotNull(applications.employeeId),
+      ),
+    );
+  const employeeIds = internal
+    .map((r) => r.employeeId)
+    .filter((id): id is string => Boolean(id));
+  if (employeeIds.length === 0) return;
+  const users = await tx
+    .select({ userId: systemUsers.id })
+    .from(systemUsers)
+    .where(
+      and(
+        inArray(systemUsers.employeeId, employeeIds),
+        eq(systemUsers.isActive, true),
+      ),
+    );
+  if (users.length === 0) return;
+  await tx.insert(notifications).values(
+    users.map((u) => ({
+      userId: u.userId,
+      type: "generic" as const,
+      title: message.title,
+      body: message.body,
+      entityType: "vacancy",
+      entityId: message.vacancyId,
+    })),
+  );
+}
+
+function pdfFilename(prefix: string, itemNumber: string, vacancyId: string) {
+  return `${prefix}-${itemNumber || vacancyId.slice(0, 8)}.pdf`;
+}
+
+// Scores are frozen once the top 5 is drawn; the shortlist once the Board has it.
+const SCORING_LOCKED_STAGES: ReadonlySet<string> = new Set([
+  "shortlisted",
+  "for_board",
+  "appointed",
+  "closed",
+]);
+const SHORTLIST_LOCKED_STAGES: ReadonlySet<string> = new Set([
+  "for_board",
+  "appointed",
+  "closed",
+]);
+// Applicants still competing when the Board's decision is released.
+const IN_RUNNING_STATUSES: ReadonlySet<string> = new Set([
+  "qualified",
+  "shortlisted",
+  "for_exam",
+  "for_interview",
+]);
 
 async function recordTransition(
   tx: Tx,
@@ -373,35 +447,15 @@ export async function createAssessment(
       name: `${q.firstName} ${q.lastName}`.trim(),
     }));
 
-    if (qualified.length > 0) {
-      const users = await tx
-        .select({
-          userId: systemUsers.id,
-          applicantRef: systemUsers.employeeId,
-        })
-        .from(systemUsers)
-        .where(
-          and(
-            inArray(
-              systemUsers.employeeId,
-              qualified.map((q) => q.applicantId),
-            ),
-            eq(systemUsers.isActive, true),
-          ),
-        );
-      if (users.length > 0) {
-        await tx.insert(notifications).values(
-          users.map((u) => ({
-            userId: u.userId,
-            type: "generic" as const,
-            title: "Exam scheduled",
-            body: `Your assessment for ${ctx.positionTitle} is scheduled on ${examDate.toISOString()} at ${venue}.`,
-            entityType: "vacancy",
-            entityId: vacancyId,
-          })),
-        );
-      }
-    }
+    await notifyInternalApplicants(
+      tx,
+      qualified.map((q) => q.applicationId),
+      {
+        title: "Exam scheduled",
+        body: `Your assessment for ${ctx.positionTitle} is scheduled on ${examDate.toISOString()} at ${venue}.`,
+        vacancyId,
+      },
+    );
 
     return { ok: true, data: { assessmentId: inserted.id } };
   });
@@ -444,15 +498,26 @@ export async function createAssessment(
 
 // ── recordAssessmentScore ────────────────────────────────────────────────────
 
-export interface RecordScoreInput {
-  assessmentId: string;
-  applicationId: string;
-  dimension: AssessmentDimensionKey;
-  score: number;
-  maxScore: number;
-  weight: number;
-  raterEmployeeId: string;
-}
+const recordScoreSchema = z.object({
+  assessmentId: z.string().uuid(),
+  applicationId: z.string().uuid(),
+  dimension: z.enum(["written_exam", "interview", "physical_exam", "other"]),
+  // Form inputs arrive as strings; range is checked against the stored
+  // dimension's maxScore below.
+  score: z.coerce.number().finite().min(0),
+});
+
+/**
+ * Weight and max score come from the assessment's stored dimension config and
+ * the rater is the session employee — neither is accepted from the client.
+ */
+export type RecordScoreInput = Omit<
+  z.infer<typeof recordScoreSchema>,
+  "score"
+> & {
+  /** Raw form value; coerced and range-checked server-side. */
+  score: number | string;
+};
 
 interface StoredDimension {
   key: AssessmentDimensionKey;
@@ -464,28 +529,75 @@ interface StoredDimension {
 export async function recordAssessmentScore(
   input: RecordScoreInput,
 ): Promise<SelectionResult<{ completed: boolean }>> {
-  await requirePermission("employees", "process");
-  const {
-    assessmentId,
-    applicationId,
-    dimension,
-    score,
-    maxScore,
-    weight,
-    raterEmployeeId,
-  } = input;
-
-  if (!Number.isFinite(score) || score < 0 || score > maxScore) {
-    return { ok: false, error: "Score out of range" };
+  const user = await requirePermission("employees", "process");
+  const parsed = recordScoreSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid score input",
+    };
+  }
+  const { assessmentId, applicationId, dimension, score } = parsed.data;
+  const raterEmployeeId = user.employeeId;
+  if (!raterEmployeeId) {
+    return {
+      ok: false,
+      error: "Your account is not linked to an employee record",
+    };
   }
 
-  return withConcurrentGuard(`rpm:score:${assessmentId}`, async (tx) => {
+  const result = await withConcurrentGuard<
+    SelectionResult<{ completed: boolean }>
+  >(`rpm:score:${assessmentId}`, async (tx) => {
     const [assessment] = await tx
       .select()
       .from(assessments)
       .where(eq(assessments.id, assessmentId))
       .limit(1);
     if (!assessment) return { ok: false, error: "Assessment not found" };
+
+    const def = (assessment.dimensions as unknown as StoredDimension[]).find(
+      (d) => d.key === dimension,
+    );
+    if (!def) {
+      return {
+        ok: false,
+        error: "Dimension is not part of this assessment",
+      };
+    }
+    const maxScore = Number(def.maxScore);
+    const weight = Number(def.weight);
+    if (score > maxScore) {
+      return { ok: false, error: `Score must be between 0 and ${maxScore}` };
+    }
+
+    const [target] = await tx
+      .select({ status: applications.status })
+      .from(applications)
+      .where(
+        and(
+          eq(applications.id, applicationId),
+          eq(applications.vacancyId, assessment.vacancyId),
+        ),
+      )
+      .limit(1);
+    if (!target) {
+      return { ok: false, error: "Application not found for this vacancy" };
+    }
+    if (target.status !== "qualified") {
+      return { ok: false, error: "Only qualified applicants can be scored" };
+    }
+    const [stageRow] = await tx
+      .select({ stage: vacancies.pipelineStage })
+      .from(vacancies)
+      .where(eq(vacancies.id, assessment.vacancyId))
+      .limit(1);
+    if (stageRow && SCORING_LOCKED_STAGES.has(stageRow.stage)) {
+      return {
+        ok: false,
+        error: "Scores are locked once the top 5 has been shortlisted",
+      };
+    }
 
     await tx
       .insert(assessmentScores)
@@ -596,6 +708,25 @@ export async function recordAssessmentScore(
 
     return { ok: true, data: { completed: true } };
   });
+
+  if (result.ok) {
+    await auditLog({
+      userId: user.id,
+      action: "rpm.assessment_score_recorded",
+      table: "assessment_scores",
+      recordId: applicationId,
+      newValues: {
+        assessmentId,
+        dimension,
+        score,
+        completed: result.data.completed,
+      },
+      module: "RPM",
+      subModule: "assessment",
+    });
+    revalidatePath("/recruitment/selection");
+  }
+  return result;
 }
 
 // ── Read helpers ─────────────────────────────────────────────────────────────
@@ -603,6 +734,7 @@ export async function recordAssessmentScore(
 export interface RankedApplicationDetail extends RankedApplication {
   referenceNo: string;
   applicantName: string;
+  status: string;
   currentPosition: string;
   eligibility: string;
   perDimension: Array<{ dimension: string; score: number; maxScore: number }>;
@@ -611,17 +743,16 @@ export interface RankedApplicationDetail extends RankedApplication {
 export async function listRanked(
   vacancyId: string,
 ): Promise<SelectionResult<RankedApplicationDetail[]>> {
-  const user = await requirePermission("employees", "view");
-  if (user.role === "employee_self_service") {
-    return {
-      ok: false,
-      error: "Employee self-service users cannot access recruitment rankings",
-    };
+  try {
+    await requireRecruitmentViewer();
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
-  const rows = await db
+  const allRows = await db
     .select({
       id: applications.id,
       applicationNumber: applications.applicationNumber,
+      status: applications.status,
       matchScore: applications.matchScore,
       matchBreakdown: applications.matchBreakdown,
       firstName: applicants.firstName,
@@ -630,6 +761,8 @@ export async function listRanked(
     .from(applications)
     .innerJoin(applicants, eq(applications.applicantId, applicants.id))
     .where(eq(applications.vacancyId, vacancyId));
+  // Only assessment-rated applicants still in the running are ranked.
+  const rows = allRows.filter(isAssessmentRated);
 
   const ranked = rankApplications(
     rows.map((r) => ({
@@ -656,6 +789,7 @@ export async function listRanked(
       ...r,
       referenceNo: base?.applicationNumber ?? "",
       applicantName: `${base?.firstName ?? ""} ${base?.lastName ?? ""}`.trim(),
+      status: base?.status ?? "",
       currentPosition: "",
       eligibility: "",
       perDimension: breakdown?.perDimension ?? [],
@@ -668,35 +802,26 @@ export async function listRanked(
 export async function listShortlisted(
   vacancyId: string,
 ): Promise<SelectionResult<RankedApplicationDetail[]>> {
-  const user = await requirePermission("employees", "view");
-  if (user.role === "employee_self_service") {
-    return {
-      ok: false,
-      error: "Employee self-service users cannot access recruitment rankings",
-    };
-  }
   const res = await listRanked(vacancyId);
   if (!res.ok) return res;
-
-  const shortlistedRows = await db
-    .select({ id: applications.id })
-    .from(applications)
-    .where(
-      and(
-        eq(applications.vacancyId, vacancyId),
-        eq(applications.status, "shortlisted"),
-      ),
-    );
-  const ids = new Set(shortlistedRows.map((r) => r.id));
-  return { ok: true, data: res.data.filter((r) => ids.has(r.id)) };
+  return {
+    ok: true,
+    data: res.data.filter((r) => r.status === "shortlisted"),
+  };
 }
 
 // ── PDF generators ───────────────────────────────────────────────────────────
 
 export async function generateAssessmentFormPdf(
   vacancyId: string,
-): Promise<SelectionResult<{ bytes: Buffer; serial: string }>> {
-  await requirePermission("employees", "view");
+): Promise<
+  SelectionResult<{ pdfBase64: string; serial: string; filename: string }>
+> {
+  try {
+    await requireRecruitmentViewer();
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   const ctx = await loadVacancyContext(vacancyId);
   if (!ctx) return { ok: false, error: "Vacancy not found" };
 
@@ -753,13 +878,26 @@ export async function generateAssessmentFormPdf(
     ),
   )) as unknown as Buffer;
 
-  return { ok: true, data: { bytes, serial } };
+  return {
+    ok: true,
+    data: {
+      pdfBase64: bytes.toString("base64"),
+      serial,
+      filename: pdfFilename("assessment-form", ctx.itemNumber, vacancyId),
+    },
+  };
 }
 
 export async function generateRatingSheetPdf(
   vacancyId: string,
-): Promise<SelectionResult<{ bytes: Buffer; serial: string }>> {
-  await requirePermission("employees", "view");
+): Promise<
+  SelectionResult<{ pdfBase64: string; serial: string; filename: string }>
+> {
+  try {
+    await requireRecruitmentViewer();
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   const ctx = await loadVacancyContext(vacancyId);
   if (!ctx) return { ok: false, error: "Vacancy not found" };
   const [assessment] = await db
@@ -771,6 +909,9 @@ export async function generateRatingSheetPdf(
 
   const ranked = await listRanked(vacancyId);
   if (!ranked.ok) return ranked;
+  if (ranked.data.length === 0) {
+    return { ok: false, error: "No rated applicants for this vacancy" };
+  }
 
   const rows: RatingSheetRow[] = ranked.data.map((r) => ({
     rank: r.rank,
@@ -794,29 +935,55 @@ export async function generateRatingSheetPdf(
       }),
     ),
   )) as unknown as Buffer;
-  return { ok: true, data: { bytes, serial } };
+  return {
+    ok: true,
+    data: {
+      pdfBase64: bytes.toString("base64"),
+      serial,
+      filename: pdfFilename("rating-sheet", ctx.itemNumber, vacancyId),
+    },
+  };
 }
 
 // ── shortlistTop5 ────────────────────────────────────────────────────────────
 
-export async function shortlistTop5(
-  vacancyId: string,
-): Promise<
-  SelectionResult<{ shortlisted: string[]; pdf: Buffer; serial: string }>
+export async function shortlistTop5(vacancyId: string): Promise<
+  SelectionResult<{
+    shortlisted: string[];
+    pdfBase64: string;
+    serial: string;
+    filename: string;
+  }>
 > {
-  await requirePermission("employees", "process");
+  const user = await requirePermission("employees", "process");
   const employeeId = await currentEmployeeId();
   if (!employeeId) return { ok: false, error: "Not authenticated" };
 
-  return withConcurrentGuard(`rpm:selection:${vacancyId}`, async (tx) => {
+  const result = await withConcurrentGuard<
+    SelectionResult<{
+      shortlisted: string[];
+      pdfBase64: string;
+      serial: string;
+      filename: string;
+    }>
+  >(`rpm:selection:${vacancyId}`, async (tx) => {
     const ctx = await loadVacancyContext(vacancyId, tx);
     if (!ctx) return { ok: false, error: "Vacancy not found" };
+    if (SHORTLIST_LOCKED_STAGES.has(ctx.vacancy.pipelineStage)) {
+      return {
+        ok: false,
+        error:
+          "The shortlist is locked once applicants are recommended to the Board",
+      };
+    }
 
     const rows = await tx
       .select({
         id: applications.id,
         applicationNumber: applications.applicationNumber,
+        status: applications.status,
         matchScore: applications.matchScore,
+        matchBreakdown: applications.matchBreakdown,
         firstName: applicants.firstName,
         lastName: applicants.lastName,
       })
@@ -824,64 +991,66 @@ export async function shortlistTop5(
       .innerJoin(applicants, eq(applications.applicantId, applicants.id))
       .where(eq(applications.vacancyId, vacancyId));
 
+    // Only qualified (or previously shortlisted) applicants with a full
+    // assessment composite compete for the top 5.
+    const candidates = rows.filter(
+      (r) =>
+        (r.status === "qualified" || r.status === "shortlisted") &&
+        isAssessmentRated(r),
+    );
     const ranked = rankApplications(
-      rows.map((r) => ({
+      candidates.map((r) => ({
         id: r.id,
         totalWeightedScore: Number(r.matchScore ?? 0),
       })),
     );
     const top = topN(ranked, 5);
-    if (top.length === 0) return { ok: false, error: "No ranked applicants" };
+    if (top.length === 0) {
+      return {
+        ok: false,
+        error: "No assessment-rated applicants yet. Record every score first.",
+      };
+    }
 
     const byId = new Map(rows.map((r) => [r.id, r]));
     const shortlistIds = top.map((t) => t.id);
 
+    // A re-run replaces the previous shortlist.
+    await tx
+      .update(applications)
+      .set({ status: "qualified" })
+      .where(
+        and(
+          eq(applications.vacancyId, vacancyId),
+          eq(applications.status, "shortlisted"),
+          notInArray(applications.id, shortlistIds),
+        ),
+      );
     await tx
       .update(applications)
       .set({ status: "shortlisted" })
       .where(inArray(applications.id, shortlistIds));
 
     const fromStage = ctx.vacancy.pipelineStage;
-    await tx
-      .update(vacancies)
-      .set({ pipelineStage: "shortlisted" })
-      .where(eq(vacancies.id, vacancyId));
-    await recordTransition(tx, {
-      vacancyId,
-      fromStage,
-      toStage: "shortlisted",
-      triggeredBy: employeeId,
-      reason: "top5_shortlisted",
-    });
-
-    // Notify shortlistees.
-    const applicantIds = shortlistIds
-      .map((id) => byId.get(id))
-      .filter((r): r is NonNullable<typeof r> => Boolean(r))
-      .map((r) => r.id);
-    if (applicantIds.length > 0) {
-      const recipients = await tx
-        .select({ userId: systemUsers.id })
-        .from(systemUsers)
-        .where(
-          and(
-            inArray(systemUsers.employeeId, applicantIds),
-            eq(systemUsers.isActive, true),
-          ),
-        );
-      if (recipients.length > 0) {
-        await tx.insert(notifications).values(
-          recipients.map((r) => ({
-            userId: r.userId,
-            type: "generic" as const,
-            title: "You have been shortlisted",
-            body: `You are among the top 5 for ${ctx.positionTitle}.`,
-            entityType: "vacancy",
-            entityId: vacancyId,
-          })),
-        );
-      }
+    if (fromStage !== "shortlisted") {
+      await tx
+        .update(vacancies)
+        .set({ pipelineStage: "shortlisted" })
+        .where(eq(vacancies.id, vacancyId));
+      await recordTransition(tx, {
+        vacancyId,
+        fromStage,
+        toStage: "shortlisted",
+        triggeredBy: employeeId,
+        reason: "top5_shortlisted",
+      });
     }
+
+    await notifyInternalApplicants(tx, shortlistIds, {
+      title: "You have been shortlisted",
+      body: `You are among the top 5 for ${ctx.positionTitle}.`,
+      vacancyId,
+    });
 
     const entries: Top5Entry[] = top.map((t) => {
       const base = byId.get(t.id);
@@ -911,49 +1080,88 @@ export async function shortlistTop5(
 
     return {
       ok: true,
-      data: { shortlisted: shortlistIds, pdf: bytes, serial },
+      data: {
+        shortlisted: shortlistIds,
+        pdfBase64: bytes.toString("base64"),
+        serial,
+        filename: pdfFilename("top5-list", ctx.itemNumber, vacancyId),
+      },
     };
   });
+
+  if (result.ok) {
+    await auditLog({
+      userId: user.id,
+      action: "rpm.top5_shortlisted",
+      table: "vacancies",
+      recordId: vacancyId,
+      newValues: { shortlisted: result.data.shortlisted },
+      module: "RPM",
+      subModule: "selection",
+    });
+    revalidatePath(`/recruitment/selection/${vacancyId}`);
+  }
+  return result;
 }
 
 // ── recommendForBoard ────────────────────────────────────────────────────────
 
 export async function recommendForBoard(
+  vacancyId: string,
   applicationIds: string[],
-): Promise<SelectionResult<{ pdf: Buffer; serial: string }>> {
+): Promise<
+  SelectionResult<{ pdfBase64: string; serial: string; filename: string }>
+> {
   const user = await requirePermission("employees", "process");
-  const firstId = applicationIds[0];
-  if (applicationIds.length === 0 || !firstId) {
-    return { ok: false, error: "No applications selected" };
+  const ids = [...new Set(applicationIds)];
+  if (ids.length === 0) {
+    return { ok: false, error: "Select at least one shortlisted applicant" };
   }
   const employeeId = await currentEmployeeId();
   if (!employeeId) return { ok: false, error: "Not authenticated" };
-
-  const [anyApp] = await db
-    .select({ vacancyId: applications.vacancyId })
-    .from(applications)
-    .where(eq(applications.id, firstId))
-    .limit(1);
-  if (!anyApp) return { ok: false, error: "Application not found" };
-  const vacancyId = anyApp.vacancyId;
 
   // Captured inside the tx; consumed for email dispatch after commit.
   let boardRecipients: ApplicantEmailRecipient[] = [];
   let positionTitle = "";
 
   const result = await withConcurrentGuard<
-    SelectionResult<{ pdf: Buffer; serial: string }>
+    SelectionResult<{ pdfBase64: string; serial: string; filename: string }>
   >(`rpm:selection:${vacancyId}`, async (tx) => {
     const ctx = await loadVacancyContext(vacancyId, tx);
     if (!ctx) return { ok: false, error: "Vacancy not found" };
     positionTitle = ctx.positionTitle;
+    if (ctx.vacancy.pipelineStage !== "shortlisted") {
+      return {
+        ok: false,
+        error: "Shortlist the top 5 before recommending to the Board",
+      };
+    }
+
+    const picked = await tx
+      .select({ id: applications.id, status: applications.status })
+      .from(applications)
+      .where(
+        and(
+          inArray(applications.id, ids),
+          eq(applications.vacancyId, vacancyId),
+        ),
+      );
+    if (
+      picked.length !== ids.length ||
+      picked.some((p) => p.status !== "shortlisted")
+    ) {
+      return {
+        ok: false,
+        error: "Only shortlisted applicants of this vacancy can be recommended",
+      };
+    }
 
     await tx
       .update(applications)
       .set({ status: "for_interview" })
       .where(
         and(
-          inArray(applications.id, applicationIds),
+          inArray(applications.id, ids),
           eq(applications.vacancyId, vacancyId),
         ),
       );
@@ -983,7 +1191,7 @@ export async function recommendForBoard(
       })
       .from(applications)
       .innerJoin(applicants, eq(applications.applicantId, applicants.id))
-      .where(inArray(applications.id, applicationIds));
+      .where(inArray(applications.id, ids));
 
     boardRecipients = rows.map((r) => ({
       applicationId: r.id,
@@ -1039,8 +1247,32 @@ export async function recommendForBoard(
       ),
     )) as unknown as Buffer;
 
-    return { ok: true, data: { pdf: bytes, serial } };
+    return {
+      ok: true,
+      data: {
+        pdfBase64: bytes.toString("base64"),
+        serial,
+        filename: pdfFilename(
+          "board-recommendation",
+          ctx.itemNumber,
+          vacancyId,
+        ),
+      },
+    };
   });
+
+  if (result.ok) {
+    await auditLog({
+      userId: user.id,
+      action: "rpm.recommended_for_board",
+      table: "vacancies",
+      recordId: vacancyId,
+      newValues: { applicationIds: ids },
+      module: "RPM",
+      subModule: "selection",
+    });
+    revalidatePath(`/recruitment/selection/${vacancyId}`);
+  }
 
   // TOR 1.2.24 / N-027 — email each recommended applicant AFTER commit.
   if (result.ok && boardRecipients.length > 0) {
@@ -1097,7 +1329,7 @@ export async function notifyExamResults(
   const rows = await db
     .select({
       applicationId: applications.id,
-      applicantId: applications.applicantId,
+      employeeId: applications.employeeId,
       status: applications.status,
       matchScore: applications.matchScore,
       email: applicants.email,
@@ -1110,25 +1342,31 @@ export async function notifyExamResults(
 
   if (rows.length === 0) return { ok: true, data: { notified: 0 } };
 
-  // In-app notifications for applicants that map to active portal users.
-  const recipients = await db
-    .select({ userId: systemUsers.id, employeeId: systemUsers.employeeId })
-    .from(systemUsers)
-    .where(
-      and(
-        inArray(
-          systemUsers.employeeId,
-          rows.map((r) => r.applicantId),
-        ),
-        eq(systemUsers.isActive, true),
-      ),
-    );
+  // In-app notifications reach internal (employee) applicants only.
+  const internalEmployeeIds = rows
+    .map((r) => r.employeeId)
+    .filter((id): id is string => Boolean(id));
+  const recipients =
+    internalEmployeeIds.length === 0
+      ? []
+      : await db
+          .select({
+            userId: systemUsers.id,
+            employeeId: systemUsers.employeeId,
+          })
+          .from(systemUsers)
+          .where(
+            and(
+              inArray(systemUsers.employeeId, internalEmployeeIds),
+              eq(systemUsers.isActive, true),
+            ),
+          );
 
   if (recipients.length > 0) {
-    const scoreByApplicant = new Map(rows.map((r) => [r.applicantId, r]));
+    const rowByEmployee = new Map(rows.map((r) => [r.employeeId ?? "", r]));
     await db.insert(notifications).values(
       recipients.map((r) => {
-        const row = scoreByApplicant.get(r.employeeId ?? "");
+        const row = rowByEmployee.get(r.employeeId ?? "");
         const status = row?.status ?? "unknown";
         return {
           userId: r.userId,
@@ -1181,6 +1419,178 @@ export async function notifyExamResults(
     ok: true,
     data: { notified: Math.max(sent, recipients.length) },
   };
+}
+
+// ── releaseResults ───────────────────────────────────────────────────────────
+
+/**
+ * RPM-021 / §12.3 FOR_BOARD → APPOINTED — release the final results once the
+ * Board has confirmed. The confirmed applicant(s) move to `results_released`
+ * (the gate for createAppointment); everyone else still in the running moves
+ * to `not_selected`. Every affected applicant is emailed after commit.
+ */
+export async function releaseResults(
+  vacancyId: string,
+  selectedApplicationIds: string[],
+): Promise<SelectionResult<{ selected: number; notSelected: number }>> {
+  const user = await requirePermission("employees", "process");
+  const ids = [...new Set(selectedApplicationIds)];
+  if (ids.length === 0) {
+    return { ok: false, error: "Select the Board-confirmed applicant(s)" };
+  }
+  const employeeId = await currentEmployeeId();
+  if (!employeeId) return { ok: false, error: "Not authenticated" };
+
+  let selectedRecipients: ApplicantEmailRecipient[] = [];
+  let otherRecipients: ApplicantEmailRecipient[] = [];
+  let positionTitle = "";
+
+  const result = await withConcurrentGuard<
+    SelectionResult<{ selected: number; notSelected: number }>
+  >(`rpm:selection:${vacancyId}`, async (tx) => {
+    const ctx = await loadVacancyContext(vacancyId, tx);
+    if (!ctx) return { ok: false, error: "Vacancy not found" };
+    positionTitle = ctx.positionTitle;
+    if (ctx.vacancy.pipelineStage !== "for_board") {
+      return {
+        ok: false,
+        error: "Results can be released only after recommending to the Board",
+      };
+    }
+
+    const rows = await tx
+      .select({
+        id: applications.id,
+        status: applications.status,
+        email: applicants.email,
+        firstName: applicants.firstName,
+        lastName: applicants.lastName,
+      })
+      .from(applications)
+      .innerJoin(applicants, eq(applications.applicantId, applicants.id))
+      .where(eq(applications.vacancyId, vacancyId));
+
+    const selected = rows.filter((r) => ids.includes(r.id));
+    if (
+      selected.length !== ids.length ||
+      selected.some((r) => r.status !== "for_interview")
+    ) {
+      return {
+        ok: false,
+        error: "Only applicants recommended to the Board can be selected",
+      };
+    }
+    const others = rows.filter(
+      (r) => !ids.includes(r.id) && IN_RUNNING_STATUSES.has(r.status),
+    );
+
+    await tx
+      .update(applications)
+      .set({ status: "results_released" })
+      .where(inArray(applications.id, ids));
+    if (others.length > 0) {
+      await tx
+        .update(applications)
+        .set({ status: "not_selected" })
+        .where(
+          inArray(
+            applications.id,
+            others.map((r) => r.id),
+          ),
+        );
+    }
+
+    const toRecipient = (r: (typeof rows)[number]) => ({
+      applicationId: r.id,
+      email: r.email,
+      name: `${r.firstName} ${r.lastName}`.trim(),
+    });
+    selectedRecipients = selected.map(toRecipient);
+    otherRecipients = others.map(toRecipient);
+
+    await notifyInternalApplicants(tx, ids, {
+      title: "Recruitment results released",
+      body: `The Board has confirmed your selection for ${ctx.positionTitle}.`,
+      vacancyId,
+    });
+    await notifyInternalApplicants(
+      tx,
+      others.map((r) => r.id),
+      {
+        title: "Recruitment results released",
+        body: `The final results for ${ctx.positionTitle} have been released.`,
+        vacancyId,
+      },
+    );
+
+    return {
+      ok: true,
+      data: { selected: selected.length, notSelected: others.length },
+    };
+  });
+
+  if (!result.ok) return result;
+
+  await auditLog({
+    userId: user.id,
+    action: "rpm.results_released",
+    table: "vacancies",
+    recordId: vacancyId,
+    newValues: {
+      selected: ids,
+      notSelected: otherRecipients.map((r) => r.applicationId),
+    },
+    module: "RPM",
+    subModule: "selection",
+  });
+
+  const send = (
+    recipients: ApplicantEmailRecipient[],
+    outcome: "appointed" | "not_selected",
+    remarks: string,
+  ) =>
+    dispatchApplicantEmails({
+      actorUserId: user.id,
+      vacancyId,
+      subModule: "results_released",
+      recipients,
+      build: (recipient) => {
+        const statusUrl = applicantStatusUrl(recipient.applicationId);
+        return {
+          subject: `Recruitment Results — ${positionTitle}`,
+          react: RpmApplicationResultEmail({
+            applicantName: recipient.name,
+            positionTitle,
+            outcome,
+            remarks,
+            statusUrl,
+          }),
+          text: applicationResultPlainText({
+            applicantName: recipient.name,
+            positionTitle,
+            remarks,
+            statusUrl,
+          }),
+        };
+      },
+    });
+  if (selectedRecipients.length > 0) {
+    await send(
+      selectedRecipients,
+      "appointed",
+      "The PCSO Board of Directors has confirmed your selection. HRD will contact you about your appointment documents.",
+    );
+  }
+  if (otherRecipients.length > 0) {
+    await send(
+      otherRecipients,
+      "not_selected",
+      "Thank you for your interest. The position has been filled by another applicant.",
+    );
+  }
+
+  revalidatePath(`/recruitment/selection/${vacancyId}`);
+  return result;
 }
 
 // ── Summary of Ratings (TOR 1.2.21) ──────────────────────────────────────────
@@ -1243,13 +1653,8 @@ async function loadSummaryOfRatings(vacancyId: string): Promise<
     .innerJoin(applicants, eq(applications.applicantId, applicants.id))
     .where(eq(applications.vacancyId, vacancyId));
 
-  // "Rated" = has a persisted composite and is still in the running.
-  const rated = rows.filter(
-    (r) =>
-      r.matchScore !== null &&
-      r.status !== "incomplete" &&
-      r.status !== "withdrawn",
-  );
+  // "Rated" = has a full assessment composite and is still ranked.
+  const rated = rows.filter(isAssessmentRated);
   if (rated.length === 0) {
     return { ok: false, error: "No rated applicants for this vacancy" };
   }
@@ -1326,7 +1731,11 @@ export async function getSummaryOfRatings(vacancyId: string): Promise<
     rows: SummaryOfRatingsRow[];
   }>
 > {
-  await requirePermission("employees", "view");
+  try {
+    await requireRecruitmentViewer();
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   return loadSummaryOfRatings(vacancyId);
 }
 
@@ -1340,7 +1749,11 @@ function csvCell(value: string | number | boolean): string {
 export async function generateSummaryOfRatingsCsv(
   vacancyId: string,
 ): Promise<SelectionResult<{ csv: string; filename: string }>> {
-  await requirePermission("employees", "view");
+  try {
+    await requireRecruitmentViewer();
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   const summary = await loadSummaryOfRatings(vacancyId);
   if (!summary.ok) return summary;
 
@@ -1396,7 +1809,11 @@ export async function generateSummaryOfRatingsPdf(
 ): Promise<
   SelectionResult<{ pdfBase64: string; serial: string; filename: string }>
 > {
-  await requirePermission("employees", "view");
+  try {
+    await requireRecruitmentViewer();
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   const summary = await loadSummaryOfRatings(vacancyId);
   if (!summary.ok) return summary;
 

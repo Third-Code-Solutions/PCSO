@@ -94,7 +94,7 @@ const ENDPOINTS: EndpointRow[] = [
     path: "/api/v1/employees/batch",
     scope: "employees:write",
     summary:
-      "Up to 500 create/update operations, applied per-item (not all-or-nothing) with per-item statuses.",
+      "Up to 500 create/update operations, all-or-nothing: validated up front, applied in one transaction.",
   },
   {
     method: "GET",
@@ -289,8 +289,10 @@ Content-Type: application/problem+json
         <Section title="Batch semantics (TOR 3.3.6)">
           <p className="text-sm text-muted-foreground">
             <Code>POST /api/v1/employees/batch</Code> accepts up to 500
-            operations. Items are applied independently — a failure never rolls
-            back the rest. Each item reports its own HTTP-style status.
+            operations and is all-or-nothing. Every operation is validated first
+            (422 lists every failing index); a valid batch runs in one
+            transaction, and any failure rolls everything back and returns a
+            problem document with <Code>failed_index</Code>.
           </p>
           <CodeBlock>{`{
   "operations": [

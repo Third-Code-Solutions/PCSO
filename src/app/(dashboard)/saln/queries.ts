@@ -10,7 +10,7 @@
  */
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { auditLog } from "@/lib/audit";
 import type { FilingType, SalnStatus } from "@/lib/validations/saln";
 
 // ---------------------------------------------------------------------------
@@ -141,25 +141,24 @@ function toSubmissionDetail(
 // Write audit log (view events on restricted SALN data)
 // ---------------------------------------------------------------------------
 
-async function writeSalnViewAudit(
-  supabase: SupabaseClient,
-  params: {
-    viewerUserId: string;
-    targetEmployeeId: string;
-    submissionId: string;
-    ipAddress?: string;
-  },
-): Promise<void> {
-  await supabase.from("audit_logs").insert({
-    user_id: params.viewerUserId,
+async function writeSalnViewAudit(params: {
+  viewerUserId: string;
+  targetEmployeeId: string;
+  submissionId: string;
+  ipAddress?: string;
+}): Promise<void> {
+  await auditLog({
+    userId: params.viewerUserId,
     action: "view",
-    table_name: "saln_submissions",
-    record_id: params.submissionId,
-    new_values: {
+    table: "saln_submissions",
+    recordId: params.submissionId,
+    newValues: {
       target_employee_id: params.targetEmployeeId,
       note: "SALN record accessed — highly restricted data",
     },
-    ip_address: params.ipAddress ?? null,
+    ipAddress: params.ipAddress,
+    module: "PIMM",
+    subModule: "saln",
   });
 }
 
@@ -282,7 +281,7 @@ export async function getSalnSubmissionById(
   // Audit log every view of a submitted SALN (not drafts)
   const status = String(data.status ?? "");
   if (status !== "draft") {
-    await writeSalnViewAudit(supabase, {
+    await writeSalnViewAudit({
       viewerUserId,
       targetEmployeeId: employeeId,
       submissionId,

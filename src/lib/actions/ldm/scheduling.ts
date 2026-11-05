@@ -18,18 +18,15 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import React from "react";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 import { db } from "@/lib/db";
 import {
   trainingRuns,
-  trainingRunApprovals,
   trainingParticipants,
-  type TrainingRun as DbTrainingRun,
   type TrainingParticipant as DbTrainingParticipant,
-  type TrainingRunApproval as DbTrainingRunApproval,
 } from "@/lib/db/schema/learning";
 import { withTx } from "@/lib/db/transaction";
 import { requirePermission } from "@/lib/auth/guards";
@@ -46,12 +43,9 @@ import {
   type ProgramLike,
   type ProposedSchedule,
   type ProviderAvailability,
-  type RunStatus,
   type ParticipantStatus,
   type TrainingRun,
   type TrainingParticipant,
-  type TrainingRunApproval,
-  type ApprovalDecision,
 } from "@/lib/utils/ldm/schedule-generator";
 import {
   createTrainingRunSchema,
@@ -67,25 +61,6 @@ function rethrowIfRedirectError(error: unknown): void {
 }
 
 // ─── Row mappers (DB row → domain shape) ─────────────────────────────────────
-
-function mapRun(row: DbTrainingRun): TrainingRun {
-  return {
-    id: row.id,
-    programId: row.programId,
-    providerId: row.providerId,
-    startDate: new Date(row.scheduledStart).toISOString(),
-    endDate: new Date(row.scheduledEnd).toISOString(),
-    venue: row.venue,
-    plannedHeadcount: row.plannedHeadcount,
-    perParticipantCost: Number(row.perParticipantCost ?? 0),
-    venueCost: Number(row.venueCost ?? 0),
-    facilitatorFees: Number(row.facilitatorFees ?? 0),
-    totalBudget: Number(row.totalBudget ?? 0),
-    status: (row.status ?? "draft") as RunStatus,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
 
 function mapParticipant(row: DbTrainingParticipant): TrainingParticipant {
   // Domain accepts only nominated/confirmed/removed. Collapse any finer DB
@@ -109,86 +84,6 @@ function mapParticipant(row: DbTrainingParticipant): TrainingParticipant {
   };
 }
 
-function mapApproval(row: DbTrainingRunApproval): TrainingRunApproval {
-  return {
-    id: row.id,
-    runId: row.runId,
-    sequenceOrder: row.sequenceOrder,
-    approverRole: row.approverRole,
-    approverId: row.approverEmployeeId,
-    decision: (row.decision as ApprovalDecision) ?? "pending",
-    comments: row.comments,
-    decidedAt: row.decidedAt ? row.decidedAt.toISOString() : null,
-  };
-}
-
-// ─── Internal accessors (used by cost.ts + approval.ts) ──────────────────────
-
-export async function _readRun(id: string): Promise<TrainingRun | null> {
-  const [row] = await db
-    .select()
-    .from(trainingRuns)
-    .where(eq(trainingRuns.id, id))
-    .limit(1);
-  return row ? mapRun(row) : null;
-}
-
-export async function _writeRunStatus(
-  id: string,
-  status: RunStatus,
-): Promise<TrainingRun | null> {
-  const [row] = await db
-    .update(trainingRuns)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(trainingRuns.id, id))
-    .returning();
-  return row ? mapRun(row) : null;
-}
-
-export async function _writeRun(updated: TrainingRun): Promise<TrainingRun> {
-  const [row] = await db
-    .update(trainingRuns)
-    .set({
-      status: updated.status,
-      updatedAt: new Date(),
-      totalBudget: String(updated.totalBudget),
-    })
-    .where(eq(trainingRuns.id, updated.id))
-    .returning();
-  return row ? mapRun(row) : updated;
-}
-
-export async function _listApprovalsByRun(
-  runId: string,
-): Promise<TrainingRunApproval[]> {
-  const rows = await db
-    .select()
-    .from(trainingRunApprovals)
-    .where(eq(trainingRunApprovals.runId, runId));
-  return rows
-    .map(mapApproval)
-    .sort((a, b) => a.sequenceOrder - b.sequenceOrder);
-}
-
-export async function _writeApprovalDecision(
-  approvalId: string,
-  decision: ApprovalDecision,
-  approverEmployeeId: string | null,
-  comments: string | null,
-): Promise<TrainingRunApproval | null> {
-  const [row] = await db
-    .update(trainingRunApprovals)
-    .set({
-      decision,
-      approverEmployeeId: approverEmployeeId ?? undefined,
-      comments,
-      decidedAt: new Date(),
-    })
-    .where(eq(trainingRunApprovals.id, approvalId))
-    .returning();
-  return row ? mapApproval(row) : null;
-}
-
 // ─── Public action surface ───────────────────────────────────────────────────
 
 export interface ProposeTrainingRunInput {
@@ -196,12 +91,6 @@ export interface ProposeTrainingRunInput {
   schedule?: Partial<ProposedSchedule>;
   program: ProgramLike;
   provider: { id: string; availability: ProviderAvailability };
-}
-
-export interface ListRunsFilter {
-  status?: RunStatus;
-  programId?: string;
-  providerId?: string;
 }
 
 /**
@@ -496,39 +385,7 @@ export async function markParticipantCompleted(
   }
 }
 
-export async function listRuns(
-  filter: ListRunsFilter = {},
-): Promise<TrainingRun[]> {
-  const predicates = [] as Array<ReturnType<typeof eq>>;
-  if (filter.status) predicates.push(eq(trainingRuns.status, filter.status));
-  if (filter.programId)
-    predicates.push(eq(trainingRuns.programId, filter.programId));
-  if (filter.providerId)
-    predicates.push(eq(trainingRuns.providerId, filter.providerId));
-
-  const whereClause = predicates.length ? and(...predicates) : undefined;
-  const rows = await (whereClause
-    ? db
-        .select()
-        .from(trainingRuns)
-        .where(whereClause)
-        .orderBy(desc(trainingRuns.createdAt))
-    : db.select().from(trainingRuns).orderBy(desc(trainingRuns.createdAt)));
-  return rows.map(mapRun);
-}
-
-export async function getRun(runId: string): Promise<TrainingRun | null> {
-  const [row] = await db
-    .select()
-    .from(trainingRuns)
-    .where(eq(trainingRuns.id, runId))
-    .limit(1);
-  return row ? mapRun(row) : null;
-}
-
-export async function listParticipants(
-  runId: string,
-): Promise<TrainingParticipant[]> {
+async function listParticipants(runId: string): Promise<TrainingParticipant[]> {
   const rows = await db
     .select()
     .from(trainingParticipants)
@@ -630,9 +487,11 @@ function renderParticipantListDocument(
   );
 }
 
+/** LDM-009 printable participant list. Gated: "use server" exports are public endpoints (H-25). */
 export async function generateParticipantListPdf(
   runId: string,
 ): Promise<Buffer> {
+  await requirePermission("learning", "export");
   const rows = await listParticipants(runId);
   const element = renderParticipantListDocument(runId, rows);
   const doc = element as unknown as React.ReactElement<DocumentProps>;

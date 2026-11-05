@@ -3,8 +3,11 @@
 /**
  * Leave Administration Gaps Actions — PCSO HRIS LAM Module
  *
- * Actions: adjustLeaveCredits, uploadLeaveLedgerCsv, commitLeaveLedgerUpload,
+ * Actions: uploadLeaveLedgerCsv, commitLeaveLedgerUpload,
  *          getAdvancedLeaveReports, sendLwopNotices
+ *
+ * Manual balance adjustment lives in app/(dashboard)/leave/actions.ts
+ * (adjustLeaveCredits, H-12).
  *
  * Requirements: LAM-001 (bulk upload), LAM-005 (LWOP list), LAM-006
  *               (auto-approval config), LAM-010 (sex-disaggregated reports),
@@ -48,22 +51,6 @@ import { eq, and, inArray } from "drizzle-orm";
 
 // ─── Schema Validation ────────────────────────────────────────────────────
 
-const AdjustLeaveCreditsSchema = z.object({
-  employeeId: z.string().uuid("Invalid employee ID."),
-  leaveTypeId: z.string().uuid("Invalid leave type ID."),
-  adjustment: z
-    .number()
-    .refine((v) => v !== 0, "Adjustment cannot be zero.")
-    .refine(
-      (v) => Math.abs(v) <= 200,
-      "Adjustment must be within +/- 200 days.",
-    ),
-  reason: z
-    .string()
-    .min(5, "Please provide a reason (min 5 characters) for audit.")
-    .max(500),
-});
-
 // Staged rows are round-tripped through a text column; re-validate on read
 // so a tampered/corrupted staging record can never reach the live ledger.
 const StagedRowSchema = z.object({
@@ -95,112 +82,6 @@ class LeaveLedgerConflictError extends Error {
   }
 }
 
-// ─── Action: adjustLeaveCredits ───────────────────────────────────────────
-
-export interface AdjustLeaveCreditsResult {
-  leaveCreditId: string;
-  previousBalance: number;
-  newBalance: number;
-}
-
-/**
- * LAM-011: Manual leave credit adjustment with audit trail
- */
-export async function adjustLeaveCredits(
-  input: unknown,
-): Promise<AdjustLeaveCreditsResult> {
-  const parsed = AdjustLeaveCreditsSchema.parse(input);
-  const user = await requirePermission("leave", "approve");
-
-  const currentYear = new Date().getFullYear();
-
-  const result = await withTx(async (tx) => {
-    // Get or create leave credit record
-    const [creditRow] = await tx
-      .select({
-        id: leaveCredits.id,
-        balance: leaveCredits.balance,
-        totalCredits: leaveCredits.totalCredits,
-        usedCredits: leaveCredits.usedCredits,
-        carryOver: leaveCredits.carryOver,
-      })
-      .from(leaveCredits)
-      .where(
-        and(
-          eq(leaveCredits.employeeId, parsed.employeeId),
-          eq(leaveCredits.leaveTypeId, parsed.leaveTypeId),
-          eq(leaveCredits.year, currentYear),
-        ),
-      )
-      .limit(1);
-
-    const previousBalance = creditRow ? Number(creditRow.balance) : 0;
-    const newBalance = previousBalance + parsed.adjustment;
-
-    if (newBalance < 0) {
-      throw new Error(
-        `Adjustment would drive balance negative (${previousBalance.toFixed(3)} + ${parsed.adjustment.toFixed(3)} = ${newBalance.toFixed(3)}).`,
-      );
-    }
-
-    let creditId: string;
-
-    if (creditRow) {
-      // Update existing record
-      await tx
-        .update(leaveCredits)
-        .set({
-          balance: String(newBalance),
-          totalCredits:
-            parsed.adjustment > 0
-              ? String(Number(creditRow.totalCredits ?? 0) + parsed.adjustment)
-              : String(creditRow.totalCredits ?? 0),
-          updatedAt: new Date(),
-        })
-        .where(eq(leaveCredits.id, creditRow.id));
-      creditId = String(creditRow.id);
-    } else {
-      // Create new record
-      const inserted = await tx
-        .insert(leaveCredits)
-        .values({
-          employeeId: parsed.employeeId,
-          leaveTypeId: parsed.leaveTypeId,
-          year: currentYear,
-          balance: String(newBalance),
-          totalCredits: String(Math.max(0, parsed.adjustment)),
-          usedCredits: "0",
-          carryOver: "0",
-        })
-        .returning({ id: leaveCredits.id });
-      const row = inserted[0];
-      if (!row) throw new Error("Failed to create leave_credits row.");
-      creditId = String(row.id);
-    }
-
-    // Audit log
-    await tx.insert(auditLogs).values({
-      userId: user.id,
-      action: "adjust",
-      tableName: "leave_credits",
-      recordId: creditId,
-      oldValues: { balance: previousBalance },
-      newValues: {
-        balance: newBalance,
-        adjustment: parsed.adjustment,
-        reason: parsed.reason,
-      },
-    });
-
-    return { leaveCreditId: creditId, previousBalance, newBalance };
-  });
-
-  revalidatePath("/leave/credits");
-  revalidatePath("/leave/credits/admin");
-
-  return result;
-}
-
 // ─── Action: uploadLeaveLedgerCsv ─────────────────────────────────────────
 
 export interface UploadLeaveLedgerCsvResult {
@@ -219,7 +100,8 @@ export interface UploadLeaveLedgerCsvResult {
 export async function uploadLeaveLedgerCsv(
   formData: FormData,
 ): Promise<UploadLeaveLedgerCsvResult> {
-  const user = await requirePermission("leave", "approve");
+  // Writes balances directly: HR admin only (H-12), not leave approvers.
+  const user = await requirePermission("leave", "process");
 
   const file = formData.get("file");
   if (!(file instanceof File)) {
@@ -279,7 +161,7 @@ export async function commitLeaveLedgerUpload(
   uploadId: string,
 ): Promise<CommitLeaveLedgerUploadResult> {
   const parsedUploadId = z.string().uuid("Invalid upload ID.").parse(uploadId);
-  const user = await requirePermission("leave", "approve");
+  const user = await requirePermission("leave", "process");
 
   let result: CommitLeaveLedgerUploadResult;
   try {

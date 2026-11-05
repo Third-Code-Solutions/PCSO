@@ -21,6 +21,7 @@ export const LeaveStatusSchema = z.enum([
   "approved",
   "disapproved",
   "cancelled",
+  "cancellation_requested", // owner asked to cancel approved leave (§12.1)
   "for_hr_review", // pending HR admin review (multi-level)
   "for_super_admin", // pending super admin (multi-level, > 30 days)
 ]);
@@ -57,9 +58,9 @@ export const ApplyLeaveSchema = z
     endDate: z.string().date("End date must be a valid date (YYYY-MM-DD)."),
 
     /**
-     * Number of working days being applied for.
-     * Computed by the client from the date range, excluding weekends and holidays.
-     * Server re-validates this against its own holiday calendar.
+     * Client-side estimate of working days, for display only. The server
+     * recomputes chargeable days from the date range, holidays, suspensions
+     * and `period` and never charges this value (H-09).
      */
     workingDays: z
       .number()
@@ -94,6 +95,15 @@ export const ApplyLeaveSchema = z
         code: z.ZodIssueCode.custom,
         path: ["endDate"],
         message: "End date must be on or after the start date.",
+      });
+    }
+
+    if (data.period !== "whole_day" && data.startDate !== data.endDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["period"],
+        message:
+          "A half-day (AM/PM) leave must start and end on the same date.",
       });
     }
 
@@ -172,6 +182,13 @@ export const CancelLeaveSchema = z.object({
 
 export type CancelLeaveInput = z.infer<typeof CancelLeaveSchema>;
 
+/** Approver decision on a CANCELLATION_REQUESTED application (§12.1). */
+export const DecideLeaveCancellationSchema = z.object({
+  leaveApplicationId: z.string().uuid("Invalid leave application ID."),
+  decision: z.enum(["confirm", "deny"]),
+  remarks: z.string().max(500).optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Monthly accrual trigger schema (for cron / admin action)
 // ---------------------------------------------------------------------------
@@ -179,7 +196,7 @@ export type CancelLeaveInput = z.infer<typeof CancelLeaveSchema>;
 export const AccrueMonthlyCreditsSchema = z.object({
   /**
    * The month (1–12) to accrue credits for.
-   * Defaults to the current month if not provided.
+   * Defaults to the previous (completed) month if not provided.
    */
   month: z.number().int().min(1).max(12).optional(),
   /**

@@ -535,6 +535,15 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "auditor",
   ],
   "/performance/step-increments": ["super_admin", "hr_admin"],
+  // H-23: org-wide PBB eligibility — HR + read-only oversight only. Without
+  // this entry the broad "/performance" prefix let ESS/supervisors in.
+  "/performance/pbb": [
+    "super_admin",
+    "hr_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ],
   "/performance/analytics": [
     "super_admin",
     "hr_admin",
@@ -602,6 +611,10 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "employee_self_service",
   ],
   "/leave/credits/admin": ["super_admin", "hr_admin"],
+  // Mirror the pages' `leave.process` gate (HR admin + super admin) so the
+  // middleware layer matches; otherwise "/leave/credits" / "/leave" let ESS in.
+  "/leave/credits/adjust": ["super_admin", "hr_admin"],
+  "/leave/bulk-upload": ["super_admin", "hr_admin"],
   "/leave/credits": [
     "super_admin",
     "hr_admin",
@@ -749,6 +762,14 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "executive",
     "auditor",
     "employee_self_service",
+  ],
+  // H-24: org-wide training spend — HR + read-only oversight only.
+  "/learning/reports": [
+    "super_admin",
+    "hr_admin",
+    "viewer",
+    "executive",
+    "auditor",
   ],
   // Broad view landing for L&D (learning.view set). Writes are gated in
   // actions. Longest-prefix match keeps /learning/certificates above intact.

@@ -1,14 +1,12 @@
 import "server-only";
 
 /**
- * Persistent, NON-BLOCKING enrollment prompt — TOR 3.2.6 / SEC-003.
+ * Enrollment prompt — TOR 3.2.6 / SEC-003.
  *
- * SEC-003 makes TOTP mandatory for super_admin and hr_admin. This release
- * does NOT hard-lock un-enrolled admin accounts (that would brick existing
- * operators before comms/training); instead:
- *   - admins WITHOUT a factor see this banner on every dashboard page, and
- *   - admins WITH a verified factor are hard-gated per session by
- *     `requirePermission` (redirect to /login/mfa until verified).
+ * SEC-003 makes TOTP mandatory for super_admin and hr_admin. `requirePermission`
+ * hard-gates both: un-enrolled admins are redirected to /settings/security
+ * (where this banner explains why), enrolled admins to /login/mfa until the
+ * session is aal2. Pages guarded only by `requireAuth` still show this banner.
  *
  * Server component: resolves role + AAL from the request session; renders
  * nothing for non-admin roles or already-enrolled admins.

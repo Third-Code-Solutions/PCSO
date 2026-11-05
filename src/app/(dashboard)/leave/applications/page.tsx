@@ -3,7 +3,8 @@
  *
  * Tabs (via ?tab= query param):
  *  - "mine"    : My Applications — available to everyone
- *  - "pending" : Pending Approval queue — leave_approver, hr_admin, super_admin
+ *  - "pending" : Pending Approval queue + cancellation requests —
+ *                leave_approver, hr_admin, super_admin
  *  - "all"     : Full filterable history — hr_admin, super_admin
  *
  * Additional URL params (all tabs):
@@ -21,6 +22,8 @@
 import { Suspense } from "react";
 import { requirePermission } from "@/lib/auth/guards";
 import { hasPermission } from "@/lib/auth/permissions";
+import { approverScopeOf } from "@/lib/utils/leave/approver-scope";
+import { isLeaveHr } from "@/lib/utils/leave/workflow";
 import { PageHeader } from "@/components/layouts/page-header";
 import { RealtimeBoundary } from "@/components/realtime/realtime-boundary";
 import { Button } from "@/components/ui/button";
@@ -35,6 +38,7 @@ import {
   TabSwitcher,
   MyApplicationsTable,
   PendingApprovalTable,
+  CancellationRequestsTable,
   AllApplicationsTable,
   FilterToolbar,
   Pagination,
@@ -113,6 +117,18 @@ export default async function LeaveApplicationsPage({
   const rawPageSize = pickString(params["pageSize"]);
 
   const activeTab = resolveTab(rawTab, canPending, canAll);
+
+  // Unit scope (PRD §11): non-HR approvers act on and see only their own
+  // office's applications; supervisors/leave approvers also only their own
+  // office in the history tab. Oversight roles keep the org-wide read view.
+  const scope = await approverScopeOf(user);
+  const pendingScopeOfficeId = isLeaveHr(user.role)
+    ? undefined
+    : scope.officeId;
+  const allScopeOfficeId =
+    user.role === "supervisor" || user.role === "leave_approver"
+      ? scope.officeId
+      : undefined;
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
   const pageSize = clampPageSize(rawPageSize);
 
@@ -120,23 +136,38 @@ export default async function LeaveApplicationsPage({
   // Data fetching — only fetch what the active tab needs.
   // ---------------------------------------------------------------------------
 
-  const [myApplications, pendingPaged, allPaged] = await Promise.all([
-    activeTab === "mine" && user.employeeId
-      ? getMyLeaveApplications(user.employeeId)
-      : Promise.resolve(null),
-    activeTab === "pending" && canPending
-      ? getAllLeaveApplicationsPaged({ status: "pending", page, pageSize })
-      : Promise.resolve(null),
-    activeTab === "all" && canAll
-      ? getAllLeaveApplicationsPaged({
-          status: rawStatus,
-          dateFrom: rawDateFrom,
-          dateTo: rawDateTo,
-          page,
-          pageSize,
-        })
-      : Promise.resolve(null),
-  ]);
+  const [myApplications, pendingPaged, allPaged, cancellationPaged] =
+    await Promise.all([
+      activeTab === "mine" && user.employeeId
+        ? getMyLeaveApplications(user.employeeId)
+        : Promise.resolve(null),
+      activeTab === "pending" && canPending
+        ? getAllLeaveApplicationsPaged({
+            status: "pending",
+            scopeOfficeId: pendingScopeOfficeId,
+            page,
+            pageSize,
+          })
+        : Promise.resolve(null),
+      activeTab === "all" && canAll
+        ? getAllLeaveApplicationsPaged({
+            status: rawStatus,
+            scopeOfficeId: allScopeOfficeId,
+            dateFrom: rawDateFrom,
+            dateTo: rawDateTo,
+            page,
+            pageSize,
+          })
+        : Promise.resolve(null),
+      activeTab === "pending" && canPending
+        ? getAllLeaveApplicationsPaged({
+            status: "cancellation_requested",
+            scopeOfficeId: pendingScopeOfficeId,
+            page: 1,
+            pageSize: 100,
+          })
+        : Promise.resolve(null),
+    ]);
 
   const pendingEnriched = pendingPaged?.rows ?? null;
   const allApplications = allPaged?.rows ?? null;
@@ -214,6 +245,9 @@ export default async function LeaveApplicationsPage({
 
           {activeTab === "pending" && canPending && (
             <>
+              <CancellationRequestsTable
+                applications={cancellationPaged?.rows ?? []}
+              />
               <FilterToolbar
                 activeTab="pending"
                 filters={currentFilters}

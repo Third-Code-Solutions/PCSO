@@ -66,7 +66,7 @@ export const workSchedules = pgTable(
     breakEnd: time("break_end"),
     totalHours: numeric("total_hours", { precision: 4, scale: 2 }).notNull(),
     gracePeriodMinutes: smallint("grace_period_minutes").notNull().default(0),
-    applicableDays: jsonb("applicable_days").notNull().default([0, 1, 2, 3, 4]), // Array of day numbers 0=Sun, 1=Mon, ..., 6=Sat
+    applicableDays: jsonb("applicable_days").notNull().default([1, 2, 3, 4, 5]), // Array of day numbers 0=Sun, 1=Mon, ..., 6=Sat (default Mon–Fri)
     isActive: boolean("is_active").notNull().default(true),
     ...timestamps,
     ...softDelete,

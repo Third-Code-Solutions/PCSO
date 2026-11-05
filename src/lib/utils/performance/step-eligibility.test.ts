@@ -14,6 +14,7 @@ import {
   checkStepEligibility,
   toRatingRecord,
   checkBatchEligibility,
+  latestReferenceDate,
   type RatingRecord,
 } from "./step-eligibility";
 
@@ -261,5 +262,20 @@ describe("toRatingRecord", () => {
       periodDateFrom: "2024-07-01",
     });
     expect(record.adjectivalRating).toBe("very_satisfactory");
+  });
+});
+
+describe("latestReferenceDate (promotion restarts the clock)", () => {
+  it("returns null when no dates are known", () => {
+    expect(latestReferenceDate(null, undefined, "")).toBeNull();
+  });
+
+  it("picks the latest of increment, 201 increment and promotion dates", () => {
+    expect(latestReferenceDate("2022-01-01", "2021-06-01", "2024-03-15")).toBe(
+      "2024-03-15",
+    );
+    expect(latestReferenceDate("2025-01-01", null, "2024-03-15")).toBe(
+      "2025-01-01",
+    );
   });
 });

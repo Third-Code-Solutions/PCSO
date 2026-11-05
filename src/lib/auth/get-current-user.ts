@@ -24,9 +24,10 @@ export interface CurrentUser {
  * Retrieves the currently authenticated user along with their RBAC role,
  * office assignment, and linked employee record.
  *
- * Reads RBAC claims from `auth.users.raw_app_meta_data` (app_metadata) — the
- * service-role-only claim store — with a `system_users` fallback. Never trusts
- * user_metadata, which is client-writable via supabase.auth.updateUser.
+ * Reads the RBAC role from `auth.users.raw_app_meta_data` (app_metadata) — the
+ * service-role-only claim store — only; office/employee linkage may fall back
+ * to `system_users`. Never trusts user_metadata, which is client-writable via
+ * supabase.auth.updateUser.
  *
  * Returns `null` when there is no active session.
  *
@@ -49,22 +50,24 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   // supabase.auth.updateUser({ data }) and must NEVER gate authorization.
   const meta = user.app_metadata as Record<string, unknown>;
 
-  // Admin user actions keep these claims in app_metadata; older/manual accounts
-  // can drift, so fall back to the authoritative `system_users` row by auth UID.
-  const metaRole = meta["role"] as Role | undefined;
+  // SECURITY (C-01): the role comes ONLY from app_metadata, matching
+  // middleware.ts. `system_users.role` is never trusted for authorization —
+  // its RLS historically allowed self-update, so a fallback to it let any
+  // user whose app_metadata lacked employee_id escalate to super_admin.
+  const role = (meta["role"] as Role | undefined) ?? "employee_self_service";
   const metaOfficeId =
     typeof meta["office_id"] === "string" ? meta["office_id"] : null;
   const metaEmployeeId =
     typeof meta["employee_id"] === "string" ? meta["employee_id"] : null;
 
-  let role = metaRole ?? "employee_self_service";
   let officeId = metaOfficeId;
   let employeeId = metaEmployeeId;
 
-  if (!metaRole || !metaEmployeeId) {
+  // Older/manual accounts can lack the linkage claims; fill them (never the
+  // role) from the super_admin-managed `system_users` row.
+  if (!metaEmployeeId) {
     const [sysUser] = await db
       .select({
-        role: systemUsers.role,
         officeId: systemUsers.officeId,
         employeeId: systemUsers.employeeId,
       })
@@ -73,8 +76,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       .limit(1);
 
     if (sysUser) {
-      role = (sysUser.role as Role | null) ?? role;
-      officeId = sysUser.officeId ?? officeId;
+      officeId = officeId ?? sysUser.officeId;
       employeeId = sysUser.employeeId ?? employeeId;
     }
   }

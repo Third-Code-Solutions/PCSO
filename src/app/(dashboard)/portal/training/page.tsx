@@ -168,7 +168,7 @@ export default async function TrainingHistoryPage() {
                   </div>
 
                   {/* Certificate Download */}
-                  {training.certificateNumber && training.certificatePdfUrl && (
+                  {training.certificateId && training.certificatePdfUrl && (
                     <Button
                       asChild
                       size="sm"
@@ -176,7 +176,7 @@ export default async function TrainingHistoryPage() {
                       className="gap-2"
                     >
                       <a
-                        href={training.certificatePdfUrl}
+                        href={`/api/learning/certificates/${training.certificateId}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         download

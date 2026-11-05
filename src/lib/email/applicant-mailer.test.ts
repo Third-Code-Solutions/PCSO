@@ -21,6 +21,14 @@ describe("mapStatusToResultOutcome", () => {
     expect(mapStatusToResultOutcome("appointed")).toBe("appointed");
   });
 
+  it("maps results_released (Board-confirmed selection) to appointed", () => {
+    expect(mapStatusToResultOutcome("results_released")).toBe("appointed");
+  });
+
+  it("maps not_selected to not_selected", () => {
+    expect(mapStatusToResultOutcome("not_selected")).toBe("not_selected");
+  });
+
   it("maps shortlisted and for_interview to shortlisted", () => {
     expect(mapStatusToResultOutcome("shortlisted")).toBe("shortlisted");
     expect(mapStatusToResultOutcome("for_interview")).toBe("shortlisted");
@@ -35,7 +43,6 @@ describe("mapStatusToResultOutcome", () => {
       "qualified",
       "not_qualified",
       "under_review",
-      "results_released",
       "submitted",
       "totally-unknown-status",
     ]) {

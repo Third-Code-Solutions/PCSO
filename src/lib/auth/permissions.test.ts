@@ -537,3 +537,63 @@ describe("isRouteAllowed() — read-only tier route gates", () => {
     expect(isRouteAllowed("auditor", "/leave/applications")).toBe(false);
   });
 });
+
+// ─── isRouteAllowed — HR/oversight-only sub-routes under broad prefixes ─────
+
+describe("isRouteAllowed() — narrowed sub-routes (H-23, H-24, leave.process)", () => {
+  const OVERSIGHT = [
+    "super_admin",
+    "hr_admin",
+    "viewer",
+    "executive",
+    "auditor",
+  ] as const;
+  const SCOPED = [
+    "employee_self_service",
+    "supervisor",
+    "leave_approver",
+  ] as const;
+
+  it.each(OVERSIGHT)(
+    "%s CAN access /performance/pbb and /learning/reports",
+    (role) => {
+      expect(isRouteAllowed(role, "/performance/pbb")).toBe(true);
+      expect(isRouteAllowed(role, "/learning/reports")).toBe(true);
+    },
+  );
+
+  it.each(SCOPED)(
+    "%s CANNOT access /performance/pbb or /learning/reports",
+    (role) => {
+      expect(isRouteAllowed(role, "/performance/pbb")).toBe(false);
+      expect(isRouteAllowed(role, "/learning/reports")).toBe(false);
+      // Broad landings stay open.
+      expect(isRouteAllowed(role, "/performance")).toBe(true);
+      expect(isRouteAllowed(role, "/learning")).toBe(true);
+    },
+  );
+
+  it("payroll_admin CANNOT access /learning/reports", () => {
+    expect(isRouteAllowed("payroll_admin", "/learning/reports")).toBe(false);
+  });
+
+  it.each(["super_admin", "hr_admin"] as const)(
+    "%s CAN access leave credit adjustment and ledger bulk upload",
+    (role) => {
+      expect(isRouteAllowed(role, "/leave/credits/adjust")).toBe(true);
+      expect(isRouteAllowed(role, "/leave/bulk-upload")).toBe(true);
+    },
+  );
+
+  it.each([
+    "employee_self_service",
+    "leave_approver",
+    "supervisor",
+    "viewer",
+    "executive",
+    "auditor",
+  ] as const)("%s CANNOT access leave adjust / bulk upload", (role) => {
+    expect(isRouteAllowed(role, "/leave/credits/adjust")).toBe(false);
+    expect(isRouteAllowed(role, "/leave/bulk-upload")).toBe(false);
+  });
+});

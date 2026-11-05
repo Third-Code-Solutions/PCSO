@@ -51,6 +51,8 @@ export interface ImportPreview {
 export interface ImportResult {
   dryRun: false;
   imported: number;
+  /** Rows left alone because the DTR entry is HR-corrected. */
+  protectedSkipped: number;
   skipped: number;
   errors: ImportRowError[];
 }
@@ -303,7 +305,9 @@ export async function importBiometric(
   fileContent: string,
   options: { dryRun?: boolean; fileName?: string } = {},
 ): Promise<ImportPreview | ImportResult> {
-  const user = await requirePermission("attendance", "create");
+  // Bulk import writes OTHER employees' DTRs — HR-only `edit`, not the
+  // ESS self-only `create` (H-05).
+  const user = await requirePermission("attendance", "edit");
 
   // Accept partial configuration (client does not pre-parse rows — server does)
   const parsed = BiometricImportSchema.partial({ rows: true }).parse(input);
@@ -363,6 +367,7 @@ export async function importBiometric(
     subModule: "biometric_import",
     newValues: {
       imported: outcome.imported,
+      protectedSkipped: outcome.protectedSkipped,
       skipped: outcome.skipped,
       invalidRows: outcome.invalidRows,
       totalRows: outcome.totalRows,
@@ -377,6 +382,7 @@ export async function importBiometric(
   return {
     dryRun: false,
     imported: outcome.imported,
+    protectedSkipped: outcome.protectedSkipped,
     skipped: outcome.skipped,
     errors: [...parseErrors, ...outcome.errors].slice(0, 200),
   };

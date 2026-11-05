@@ -28,6 +28,7 @@ import {
 import { employees } from "@/lib/db/schema/employees";
 import { offices } from "@/lib/db/schema/offices";
 import { requirePermission } from "@/lib/auth/guards";
+import { requireLearningOversight } from "./guard";
 import { notifyEmployee } from "@/lib/notifications";
 
 // ── Types (module-local: 'use server' files export async functions only) ────
@@ -125,7 +126,7 @@ export async function getMandatoryComplianceReport(filters?: {
   programId?: string;
   cycleYear?: number;
 }): Promise<MandatoryComplianceRecord[]> {
-  await requirePermission("learning", "view");
+  await requireLearningOversight();
   const parsed = complianceFilterSchema.parse(filters ?? {});
   const currentYear = parsed.cycleYear ?? new Date().getFullYear();
 
@@ -197,7 +198,7 @@ export async function getMandatoryComplianceReport(filters?: {
 export async function getComplianceSummary(
   cycleYear?: number,
 ): Promise<ComplianceSummary> {
-  await requirePermission("learning", "view");
+  await requireLearningOversight();
   const currentYear =
     z.number().int().min(2000).max(2100).optional().parse(cycleYear) ??
     new Date().getFullYear();

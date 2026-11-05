@@ -13,6 +13,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/lib/db";
@@ -38,6 +39,8 @@ function err(message: string): Err {
   return { error: message };
 }
 function toErrMsg(e: unknown): string {
+  // Never swallow Next's redirect (e.g. requirePermission access denial).
+  if (isRedirectError(e)) throw e;
   return e instanceof Error ? e.message : "Unexpected error";
 }
 

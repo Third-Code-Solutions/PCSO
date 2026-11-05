@@ -23,7 +23,6 @@ import { and, eq, inArray, gte, lte, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   leaveTypes,
-  leaveCredits,
   leaveApplications,
   employees,
   systemUsers,
@@ -31,7 +30,8 @@ import {
 } from "@/lib/db/schema";
 import { createServerClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { requirePermission, requireAuth } from "@/lib/auth/guards";
+import { requirePermission } from "@/lib/auth/guards";
+import { approverScopeOf } from "@/lib/utils/leave/approver-scope";
 import {
   EMPLOYEE_DOCUMENTS_BUCKET,
   LEAVE_ATTACHMENTS_PREFIX,
@@ -46,19 +46,32 @@ import {
   ApproveLeaveSchema,
   DisapproveLeaveSchema,
   CancelLeaveSchema,
+  DecideLeaveCancellationSchema,
   AccrueMonthlyCreditsSchema,
 } from "@/lib/validations/leave";
 import {
   LEAVE_TYPES,
   MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS,
   MONTHLY_ACCRUAL_RATE,
+  SL_MEDICAL_CERT_THRESHOLD_DAYS,
+  ledgerCodeFor,
 } from "@/lib/constants/leave-types";
+import { countChargeableDays } from "@/lib/utils/leave/working-days";
 import {
-  computeAnnualAccrual,
-  accrueMonthlyCredits as accrueEmployeeMonthlyCredits,
-  deductLeaveCredits,
-  restoreLeaveCredits,
-} from "@/lib/utils/leave/credits";
+  loadNonWorkingCalendar,
+  postLedgerEntry,
+} from "@/lib/utils/leave/ledger";
+import {
+  assertApproverScope,
+  assertNotOwnApplication,
+  assertNotOwnBalance,
+  chargedDays,
+  isLeaveHr,
+  isOwnLeaveAttachmentPath,
+  resolveCancel,
+  resolveCancellationDecision,
+} from "@/lib/utils/leave/workflow";
+import { runMonthlyAccrual } from "@/lib/utils/leave/system-accrual";
 import { Resend } from "resend";
 import { env } from "@/lib/env";
 import {
@@ -174,6 +187,75 @@ async function resolveOwnerUserId(employeeId: string): Promise<string | null> {
   }
 }
 
+/** Today as YYYY-MM-DD in Philippine time (servers run in UTC). */
+function todayInManila(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(
+    new Date(),
+  );
+}
+
+/**
+ * Charge (negative `days`) or restore (positive) the ledger an application's
+ * leave type is charged against — VL/SL, or VL for Forced Leave (H-10).
+ * Always posts to the current year's running ledger row.
+ */
+async function postApplicationCharge(
+  tx: Tx,
+  app: { employeeId: string; leaveTypeCode: string },
+  days: number,
+): Promise<void> {
+  const ledgerCode = ledgerCodeFor(app.leaveTypeCode);
+  if (!ledgerCode || days === 0) return;
+
+  const [ledgerType] = await tx
+    .select({ id: leaveTypes.id })
+    .from(leaveTypes)
+    .where(eq(leaveTypes.code, ledgerCode))
+    .limit(1);
+  if (!ledgerType) {
+    throw new Error(`Leave type '${ledgerCode}' not found in reference table.`);
+  }
+
+  await postLedgerEntry(tx, {
+    employeeId: app.employeeId,
+    leaveTypeId: ledgerType.id,
+    year: new Date().getFullYear(),
+    delta: days,
+    kind: "use",
+  });
+}
+
+/**
+ * Give back exactly what applyLeave charged, per its `create` audit entry —
+ * never the row's no_of_days, and nothing for a row applyLeave never charged
+ * (e.g. one inserted straight through PostgREST before the write lockdown).
+ */
+async function restoreApplicationCharge(
+  tx: Tx,
+  app: { id: string; employeeId: string; leaveTypeCode: string },
+): Promise<void> {
+  const ledgerCode = ledgerCodeFor(app.leaveTypeCode);
+  if (!ledgerCode) return;
+
+  const [created] = await tx
+    .select({ newValues: auditLogs.newValues })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.tableName, "leave_applications"),
+        eq(auditLogs.action, "create"),
+        eq(auditLogs.recordId, app.id),
+      ),
+    )
+    .limit(1);
+
+  await postApplicationCharge(
+    tx,
+    app,
+    chargedDays(created?.newValues, ledgerCode),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Action: applyLeave
 // ---------------------------------------------------------------------------
@@ -195,8 +277,41 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
       "Forbidden: you may only apply for leave on your own behalf.",
     );
   }
+  // Attachments must be objects uploadLeaveAttachments wrote under the
+  // applicant's own prefix — they are later signed with the service role.
+  // (Checked here, not in ApplyLeaveSchema: the client form validates
+  // placeholder file names against that schema before uploading.)
+  if (
+    parsed.attachmentPaths?.some(
+      (path) => !isOwnLeaveAttachmentPath(path, parsed.employeeId),
+    )
+  ) {
+    throw new Error("Invalid attachment: upload the document again.");
+  }
 
-  const currentYear = new Date().getFullYear();
+  // H-09: the chargeable day count is computed here from the holiday and
+  // work-suspension calendar. The client's `workingDays` is a UI estimate only.
+  const calendar = await loadNonWorkingCalendar(
+    parsed.startDate,
+    parsed.endDate,
+  );
+  const workingDays = countChargeableDays(parsed.startDate, parsed.endDate, {
+    ...calendar,
+    period: parsed.period,
+  });
+  if (workingDays <= 0) {
+    throw new Error("The selected dates contain no working days to charge.");
+  }
+  if (
+    parsed.leaveTypeCode === "SL" &&
+    workingDays > SL_MEDICAL_CERT_THRESHOLD_DAYS &&
+    !parsed.attachmentPaths?.length
+  ) {
+    throw new Error(
+      `A medical certificate is required for Sick Leave exceeding ${SL_MEDICAL_CERT_THRESHOLD_DAYS} days.`,
+    );
+  }
+  const ledgerCode = ledgerCodeFor(parsed.leaveTypeCode);
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
@@ -217,17 +332,9 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
         );
       }
 
-      const isAccruedLeave =
-        leaveTypeRef.code === "VL" || leaveTypeRef.code === "SL";
-
-      // Serialize concurrent applyLeave calls for the same employee/type/year.
-      // Advisory lock is released automatically when the tx ends.
-      if (isAccruedLeave) {
-        await lockKey(
-          tx,
-          `leave-credits:${parsed.employeeId}:${leaveTypeRef.id}:${currentYear}`,
-        );
-      }
+      // Serialize concurrent applications by the same employee so the overlap
+      // guard and the ledger charge below cannot interleave.
+      await lockKey(tx, `leave-apply:${parsed.employeeId}`);
 
       // Overlap guard — any pending/approved leave that intersects the range blocks.
       const overlapping = await tx
@@ -241,7 +348,11 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
         .where(
           and(
             eq(leaveApplications.employeeId, parsed.employeeId),
-            inArray(leaveApplications.status, ["pending", "approved"]),
+            inArray(leaveApplications.status, [
+              "pending",
+              "approved",
+              "cancellation_requested",
+            ]),
             lte(leaveApplications.dateFrom, parsed.endDate),
             gte(leaveApplications.dateTo, parsed.startDate),
           ),
@@ -256,59 +367,6 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
         );
       }
 
-      // For accrued leave (VL, SL): validate balance and deduct inside the tx.
-      if (isAccruedLeave) {
-        const [creditRow] = await tx
-          .select({
-            id: leaveCredits.id,
-            balance: leaveCredits.balance,
-            usedCredits: leaveCredits.usedCredits,
-            totalCredits: leaveCredits.totalCredits,
-            carryOver: leaveCredits.carryOver,
-          })
-          .from(leaveCredits)
-          .where(
-            and(
-              eq(leaveCredits.employeeId, parsed.employeeId),
-              eq(leaveCredits.leaveTypeId, leaveTypeRef.id),
-              eq(leaveCredits.year, currentYear),
-            ),
-          )
-          .limit(1);
-
-        if (!creditRow) {
-          throw new Error(
-            `No ${leaveTypeRef.code} credit record found for ${currentYear}. ` +
-              "Please contact HR to initialize your leave credits.",
-          );
-        }
-
-        const currentBalance = {
-          vl: leaveTypeRef.code === "VL" ? Number(creditRow.balance) : 0,
-          sl: leaveTypeRef.code === "SL" ? Number(creditRow.balance) : 0,
-        };
-
-        // Throws RangeError on insufficient balance — rolls back the tx.
-        const updatedBalance = deductLeaveCredits(
-          currentBalance,
-          leaveTypeRef.code as "VL" | "SL",
-          parsed.workingDays,
-        );
-
-        const newBalance =
-          leaveTypeRef.code === "VL" ? updatedBalance.vl : updatedBalance.sl;
-        const newUsed = Number(creditRow.usedCredits) + parsed.workingDays;
-
-        await tx
-          .update(leaveCredits)
-          .set({
-            balance: String(newBalance),
-            usedCredits: String(newUsed),
-            updatedAt: new Date(),
-          })
-          .where(eq(leaveCredits.id, creditRow.id));
-      }
-
       // Insert the leave application in the same tx.
       const insertedRows = await tx
         .insert(leaveApplications)
@@ -317,7 +375,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           leaveTypeId: leaveTypeRef.id,
           dateFrom: parsed.startDate,
           dateTo: parsed.endDate,
-          noOfDays: String(parsed.workingDays),
+          noOfDays: String(workingDays),
           reason: parsed.reason ?? null,
           status: "pending",
           // LAM-008: storage paths of supporting documents (uploaded via
@@ -334,6 +392,14 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
         throw new Error("Failed to insert leave application.");
       }
 
+      // VL/SL (and FL → VL) are charged now; throws on insufficient balance,
+      // rolling back the insert. Restored on disapproval / cancellation.
+      await postApplicationCharge(
+        tx,
+        { employeeId: parsed.employeeId, leaveTypeCode: leaveTypeRef.code },
+        -workingDays,
+      );
+
       await writeAuditLogTx(tx, {
         userId: user.id,
         action: "create",
@@ -344,7 +410,10 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           leaveTypeCode: parsed.leaveTypeCode,
           startDate: parsed.startDate,
           endDate: parsed.endDate,
-          workingDays: parsed.workingDays,
+          workingDays,
+          period: parsed.period,
+          // Marks that the ledger was charged — read back before restoring.
+          ledgerCode,
           status: "pending",
           attachmentCount: parsed.attachmentPaths?.length ?? 0,
         },
@@ -368,8 +437,8 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
     await notifyRoles(["hr_admin", "leave_approver"], {
       type: "leave_submitted",
       title: "New leave application",
-      body: `A ${result.leaveTypeName} application for ${parsed.workingDays} day${
-        parsed.workingDays === 1 ? "" : "s"
+      body: `A ${result.leaveTypeName} application for ${workingDays} day${
+        workingDays === 1 ? "" : "s"
       } is awaiting review.`,
       actionUrl: "/leave/approvals",
       entityType: "leave_applications",
@@ -384,8 +453,8 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
     await notifyEmployee(parsed.employeeId, {
       type: "leave_submitted",
       title: "Leave application submitted",
-      body: `Your ${result.leaveTypeName} from ${parsed.startDate} to ${parsed.endDate} (${parsed.workingDays} day${
-        parsed.workingDays === 1 ? "" : "s"
+      body: `Your ${result.leaveTypeName} from ${parsed.startDate} to ${parsed.endDate} (${workingDays} day${
+        workingDays === 1 ? "" : "s"
       }) is pending approval.`,
       actionUrl: "/leave/applications",
       entityType: "leave_applications",
@@ -434,7 +503,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           leaveTypeCode,
           startDate: parsed.startDate,
           endDate: parsed.endDate,
-          workingDays: parsed.workingDays,
+          workingDays,
           reason: parsed.reason ?? null,
           leaveApplicationId: result.leaveApplicationId,
           approverName,
@@ -446,7 +515,7 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
           leaveTypeCode,
           startDate: parsed.startDate,
           endDate: parsed.endDate,
-          workingDays: parsed.workingDays,
+          workingDays,
           reason: parsed.reason ?? null,
           leaveApplicationId: result.leaveApplicationId,
           approverName,
@@ -562,22 +631,36 @@ export async function uploadLeaveAttachments(
 // Action: approveLeave
 // ---------------------------------------------------------------------------
 
-export async function approveLeave(input: unknown): Promise<void> {
+export interface ApproveLeaveResult {
+  /** approved = final; escalated = still pending HR sign-off; unchanged = already approved. */
+  status: "approved" | "escalated" | "unchanged";
+}
+
+export async function approveLeave(
+  input: unknown,
+): Promise<ApproveLeaveResult> {
   const parsed = ApproveLeaveSchema.parse(input);
   const user = await requirePermission("leave", "approve");
 
   // Fast pre-check for idempotency: a second call after approval is a no-op.
   const [preCheck] = await db
-    .select({ status: leaveApplications.status })
+    .select({
+      status: leaveApplications.status,
+      employeeId: leaveApplications.employeeId,
+      applicantOfficeId: employees.officeId,
+    })
     .from(leaveApplications)
+    .leftJoin(employees, eq(employees.id, leaveApplications.employeeId))
     .where(eq(leaveApplications.id, parsed.leaveApplicationId))
     .limit(1);
 
   if (!preCheck) {
     throw new Error("Leave application not found.");
   }
+  assertNotOwnApplication(user.employeeId, String(preCheck.employeeId));
+  assertApproverScope(await approverScopeOf(user), preCheck.applicantOfficeId);
   if (preCheck.status === "approved") {
-    return;
+    return { status: "unchanged" };
   }
   if (preCheck.status !== "pending") {
     throw new Error(
@@ -630,12 +713,10 @@ export async function approveLeave(input: unknown): Promise<void> {
       const workingDays = Number(app.noOfDays ?? 0);
       const needsEscalation = workingDays > MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS;
 
-      // Multi-level escalation: supervisor approval at >15 days routes to HR.
-      let nextStatus: "approved" | "pending" = "approved";
-      if (needsEscalation) {
-        if (user.role === "leave_approver") nextStatus = "pending";
-        else nextStatus = "approved";
-      }
+      // Multi-level escalation: any non-HR approver (supervisor or
+      // leave_approver) at >15 days leaves it pending for HR sign-off.
+      const nextStatus: "approved" | "pending" =
+        needsEscalation && !isLeaveHr(user.role) ? "pending" : "approved";
 
       // Optimistic concurrency: UPDATE ... WHERE status = 'pending'.
       // If another approver already processed this row, `affected` is 0 and we
@@ -785,6 +866,9 @@ export async function approveLeave(input: unknown): Promise<void> {
   }
 
   revalidateLeavePaths();
+  return {
+    status: txResult.nextStatus === "approved" ? "approved" : "escalated",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -849,6 +933,7 @@ export async function batchApproveLeaves(
 export async function disapproveLeave(input: unknown): Promise<void> {
   const parsed = DisapproveLeaveSchema.parse(input);
   const user = await requirePermission("leave", "approve");
+  const actor = await approverScopeOf(user);
 
   const txResult = await withRetry(() =>
     withTx(async (tx) => {
@@ -861,12 +946,16 @@ export async function disapproveLeave(input: unknown): Promise<void> {
           dateFrom: leaveApplications.dateFrom,
           dateTo: leaveApplications.dateTo,
           leaveTypeId: leaveApplications.leaveTypeId,
+          applicantOfficeId: employees.officeId,
         })
         .from(leaveApplications)
+        .leftJoin(employees, eq(employees.id, leaveApplications.employeeId))
         .where(eq(leaveApplications.id, parsed.leaveApplicationId))
         .limit(1);
 
       if (!app) throw new Error("Leave application not found.");
+      assertNotOwnApplication(user.employeeId, String(app.employeeId));
+      assertApproverScope(actor, app.applicantOfficeId);
 
       if (app.status === "disapproved") {
         return { noOp: true as const, app, leaveTypeCode: "" };
@@ -884,16 +973,6 @@ export async function disapproveLeave(input: unknown): Promise<void> {
         .limit(1);
 
       const disapproveLeaveCode = leaveTypeRef?.code ?? "";
-      const isAccrued =
-        disapproveLeaveCode === "VL" || disapproveLeaveCode === "SL";
-      const year = new Date().getFullYear();
-
-      if (isAccrued) {
-        await lockKey(
-          tx,
-          `leave-credits:${String(app.employeeId)}:${app.leaveTypeId}:${year}`,
-        );
-      }
 
       // Optimistic status guard: must still be pending.
       const updated = await tx
@@ -921,54 +1000,12 @@ export async function disapproveLeave(input: unknown): Promise<void> {
         };
       }
 
-      // Restore accrued credits in the same tx.
-      if (isAccrued) {
-        const daysToRestore = Number(app.noOfDays ?? 0);
-        if (daysToRestore > 0) {
-          const [creditRow] = await tx
-            .select({
-              id: leaveCredits.id,
-              balance: leaveCredits.balance,
-              usedCredits: leaveCredits.usedCredits,
-            })
-            .from(leaveCredits)
-            .where(
-              and(
-                eq(leaveCredits.employeeId, String(app.employeeId)),
-                eq(leaveCredits.leaveTypeId, String(app.leaveTypeId)),
-                eq(leaveCredits.year, year),
-              ),
-            )
-            .limit(1);
-
-          if (creditRow) {
-            const currentBalance = {
-              vl: disapproveLeaveCode === "VL" ? Number(creditRow.balance) : 0,
-              sl: disapproveLeaveCode === "SL" ? Number(creditRow.balance) : 0,
-            };
-            const restored = restoreLeaveCredits(
-              currentBalance,
-              disapproveLeaveCode as "VL" | "SL",
-              daysToRestore,
-            );
-            const newBalance =
-              disapproveLeaveCode === "VL" ? restored.vl : restored.sl;
-            const newUsed = Math.max(
-              0,
-              Number(creditRow.usedCredits) - daysToRestore,
-            );
-
-            await tx
-              .update(leaveCredits)
-              .set({
-                balance: String(newBalance),
-                usedCredits: String(newUsed),
-                updatedAt: new Date(),
-              })
-              .where(eq(leaveCredits.id, creditRow.id));
-          }
-        }
-      }
+      // Restore the charged credits in the same tx.
+      await restoreApplicationCharge(tx, {
+        id: String(app.id),
+        employeeId: String(app.employeeId),
+        leaveTypeCode: disapproveLeaveCode,
+      });
 
       await writeAuditLogTx(tx, {
         userId: user.id,
@@ -1067,175 +1104,134 @@ export async function disapproveLeave(input: unknown): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Action: cancelLeave
+// Action: cancelLeave (PRD §12.1, H-04)
 // ---------------------------------------------------------------------------
 
-export async function cancelLeave(input: unknown): Promise<void> {
-  const parsed = CancelLeaveSchema.parse(input);
-  // Cancellation is not strictly a "delete" per the permission matrix
-  // (the matrix restricts delete to super_admin, while self-service users must
-  // be able to cancel their own pending/approved leave). We therefore assert
-  // authentication here and enforce ownership inside the tx.
-  const user = await requireAuth();
+export interface CancelLeaveResult {
+  status: "cancelled" | "cancellation_requested";
+}
 
-  const txResult = await withRetry(() =>
+/**
+ * Owner withdraws PENDING leave → cancelled (credits restored).
+ * Owner cancels APPROVED, not-yet-consumed leave → cancellation_requested
+ * (credits restored only when an approver confirms).
+ * HR (hr_admin / super_admin) cancels pending/approved/requested → cancelled.
+ */
+export async function cancelLeave(input: unknown): Promise<CancelLeaveResult> {
+  const parsed = CancelLeaveSchema.parse(input);
+  // `view` covers every role that owns leave; ownership/HR is enforced below
+  // because the server DB connection bypasses RLS.
+  const user = await requirePermission("leave", "view");
+  const isHr = isLeaveHr(user.role);
+
+  const result = await withRetry(() =>
     withTx(async (tx) => {
       const [app] = await tx
         .select({
           id: leaveApplications.id,
           status: leaveApplications.status,
           employeeId: leaveApplications.employeeId,
-          noOfDays: leaveApplications.noOfDays,
-          leaveTypeId: leaveApplications.leaveTypeId,
+          dateTo: leaveApplications.dateTo,
+          leaveTypeCode: leaveTypes.code,
         })
         .from(leaveApplications)
+        .innerJoin(leaveTypes, eq(leaveTypes.id, leaveApplications.leaveTypeId))
         .where(eq(leaveApplications.id, parsed.leaveApplicationId))
         .limit(1);
-
       if (!app) throw new Error("Leave application not found.");
 
-      if (
-        user.role === "employee_self_service" &&
-        user.employeeId !== String(app.employeeId)
-      ) {
-        throw new Error(
-          "Forbidden: you may only cancel your own leave applications.",
-        );
+      const isOwner =
+        user.employeeId !== null && user.employeeId === String(app.employeeId);
+      const outcome = resolveCancel({
+        status: String(app.status),
+        isOwner,
+        isHr,
+        dateTo: String(app.dateTo),
+        today: todayInManila(),
+      });
+      if (outcome.kind === "noop") {
+        return {
+          status: app.status as CancelLeaveResult["status"],
+          changed: false,
+          isOwner,
+          employeeId: String(app.employeeId),
+        };
       }
 
-      if (app.status === "cancelled") {
-        return { noOp: true as const, app, leaveTypeCode: "" };
-      }
-      if (!["pending", "approved"].includes(String(app.status))) {
-        throw new Error(
-          `Cannot cancel an application in '${app.status}' status.`,
-        );
-      }
-
-      const [leaveTypeRef] = await tx
-        .select({ code: leaveTypes.code })
-        .from(leaveTypes)
-        .where(eq(leaveTypes.id, app.leaveTypeId))
-        .limit(1);
-
-      const leaveCode = leaveTypeRef?.code ?? "";
-      const isAccrued = leaveCode === "VL" || leaveCode === "SL";
-      const year = new Date().getFullYear();
-
-      if (isAccrued) {
-        await lockKey(
-          tx,
-          `leave-credits:${String(app.employeeId)}:${app.leaveTypeId}:${year}`,
-        );
-      }
-
-      const previousStatus = app.status;
-
-      // Optimistic: must still be pending OR approved.
+      const nextStatus =
+        outcome.kind === "cancel" ? "cancelled" : "cancellation_requested";
       const updated = await tx
         .update(leaveApplications)
         .set({
-          status: "cancelled",
-          remarks: parsed.reason ?? null,
+          status: nextStatus,
+          ...(parsed.reason ? { remarks: parsed.reason } : {}),
           updatedAt: new Date(),
         })
         .where(
           and(
             eq(leaveApplications.id, parsed.leaveApplicationId),
-            inArray(leaveApplications.status, ["pending", "approved"]),
+            sql`${leaveApplications.status} = ${outcome.from}`,
           ),
         )
         .returning({ id: leaveApplications.id });
-
       if (updated.length === 0) {
-        return { raced: true as const, app, leaveTypeCode: leaveCode };
+        throw new Error(
+          "This application was modified by another user. Please refresh.",
+        );
       }
 
-      // Restore credits in the same tx.
-      if (isAccrued) {
-        const daysToRestore = Number(app.noOfDays ?? 0);
-        if (daysToRestore > 0) {
-          const [creditRow] = await tx
-            .select({
-              id: leaveCredits.id,
-              balance: leaveCredits.balance,
-              usedCredits: leaveCredits.usedCredits,
-            })
-            .from(leaveCredits)
-            .where(
-              and(
-                eq(leaveCredits.employeeId, String(app.employeeId)),
-                eq(leaveCredits.leaveTypeId, String(app.leaveTypeId)),
-                eq(leaveCredits.year, year),
-              ),
-            )
-            .limit(1);
-
-          if (creditRow) {
-            const currentBalance = {
-              vl: leaveCode === "VL" ? Number(creditRow.balance) : 0,
-              sl: leaveCode === "SL" ? Number(creditRow.balance) : 0,
-            };
-            const restored = restoreLeaveCredits(
-              currentBalance,
-              leaveCode as "VL" | "SL",
-              daysToRestore,
-            );
-            const newBalance = leaveCode === "VL" ? restored.vl : restored.sl;
-            const newUsed = Math.max(
-              0,
-              Number(creditRow.usedCredits) - daysToRestore,
-            );
-
-            await tx
-              .update(leaveCredits)
-              .set({
-                balance: String(newBalance),
-                usedCredits: String(newUsed),
-                updatedAt: new Date(),
-              })
-              .where(eq(leaveCredits.id, creditRow.id));
-          }
-        }
+      if (nextStatus === "cancelled") {
+        await restoreApplicationCharge(tx, {
+          id: String(app.id),
+          employeeId: String(app.employeeId),
+          leaveTypeCode: app.leaveTypeCode,
+        });
       }
 
       await writeAuditLogTx(tx, {
         userId: user.id,
-        action: "cancel",
+        action: nextStatus === "cancelled" ? "cancel" : "cancel_request",
         tableName: "leave_applications",
         recordId: parsed.leaveApplicationId,
-        oldValues: { status: previousStatus },
-        newValues: { status: "cancelled", reason: parsed.reason },
+        oldValues: { status: outcome.from },
+        newValues: { status: nextStatus, reason: parsed.reason ?? null },
       });
 
       return {
-        raced: false as const,
-        noOp: false as const,
-        app,
-        leaveTypeCode: leaveCode,
+        status: nextStatus as CancelLeaveResult["status"],
+        changed: true,
+        isOwner,
+        employeeId: String(app.employeeId),
       };
     }),
   );
 
-  if ("noOp" in txResult && txResult.noOp) return;
-  if ("raced" in txResult && txResult.raced) {
-    throw new Error("Already processed by another approver");
-  }
-
-  // Notify the applicant only when cancelled by someone else (HR).
-  if (String(txResult.app.employeeId) !== user.employeeId) {
-    const ownerUserId = await resolveOwnerUserId(
-      String(txResult.app.employeeId),
-    );
-    if (ownerUserId) {
-      await createNotification({
-        userId: ownerUserId,
+  if (result.changed) {
+    const reasonSuffix = parsed.reason ? ` Reason: ${parsed.reason}` : "";
+    if (result.status === "cancellation_requested") {
+      await notifyRoles(["leave_approver", "hr_admin"], {
+        type: "leave_cancelled",
+        title: "Leave cancellation requested",
+        body: `An employee asked to cancel approved leave.${reasonSuffix}`,
+        actionUrl: "/leave/applications?tab=pending",
+        entityType: "leave_applications",
+        entityId: parsed.leaveApplicationId,
+      });
+    } else if (!result.isOwner) {
+      await notifyEmployee(result.employeeId, {
         type: "leave_cancelled",
         title: "Leave application cancelled",
-        body: `Your leave was cancelled by HR.${
-          parsed.reason ? ` Reason: ${parsed.reason}` : ""
-        }`,
+        body: `Your leave was cancelled by HR.${reasonSuffix}`,
         actionUrl: "/leave/applications",
+        entityType: "leave_applications",
+        entityId: parsed.leaveApplicationId,
+      });
+    } else {
+      await notifyRoles(["leave_approver", "hr_admin"], {
+        type: "leave_cancelled",
+        title: "Leave application withdrawn",
+        body: `A pending leave application was withdrawn.${reasonSuffix}`,
+        actionUrl: "/leave/applications?tab=pending",
         entityType: "leave_applications",
         entityId: parsed.leaveApplicationId,
       });
@@ -1243,10 +1239,111 @@ export async function cancelLeave(input: unknown): Promise<void> {
   }
 
   revalidateLeavePaths();
+  return { status: result.status };
 }
 
 // ---------------------------------------------------------------------------
-// Action: accrueMonthlyCredits (cron target)
+// Action: decideLeaveCancellation (PRD §12.1 CANCELLATION_REQUESTED → …)
+// ---------------------------------------------------------------------------
+
+/**
+ * Approver confirms (→ cancelled, credits restored in the same tx) or denies
+ * (→ approved) an owner's cancellation request.
+ */
+export async function decideLeaveCancellation(
+  input: unknown,
+): Promise<{ status: "cancelled" | "approved" }> {
+  const parsed = DecideLeaveCancellationSchema.parse(input);
+  const user = await requirePermission("leave", "approve");
+  const actor = await approverScopeOf(user);
+
+  const result = await withRetry(() =>
+    withTx(async (tx) => {
+      const [app] = await tx
+        .select({
+          id: leaveApplications.id,
+          status: leaveApplications.status,
+          employeeId: leaveApplications.employeeId,
+          leaveTypeCode: leaveTypes.code,
+          applicantOfficeId: employees.officeId,
+        })
+        .from(leaveApplications)
+        .innerJoin(leaveTypes, eq(leaveTypes.id, leaveApplications.leaveTypeId))
+        .leftJoin(employees, eq(employees.id, leaveApplications.employeeId))
+        .where(eq(leaveApplications.id, parsed.leaveApplicationId))
+        .limit(1);
+      if (!app) throw new Error("Leave application not found.");
+      assertApproverScope(actor, app.applicantOfficeId);
+
+      const nextStatus = resolveCancellationDecision({
+        status: String(app.status),
+        decision: parsed.decision,
+        isOwner:
+          user.employeeId !== null &&
+          user.employeeId === String(app.employeeId),
+      });
+
+      const updated = await tx
+        .update(leaveApplications)
+        .set({
+          status: nextStatus,
+          ...(parsed.remarks ? { remarks: parsed.remarks } : {}),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(leaveApplications.id, parsed.leaveApplicationId),
+            eq(leaveApplications.status, "cancellation_requested"),
+          ),
+        )
+        .returning({ id: leaveApplications.id });
+      if (updated.length === 0) {
+        throw new Error("Already processed by another approver.");
+      }
+
+      if (nextStatus === "cancelled") {
+        await restoreApplicationCharge(tx, {
+          id: String(app.id),
+          employeeId: String(app.employeeId),
+          leaveTypeCode: app.leaveTypeCode,
+        });
+      }
+
+      await writeAuditLogTx(tx, {
+        userId: user.id,
+        action: nextStatus === "cancelled" ? "cancel_confirm" : "cancel_deny",
+        tableName: "leave_applications",
+        recordId: parsed.leaveApplicationId,
+        oldValues: { status: "cancellation_requested" },
+        newValues: { status: nextStatus, remarks: parsed.remarks ?? null },
+      });
+
+      return { status: nextStatus, employeeId: String(app.employeeId) };
+    }),
+  );
+
+  const remarksSuffix = parsed.remarks ? ` Remarks: ${parsed.remarks}` : "";
+  await notifyEmployee(result.employeeId, {
+    type: result.status === "cancelled" ? "leave_cancelled" : "leave_approved",
+    title:
+      result.status === "cancelled"
+        ? "Leave cancellation approved"
+        : "Leave cancellation request denied",
+    body:
+      result.status === "cancelled"
+        ? `Your leave was cancelled and the credits restored.${remarksSuffix}`
+        : `Your leave remains approved.${remarksSuffix}`,
+    actionUrl: "/leave/applications",
+    entityType: "leave_applications",
+    entityId: parsed.leaveApplicationId,
+  });
+
+  revalidateLeavePaths();
+  return { status: result.status };
+}
+
+// ---------------------------------------------------------------------------
+// Action: accrueMonthlyCredits (HR-triggered run of the monthly accrual)
 // ---------------------------------------------------------------------------
 
 export interface AccrualSummary {
@@ -1256,196 +1353,34 @@ export interface AccrualSummary {
 }
 
 /**
- * Accrues monthly VL/SL credits for all eligible employees.
- * Intended to be triggered by a monthly cron job (e.g., end of month).
- * Idempotent: employees who already received credit for the given month are skipped.
+ * Manually run the LAM-002 monthly accrual (same engine as the cron job).
+ * Defaults to the previous, completed month. Idempotent per month/year.
  */
 export async function accrueMonthlyCredits(
   input: unknown,
 ): Promise<AccrualSummary> {
   const parsed = AccrueMonthlyCreditsSchema.parse(input);
-  // `process` permission is empty for leave; approvers (hr_admin, super_admin) run accrual.
-  const user = await requirePermission("leave", "approve");
-  const supabase = await createServerClient();
+  const user = await requirePermission("leave", "process");
 
-  const now = new Date();
-  const creditMonth = parsed.month ?? now.getMonth() + 1; // 1-indexed
-  const creditYear = parsed.year ?? now.getFullYear();
-
-  const summary: AccrualSummary = { processed: 0, skipped: 0, errors: [] };
-
-  // Fetch VL leave type ID
-  const { data: vlType, error: ltError } = await supabase
-    .from("leave_types")
-    .select("id")
-    .eq("code", "VL")
-    .single();
-
-  const { data: slType, error: slLtError } = await supabase
-    .from("leave_types")
-    .select("id")
-    .eq("code", "SL")
-    .single();
-
-  if (ltError || !vlType || slLtError || !slType) {
-    throw new Error(
-      "VL or SL leave type not found in reference table. Cannot accrue.",
-    );
-  }
-
-  // Fetch employees to process
-  let employeeQuery = supabase
-    .from("employees")
-    .select("id, date_hired, appointment_type")
-    .eq("status", "active")
-    .is("deleted_at", null)
-    // Only organic personnel accrue CSC leave credits (PRD §10.1.1). Allowlist
-    // organic types so non-organic appointments (JO / COS / consultant /
-    // confidential_agent) never accrue credits.
-    .in("appointment_type", [
-      "permanent",
-      "temporary",
-      "coterminous",
-      "casual",
-      "cti",
-    ]);
-
-  if (parsed.employeeIds && parsed.employeeIds.length > 0) {
-    employeeQuery = employeeQuery.in("id", parsed.employeeIds);
-  }
-
-  const { data: empRows, error: empError } = await employeeQuery;
-
-  if (empError)
-    throw new Error(`Failed to fetch employees: ${empError.message}`);
-
-  // Idempotency (mirrors system-accrual.ts runMonthlyAccrual): collect the
-  // employees already credited for this month/year via their "accrue" audit
-  // rows. Without this, re-running a month permanently double-credits every
-  // already-accrued employee. The UI promises already-credited employees are
-  // skipped — this makes that true.
-  const alreadyAccrued = await db
-    .select({ recordId: auditLogs.recordId })
-    .from(auditLogs)
-    .where(
-      and(
-        eq(auditLogs.action, "accrue"),
-        eq(auditLogs.tableName, "leave_credits"),
-        sql`${auditLogs.newValues} ->> 'month' = ${String(creditMonth)}`,
-        sql`${auditLogs.newValues} ->> 'year' = ${String(creditYear)}`,
-      ),
-    );
-  const accruedEmployeeIds = new Set(
-    alreadyAccrued.map((r) => r.recordId).filter((id): id is string => !!id),
-  );
-
-  for (const emp of empRows ?? []) {
-    try {
-      // Skip employees already credited for this month/year (idempotent re-run).
-      if (accruedEmployeeIds.has(String(emp.id))) {
-        summary.skipped++;
-        continue;
-      }
-
-      const hireDate = new Date(String(emp.date_hired));
-
-      // Fetch current balances
-      const { data: vlCredit } = await supabase
-        .from("leave_credits")
-        .select("id, balance, carry_over, total_credits, used_credits")
-        .eq("employee_id", emp.id)
-        .eq("leave_type_id", vlType.id)
-        .eq("year", creditYear)
-        .single();
-
-      const { data: slCredit } = await supabase
-        .from("leave_credits")
-        .select("id, balance, carry_over, total_credits, used_credits")
-        .eq("employee_id", emp.id)
-        .eq("leave_type_id", slType.id)
-        .eq("year", creditYear)
-        .single();
-
-      const currentBalance = {
-        vl: Number(vlCredit?.balance ?? 0),
-        sl: Number(slCredit?.balance ?? 0),
-      };
-
-      const accrualResult = accrueEmployeeMonthlyCredits(
-        currentBalance,
-        hireDate,
-        creditMonth,
-        creditYear,
-      );
-
-      if (accrualResult.vlAdded === 0 && accrualResult.slAdded === 0) {
-        summary.skipped++;
-        continue;
-      }
-
-      // Upsert VL credit
-      await supabase.from("leave_credits").upsert(
-        {
-          employee_id: emp.id,
-          leave_type_id: vlType.id,
-          year: creditYear,
-          total_credits: String(
-            Number(vlCredit?.total_credits ?? 0) + accrualResult.vlAdded,
-          ),
-          balance: String(accrualResult.vlBalance),
-          used_credits: String(vlCredit?.used_credits ?? 0),
-          carry_over: String(vlCredit?.carry_over ?? 0),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "employee_id,leave_type_id,year" },
-      );
-
-      // Upsert SL credit
-      await supabase.from("leave_credits").upsert(
-        {
-          employee_id: emp.id,
-          leave_type_id: slType.id,
-          year: creditYear,
-          total_credits: String(
-            Number(slCredit?.total_credits ?? 0) + accrualResult.slAdded,
-          ),
-          balance: String(accrualResult.slBalance),
-          used_credits: String(slCredit?.used_credits ?? 0),
-          carry_over: String(slCredit?.carry_over ?? 0),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "employee_id,leave_type_id,year" },
-      );
-
-      // Audit via Drizzle for consistency with the rest of this module.
-      await db.insert(auditLogs).values({
-        userId: user.id,
-        action: "accrue",
-        tableName: "leave_credits",
-        recordId: String(emp.id),
-        newValues: {
-          month: creditMonth,
-          year: creditYear,
-          vlAdded: accrualResult.vlAdded,
-          slAdded: accrualResult.slAdded,
-        },
-      });
-
-      summary.processed++;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      summary.errors.push({ employeeId: String(emp.id), message });
-    }
-  }
+  const summary = await runMonthlyAccrual({
+    month: parsed.month,
+    year: parsed.year,
+    employeeIds: parsed.employeeIds,
+    actorUserId: user.id,
+  });
 
   revalidatePath("/leave/credits");
   revalidatePath("/leave/credits/admin");
 
-  return summary;
+  return {
+    processed: summary.processed,
+    skipped: summary.skipped,
+    errors: summary.errors,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// Action: adjustLeaveCredits (HR admin manual correction)
+// Action: adjustLeaveCredits (HR admin manual correction, H-12)
 // ---------------------------------------------------------------------------
 
 const AdjustLeaveCreditsSchema = z.object({
@@ -1473,138 +1408,82 @@ export interface AdjustLeaveCreditsResult {
 
 /**
  * Manual, audited adjustment of an employee's VL or SL balance.
- * Guarantees: only HR admin / super admin; balance cannot go negative;
- * delta and reason are written to audit_logs.
- * Runs inside `withTx` + advisory lock so concurrent adjustments + applications
- * can never interleave for the same (employee, type, year).
+ * HR admin / super admin only (`leave:process`), never on one's own balance;
+ * the balance cannot go negative; old/new balance, delta and reason are
+ * written to audit_logs in the same transaction. Later-year balances carry
+ * the adjustment forward (ledger rollover).
  */
 export async function adjustLeaveCredits(
   input: unknown,
 ): Promise<AdjustLeaveCreditsResult> {
   const parsed = AdjustLeaveCreditsSchema.parse(input);
-  const user = await requirePermission("leave", "approve");
+  const user = await requirePermission("leave", "process");
+  assertNotOwnBalance(user.employeeId, parsed.employeeId);
 
   const result = await withRetry(() =>
     withTx(async (tx) => {
       const [leaveTypeRef] = await tx
-        .select({ id: leaveTypes.id, code: leaveTypes.code })
+        .select({ id: leaveTypes.id })
         .from(leaveTypes)
         .where(eq(leaveTypes.code, parsed.leaveTypeCode))
         .limit(1);
-
       if (!leaveTypeRef) {
         throw new Error(`Leave type '${parsed.leaveTypeCode}' not found.`);
       }
 
-      await lockKey(
-        tx,
-        `leave-credits:${parsed.employeeId}:${leaveTypeRef.id}:${parsed.year}`,
-      );
-
-      const [creditRow] = await tx
-        .select({
-          id: leaveCredits.id,
-          balance: leaveCredits.balance,
-          usedCredits: leaveCredits.usedCredits,
-          totalCredits: leaveCredits.totalCredits,
-          carryOver: leaveCredits.carryOver,
-        })
-        .from(leaveCredits)
-        .where(
-          and(
-            eq(leaveCredits.employeeId, parsed.employeeId),
-            eq(leaveCredits.leaveTypeId, leaveTypeRef.id),
-            eq(leaveCredits.year, parsed.year),
-          ),
-        )
-        .limit(1);
-
-      const previousBalance = creditRow ? Number(creditRow.balance) : 0;
-      const newBalance = previousBalance + parsed.delta;
-
-      if (newBalance < 0) {
-        throw new Error(
-          `Adjustment would drive balance negative (${previousBalance.toFixed(3)} + ${parsed.delta.toFixed(3)} = ${newBalance.toFixed(3)}).`,
-        );
-      }
-
-      let creditId: string;
-      if (creditRow) {
-        await tx
-          .update(leaveCredits)
-          .set({
-            balance: String(newBalance),
-            totalCredits:
-              parsed.delta > 0
-                ? String(Number(creditRow.totalCredits ?? 0) + parsed.delta)
-                : String(creditRow.totalCredits ?? 0),
-            updatedAt: new Date(),
-          })
-          .where(eq(leaveCredits.id, creditRow.id));
-        creditId = String(creditRow.id);
-      } else {
-        const inserted = await tx
-          .insert(leaveCredits)
-          .values({
-            employeeId: parsed.employeeId,
-            leaveTypeId: leaveTypeRef.id,
-            year: parsed.year,
-            balance: String(newBalance),
-            totalCredits: String(Math.max(0, parsed.delta)),
-            usedCredits: "0",
-            carryOver: "0",
-          })
-          .returning({ id: leaveCredits.id });
-        const row = inserted[0];
-        if (!row) throw new Error("Failed to seed leave_credits row.");
-        creditId = String(row.id);
+      let posted: Awaited<ReturnType<typeof postLedgerEntry>>;
+      try {
+        posted = await postLedgerEntry(tx, {
+          employeeId: parsed.employeeId,
+          leaveTypeId: leaveTypeRef.id,
+          year: parsed.year,
+          delta: parsed.delta,
+          kind: "adjust",
+        });
+      } catch (err) {
+        if (err instanceof RangeError) {
+          throw new Error(
+            "Adjustment would drive the balance negative. " + err.message,
+          );
+        }
+        throw err;
       }
 
       await writeAuditLogTx(tx, {
         userId: user.id,
         action: "adjust",
         tableName: "leave_credits",
-        recordId: creditId,
-        oldValues: { balance: previousBalance },
+        recordId: posted.id,
+        oldValues: { balance: posted.previousBalance },
         newValues: {
-          balance: newBalance,
+          balance: posted.newBalance,
           delta: parsed.delta,
+          employeeId: parsed.employeeId,
           leaveTypeCode: parsed.leaveTypeCode,
           year: parsed.year,
           reason: parsed.reason,
         },
       });
 
-      return { creditId, previousBalance, newBalance };
+      return posted;
     }),
   );
 
-  try {
-    const ownerUserId = await resolveOwnerUserId(parsed.employeeId);
-    if (ownerUserId) {
-      await createNotification({
-        userId: ownerUserId,
-        type: "generic",
-        title: "Leave credits adjusted",
-        body: `Your ${parsed.leaveTypeCode} balance was adjusted by ${
-          parsed.delta > 0 ? "+" : ""
-        }${parsed.delta.toFixed(3)} day(s). New balance: ${result.newBalance.toFixed(3)}.`,
-        actionUrl: "/leave/credits",
-        entityType: "leave_credits",
-        entityId: result.creditId,
-      });
-    }
-  } catch (err) {
-    console.error(
-      "[leave/actions] adjustLeaveCredits notification failed:",
-      err,
-    );
-  }
+  await notifyEmployee(parsed.employeeId, {
+    type: "generic",
+    title: "Leave credits adjusted",
+    body: `Your ${parsed.leaveTypeCode} balance was adjusted by ${
+      parsed.delta > 0 ? "+" : ""
+    }${parsed.delta.toFixed(3)} day(s). New balance: ${result.newBalance.toFixed(3)}.`,
+    actionUrl: "/leave/credits",
+    entityType: "leave_credits",
+    entityId: result.id,
+  });
 
   revalidateLeavePaths();
 
   return {
-    leaveCreditId: result.creditId,
+    leaveCreditId: result.id,
     previousBalance: result.previousBalance,
     newBalance: result.newBalance,
   };
@@ -1612,7 +1491,6 @@ export async function adjustLeaveCredits(
 
 // Suppress unused import warnings for constants used via type only
 void MONTHLY_ACCRUAL_RATE;
-void computeAnnualAccrual;
 // `employees` and `isNull` imports are preserved for schema-resolution side
 // effects; mark as used to silence TS noUnusedLocals if enabled.
 void employees;

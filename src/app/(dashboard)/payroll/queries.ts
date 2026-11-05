@@ -270,6 +270,8 @@ export async function getMyPayslips(employeeId: string): Promise<MyPayslip[]> {
       and(
         eq(payrollRecords.employeeId, employeeId),
         eq(payrollRecords.status, "paid"),
+        // H-14: excluded records were never disbursed — no payslip.
+        eq(payrollRecords.included, true),
       ),
     )
     .orderBy(desc(payrollPeriods.periodStart));

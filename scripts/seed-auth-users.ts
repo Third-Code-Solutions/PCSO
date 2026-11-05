@@ -58,11 +58,24 @@ interface AuthUserConfig {
   employeeNo: string | null;
 }
 
+// Passwords are NEVER committed (C-03). Set SEED_<ROLE>_PASSWORD
+// (e.g. SEED_HR_ADMIN_PASSWORD) or SEED_DEFAULT_PASSWORD in .env.local.
+function seedPassword(role: string): string {
+  const key = `SEED_${role.toUpperCase()}_PASSWORD`;
+  const value = process.env[key] ?? process.env.SEED_DEFAULT_PASSWORD;
+  if (!value || value.length < 12) {
+    throw new Error(
+      `Set ${key} or SEED_DEFAULT_PASSWORD (min 12 chars) in .env.local`,
+    );
+  }
+  return value;
+}
+
 const AUTH_USERS: AuthUserConfig[] = [
   // D1 — Employee Self-Service
   {
     email: "ess@pcso.gov.ph",
-    password: "PCSO-employee-self-service-B7RlGdel",
+    password: seedPassword("employee_self_service"),
     role: "employee_self_service",
     officeCode: null,
     employeeNo: "EMP-2026-00001",
@@ -70,7 +83,7 @@ const AUTH_USERS: AuthUserConfig[] = [
   // D2 — Supervisor / Manager
   {
     email: "supervisor@pcso.gov.ph",
-    password: "PCSO-supervisor-tqCcVJI3",
+    password: seedPassword("supervisor"),
     role: "supervisor",
     officeCode: null,
     employeeNo: null,
@@ -78,7 +91,7 @@ const AUTH_USERS: AuthUserConfig[] = [
   // D3 — HR Administrator
   {
     email: "hr@pcso.gov.ph",
-    password: "PCSO-hr-admin-y8R9fUQM",
+    password: seedPassword("hr_admin"),
     role: "hr_admin",
     officeCode: null,
     employeeNo: null,
@@ -86,7 +99,7 @@ const AUTH_USERS: AuthUserConfig[] = [
   // D4 — Payroll & Compensation
   {
     email: "payroll@pcso.gov.ph",
-    password: "PCSO-payroll-admin-2EBCCrQt",
+    password: seedPassword("payroll_admin"),
     role: "payroll_admin",
     officeCode: null,
     employeeNo: null,
@@ -94,7 +107,7 @@ const AUTH_USERS: AuthUserConfig[] = [
   // D5 — Executive / Leadership (read-only analytics)
   {
     email: "executive@pcso.gov.ph",
-    password: "PCSO-executive-2_3XZENR",
+    password: seedPassword("executive"),
     role: "executive",
     officeCode: null,
     employeeNo: null,
@@ -102,7 +115,7 @@ const AUTH_USERS: AuthUserConfig[] = [
   // D6 — Compliance & Audit (read-everywhere, write-nowhere)
   {
     email: "audit@pcso.gov.ph",
-    password: "PCSO-auditor-l36e_poM",
+    password: seedPassword("auditor"),
     role: "auditor",
     officeCode: null,
     employeeNo: null,
@@ -110,7 +123,7 @@ const AUTH_USERS: AuthUserConfig[] = [
   // D7 — System Administrator
   {
     email: "sysadmin@pcso.gov.ph",
-    password: "PCSO-super-admin-vAs45Fhn",
+    password: seedPassword("super_admin"),
     role: "super_admin",
     officeCode: null,
     employeeNo: null,

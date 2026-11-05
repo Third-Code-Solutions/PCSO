@@ -120,3 +120,66 @@ export function normalizeApplicableDays(value: unknown): number[] {
   if (days.length === 0) return [...DEFAULT_APPLICABLE_DAYS];
   return Array.from(new Set(days)).sort((a, b) => a - b);
 }
+
+// ---------------------------------------------------------------------------
+// planScheduleAssignment — H-13 (TAM-001 assignment writes)
+// ---------------------------------------------------------------------------
+
+export interface ExistingAssignment extends ScheduleAssignment {
+  id: string;
+}
+
+export type AssignmentPlan =
+  | { kind: "error"; message: string }
+  /** Same start date already assigned: switch that row's schedule/end. */
+  | { kind: "update"; id: string; effectiveTo: DateString | null }
+  /** Close the listed rows (effectiveTo = closeOn), then insert a new open row. */
+  | { kind: "insert"; closeIds: string[]; closeOn: DateString };
+
+/** YYYY-MM-DD of the day before `date` (UTC arithmetic, no TZ drift). */
+export function previousDay(date: DateString): DateString {
+  const [y = 0, m = 1, d = 1] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * Decides how to record "owner uses schedule X from `effectiveFrom`" against
+ * the owner's existing assignment rows, keeping ranges non-overlapping so
+ * `pickApplicableSchedule` stays unambiguous.
+ *
+ * Back-dating behind a later-starting assignment is refused rather than
+ * silently splitting ranges; HR ends or edits the later row first.
+ */
+export function planScheduleAssignment(
+  existing: readonly ExistingAssignment[],
+  effectiveFrom: DateString,
+): AssignmentPlan {
+  const later = existing
+    .filter((a) => a.effectiveFrom > effectiveFrom)
+    .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))[0];
+
+  const sameStart = existing.find((a) => a.effectiveFrom === effectiveFrom);
+  if (sameStart) {
+    // Re-open to "onward" unless a later assignment takes over.
+    return {
+      kind: "update",
+      id: sameStart.id,
+      effectiveTo: later ? previousDay(later.effectiveFrom) : null,
+    };
+  }
+
+  if (later) {
+    return {
+      kind: "error",
+      message: `An assignment already starts on ${later.effectiveFrom}. End it first or pick a date on or after it.`,
+    };
+  }
+
+  return {
+    kind: "insert",
+    closeIds: existing
+      .filter((a) => a.effectiveTo === null || a.effectiveTo >= effectiveFrom)
+      .map((a) => a.id),
+    closeOn: previousDay(effectiveFrom),
+  };
+}

@@ -13,6 +13,11 @@ import {
   allowances,
   employees,
   attendanceLogs,
+  gsisRates,
+  philhealthRates,
+  pagibigRates,
+  birTaxTables,
+  salaryAdjustments,
 } from "@/lib/db/schema";
 import { eq, and, gte, isNull, inArray, lte, desc, ne, sql } from "drizzle-orm";
 import {
@@ -33,7 +38,20 @@ import type {
   AttendanceInput,
   AppointmentType,
   OtherAdjustment,
+  StatutoryRates,
 } from "@/lib/utils/payroll/types";
+import { resolveStatutoryRates } from "@/lib/utils/payroll/statutory-rates";
+import {
+  manilaToday,
+  resolveAdjustedSalary,
+  type EffectedAdjustmentRow,
+} from "@/lib/utils/payroll/salary-adjustment";
+import {
+  applyDueSalaryAdjustments,
+  auditEffectedAdjustments,
+} from "@/lib/payroll/salary-adjustment-effect";
+import { planReprocess } from "@/lib/payroll/reprocess";
+import { buildOverridePatch } from "@/lib/payroll/override";
 import { computeFullPayroll } from "@/lib/utils/payroll";
 import { roundMoney, parseMoney } from "@/lib/utils/payroll/rounding";
 import {
@@ -233,6 +251,10 @@ export async function processPayroll(periodId: string) {
   const result = await withRetry(() =>
     withTx(async (tx) => {
       await lockKey(tx, `payroll:process:${periodId}`);
+      // Serialize with approval and inclusion tagging of this period so a
+      // re-process can never interleave with them (C-12).
+      await lockKey(tx, `payroll:approve:${periodId}`);
+      await lockKey(tx, `payroll:inclusion:${periodId}`);
 
       const [period] = await tx
         .select()
@@ -296,8 +318,31 @@ export async function processPayroll(periodId: string) {
           throw new Error(`Unsupported payroll scope: ${period.scope}`);
       }
 
-      // Load scope reference data (salary table, allowance configs, loans)
-      // and reverse loan amortizations applied by a prior processing run.
+      // C-12 / H-14: re-processing replaces every record of the period. Refuse
+      // when it would discard manual overrides; carry exclusion tags forward.
+      const existingRecords = await tx
+        .select({
+          employeeId: payrollRecords.employeeId,
+          status: payrollRecords.status,
+          included: payrollRecords.included,
+          exclusionReason: payrollRecords.exclusionReason,
+          hasAdjustments: sql<boolean>`exists (select 1 from ${payrollAdjustments} where ${payrollAdjustments.recordId} = ${payrollRecords.id})`,
+        })
+        .from(payrollRecords)
+        .where(eq(payrollRecords.periodId, periodId));
+      const plan = planReprocess(existingRecords);
+      if (!plan.ok) throw new Error(plan.reason);
+
+      // H-17: future-dated salary adjustments whose effectivity has arrived
+      // update the 201 before this run resolves salaries.
+      const effectedAdjustments = await applyDueSalaryAdjustments(
+        tx,
+        manilaToday(),
+      );
+
+      // Load scope reference data (salary table, statutory rates, allowance
+      // configs, loans) and reverse loan amortizations applied by a prior
+      // processing run.
       const ctx = await loadScopeContext(tx, period);
 
       const eligibleEmployees = await tx
@@ -377,41 +422,43 @@ export async function processPayroll(periodId: string) {
       const periodEndDate = new Date(period.periodEnd);
       const periodType = "semi-monthly" as const;
 
-      // Delete existing draft records for re-processing (inside the tx so a
-      // failure leaves the previous snapshot untouched).
+      // Replace ALL records of the period (all are drafts — planReprocess).
+      // Inside the tx so a failure leaves the previous snapshot untouched.
       await tx
         .delete(payrollRecords)
-        .where(
-          and(
-            eq(payrollRecords.periodId, periodId),
-            eq(payrollRecords.status, "draft"),
-          ),
-        );
+        .where(eq(payrollRecords.periodId, periodId));
 
       // Build all rows in memory first, then chunk-insert.
       let totalGrossPay = 0;
       let totalDeductions = 0;
       let totalNetPay = 0;
+      let includedCount = 0;
 
       const rowsToInsert: (typeof payrollRecords.$inferInsert)[] = [];
       const loanDeductionRows: (typeof payrollLoanDeductions.$inferInsert)[] =
         [];
 
       for (const emp of eligibleEmployees) {
+        // H-14: an employee tagged excluded stays excluded; nothing is
+        // collected from them (their loans are not amortized).
+        const isExcluded = plan.exclusions.has(emp.id);
         const employeeInput: EmployeePayrollInput = {
           id: emp.id,
           appointmentType: emp.appointmentType as AppointmentType,
           salaryGrade: emp.salaryGrade,
           step: emp.step,
           yearsInService: computeYearsInService(emp.dateHired),
-          // Prefer the salary_grades reference table; computeFullPayroll
-          // falls back to the static SSL table when undefined.
-          authorizedMonthlySalary: resolveSalaryAsOf(
-            ctx.salaryRows,
-            emp.salaryGrade,
-            emp.step,
-            period.periodEnd,
-          ),
+          // Effected salary adjustment (H-17), else the salary_grades table;
+          // computeFullPayroll falls back to the static SSL table when
+          // undefined.
+          authorizedMonthlySalary:
+            adjustedSalaryFor(ctx, emp) ??
+            resolveSalaryAsOf(
+              ctx.salaryRows,
+              emp.salaryGrade,
+              emp.step,
+              period.periodEnd,
+            ),
         };
 
         const attendanceInput: AttendanceInput = attendanceByEmployee.get(
@@ -424,12 +471,13 @@ export async function processPayroll(periodId: string) {
         };
 
         // PAY-009: amortizations due this period for scopes collecting loans.
-        const loanInput = ctx.includeLoans
-          ? computeLoanDeductions(
-              ctx.loansByEmployee.get(emp.id) ?? [],
-              period.periodEnd,
-            )
-          : { entries: [] as LoanDeductionEntry[], total: 0 };
+        const loanInput =
+          ctx.includeLoans && !isExcluded
+            ? computeLoanDeductions(
+                ctx.loansByEmployee.get(emp.id) ?? [],
+                period.periodEnd,
+              )
+            : { entries: [] as LoanDeductionEntry[], total: 0 };
 
         // Regular/JO-COS runs collect loan amortizations from net pay.
         // Post-tax: otherAdjustments deductions do not reduce taxable income.
@@ -481,6 +529,7 @@ export async function processPayroll(periodId: string) {
             end: periodEndDate,
           },
           attendance: attendanceInput,
+          rates: ctx.rates,
           ...(combinedAdjustments.length > 0
             ? { otherAdjustments: combinedAdjustments }
             : {}),
@@ -583,6 +632,10 @@ export async function processPayroll(periodId: string) {
           computationSnapshot: computed as unknown as Record<string, unknown>,
           hasException,
           exceptionNotes: exceptionNotes ?? null,
+          included: !isExcluded,
+          exclusionReason: isExcluded
+            ? (plan.exclusions.get(emp.id) ?? null)
+            : null,
         });
 
         for (const entry of appliedLoanEntries) {
@@ -595,9 +648,13 @@ export async function processPayroll(periodId: string) {
           });
         }
 
-        totalGrossPay += parseMoney(computed.earnings.grossPay);
-        totalDeductions += parseMoney(computed.deductions.totalDeductions);
-        totalNetPay += parseMoney(computed.netPay);
+        // TOR 1.8.4: excluded records are zeroed from period totals.
+        if (!isExcluded) {
+          includedCount += 1;
+          totalGrossPay += parseMoney(computed.earnings.grossPay);
+          totalDeductions += parseMoney(computed.deductions.totalDeductions);
+          totalNetPay += parseMoney(computed.netPay);
+        }
       }
 
       // Chunked bulk insert — stays within a single transaction so a failure
@@ -616,8 +673,9 @@ export async function processPayroll(periodId: string) {
           totalGrossPay: roundMoney(totalGrossPay),
           totalDeductions: roundMoney(totalDeductions),
           totalNetPay: roundMoney(totalNetPay),
-          // Employees actually included in the run (scope-skipped ones excluded)
-          employeeCount: rowsToInsert.length,
+          // Employees actually paid by the run (scope-skipped and
+          // inclusion-tagged ones excluded)
+          employeeCount: includedCount,
           processedAt: now,
           processedBy: user.id,
           updatedAt: new Date(),
@@ -625,13 +683,16 @@ export async function processPayroll(periodId: string) {
         .where(eq(payrollPeriods.id, periodId));
 
       return {
-        employeeCount: rowsToInsert.length,
+        employeeCount: includedCount,
         totalGrossPay: roundMoney(totalGrossPay),
         totalDeductions: roundMoney(totalDeductions),
         totalNetPay: roundMoney(totalNetPay),
+        effectedAdjustments,
       };
     }),
   );
+
+  auditEffectedAdjustments(result.effectedAdjustments, user.id);
 
   void auditLog({
     userId: user.id,
@@ -701,7 +762,9 @@ export async function approvePayroll(periodId: string) {
 
       const now = new Date().toISOString();
 
-      // Approve all draft + override records in a single update
+      // Approve all included draft + override records in a single update.
+      // Excluded records (TOR 1.8.4 / H-14) stay draft: never approved, paid,
+      // put in the bank file or the journal.
       await tx
         .update(payrollRecords)
         .set({ status: "approved", updatedAt: new Date() })
@@ -709,6 +772,7 @@ export async function approvePayroll(periodId: string) {
           and(
             eq(payrollRecords.periodId, periodId),
             inArray(payrollRecords.status, ["draft", "override"]),
+            eq(payrollRecords.included, true),
           ),
         );
 
@@ -837,9 +901,11 @@ export async function overrideRecord(input: unknown) {
         .limit(1);
 
       if (!record) throw new Error("Payroll record not found");
-      if (record.status === "paid") {
+      // Only while the run is still being reviewed: an override after
+      // approval would never be released/paid and would bypass approval.
+      if (record.status !== "draft" && record.status !== "override") {
         throw new Error(
-          "Cannot override a paid payroll record. Append an adjustment instead.",
+          `Cannot override a ${record.status} payroll record — overrides are only allowed before approval.`,
         );
       }
 
@@ -847,6 +913,12 @@ export async function overrideRecord(input: unknown) {
         (record as unknown as Record<string, string | null>)[
           parsed.fieldName
         ] ?? null;
+      // Keeps gross − deductions = net so the journal balances (H-16).
+      const patch = buildOverridePatch(
+        record,
+        parsed.fieldName,
+        parsed.adjustedValue,
+      );
 
       const [adjustment] = await tx
         .insert(payrollAdjustments)
@@ -866,16 +938,47 @@ export async function overrideRecord(input: unknown) {
 
       if (!adjustment) throw new Error("Failed to record adjustment.");
 
-      await tx
+      // Conditional on status so an approval that committed meanwhile wins
+      // (the row is then no longer draft/override and nothing is updated).
+      const updatedRows = await tx
         .update(payrollRecords)
         .set({
-          [parsed.fieldName]: parsed.adjustedValue,
+          ...patch,
           status: "override",
           updatedAt: new Date(),
         })
-        .where(eq(payrollRecords.id, parsed.recordId));
+        .where(
+          and(
+            eq(payrollRecords.id, parsed.recordId),
+            inArray(payrollRecords.status, ["draft", "override"]),
+          ),
+        )
+        .returning({ id: payrollRecords.id });
+      if (updatedRows.length === 0) {
+        throw new Error(
+          "Payroll record was approved meanwhile — not overridden.",
+        );
+      }
 
-      return { adjustment, originalValue, periodId: record.periodId };
+      // Period totals follow the record (included records only, TOR 1.8.4).
+      if (record.included) {
+        await tx
+          .update(payrollPeriods)
+          .set({
+            totalGrossPay: sql`(select coalesce(sum(${payrollRecords.grossPay}), 0) from ${payrollRecords} where ${payrollRecords.periodId} = ${record.periodId} and ${payrollRecords.included})`,
+            totalDeductions: sql`(select coalesce(sum(${payrollRecords.totalDeductions}), 0) from ${payrollRecords} where ${payrollRecords.periodId} = ${record.periodId} and ${payrollRecords.included})`,
+            totalNetPay: sql`(select coalesce(sum(${payrollRecords.netPay}), 0) from ${payrollRecords} where ${payrollRecords.periodId} = ${record.periodId} and ${payrollRecords.included})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(payrollPeriods.id, record.periodId));
+      }
+
+      return {
+        adjustment,
+        originalValue,
+        patch,
+        periodId: record.periodId,
+      };
     }),
   );
 
@@ -886,7 +989,7 @@ export async function overrideRecord(input: unknown) {
     recordId: parsed.recordId,
     oldValues: { [parsed.fieldName]: result.originalValue },
     newValues: {
-      [parsed.fieldName]: parsed.adjustedValue,
+      ...result.patch,
       adjustmentId: result.adjustment.id,
     },
   });
@@ -1100,6 +1203,10 @@ interface ScopeContext {
   skipMandatoryDeductions: boolean;
   benefitType: PayrollBenefitType | null;
   salaryRows: SalaryGradeRow[];
+  /** Statutory rates effective at period end (C-13); constants fill gaps. */
+  rates: StatutoryRates;
+  /** Effected salary adjustments (H-17) per employee, oldest first. */
+  adjustmentsByEmployee: Map<string, EffectedAdjustmentRow[]>;
   rataConfig: AllowanceAmountConfig | null;
   magnaCartaWomen: AllowanceAmountConfig | null;
   magnaCartaPwd: AllowanceAmountConfig | null;
@@ -1132,6 +1239,87 @@ async function loadScopeContext(
     })
     .from(salaryGrades)
     .where(lte(salaryGrades.effectiveDate, period.periodEnd));
+
+  // C-13 / TOR 1.8.3: government rate tables are the source of truth; the
+  // engine constants are only a fallback for a missing or invalid table.
+  const asOf = period.periodEnd;
+  const [gsisRows, philHealthRows, pagIbigRows, birRows] = await Promise.all([
+    tx
+      .select({
+        employeeRate: gsisRates.employeeRate,
+        employerRate: gsisRates.employerRate,
+        effectiveDate: gsisRates.effectiveDate,
+      })
+      .from(gsisRates)
+      .where(lte(gsisRates.effectiveDate, asOf)),
+    tx
+      .select({
+        employeeRate: philhealthRates.employeeRate,
+        employerRate: philhealthRates.employerRate,
+        minMsalary: philhealthRates.minMsalary,
+        maxMsalary: philhealthRates.maxMsalary,
+        effectiveDate: philhealthRates.effectiveDate,
+      })
+      .from(philhealthRates)
+      .where(lte(philhealthRates.effectiveDate, asOf)),
+    tx
+      .select({
+        employeeRateLow: pagibigRates.employeeRateLow,
+        employeeRateHigh: pagibigRates.employeeRateHigh,
+        employerRate: pagibigRates.employerRate,
+        salaryThreshold: pagibigRates.salaryThreshold,
+        maxContribution: pagibigRates.maxContribution,
+        effectiveDate: pagibigRates.effectiveDate,
+      })
+      .from(pagibigRates)
+      .where(lte(pagibigRates.effectiveDate, asOf)),
+    tx
+      .select({
+        periodType: birTaxTables.periodType,
+        bracketFrom: birTaxTables.bracketFrom,
+        baseTax: birTaxTables.baseTax,
+        excessRate: birTaxTables.excessRate,
+        effectiveDate: birTaxTables.effectiveDate,
+      })
+      .from(birTaxTables)
+      .where(lte(birTaxTables.effectiveDate, asOf)),
+  ]);
+  const rates = resolveStatutoryRates(
+    {
+      gsis: gsisRows,
+      philHealth: philHealthRows,
+      pagIbig: pagIbigRows,
+      bir: birRows,
+    },
+    asOf,
+  );
+
+  // H-17: an effected adjustment sets the salary (incl. amount-only ones).
+  const adjustmentRows = await tx
+    .select({
+      employeeId: salaryAdjustments.employeeId,
+      effectiveDate: salaryAdjustments.effectiveDate,
+      newSalary: salaryAdjustments.newSalary,
+      oldGrade: salaryAdjustments.oldGrade,
+      oldStep: salaryAdjustments.oldStep,
+      newGrade: salaryAdjustments.newGrade,
+      newStep: salaryAdjustments.newStep,
+    })
+    .from(salaryAdjustments)
+    .where(
+      and(
+        eq(salaryAdjustments.status, "effected"),
+        isNull(salaryAdjustments.deletedAt),
+        lte(salaryAdjustments.effectiveDate, asOf),
+      ),
+    )
+    .orderBy(salaryAdjustments.effectiveDate, salaryAdjustments.approvedAt);
+  const adjustmentsByEmployee = new Map<string, EffectedAdjustmentRow[]>();
+  for (const { employeeId, ...row } of adjustmentRows) {
+    const list = adjustmentsByEmployee.get(employeeId);
+    if (list) list.push(row);
+    else adjustmentsByEmployee.set(employeeId, [row]);
+  }
 
   let rataConfig: AllowanceAmountConfig | null = null;
   if (period.scope === "rata") {
@@ -1275,6 +1463,8 @@ async function loadScopeContext(
     skipMandatoryDeductions: period.skipMandatoryDeductions,
     benefitType: period.benefitType,
     salaryRows,
+    rates,
+    adjustmentsByEmployee,
     rataConfig,
     magnaCartaWomen,
     magnaCartaPwd,
@@ -1282,6 +1472,40 @@ async function loadScopeContext(
     includeLoans,
     loansByEmployee,
   };
+}
+
+/** Salary set by the employee's latest effected adjustment, if any (H-17). */
+function adjustedSalaryFor(
+  ctx: ScopeContext,
+  emp: EmployeeRow,
+  asOf: string = ctx.periodEnd,
+): number | undefined {
+  const rows = ctx.adjustmentsByEmployee.get(emp.id);
+  if (!rows) return undefined;
+  return resolveAdjustedSalary(
+    rows,
+    ctx.salaryRows,
+    emp.salaryGrade,
+    emp.step,
+    asOf,
+  );
+}
+
+/** Monthly salary for scoped runs: adjustment first, else the salary table. */
+function monthlySalaryFor(
+  ctx: ScopeContext,
+  emp: EmployeeRow,
+  asOf: string = ctx.periodEnd,
+): number {
+  return (
+    adjustedSalaryFor(ctx, emp, asOf) ??
+    resolveEmployeeMonthlySalary(
+      ctx.salaryRows,
+      emp.salaryGrade,
+      emp.step,
+      asOf,
+    )
+  );
 }
 
 type LoanRow = typeof loanLedger.$inferSelect;
@@ -1458,12 +1682,7 @@ function computeRecordForScope(
       if (rataMonthly <= 0) return null; // position not entitled to RATA
 
       const rataResult = computeRATA(rataMonthly, "monthly");
-      const monthlySalary = resolveEmployeeMonthlySalary(
-        ctx.salaryRows,
-        emp.salaryGrade,
-        emp.step,
-        ctx.periodEnd,
-      );
+      const monthlySalary = monthlySalaryFor(ctx, emp);
       // Only the excess over the PHP 35,000/month ceiling is taxable, and it
       // stacks on the regular monthly compensation — tax the marginal amount,
       // not from the zero bracket (F-SUPP-TAX).
@@ -1473,8 +1692,10 @@ function computeRecordForScope(
               computeRegularMonthlyTaxable(
                 monthlySalary,
                 emp.appointmentType as AppointmentType,
+                ctx.rates,
               ),
               rataResult.taxableRATA,
+              ctx.rates,
             )
           : 0;
 
@@ -1507,12 +1728,7 @@ function computeRecordForScope(
       // bonus every run (F-BONUS-OVERPAY). benefitType is guaranteed non-null
       // for this scope (validated + guarded in loadScopeContext).
       const appointmentType = emp.appointmentType as AppointmentType;
-      const monthlySalary = resolveEmployeeMonthlySalary(
-        ctx.salaryRows,
-        emp.salaryGrade,
-        emp.step,
-        ctx.periodEnd,
-      );
+      const monthlySalary = monthlySalaryFor(ctx, emp);
 
       let midYearBonus = 0;
       let yearEndBonus = 0;
@@ -1546,8 +1762,13 @@ function computeRecordForScope(
       const withholding =
         deMinimis.taxable > 0
           ? computeSupplementalWithholding(
-              computeRegularMonthlyTaxable(monthlySalary, appointmentType),
+              computeRegularMonthlyTaxable(
+                monthlySalary,
+                appointmentType,
+                ctx.rates,
+              ),
               deMinimis.taxable,
+              ctx.rates,
             )
           : 0;
 
@@ -1584,18 +1805,8 @@ function computeRecordForScope(
       // resolved as of the DAY BEFORE the period start, else it picks up the
       // new rate and the differential computes 0 (F-DIFF-BOUNDARY). Promotions
       // that changed grade/step within the window need a manual override.
-      const oldRate = resolveEmployeeMonthlySalary(
-        ctx.salaryRows,
-        emp.salaryGrade,
-        emp.step,
-        isoDayBefore(ctx.periodStart),
-      );
-      const newRate = resolveEmployeeMonthlySalary(
-        ctx.salaryRows,
-        emp.salaryGrade,
-        emp.step,
-        ctx.periodEnd,
-      );
+      const oldRate = monthlySalaryFor(ctx, emp, isoDayBefore(ctx.periodStart));
+      const newRate = monthlySalaryFor(ctx, emp);
       if (newRate === oldRate) return null; // no rate change in the window
 
       // newRate < oldRate throws inside computeSalaryDifferential and the
@@ -1613,8 +1824,10 @@ function computeRecordForScope(
         computeRegularMonthlyTaxable(
           newRate,
           emp.appointmentType as AppointmentType,
+          ctx.rates,
         ),
         differential,
+        ctx.rates,
       );
 
       return {
@@ -1728,12 +1941,7 @@ function computeRecordForScope(
       );
       if (benefit.total <= 0) return null; // qualifies under neither law
 
-      const monthlySalary = resolveEmployeeMonthlySalary(
-        ctx.salaryRows,
-        emp.salaryGrade,
-        emp.step,
-        ctx.periodEnd,
-      );
+      const monthlySalary = monthlySalaryFor(ctx, emp);
 
       return {
         computed: {

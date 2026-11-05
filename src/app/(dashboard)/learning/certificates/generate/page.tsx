@@ -28,7 +28,7 @@ interface PageProps {
 export default async function GenerateCertificatePage({
   searchParams,
 }: PageProps) {
-  const user = await requirePermission("learning", "create");
+  await requirePermission("learning", "create");
   const params = await searchParams;
 
   // Get completed participants without certificates
@@ -100,10 +100,7 @@ export default async function GenerateCertificatePage({
             All completed participants have certificates.
           </div>
         ) : (
-          <GenerateCertificateForm
-            participants={completedWithoutCerts}
-            issuedByEmployeeId={user.employeeId || ""}
-          />
+          <GenerateCertificateForm participants={completedWithoutCerts} />
         )}
       </div>
     </main>

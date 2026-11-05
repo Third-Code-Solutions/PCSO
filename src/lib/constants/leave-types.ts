@@ -395,9 +395,6 @@ export const MONTHLY_ACCRUAL_RATE: Partial<Record<LeaveTypeCode, number>> = {
   SL: 1.25,
 } as const;
 
-/** VL carry-over cap (days). Per CSC: maximum 10 days carry-over per year. */
-export const VL_CARRY_OVER_MAX = 10;
-
 /** Working days per month for daily rate computation. */
 export const WORKING_DAYS_PER_MONTH = 22;
 
@@ -406,3 +403,18 @@ export const SL_MEDICAL_CERT_THRESHOLD_DAYS = 3;
 
 /** Threshold (days) above which multi-level approval is required. */
 export const MULTI_LEVEL_APPROVAL_THRESHOLD_DAYS = 30;
+
+/** Mandatory/forced leave days per year (CSC Omnibus Rules, PRD §10.1.3). */
+export const FORCED_LEAVE_DAYS = 5;
+
+/** VL balance at or above which forced leave is mandatory. */
+export const FORCED_LEAVE_MIN_VL_BALANCE = 10;
+
+/**
+ * Ledger (leave_credits) a leave type is charged against: VL/SL against
+ * themselves, Forced Leave against VL (H-10). Null = not credit-based.
+ */
+export function ledgerCodeFor(code: string): "VL" | "SL" | null {
+  if (code === "VL" || code === "SL") return code;
+  return LEAVE_TYPES[code as LeaveTypeCode]?.chargedToVL ? "VL" : null;
+}
