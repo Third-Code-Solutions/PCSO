@@ -16,6 +16,8 @@ import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { createNotification, notifyEmployee } from "@/lib/notifications";
 import { db } from "@/lib/db";
+import { withTx } from "@/lib/db/transaction";
+import { lockAttendanceLog } from "@/lib/utils/attendance/log-lock";
 import { attendanceLogs, employees, systemUsers } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
@@ -211,15 +213,19 @@ export async function decideOvertimeRequest(input: unknown): Promise<void> {
 
   // Propagate approved minutes to the attendance_log row (if exists)
   if (parsed.decision !== "denied") {
-    await db
-      .update(attendanceLogs)
-      .set({ overtimeMinutes: approvedMinutes, updatedAt: new Date() })
-      .where(
-        and(
-          eq(attendanceLogs.employeeId, current.employee_id as string),
-          eq(attendanceLogs.logDate, current.date as string),
-        ),
-      );
+    const employeeId = current.employee_id as string;
+    await withTx(async (tx) => {
+      await lockAttendanceLog(tx, employeeId);
+      await tx
+        .update(attendanceLogs)
+        .set({ overtimeMinutes: approvedMinutes, updatedAt: new Date() })
+        .where(
+          and(
+            eq(attendanceLogs.employeeId, employeeId),
+            eq(attendanceLogs.logDate, current.date as string),
+          ),
+        );
+    });
   }
 
   // Notify the requester of the outcome

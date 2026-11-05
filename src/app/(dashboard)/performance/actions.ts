@@ -1500,9 +1500,9 @@ export async function startMyIpcrf(
   const { z } = await import("zod");
   const Schema = z.object({ periodId: z.string().uuid("Invalid period ID.") });
   const parsed = Schema.parse(input);
-  // Own-record self-service path: performance.view (ESS selfOnly) is enough;
-  // the ratee is always the session's employee, never client input.
-  const user = await requirePermission("performance", "view");
+  // Own-record path: any signed-in employee (ESS, payroll_admin, …) may start
+  // their own IPCRF; the ratee is always the session's employee, never input.
+  const user = await requireAuth();
 
   if (!user.employeeId) {
     throw new Error("No employee record is linked to your account.");

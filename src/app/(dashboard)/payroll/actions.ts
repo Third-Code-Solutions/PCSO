@@ -600,10 +600,13 @@ export async function processPayroll(periodId: string) {
           step: emp.step,
           positionTitle: emp.positionTitle,
           appointmentType: emp.appointmentType,
-          lateMinutes: 0,
-          undertimeMinutes: 0,
-          absenceDays: 0,
-          approvedOvertimeHours: "0",
+          // The attendance this record was computed from (zero for scopes
+          // that are not attendance-docked), so the register shows it.
+          lateMinutes: attendanceInput.lateMinutes,
+          undertimeMinutes: attendanceInput.undertimeMinutes,
+          absenceDays: attendanceInput.absenceDays,
+          approvedOvertimeHours:
+            attendanceInput.approvedOvertimeHours.toFixed(2),
 
           authorizedSalary: computed.earnings.authorizedSalary,
           basicPay: computed.earnings.basicPay,

@@ -59,16 +59,37 @@ function buildUnauthorizedUrl(pathname: string): string {
  * converts into a redirect response, which the caller does not need to
  * handle).
  *
- * Returns the current user when authenticated.
+ * Returns the current user when authenticated. MFA-enforced roles on an aal1
+ * session are redirected to the TOTP challenge or enrollment first.
  *
  * Use at the top of Server Components or Server Actions that require login.
  *
  * Concurrency: session is resolved FRESH on every request. `React.cache`
  * only dedupes calls within the same request scope, never across requests.
  */
-export async function requireAuth(): Promise<CurrentUser> {
+export async function requireAuth(
+  options: { allowAal1?: boolean } = {},
+): Promise<CurrentUser> {
   const user = await getCurrentUserCached();
   if (!user) redirect("/login");
+
+  // SEC-003 / TOR 3.2.6 (H-01): super_admin and hr_admin need an aal2 session
+  // on every guarded page and action, not only requirePermission ones.
+  // Enrolled accounts go to the TOTP challenge; accounts without a factor go
+  // to self-service enrollment. Only the enrollment page and its actions pass
+  // `allowAal1` (they are how an aal1 session reaches aal2 — no loop).
+  // Fails closed: an unreadable assurance level is treated as aal1.
+  if (!options.allowAal1 && isMfaEnforcedRole(user.role)) {
+    const aal = await getAalStatus();
+    if (aal.currentLevel !== "aal2") {
+      redirect(
+        aal.hasVerifiedTotpFactor
+          ? "/login/mfa"
+          : "/settings/security?mfa=required",
+      );
+    }
+  }
+
   return user;
 }
 
@@ -97,22 +118,8 @@ export async function requirePermission(
   resource: Resource,
   action: Action,
 ): Promise<CurrentUser> {
+  // requireAuth enforces aal2 for MFA-enforced roles (H-01).
   const user = await requireAuth();
-
-  // SEC-003 / TOR 3.2.6 (H-01): super_admin and hr_admin need an aal2 session.
-  // Enrolled accounts go to the TOTP challenge; accounts without a factor go
-  // to self-service enrollment (guarded by requireAuth, so no redirect loop).
-  // Fails closed: an unreadable assurance level is treated as aal1.
-  if (isMfaEnforcedRole(user.role)) {
-    const aal = await getAalStatus();
-    if (aal.currentLevel !== "aal2") {
-      redirect(
-        aal.hasVerifiedTotpFactor
-          ? "/login/mfa"
-          : "/settings/security?mfa=required",
-      );
-    }
-  }
 
   if (!hasPermission(user.role, resource, action)) {
     const pathname = await getCurrentPathname();

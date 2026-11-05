@@ -4,6 +4,7 @@ import {
   assertNotOwnApplication,
   assertNotOwnBalance,
   chargedDays,
+  isLeaveApproverFor,
   isOwnLeaveAttachmentPath,
   resolveCancel,
   resolveCancellationDecision,
@@ -305,5 +306,59 @@ describe("isOwnLeaveAttachmentPath", () => {
     expect(isOwnLeaveAttachmentPath("leave-attachments//x.pdf", "")).toBe(
       false,
     );
+  });
+});
+
+describe("isLeaveApproverFor (N-001 audience)", () => {
+  const applicant = { employeeId: "emp-1", officeId: "office-a" };
+
+  it("includes HR regardless of office", () => {
+    expect(
+      isLeaveApproverFor(
+        { role: "hr_admin", officeId: null, employeeId: "emp-9" },
+        applicant,
+      ),
+    ).toBe(true);
+  });
+
+  it("includes supervisors and leave approvers of the applicant's office", () => {
+    for (const role of ["supervisor", "leave_approver"] as const) {
+      expect(
+        isLeaveApproverFor(
+          { role, officeId: "office-a", employeeId: "emp-9" },
+          applicant,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("excludes approvers of other offices or with no office", () => {
+    expect(
+      isLeaveApproverFor(
+        { role: "leave_approver", officeId: "office-b", employeeId: "emp-9" },
+        applicant,
+      ),
+    ).toBe(false);
+    expect(
+      isLeaveApproverFor(
+        { role: "supervisor", officeId: null, employeeId: "emp-9" },
+        { employeeId: "emp-1", officeId: null },
+      ),
+    ).toBe(false);
+  });
+
+  it("excludes the applicant and non-approver roles", () => {
+    expect(
+      isLeaveApproverFor(
+        { role: "hr_admin", officeId: "office-a", employeeId: "emp-1" },
+        applicant,
+      ),
+    ).toBe(false);
+    expect(
+      isLeaveApproverFor(
+        { role: "payroll_admin", officeId: "office-a", employeeId: "emp-9" },
+        applicant,
+      ),
+    ).toBe(false);
   });
 });

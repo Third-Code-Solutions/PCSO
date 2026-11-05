@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-import { requirePermission } from "./guards";
+import { requireAuth, requirePermission } from "./guards";
 
 const hrAdmin: CurrentUser = {
   id: "u1",
@@ -89,6 +89,33 @@ describe("requirePermission MFA enforcement (H-01)", () => {
     currentUser.mockResolvedValue({ ...hrAdmin, role: "supervisor" });
     await expect(requirePermission("employees", "export")).rejects.toThrow(
       /REDIRECT:\/login\?unauthorized=1/,
+    );
+  });
+});
+
+describe("requireAuth MFA enforcement (H-01 residual)", () => {
+  beforeEach(() => {
+    currentUser.mockReset();
+    aalStatus.mockReset();
+  });
+
+  it("redirects admins on aal1 even on requireAuth-only paths", async () => {
+    currentUser.mockResolvedValue(hrAdmin);
+    aalStatus.mockResolvedValue(aal("aal1", true));
+    await expect(requireAuth()).rejects.toThrow("REDIRECT:/login/mfa");
+  });
+
+  it("lets the enrollment page through on aal1 (no redirect loop)", async () => {
+    currentUser.mockResolvedValue(hrAdmin);
+    aalStatus.mockResolvedValue(aal("aal1", false));
+    await expect(requireAuth({ allowAal1: true })).resolves.toBe(hrAdmin);
+    expect(aalStatus).not.toHaveBeenCalled();
+  });
+
+  it("redirects anonymous visitors to login", async () => {
+    currentUser.mockResolvedValue(null);
+    await expect(requireAuth({ allowAal1: true })).rejects.toThrow(
+      "REDIRECT:/login",
     );
   });
 });

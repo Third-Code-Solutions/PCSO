@@ -31,7 +31,10 @@ import {
 import { createServerClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/auth/guards";
-import { approverScopeOf } from "@/lib/utils/leave/approver-scope";
+import {
+  approverScopeOf,
+  leaveApproverRecipients,
+} from "@/lib/utils/leave/approver-scope";
 import {
   EMPLOYEE_DOCUMENTS_BUCKET,
   LEAVE_ATTACHMENTS_PREFIX,
@@ -87,6 +90,7 @@ import {
   createNotification,
   notifyEmployee,
   notifyRoles,
+  type CreateNotificationInput,
 } from "@/lib/notifications";
 import { z } from "zod";
 
@@ -254,6 +258,29 @@ async function restoreApplicationCharge(
     app,
     chargedDays(created?.newValues, ledgerCode),
   );
+}
+
+/** N-005: tell HR and the applicant's own office approvers. Non-blocking. */
+async function notifyLeaveApprovers(
+  employeeId: string,
+  payload: Omit<CreateNotificationInput, "userId">,
+): Promise<void> {
+  try {
+    const [applicant] = await db
+      .select({ officeId: employees.officeId })
+      .from(employees)
+      .where(eq(employees.id, employeeId))
+      .limit(1);
+    const approvers = await leaveApproverRecipients({
+      employeeId,
+      officeId: applicant?.officeId ?? null,
+    });
+    for (const approver of approvers) {
+      await createNotification({ ...payload, userId: approver.id });
+    }
+  } catch (err) {
+    console.error("[leave/actions] notifyLeaveApprovers failed:", err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -430,11 +457,32 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
   // ── Post-commit side effects (email + in-app notifications) ───────────────
   // These must NOT run inside the tx (non-idempotent external calls).
 
-  const supabase = await createServerClient();
+  // N-001: HR plus the applicant's own office approvers — not every approver.
+  const [applicant] = await db
+    .select({
+      firstName: employees.firstName,
+      lastName: employees.lastName,
+      employeeNo: employees.employeeNo,
+      officeId: employees.officeId,
+    })
+    .from(employees)
+    .where(eq(employees.id, parsed.employeeId))
+    .limit(1);
 
-  // Approver notification (HR admin + leave approvers). Non-blocking.
+  let approvers: Awaited<ReturnType<typeof leaveApproverRecipients>> = [];
   try {
-    await notifyRoles(["hr_admin", "leave_approver"], {
+    approvers = await leaveApproverRecipients({
+      employeeId: parsed.employeeId,
+      officeId: applicant?.officeId ?? null,
+    });
+  } catch (err) {
+    console.error("[leave/actions] approver lookup(applyLeave) failed:", err);
+  }
+
+  // In-app approver notifications. Non-blocking (createNotification never throws).
+  for (const approver of approvers) {
+    await createNotification({
+      userId: approver.id,
       type: "leave_submitted",
       title: "New leave application",
       body: `A ${result.leaveTypeName} application for ${workingDays} day${
@@ -444,8 +492,6 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
       entityType: "leave_applications",
       entityId: result.leaveApplicationId,
     });
-  } catch (err) {
-    console.error("[leave/actions] notifyRoles(applyLeave) failed:", err);
   }
 
   // Confirm to the applicant that their submission was received.
@@ -466,33 +512,14 @@ export async function applyLeave(input: unknown): Promise<ApplyLeaveResult> {
 
   // Approver emails (best-effort; do not abort on failure).
   try {
-    const { data: approvers } = await supabase
-      .from("system_users")
-      .select("email, employees ( first_name, last_name )")
-      .in("role", ["hr_admin", "leave_approver"])
-      .eq("is_active", true)
-      .limit(5);
-
-    const { data: empData } = await supabase
-      .from("employees")
-      .select("first_name, last_name, employee_no")
-      .eq("id", parsed.employeeId)
-      .single();
-
-    const applicantName = empData
-      ? `${empData.first_name} ${empData.last_name}`
+    const applicantName = applicant
+      ? `${applicant.firstName} ${applicant.lastName}`
       : "Employee";
-    const employeeNo = String(empData?.employee_no ?? "");
+    const employeeNo = String(applicant?.employeeNo ?? "");
     const leaveTypeCode = parsed.leaveTypeCode as LeaveTypeCode;
 
-    for (const approver of approvers ?? []) {
-      const approverEmpData = approver.employees as {
-        first_name?: string;
-        last_name?: string;
-      } | null;
-      const approverName = approverEmpData
-        ? `${approverEmpData.first_name} ${approverEmpData.last_name}`
-        : "Approver";
+    for (const approver of approvers) {
+      const approverName = approver.name ?? "Approver";
 
       await sendEmail({
         to: approver.email,
@@ -1209,7 +1236,7 @@ export async function cancelLeave(input: unknown): Promise<CancelLeaveResult> {
   if (result.changed) {
     const reasonSuffix = parsed.reason ? ` Reason: ${parsed.reason}` : "";
     if (result.status === "cancellation_requested") {
-      await notifyRoles(["leave_approver", "hr_admin"], {
+      await notifyLeaveApprovers(result.employeeId, {
         type: "leave_cancelled",
         title: "Leave cancellation requested",
         body: `An employee asked to cancel approved leave.${reasonSuffix}`,
@@ -1227,7 +1254,7 @@ export async function cancelLeave(input: unknown): Promise<CancelLeaveResult> {
         entityId: parsed.leaveApplicationId,
       });
     } else {
-      await notifyRoles(["leave_approver", "hr_admin"], {
+      await notifyLeaveApprovers(result.employeeId, {
         type: "leave_cancelled",
         title: "Leave application withdrawn",
         body: `A pending leave application was withdrawn.${reasonSuffix}`,

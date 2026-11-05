@@ -36,7 +36,7 @@ const UnenrollSchema = z.object({
 export async function recordTotpEnrollment(
   input: unknown,
 ): Promise<{ success: boolean; error?: string }> {
-  const user = await requireAuth();
+  const user = await requireAuth({ allowAal1: true });
   const parsed = RecordEnrollmentSchema.safeParse(input);
   if (!parsed.success) {
     return { success: false, error: "Invalid factor reference." };
@@ -83,6 +83,8 @@ export async function recordTotpEnrollment(
 export async function unenrollTotp(
   input: unknown,
 ): Promise<{ success: boolean; error?: string }> {
+  // Not allowAal1: a password-only (aal1) session must never remove an
+  // MFA-enforced account's factor.
   const user = await requireAuth();
   const parsed = UnenrollSchema.safeParse(input);
   if (!parsed.success) {

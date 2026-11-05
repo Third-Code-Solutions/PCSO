@@ -28,6 +28,23 @@ export function assertApproverScope(
 }
 
 /**
+ * N-001 audience for a new application: HR, plus the supervisors / leave
+ * approvers of the applicant's office — the same people assertApproverScope
+ * lets act on it. Applicants are never told about their own application.
+ */
+export function isLeaveApproverFor(
+  approver: { role: Role; officeId: string | null; employeeId: string | null },
+  applicant: { employeeId: string; officeId: string | null },
+): boolean {
+  if (approver.employeeId === applicant.employeeId) return false;
+  if (isLeaveHr(approver.role)) return true;
+  if (approver.role !== "supervisor" && approver.role !== "leave_approver") {
+    return false;
+  }
+  return approver.officeId !== null && approver.officeId === applicant.officeId;
+}
+
+/**
  * Days applyLeave actually charged to `ledgerCode`, read from the
  * application's `create` audit entry. 0 when nothing was charged (no audit
  * entry, e.g. a row inserted outside applyLeave, or a legacy FL row).

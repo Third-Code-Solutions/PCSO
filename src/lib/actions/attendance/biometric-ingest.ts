@@ -46,7 +46,8 @@ import {
   sql,
 } from "drizzle-orm";
 import { logTransaction } from "@/lib/audit";
-import { lockKey, withTx } from "@/lib/db/transaction";
+import { withTx } from "@/lib/db/transaction";
+import { lockAttendanceLog } from "@/lib/utils/attendance/log-lock";
 import {
   loadScheduleAssignments,
   pickFromMaps,
@@ -560,7 +561,7 @@ async function writeChunk(
       new Set(chunk.map((e) => e.employee.id)),
     ).sort();
     for (const id of employeeIds) {
-      await lockKey(tx, `attendance:log:${id}`);
+      await lockAttendanceLog(tx, id);
     }
 
     const dates = chunk.map((e) => e.row.date).sort();

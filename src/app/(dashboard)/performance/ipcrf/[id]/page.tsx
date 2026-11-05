@@ -39,11 +39,12 @@ export default async function IpcrfDetailPage({ params }: Props) {
 
   if (!rating) notFound();
 
-  // Self-service employees may only view their own IPCRF
-  if (
-    user.role === "employee_self_service" &&
-    user.employeeId !== rating.employeeId
-  ) {
+  // Roles without org-wide performance.view (ESS, payroll_admin) see only
+  // their own IPCRF — same split as the list page.
+  const canViewAll =
+    hasPermission(user.role, "performance", "view") &&
+    user.role !== "employee_self_service";
+  if (!canViewAll && user.employeeId !== rating.employeeId) {
     notFound();
   }
 

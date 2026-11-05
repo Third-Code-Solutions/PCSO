@@ -32,6 +32,7 @@ import { requireAuth, requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
 import { notifyEmployee } from "@/lib/notifications";
 import { withTx, lockKey } from "@/lib/db/transaction";
+import { lockAttendanceLog } from "@/lib/utils/attendance/log-lock";
 import { computeDailyAttendance } from "@/lib/utils/attendance/compute";
 import {
   toComputeSchedule,
@@ -354,6 +355,7 @@ export async function processDtrCorrection(
       let attendanceRecordId: string | null = null;
 
       if (decision === "approve") {
+        await lockAttendanceLog(tx, request.employeeId);
         const [existing] = await tx
           .select()
           .from(attendanceLogs)

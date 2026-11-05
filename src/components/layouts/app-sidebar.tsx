@@ -101,7 +101,7 @@ const ALL_ROLES: readonly Role[] = [
 // Per-role spec (enforced below):
 //   - super_admin:           sees everything
 //   - hr_admin:              no payroll, no remittances, no /admin/*, no /saln/*
-//   - payroll_admin:         no plantilla, leave, performance, saln, admin;
+//   - payroll_admin:         no plantilla, leave, saln, admin; own IPCRF only;
 //                            employees read-only (no /employees/new), and no
 //                            attendance admin/timesheets/import/clock/overtime
 //   - leave_approver:        narrow — leave + own attendance + self IPCRF
@@ -568,6 +568,7 @@ const NAV_ITEMS: NavItem[] = [
       "leave_approver",
       "executive",
       "viewer",
+      "payroll_admin",
       "employee_self_service",
     ],
     children: [
@@ -579,13 +580,14 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: "IPCRF",
         href: "/performance/ipcrf",
-        // Admins & viewer see all; approver & self-service see self
+        // Admins & viewer see all; approver, payroll_admin & self-service see self
         roles: [
           "super_admin",
           "hr_admin",
           "leave_approver",
           "executive",
           "viewer",
+          "payroll_admin",
           "employee_self_service",
         ],
       },

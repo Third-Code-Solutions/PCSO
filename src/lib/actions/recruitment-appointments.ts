@@ -31,6 +31,7 @@ import { workSchedules } from "@/lib/db/schema/attendance";
 import { requirePermission } from "@/lib/auth/guards";
 import { requireRecruitmentViewer } from "@/lib/utils/rpm/recruitment-viewer";
 import { withTx } from "@/lib/db/transaction";
+import { promotionStep } from "@/lib/utils/rpm/promotion-step";
 import {
   atomicallyProvisionNewEmployee,
   type AppointmentIssueInput,
@@ -109,6 +110,7 @@ export async function createAppointment(input: unknown) {
       id: applications.id,
       vacancyId: applications.vacancyId,
       applicantId: applications.applicantId,
+      employeeId: applications.employeeId,
       status: applications.status,
     })
     .from(applications)
@@ -186,7 +188,14 @@ export async function createAppointment(input: unknown) {
     return { success: false, error: "Position not found" };
   }
 
-  const monthlySalary = await calculateMonthlySalary(position.salaryGrade, 1);
+  const step = await appointmentStep(
+    application.employeeId,
+    position.salaryGrade,
+  );
+  const monthlySalary = await calculateMonthlySalary(
+    position.salaryGrade,
+    step,
+  );
 
   const appointmentNumber = await generateAppointmentNumber();
 
@@ -200,7 +209,7 @@ export async function createAppointment(input: unknown) {
     appointmentDate: parsed.appointmentDate,
     effectiveDate: parsed.effectiveDate,
     salaryGrade: position.salaryGrade,
-    stepIncrement: 1,
+    stepIncrement: step,
     monthlySalary: monthlySalary.toString(),
     appointmentType: parsed.appointmentType,
     status: "draft",
@@ -215,6 +224,43 @@ export async function createAppointment(input: unknown) {
 
   revalidatePath("/recruitment/appointments");
   return { success: true, appointmentId: created?.id };
+}
+
+/**
+ * External appointees start at step 1. Internal ones (promotion filed via the
+ * portal) get the lowest step of the new grade that pays at least their
+ * current salary. shortcut: "current salary" is the schedule rate for their
+ * grade/step; an effected amount-only salary adjustment is not considered.
+ */
+async function appointmentStep(
+  employeeId: string | null,
+  newGrade: number,
+): Promise<number> {
+  if (!employeeId) return 1;
+  const [emp] = await db
+    .select({ salaryGrade: employees.salaryGrade, step: employees.step })
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+  if (!emp) return 1;
+  const currentSalary = await calculateMonthlySalary(emp.salaryGrade, emp.step);
+  const rows = await db
+    .select({
+      step: salaryGrades.step,
+      monthlySalary: salaryGrades.monthlySalary,
+    })
+    .from(salaryGrades)
+    .where(eq(salaryGrades.grade, newGrade))
+    .orderBy(desc(salaryGrades.effectiveDate));
+  // Latest schedule row per step.
+  const latest = new Map<number, number>();
+  for (const r of rows) {
+    if (!latest.has(r.step)) latest.set(r.step, Number(r.monthlySalary));
+  }
+  return promotionStep(
+    currentSalary,
+    [...latest].map(([step, monthlySalary]) => ({ step, monthlySalary })),
+  );
 }
 
 async function calculateMonthlySalary(

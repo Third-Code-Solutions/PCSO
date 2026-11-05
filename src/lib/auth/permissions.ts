@@ -579,6 +579,7 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "viewer",
     "executive",
     "auditor",
+    "payroll_admin", // own IPCRF only (page + startMyIpcrf scope to self)
     "employee_self_service",
   ],
   "/performance": [
@@ -589,6 +590,7 @@ export const ROUTE_ACCESS: Readonly<Record<string, RoleList>> = {
     "viewer",
     "executive",
     "auditor",
+    "payroll_admin", // own IPCRF only (page + startMyIpcrf scope to self)
     "employee_self_service",
   ],
 

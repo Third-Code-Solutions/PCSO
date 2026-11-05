@@ -32,6 +32,7 @@ import { eq, and, gte, lte, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth/guards";
 import { auditLog } from "@/lib/audit";
+import { lockAttendanceLog } from "@/lib/utils/attendance/log-lock";
 import {
   ClockInSchema,
   ClockOutSchema,
@@ -315,6 +316,7 @@ export async function clockIn(input: unknown): Promise<{ id: string }> {
   };
   try {
     row = await db.transaction(async (tx) => {
+      await lockAttendanceLog(tx, effectiveEmployeeId);
       // Atomic "has-open-log-today" guard. The unique index is the ultimate
       // backstop, but checking inside the transaction gives us a clean error
       // path without relying on error codes for the common case.
@@ -397,6 +399,7 @@ export async function clockOut(input: unknown): Promise<void> {
   }
 
   const { existing, updated } = await db.transaction(async (tx) => {
+    await lockAttendanceLog(tx, effectiveEmployeeId);
     const [current] = await tx
       .select()
       .from(attendanceLogs)
@@ -492,6 +495,7 @@ export async function manualEntry(input: unknown): Promise<{ id: string }> {
 
   // All-or-nothing: capture previous row (for audit), upsert, and log.
   const { row, oldRow } = await db.transaction(async (tx) => {
+    await lockAttendanceLog(tx, parsed.employeeId);
     const [prev] = await tx
       .select()
       .from(attendanceLogs)
@@ -596,6 +600,16 @@ export async function adminUpdateLog(input: unknown): Promise<{ id: string }> {
   const user = await requirePermission("attendance", "edit");
 
   const { updated, previous } = await db.transaction(async (tx) => {
+    // Lock the owner first, then read the row, so the version check sees
+    // any write an ingest or another HR edit committed meanwhile.
+    const [owner] = await tx
+      .select({ employeeId: attendanceLogs.employeeId })
+      .from(attendanceLogs)
+      .where(eq(attendanceLogs.id, parsed.attendanceLogId))
+      .limit(1);
+    if (!owner) throw new Error("Attendance log not found.");
+    await lockAttendanceLog(tx, owner.employeeId);
+
     const [current] = await tx
       .select()
       .from(attendanceLogs)

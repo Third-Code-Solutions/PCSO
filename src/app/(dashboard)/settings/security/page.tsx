@@ -10,11 +10,11 @@ export const metadata = { title: "Security — Two-Factor Authentication" };
  * Two-factor authentication management — TOR 3.2.6 / SEC-003.
  *
  * Any authenticated user may enroll a TOTP factor; super_admin and hr_admin
- * are REQUIRED to: requirePermission redirects them here until enrolled. This
- * page must stay on requireAuth (not requirePermission) to avoid a loop.
+ * are REQUIRED to: requireAuth / requirePermission redirect them here until
+ * enrolled. This page passes `allowAal1` so that redirect cannot loop.
  */
 export default async function SecuritySettingsPage() {
-  const user = await requireAuth();
+  const user = await requireAuth({ allowAal1: true });
   const isMandatory = isMfaEnforcedRole(user.role);
 
   return (
