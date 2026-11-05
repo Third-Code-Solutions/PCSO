@@ -1,30 +1,9 @@
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { employees, offices, type Employee } from "@/lib/db/schema";
-import { eq, and, isNull, ilike, or, desc, sql, count } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import type { EmployeeListParams } from "@/lib/validations/employees";
-
-// ---------------------------------------------------------------------------
-// Shared column selection for list views
-// ---------------------------------------------------------------------------
-const employeeListSelect = {
-  id: employees.id,
-  employeeNo: employees.employeeNo,
-  firstName: employees.firstName,
-  middleName: employees.middleName,
-  lastName: employees.lastName,
-  suffix: employees.suffix,
-  positionTitle: employees.positionTitle,
-  appointmentType: employees.appointmentType,
-  salaryGrade: employees.salaryGrade,
-  step: employees.step,
-  status: employees.status,
-  officeId: employees.officeId,
-  email: employees.email,
-  phone: employees.phone,
-  dateHired: employees.dateHired,
-  createdAt: employees.createdAt,
-  updatedAt: employees.updatedAt,
-} as const;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +37,56 @@ export type EmployeeListResult = {
   totalPages: number;
 };
 
+type EmployeeListQueryRow = {
+  id: string;
+  employee_no: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
+  suffix: string | null;
+  position_title: string;
+  appointment_type: Employee["appointmentType"];
+  salary_grade: number;
+  step: number;
+  status: Employee["status"];
+  office_id: string | null;
+  email: string | null;
+  phone: string | null;
+  date_hired: string;
+  created_at: string;
+  updated_at: string;
+  offices: { name: string } | { name: string }[] | null;
+};
+
+const EMPLOYEE_LIST_COLUMNS = `
+  id,
+  employee_no,
+  first_name,
+  middle_name,
+  last_name,
+  suffix,
+  position_title,
+  appointment_type,
+  salary_grade,
+  step,
+  status,
+  office_id,
+  email,
+  phone,
+  date_hired,
+  created_at,
+  updated_at,
+  offices(name)
+`;
+
+function sanitizeEmployeeSearch(value: string): string {
+  return value
+    .replace(/[^a-zA-Z0-9 _-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+}
+
 // ---------------------------------------------------------------------------
 // getEmployees — paginated list with search and filters
 // ---------------------------------------------------------------------------
@@ -75,82 +104,66 @@ export async function getEmployees(
   } = params;
   const offset = (page - 1) * perPage;
 
-  const conditions = [isNull(employees.deletedAt)];
+  // Use the pooled Supabase server client for this list read. The direct
+  // Postgres client remains in use for detail reads and mutations, but opening
+  // a cold serverless DB connection here made every directory navigation wait.
+  let query = supabaseAdmin
+    .from("employees")
+    .select(EMPLOYEE_LIST_COLUMNS, { count: "exact" })
+    .is("deleted_at", null);
 
-  if (search) {
-    const searchTerm = `%${search}%`;
-    conditions.push(
-      or(
-        ilike(employees.firstName, searchTerm),
-        ilike(employees.lastName, searchTerm),
-        ilike(employees.middleName, searchTerm),
-        ilike(employees.employeeNo, searchTerm),
-        ilike(employees.positionTitle, searchTerm),
-        // FTS vector — uses the ts_vector index if available
-        sql`to_tsvector('simple', coalesce(${employees.firstName}, '') || ' ' || coalesce(${employees.lastName}, '') || ' ' || coalesce(${employees.positionTitle}, '')) @@ plainto_tsquery('simple', ${search})`,
-      )!,
+  if (appointmentType) query = query.eq("appointment_type", appointmentType);
+  if (officeId) query = query.eq("office_id", officeId);
+  if (status) query = query.eq("status", status);
+  if (salaryGrade) query = query.eq("salary_grade", salaryGrade);
+
+  const safeSearch = search ? sanitizeEmployeeSearch(search) : "";
+  if (safeSearch) {
+    const pattern = `*${safeSearch}*`;
+    query = query.or(
+      [
+        `first_name.ilike.${pattern}`,
+        `last_name.ilike.${pattern}`,
+        `middle_name.ilike.${pattern}`,
+        `employee_no.ilike.${pattern}`,
+        `position_title.ilike.${pattern}`,
+      ].join(","),
     );
   }
 
-  if (appointmentType) {
-    conditions.push(eq(employees.appointmentType, appointmentType));
-  }
+  const { data, error, count } = await query
+    .order("updated_at", { ascending: false })
+    .order("last_name", { ascending: true })
+    .order("first_name", { ascending: true })
+    .range(offset, offset + perPage - 1);
 
-  if (officeId) {
-    conditions.push(eq(employees.officeId, officeId));
-  }
+  if (error) throw new Error(`Failed to fetch employees: ${error.message}`);
 
-  if (status) {
-    conditions.push(eq(employees.status, status));
-  }
-
-  if (salaryGrade) {
-    conditions.push(eq(employees.salaryGrade, salaryGrade));
-  }
-
-  const whereClause = and(...conditions);
-
-  const [totalResult, rows] = await Promise.all([
-    db.select({ count: count() }).from(employees).where(whereClause),
-    db
-      .select({
-        ...employeeListSelect,
-        officeName: offices.name,
-      })
-      .from(employees)
-      .leftJoin(offices, eq(employees.officeId, offices.id))
-      .where(whereClause)
-      .orderBy(
-        desc(employees.updatedAt),
-        employees.lastName,
-        employees.firstName,
-      )
-      .limit(perPage)
-      .offset(offset),
-  ]);
-
-  const total = totalResult[0]?.count ?? 0;
+  const rows = (data ?? []) as unknown as EmployeeListQueryRow[];
+  const total = count ?? 0;
 
   return {
     data: rows.map((r) => ({
       id: r.id,
-      employeeNo: r.employeeNo,
-      firstName: r.firstName,
-      middleName: r.middleName ?? null,
-      lastName: r.lastName,
+      employeeNo: r.employee_no,
+      firstName: r.first_name,
+      middleName: r.middle_name ?? null,
+      lastName: r.last_name,
       suffix: r.suffix ?? null,
-      positionTitle: r.positionTitle,
-      appointmentType: r.appointmentType,
-      salaryGrade: r.salaryGrade,
+      positionTitle: r.position_title,
+      appointmentType: r.appointment_type,
+      salaryGrade: r.salary_grade,
       step: r.step,
       status: r.status,
-      officeId: r.officeId ?? null,
-      officeName: r.officeName ?? null,
+      officeId: r.office_id ?? null,
+      officeName: Array.isArray(r.offices)
+        ? (r.offices[0]?.name ?? null)
+        : (r.offices?.name ?? null),
       email: r.email ?? null,
       phone: r.phone ?? null,
-      dateHired: r.dateHired,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
+      dateHired: r.date_hired,
+      createdAt: new Date(r.created_at),
+      updatedAt: new Date(r.updated_at),
     })),
     total,
     page,
@@ -204,7 +217,7 @@ export type OfficeSelectOption = {
   code: string;
 };
 
-export async function getOfficesForSelect(): Promise<OfficeSelectOption[]> {
+async function fetchOfficesForSelect(): Promise<OfficeSelectOption[]> {
   return db
     .select({
       id: offices.id,
@@ -214,6 +227,12 @@ export async function getOfficesForSelect(): Promise<OfficeSelectOption[]> {
     .from(offices)
     .orderBy(offices.name);
 }
+
+export const getOfficesForSelect = unstable_cache(
+  fetchOfficesForSelect,
+  ["employees:office-select:v1"],
+  { revalidate: 300, tags: ["offices"] },
+);
 
 // ---------------------------------------------------------------------------
 // getEmployeeForEdit — same as getEmployeeById, used in edit page

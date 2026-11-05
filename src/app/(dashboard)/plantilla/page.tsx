@@ -19,6 +19,7 @@ import {
   getPlantillaPositions,
   getOffices,
   getActiveEmployees,
+  type PlantillaListParams,
 } from "./queries";
 import { PlantillaListParamsSchema } from "@/lib/validations/plantilla";
 import { requireAuth } from "@/lib/auth/guards";
@@ -26,6 +27,35 @@ import { requireAuth } from "@/lib/auth/guards";
 export const metadata: Metadata = {
   title: "Plantilla of Personnel",
 };
+
+async function PlantillaDataSection({
+  params,
+}: {
+  params: PlantillaListParams;
+}) {
+  const [{ rows, total }, offices, employees] = await Promise.all([
+    getPlantillaPositions(params),
+    getOffices(),
+    getActiveEmployees(),
+  ]);
+
+  return (
+    <PlantillaTableClient
+      rows={rows}
+      total={total}
+      offices={offices}
+      employees={employees}
+      page={params.page ?? 1}
+      perPage={params.perPage ?? 50}
+      currentFilters={{
+        search: params.search,
+        officeId: params.officeId,
+        salaryGrade: params.salaryGrade,
+        status: params.status ?? "all",
+      }}
+    />
+  );
+}
 
 interface PlantillaPageProps {
   searchParams: Promise<Record<string, string | string[]>>;
@@ -54,19 +84,6 @@ export default async function PlantillaPage({
     exportParams.set("salaryGrade", String(params.salaryGrade));
   if (params.status !== "all") exportParams.set("status", params.status);
   const exportQS = exportParams.toString();
-
-  const [{ rows, total }, offices, employees] = await Promise.all([
-    getPlantillaPositions({
-      page: params.page,
-      perPage: params.perPage,
-      search: params.search,
-      officeId: params.officeId,
-      salaryGrade: params.salaryGrade,
-      status: params.status,
-    }),
-    getOffices(),
-    getActiveEmployees(),
-  ]);
 
   return (
     <div>
@@ -106,20 +123,7 @@ export default async function PlantillaPage({
       <Suspense
         fallback={<PlantillaListSkeleton rows={Math.min(params.perPage, 10)} />}
       >
-        <PlantillaTableClient
-          rows={rows}
-          total={total}
-          offices={offices}
-          employees={employees}
-          page={params.page}
-          perPage={params.perPage}
-          currentFilters={{
-            search: params.search,
-            officeId: params.officeId,
-            salaryGrade: params.salaryGrade,
-            status: params.status,
-          }}
-        />
+        <PlantillaDataSection params={params} />
       </Suspense>
     </div>
   );

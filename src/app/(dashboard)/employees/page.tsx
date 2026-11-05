@@ -10,11 +10,40 @@ import { requireAuth } from "@/lib/auth/guards";
 import { redirect } from "next/navigation";
 import { RoleGate } from "@/components/role-gate";
 import { getEmployees, getOfficesForSelect } from "./queries";
-import { EmployeeListParamsSchema } from "@/lib/validations/employees";
+import {
+  EmployeeListParamsSchema,
+  type EmployeeListParams,
+} from "@/lib/validations/employees";
 import type { Role } from "@/lib/auth/permissions";
 
 // Export CSV is available to roles that can export employee data.
 const EXPORT_ROLES: ReadonlyArray<Role> = ["super_admin", "hr_admin"];
+
+async function EmployeesDataSection({
+  params,
+}: {
+  params: EmployeeListParams;
+}) {
+  const [listResult, offices] = await Promise.all([
+    getEmployees(params),
+    getOfficesForSelect(),
+  ]);
+
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {listResult.total.toLocaleString()} record
+        {listResult.total !== 1 ? "s" : ""} found
+      </p>
+      <EmployeeFilters offices={offices} />
+      <EmployeeListTable
+        initialData={listResult}
+        currentPage={params.page}
+        perPage={params.perPage}
+      />
+    </>
+  );
+}
 
 export const metadata = {
   title: "Employees",
@@ -76,11 +105,6 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
     exportParams.set("salaryGrade", String(scopedParams.salaryGrade));
   const exportQS = exportParams.toString();
 
-  const [listResult, offices] = await Promise.all([
-    getEmployees(scopedParams),
-    getOfficesForSelect(),
-  ]);
-
   return (
     <div className="space-y-6 p-6">
       {/* Realtime subscription — refreshes on any employees table change */}
@@ -97,10 +121,6 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
               </span>
             )}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {listResult.total.toLocaleString()} record
-            {listResult.total !== 1 ? "s" : ""} found
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <RoleGate role={user.role} roles={EXPORT_ROLES} fallback={null}>
@@ -136,20 +156,10 @@ export default async function EmployeesPage({ searchParams }: PageProps) {
         </div>
       </header>
 
-      {/* Filters */}
-      <Suspense>
-        <EmployeeFilters offices={offices} />
-      </Suspense>
-
-      {/* Table */}
       <Suspense
         fallback={<EmployeeListSkeleton rows={Math.min(params.perPage, 10)} />}
       >
-        <EmployeeListTable
-          initialData={listResult}
-          currentPage={params.page}
-          perPage={params.perPage}
-        />
+        <EmployeesDataSection params={scopedParams} />
       </Suspense>
     </div>
   );

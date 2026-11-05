@@ -7,6 +7,7 @@
  * These functions READ data only — mutations live in actions.ts.
  */
 
+import { unstable_cache } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 // ---------------------------------------------------------------------------
@@ -292,7 +293,7 @@ export async function getVacancySummary(): Promise<VacancySummaryRow[]> {
 // Offices list (for filters and forms)
 // ---------------------------------------------------------------------------
 
-export async function getOffices(): Promise<OfficeRow[]> {
+async function fetchOffices(): Promise<OfficeRow[]> {
   const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
@@ -334,6 +335,12 @@ export async function getOffices(): Promise<OfficeRow[]> {
     };
   });
 }
+
+export const getOffices = unstable_cache(
+  fetchOffices,
+  ["plantilla:offices:v1"],
+  { revalidate: 300, tags: ["offices"] },
+);
 
 // ---------------------------------------------------------------------------
 // Single office
@@ -385,7 +392,7 @@ export async function getOfficeById(id: string): Promise<OfficeRow | null> {
 // Active employees (for assignment selector)
 // ---------------------------------------------------------------------------
 
-export async function getActiveEmployees(): Promise<EmployeeSelectorRow[]> {
+async function fetchActiveEmployees(): Promise<EmployeeSelectorRow[]> {
   const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
@@ -406,3 +413,9 @@ export async function getActiveEmployees(): Promise<EmployeeSelectorRow[]> {
     officeId: row.office_id as string | null,
   }));
 }
+
+export const getActiveEmployees = unstable_cache(
+  fetchActiveEmployees,
+  ["plantilla:active-employees:v1"],
+  { revalidate: 300, tags: ["employees"] },
+);
